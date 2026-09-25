@@ -15,6 +15,41 @@ const KINDS: Record<string, string> = {
   admin: N_('Admin'),
 };
 
+/** What an admin did, as the server writes it down (in English), in the reader's language. */
+function detailText(kind: string, detail: string | null): string | null {
+  if (!detail || kind !== 'admin') return detail;
+  const rules: [RegExp, (m: RegExpMatchArray) => string][] = [
+    [/^invited (\S+) as admin$/, (m) => t('{email} als Admin eingeladen', { email: m[1]! })],
+    [/^invited (\S+)$/, (m) => t('{email} eingeladen', { email: m[1]! })],
+    [
+      /^withdrew the invitation for (\S+)$/,
+      (m) => t('Einladung für {email} zurückgezogen', { email: m[1]! }),
+    ],
+    [/^changed the settings$/, () => t('Einstellungen geändert')],
+    [/^wrote the backup (\S+)$/, (m) => t('Backup {name} geschrieben', { name: m[1]! })],
+    [/^downloaded the backup (\S+)$/, (m) => t('Backup {name} heruntergeladen', { name: m[1]! })],
+    [/^deleted the account (\S+)$/, (m) => t('Konto {email} gelöscht', { email: m[1]! })],
+    [
+      /^logged out device (\S+) of (\S+)$/,
+      (m) => t('Gerät {device} abgemeldet', { device: m[1]! }),
+    ],
+    [/^disable for (\S+)$/, (m) => t('{email} gesperrt', { email: m[1]! })],
+    [/^enable for (\S+)$/, (m) => t('{email} freigegeben', { email: m[1]! })],
+    [/^make-admin for (\S+)$/, (m) => t('{email} zum Admin gemacht', { email: m[1]! })],
+    [/^remove-admin for (\S+)$/, (m) => t('{email} ist kein Admin mehr', { email: m[1]! })],
+    [/^log-out for (\S+)$/, (m) => t('{email} überall abgemeldet', { email: m[1]! })],
+    [
+      /^reset-two-factor for (\S+)$/,
+      (m) => t('Zwei-Schritt-Anmeldung von {email} zurückgesetzt', { email: m[1]! }),
+    ],
+  ];
+  for (const [pattern, text] of rules) {
+    const match = detail.match(pattern);
+    if (match) return text(match);
+  }
+  return detail;
+}
+
 /** Logins, refused logins, registrations and what admins did, the newest first; 90 days of it. */
 export function Events() {
   useLanguage();
@@ -64,7 +99,9 @@ export function Events() {
               <td>{when(event.time)}</td>
               <td>
                 {t(KINDS[event.kind] ?? event.kind)}
-                {event.detail && <small className="event-detail">{event.detail}</small>}
+                {event.detail && (
+                  <small className="event-detail">{detailText(event.kind, event.detail)}</small>
+                )}
               </td>
               <td>{event.email ?? '–'}</td>
               <td>
