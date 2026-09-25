@@ -7,9 +7,34 @@
 # CI uses docker/Dockerfile.release instead, with binaries it cross-compiled before, which is
 # much faster for arm64. Both end in the same image.
 
+# The web vault's crypto, as WebAssembly: web/wasm, a Rust workspace of its own.
+FROM rust:1-slim-trixie AS wasm
+RUN rustup target add wasm32-unknown-unknown
+WORKDIR /src/web/wasm
+COPY web/wasm/ ./
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    version="$(sed -n 's/^wasm-bindgen = "=\(.*\)"/\1/p' Cargo.toml)" \
+ && cargo install wasm-bindgen-cli --version "$version" --locked \
+ && cargo build --release --locked --target wasm32-unknown-unknown \
+ && wasm-bindgen --target web --out-dir /pkg --out-name core \
+      target/wasm32-unknown-unknown/release/uwulock_web_core.wasm
+
+# The web vault and the admin portal.
+FROM node:24-slim AS web
+WORKDIR /web
+RUN corepack enable
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
+COPY web/ ./
+COPY --from=wasm /pkg src/wasm/pkg
+RUN pnpm run build:web
+
 FROM rust:1-slim-trixie AS build
 WORKDIR /src
 COPY . .
+# Embedded into the binary by crates/uwulock-web/build.rs.
+COPY --from=web /web/dist /src/web/dist
 # `--locked` so the image is built from the versions in Cargo.lock and not from whatever was
 # published this morning. The cached target directory can hold an earlier build whose sources
 # look unchanged to cargo, so the server's own sources are touched first.

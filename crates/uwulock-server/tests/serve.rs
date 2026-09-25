@@ -31,6 +31,7 @@ async fn start(mut config: Config) -> Running {
     let done = tokio::spawn(uwulock_server::run(
         config,
         store,
+        uwulock_api::LogBuffer::new(100),
         async move {
             let _ = stopped.await;
         },

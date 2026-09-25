@@ -1,6 +1,8 @@
 # Running UwULock Server
 
 - [With install.sh](#with-installsh)
+- [The first admin, and everybody else](#the-first-admin-and-everybody-else)
+- [Mail](#mail)
 - [With Let's Encrypt](#with-lets-encrypt)
 - [Behind a reverse proxy](#behind-a-reverse-proxy)
 - [With your own certificate](#with-your-own-certificate)
@@ -30,11 +32,61 @@ It installs Docker if it is missing, asks which of the two ways, sets up `/opt/u
 the server and waits until it is healthy. Without questions:
 
 ```bash
-sudo bash install.sh --domain vault.example.com --acme-email admin@example.com --yes
-sudo bash install.sh --behind-proxy https://vault.example.com --yes
+sudo bash install.sh --domain vault.example.com --acme-email admin@example.com --admin you@example.com --yes
+sudo bash install.sh --behind-proxy https://vault.example.com --admin you@example.com --yes
 ```
 
 `sudo bash install.sh --help` lists every flag.
+
+## The first admin, and everybody else
+
+Nobody registers without an invitation. An invitation is a link to the web vault
+(`https://vault.example.com/#/finish-signup?token=…`) that works for a week; whoever opens it
+chooses a name and a master password there, and the account is made — the keys in their
+browser, the server gets only the password's hash and the keys wrapped under it.
+
+The first invitation comes from the command line, and makes an admin:
+
+```bash
+cd /opt/uwulock
+sudo docker compose exec uwulock uwulock-server invite --admin you@example.com
+```
+
+(`install.sh --admin you@example.com` does exactly that at the end.) The link is printed; when
+the server can send mail, it goes out by mail as well. Everybody else an admin invites in the
+admin portal at `/admin`, where the link is shown too, for passing on by hand.
+
+Admins are ordinary accounts with the admin right. The portal shows accounts, devices, the event
+log (logins, refused logins, what admins did), the server's log, backups and whether there is an
+update — never anything inside a vault: that is encrypted with keys only its owner has.
+
+For the day the only admin cannot log in any more:
+
+```bash
+sudo docker compose exec uwulock uwulock-server admin you@example.com          # make an admin
+sudo docker compose exec uwulock uwulock-server reset-two-factor you@example.com
+```
+
+## Mail
+
+For invitations, codes for two-step login by mail, password hints, and a note when an account
+logs in on a new device. Without it everything else works; invitations are passed on as links.
+Set it up in the admin portal (Settings → Mail, with a test mail), or in `.env` before the
+first start — that is only where a new server starts; once saved in the portal, the database
+holds it:
+
+```bash
+UWULOCK_SMTP_HOST=mail.example.com
+UWULOCK_SMTP_PORT=587
+UWULOCK_SMTP_SECURITY=starttls        # starttls (587), tls (465), or none for a local relay
+UWULOCK_SMTP_USERNAME=vault@example.com
+UWULOCK_SMTP_PASSWORD=...
+UWULOCK_SMTP_FROM=vault@example.com
+UWULOCK_SMTP_FROM_NAME=UwULock
+```
+
+Mails go out in German or English: in the language each account chose in the web vault, and
+for invitations in the server's (`UWULOCK_LANGUAGE`, or the portal).
 
 ## With Let's Encrypt
 
@@ -202,7 +254,9 @@ The database that was there is kept next to it as `uwulock.db.before-restore-<ti
 
 ## Settings
 
-All in `.env`, read when the container starts (`docker compose up -d` after a change).
+All in `.env`, read when the container starts (`docker compose up -d` after a change). Mail,
+the invitations' lifetime, the default language and a few switches live in the admin portal
+instead; `.env` only gives where a new server starts.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
@@ -215,6 +269,8 @@ All in `.env`, read when the container starts (`docker compose up -d` after a ch
 | `UWULOCK_TLS_CERT`, `UWULOCK_TLS_KEY` | `/data/tls/cert.pem`, `/data/tls/key.pem` | The PEM files for `files`. |
 | `UWULOCK_TRUST_FORWARDED` | `off` | Believe `X-Forwarded-For`. Only behind a proxy that sets it. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
+| `UWULOCK_LANGUAGE` | `de` | Invitations, and new accounts until their owner picks: `de` or `en`. Start value; the admin portal changes it. |
+| `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |
 | `RUST_LOG` | `info` for the server | How much it logs, e.g. `uwulock_server=debug`. |
 
 ## Without Docker

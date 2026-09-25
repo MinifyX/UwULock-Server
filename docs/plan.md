@@ -5,7 +5,8 @@ Bitwarden-kompatibel wie Vaultwarden, aber schneller, auf UwULock zugeschnitten,
 für eigene Funktionen — ohne dass die offizielle Bitwarden-Browsererweiterung, die Apps oder die
 CLI aufhören zu funktionieren.
 
-Stand: September 2026. Stufe 0 ist fertig (0.0.1).
+Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
+Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden.
 
 ## Leitlinien
 
@@ -27,10 +28,12 @@ Stand: September 2026. Stufe 0 ist fertig (0.0.1).
 | `uwulock-api`    | HTTP: Bitwarden-API (`/identity`, `/api`, `/notifications`, …) und UwULocks eigene unter `/uwu/v1`. |
 | `uwulock-server` | Das Programm: Einstellungen, TLS (Let's Encrypt, Zertifikatsdateien oder hinter einem Proxy), Befehle, nächtliche Backups, Update-Hinweis. |
 | `uwulock-bench`  | Last gegen einen Bitwarden-kompatiblen Server, zum Vergleich mit Vaultwarden. |
+| `uwulock-mail`   | SMTP, Vorlagen auf Deutsch und Englisch. |
+| `uwulock-web`    | Die Dateien von Web-Tresor und Admin-Portal, in die Binary eingebettet. |
+| `uwulock-e2e`    | UwULocks eigener Client (`uwulock-bitwarden`) gegen den echten Server. |
+| `web/`           | Eigener Web-Tresor und Admin-Portal (React, im Look der UwULock-App); `web/wasm` ist ihre Krypto: `uwulock-core` als WebAssembly. |
 | später `uwulock-notify`  | Echtzeit: SignalR-WebSocket für die offiziellen Clients, Bitwardens Push-Relay für die Handy-Apps, ein schlanker Kanal für UwULock. |
-| später `uwulock-mail`    | SMTP, Vorlagen auf Deutsch und Englisch, Voreinstellung für UwUMail-Server. |
 | später `uwulock-migrate` | Übernahme eines Vaultwarden direkt aus dessen Datenbank. |
-| später `web/`            | Eigener Web-Vault und Admin-Portal (React). |
 
 Die Krypto kommt aus dem Client: `uwulock-core` (im Repository des Clients) enthält Bitwardens
 Verschlüsselung ohne Netzwerk und lässt sich nach WebAssembly bauen. Der Web-Vault nutzt dieselbe,
@@ -68,17 +71,26 @@ Jede Stufe ist ein Release und für sich nutzbar.
 - [x] Im Client: `uwulock-bitwarden` in `uwulock-core` (Krypto, WASM-fähig) und die HTTP-Schicht
       aufgeteilt
 
-### Stufe 1 — Kern für Einzelne (0.1)
+### Stufe 1 — Kern für Einzelne, mit Web-Tresor und Admin-Portal (0.1, Beta)
 
-- Anmeldung: Prelogin, Registrierung nur per Einladung (optional frei für bestimmte Domains),
-  Token mit Passwort und Refresh-Token, Geräte
-- Tresor: Sync, Einträge anlegen/ändern/löschen, Papierkorb, Favoriten, Massenaktionen, Import,
-  Ordner, Profil
-- Konto: Passwort, KDF und E-Mail ändern, Schlüssel rotieren, Konto löschen
-- `/api/config` mit einer Version, bei der die offiziellen Clients ihre Funktionen freischalten
-- 2FA: TOTP, E-Mail-Code, Wiederherstellungscode, „Gerät merken"
-- CORS für die Browsererweiterung, Rate-Limits, Header-Timeouts
-- Prüfstein: UwULock-Client, Browsererweiterung, `bw`-CLI und Handy-Apps funktionieren
+- [x] Anmeldung: Prelogin, Registrierung nur per Einladung (Link per Mail oder von Hand), Token
+      mit Passwort und Refresh-Token, Geräte
+- [x] Tresor: Sync, Einträge anlegen/ändern/löschen, Papierkorb, Archiv, Favoriten,
+      Massenaktionen, Import, Ordner, Profil
+- [x] Konto: Passwort, KDF und E-Mail ändern, Schlüssel rotieren, überall abmelden, Konto löschen
+- [x] `/api/config` mit einer Version, bei der die offiziellen Clients ihre Funktionen freischalten
+- [x] 2FA: TOTP, E-Mail-Code, Wiederherstellungscode, „Gerät merken"
+- [x] CORS für die Desktop-App, Rate-Limits, Header-Timeouts
+- [x] Mail (vorgezogen): SMTP, Vorlagen auf Deutsch und Englisch, Sprache pro Konto
+- [x] Web-Tresor (vorgezogen aus Stufe 3): Registrieren per Einladung, Tresor ansehen und
+      bearbeiten, Mehrfachauswahl, Generator, Import/Export (Bitwarden-JSON und -CSV), alle
+      Kontoeinstellungen, 2FA mit QR-Code, Geräte; Krypto über WASM; Deutsch und Englisch
+- [x] Admin-Portal (vorgezogen aus Stufe 3): Nutzer, Einladungen, Geräte, 2FA zurücksetzen,
+      Admin-Recht, SMTP und weitere Einstellungen in der Datenbank, Statistik, Ereignisse, Logs,
+      Backups, Update-Hinweis; den ersten Admin lädt die Kommandozeile ein
+- [x] Prüfstein in CI: UwULock-Client (`uwulock-e2e`), die offizielle `bw`-CLI, Web-Tresor und
+      Admin-Portal im Browser
+- [ ] Vor 0.1.0: Browsererweiterung und Handy-Apps von Hand gegen die Beta (Checkliste unten)
 
 ### Stufe 2 — Umstieg von Vaultwarden (0.2)
 
@@ -88,13 +100,14 @@ Jede Stufe ist ein Release und für sich nutzbar.
 - Echtzeit: SignalR-Hub, Push-Relay für die Handy-Apps
 - Ab hier kann der eigene Tresor umziehen.
 
-### Stufe 3 — Web-Vault und Admin-Portal (0.3)
+### Stufe 3 — Web-Tresor und Admin-Portal ausbauen (0.3)
 
-- Web-Vault: Tresor im Browser, Krypto über WASM, Einstellungen, 2FA einrichten
-- Admin-Portal: Nutzer, Einladungen, Geräte, 2FA zurücksetzen, SMTP, Push-Relay,
-  Registrierungsregeln, Statistik, Logs, Backups, Update-Hinweis
-- Admins sind normale Konten mit Admin-Recht; den ersten legt die Kommandozeile an
-- Deutsch und Englisch
+Das Grundgerüst beider kam schon mit 0.1. Hier kommt dazu, was davon von späteren Stufen
+abhängt oder erst mit mehr Nutzern wichtig wird:
+
+- Web-Tresor: Anhänge und Sends (mit Stufe 4), eine Ansicht fürs Handy
+- Admin-Portal: Push-Relay einrichten (mit Stufe 2), Registrierungsregeln über Einladungen
+  hinaus, Statistik über die Zeit, Backups zurückspielen
 
 ### Stufe 4 — Alles, was Vaultwarden für Einzelne kann (1.0)
 
@@ -123,6 +136,17 @@ Jede Stufe ist ein Release und für sich nutzbar.
 - Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
   einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf
 
+## Checkliste vor einem Release (Browsererweiterung und Apps)
+
+Was CI nicht kann, von Hand gegen die Beta, mit dem Server als „selbst gehostet":
+
+- Browsererweiterung (Firefox und Chrome): Anmelden, mit 2FA (App und Mail), Eintrag anlegen,
+  Autofill auf einer Seite, Passwort-Generator, Sperren und Entsperren, Abmelden
+- Android- und iOS-App: dasselbe, dazu Autofill im System und Entsperren mit Biometrie
+- Desktop-App von Bitwarden: Anmelden, Sync, Eintrag anlegen
+- UwULock: Anmelden, Sync, Eintrag bearbeiten
+- Ein Eintrag, den eine App angelegt hat, öffnet sich im Web-Tresor und umgekehrt
+
 ## Kompatibilität absichern
 
 - In CI: die offizielle `bw`-CLI gegen den Server (Anmeldung, 2FA, Sync, Einträge, Anhänge, Sends)
@@ -138,6 +162,10 @@ Docker-Images für amd64 und arm64 auf GHCR, dazu `install.sh`, `update.sh`, `co
 ## Festgelegt
 
 - Stufe 5 (Firma) vor Stufe 6 (UwU-Extras); die beiden lassen sich tauschen.
-- Web-Vault an der Wurzel `/`, Admin-Portal unter `/admin`.
+- Web-Tresor und Admin-Portal schon in 0.1: der Web-Tresor an der Wurzel `/`, das Admin-Portal
+  unter `/admin`, beide im Look der UwULock-App.
+- Keine Bestätigung neuer Geräte per Mail (Bitwardens „new device verification"): wer mehr
+  Schutz will, richtet 2FA ein. Eine Mail bei jeder Anmeldung eines neuen Geräts gibt es, im
+  Admin-Portal abschaltbar.
 - Anhänge auf der Platte; S3-artiger Speicher erst, wenn die Firma ihn braucht.
 - AGPL-3.0, Registrierung nur per Einladung, Deutsch und Englisch.

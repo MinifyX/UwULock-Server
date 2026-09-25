@@ -3,17 +3,18 @@
 //! Each is a whole, consistent copy of the database under `backups/`, next to it in the same
 //! volume. That protects against a bad update and a mistake, not against a dead disk: copying
 //! `backups/` somewhere else is up to whoever runs the server (docs/deployment.md says how).
+//!
+//! The nightly job, the `backup` command and the admin portal all write them through here.
 
-use crate::Config;
+use crate::{Store, with_suffix};
 use std::path::{Path, PathBuf};
-use uwulock_store::{Store, with_suffix};
 
 /// Backups kept: a week of nights, the ones before updates counted in.
 pub const KEPT: usize = 7;
 
-/// Write a backup to `path`, or to a dated file under `backups/`. Returns where it went.
-pub async fn write(store: &Store, config: &Config, path: Option<PathBuf>) -> Result<PathBuf, String> {
-    let path = path.unwrap_or_else(|| dated_path(config, now_ms()));
+/// Write a backup to `path`, or to a dated file in `dir`. Returns where it went.
+pub async fn write(store: &Store, dir: &Path, path: Option<PathBuf>) -> Result<PathBuf, String> {
+    let path = path.unwrap_or_else(|| dated_path(dir, now_ms()));
     room_for(store.path(), &path)?;
     store.backup_to(&path).await.map_err(|error| error.to_string())?;
     Ok(path)
@@ -21,8 +22,8 @@ pub async fn write(store: &Store, config: &Config, path: Option<PathBuf>) -> Res
 
 /// `backups/uwulock-<when>.db`, to the second — the nightly one and one taken before an update
 /// can fall on the same day, and `VACUUM INTO` will not write over a file.
-pub fn dated_path(config: &Config, ms: u64) -> PathBuf {
-    config.backups().join(format!("uwulock-{}.db", stamp(ms)))
+pub fn dated_path(dir: &Path, ms: u64) -> PathBuf {
+    dir.join(format!("uwulock-{}.db", stamp(ms)))
 }
 
 /// When a backup was written, from its name. Nothing for a file that is not one.

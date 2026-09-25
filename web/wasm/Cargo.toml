@@ -1,0 +1,35 @@
+[package]
+name = "uwulock-web-core"
+description = "The web vault's crypto and vault: uwulock-core, as WebAssembly, behind the calls the page makes"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/MinifyX/UwULock-Server"
+rust-version = "1.89"
+publish = false
+
+# A workspace of its own: the server's `cargo test --workspace` never builds this, and this never
+# builds the server.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# UwULock's crypto and vault, the same the desktop app uses, at the commit uwulock-e2e tests.
+uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "3f120ff1d5a1421ba17531a7d911f7ed7ea59c7b" }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+wasm-bindgen = "=0.2.129"
+zeroize = "1"
+
+[profile.release]
+# Speed over size: the page derives the master key in here, and PBKDF2 or Argon2 is most of
+# what a login waits for.
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

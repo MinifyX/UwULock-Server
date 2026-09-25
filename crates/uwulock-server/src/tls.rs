@@ -35,7 +35,18 @@ pub async fn serve(
     handle: Handle<SocketAddr>,
 ) -> Result<(), String> {
     let service = app.into_make_service_with_connect_info::<SocketAddr>();
-    let server = axum_server::from_tcp(listener).map_err(|error| error.to_string())?.handle(handle);
+    let mut server = axum_server::from_tcp(listener).map_err(|error| error.to_string())?.handle(handle);
+    // A client gets 20 seconds to send the head of its request: a connection that trickles it
+    // in byte by byte does not keep a slot for ever. An HTTP/2 connection is pinged when idle,
+    // and closed when the other side stopped answering.
+    let builder = server.http_builder();
+    builder.http1().timer(hyper_util::rt::TokioTimer::new()).header_read_timeout(Duration::from_secs(20));
+    builder
+        .http2()
+        .timer(hyper_util::rt::TokioTimer::new())
+        .keep_alive_interval(Some(Duration::from_secs(60)))
+        .keep_alive_timeout(Duration::from_secs(20))
+        .max_concurrent_streams(256);
     match &config.tls {
         TlsMode::Off => server.serve(service).await,
         TlsMode::Files { cert, key } => {

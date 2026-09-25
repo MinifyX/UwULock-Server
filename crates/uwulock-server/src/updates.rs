@@ -134,7 +134,8 @@ pub enum Finding {
 
 /// Once a day, from a minute after the start: long enough that a server
 /// restarted in a loop does not ask GitHub every time.
-pub fn spawn(config: Arc<Config>) {
+/// What was found also goes to `info`, which the admin portal shows.
+pub fn spawn(config: Arc<Config>, info: Arc<parking_lot::RwLock<uwulock_api::UpdateInfo>>) {
     if !config.update_check {
         tracing::info!("not checking for updates (UWULOCK_UPDATE_CHECK=off)");
         return;
@@ -142,7 +143,25 @@ pub fn spawn(config: Arc<Config>) {
     tokio::spawn(async move {
         tokio::time::sleep(Duration::from_secs(60)).await;
         loop {
-            match check(&config).await {
+            let found = check(&config).await;
+            {
+                let mut info = info.write();
+                info.checked = Some(uwulock_store::clock::now());
+                info.newer = None;
+                info.url = None;
+                info.commits = None;
+                info.error = None;
+                match &found {
+                    Ok(Finding::UpToDate) => {}
+                    Ok(Finding::Release { version, url }) => {
+                        info.newer = Some(version.clone());
+                        info.url = Some(url.clone());
+                    }
+                    Ok(Finding::Commits(count)) => info.commits = Some(*count),
+                    Err(error) => info.error = Some(error.clone()),
+                }
+            }
+            match found {
                 Ok(Finding::UpToDate) => tracing::debug!("up to date"),
                 Ok(Finding::Release { version, url }) => tracing::info!(
                     running = build().version,

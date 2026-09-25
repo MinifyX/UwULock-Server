@@ -2,10 +2,13 @@
 //!
 //! No config file: a container gets its settings from environment variables, and a setting that
 //! lives in two places is a setting that disagrees with itself. Settings a person changes while
-//! the server runs — mail, sign-ups — will live in the database and the admin portal instead.
+//! the server runs — mail, invitations — live in the database and the admin portal; what is set
+//! for them here is only where a new server starts.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use uwulock_api::Settings;
+use uwulock_mail::{Language, Security, SmtpSettings};
 
 /// Where the certificate comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +67,9 @@ pub struct Config {
     /// The image tag this machine follows (`latest`, `beta`, `edge` or a version), which decides
     /// what counts as an update.
     pub channel: Option<String>,
+    /// Mail server and default language a new server starts with, until an admin saves others
+    /// in the portal.
+    pub start_settings: Settings,
 }
 
 impl Default for Config {
@@ -76,6 +82,7 @@ impl Default for Config {
             trust_forwarded: false,
             update_check: true,
             channel: None,
+            start_settings: Settings::default(),
         }
     }
 }
@@ -110,6 +117,40 @@ impl Config {
                 switch(&check).ok_or_else(|| format!("UWULOCK_UPDATE_CHECK must be on or off: {check}"))?;
         }
         config.channel = var("UWULOCK_CHANNEL");
+        if let Some(language) = var("UWULOCK_LANGUAGE") {
+            config.start_settings.default_language = match language.to_ascii_lowercase().as_str() {
+                "de" => Language::De,
+                "en" => Language::En,
+                _ => return Err(format!("UWULOCK_LANGUAGE must be de or en: {language}")),
+            };
+        }
+        if let Some(host) = var("UWULOCK_SMTP_HOST") {
+            let security = match var("UWULOCK_SMTP_SECURITY").as_deref().map(str::to_ascii_lowercase).as_deref() {
+                None | Some("starttls") => Security::Starttls,
+                Some("tls" | "ssl") => Security::Tls,
+                Some("none" | "off") => Security::None,
+                Some(other) => return Err(format!("UWULOCK_SMTP_SECURITY must be starttls, tls or none: {other}")),
+            };
+            let port = match var("UWULOCK_SMTP_PORT") {
+                Some(port) => port.parse().map_err(|_| format!("UWULOCK_SMTP_PORT is not a port: {port}"))?,
+                None => match security {
+                    Security::Tls => 465,
+                    Security::Starttls => 587,
+                    Security::None => 25,
+                },
+            };
+            let from =
+                var("UWULOCK_SMTP_FROM").ok_or("UWULOCK_SMTP_HOST needs UWULOCK_SMTP_FROM: the sender address")?;
+            config.start_settings.smtp = Some(SmtpSettings {
+                host,
+                port,
+                security,
+                username: var("UWULOCK_SMTP_USERNAME"),
+                password: var("UWULOCK_SMTP_PASSWORD"),
+                from,
+                from_name: var("UWULOCK_SMTP_FROM_NAME"),
+            });
+        }
 
         config.tls = match var("UWULOCK_TLS").as_deref().map(str::to_ascii_lowercase).as_deref() {
             None | Some("off" | "proxy") => TlsMode::Off,
@@ -328,6 +369,22 @@ mod tests {
             TlsMode::Files { cert: PathBuf::from("/data/tls/cert.pem"), key: PathBuf::from("/data/tls/key.pem") }
         );
         assert_eq!(config.base_url(), "https://0.0.0.0:8443");
+    }
+
+    #[test]
+    fn mail_from_the_environment_is_where_a_new_server_starts() {
+        let started = config(&[
+            ("UWULOCK_SMTP_HOST", "mail.example.com"),
+            ("UWULOCK_SMTP_SECURITY", "tls"),
+            ("UWULOCK_SMTP_FROM", "vault@example.com"),
+            ("UWULOCK_LANGUAGE", "en"),
+        ])
+        .unwrap();
+        let smtp = started.start_settings.smtp.unwrap();
+        assert_eq!((smtp.port, smtp.security), (465, Security::Tls));
+        assert_eq!(started.start_settings.default_language, Language::En);
+        assert!(config(&[("UWULOCK_SMTP_HOST", "mail.example.com")]).is_err(), "no sender");
+        assert!(config(&[("UWULOCK_LANGUAGE", "fr")]).is_err());
     }
 
     #[test]

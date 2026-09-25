@@ -8,13 +8,26 @@
 //! the clients encrypted. So this is mostly bookkeeping, and it has to be fast at one thing above
 //! all: handing a whole vault to a client that syncs.
 
+mod accounts;
+mod admin;
 mod backup;
+pub mod backups;
+pub mod clock;
 mod migrations;
 mod sqlite;
+mod vault;
 
+pub use accounts::{
+    CODE_ATTEMPTS, CodeRefusal, Device, DeviceLogin, Invitation, Kdf, NewUser, SessionUser, TwoFactor, User,
+    UserOverview, normalize_email,
+};
+pub use admin::{EVENT_DAYS, Event, Stats};
 pub use backup::restore;
 pub use migrations::SCHEMA_VERSION;
+pub use vault::{Bulk, Cipher, Folder, VaultContents};
 
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -25,6 +38,9 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("{0}")]
     Io(#[from] std::io::Error),
+    /// Something with that name is there already, like an account for an address.
+    #[error("it exists already")]
+    Exists,
     /// The file was last opened by a newer UwULock Server, which changed it in ways this one
     /// does not know. Going on would mean guessing.
     #[error("the database comes from a newer UwULock Server (schema {found}, this one knows up to {known})")]
@@ -55,6 +71,9 @@ impl Default for Options {
 #[derive(Clone)]
 pub struct Store {
     backend: Arc<Backend>,
+    /// Who the requests are from, by user id, and since when that is known: see
+    /// [`Store::session_user`].
+    sessions: Arc<RwLock<HashMap<String, (SessionUser, std::time::Instant)>>>,
 }
 
 enum Backend {
@@ -65,7 +84,7 @@ impl Store {
     /// Open (or make) the SQLite database at `path` and bring its schema up to date.
     pub fn open_sqlite(path: &Path, options: &Options) -> Result<Self> {
         let sqlite = sqlite::Sqlite::open(path, options)?;
-        Ok(Self { backend: Arc::new(Backend::Sqlite(sqlite)) })
+        Ok(Self { backend: Arc::new(Backend::Sqlite(sqlite)), sessions: Arc::default() })
     }
 
     /// Whether the database answers. What `/healthz` asks.
@@ -126,7 +145,6 @@ impl Store {
 
     /// Run `change` in a transaction on the write connection, on a blocking thread. It commits
     /// when `change` returns `Ok`, and rolls back otherwise.
-    #[allow(dead_code)] // The first writes come with accounts in 0.1.
     pub(crate) async fn sqlite_write<T, F>(&self, change: F) -> Result<T>
     where
         T: Send + 'static,

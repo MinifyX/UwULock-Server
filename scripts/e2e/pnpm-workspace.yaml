@@ -1,0 +1,3 @@
+# core-js only prints a banner when it installs: nothing to run.
+allowBuilds:
+  core-js: false

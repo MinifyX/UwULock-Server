@@ -51,7 +51,7 @@ mod tests {
 
     #[tokio::test]
     async fn alive_is_the_time_like_bitwarden_s() {
-        let server = TestServer::new();
+        let server = TestServer::new().await;
         for path in ["/alive", "/api/alive", "/api/now"] {
             let response = server.get(path).await;
             assert_eq!(response.status(), StatusCode::OK, "{path}");
@@ -66,7 +66,7 @@ mod tests {
 
     #[tokio::test]
     async fn healthz_asks_the_database() {
-        let server = TestServer::new();
+        let server = TestServer::new().await;
         let response = server.get("/healthz").await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers()["x-content-type-options"], "nosniff");
