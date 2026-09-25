@@ -1,0 +1,12 @@
+{
+  "name": "@uwulock/server-e2e",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "packageManager": "pnpm@11.3.0",
+  "description": "What the end-to-end tests need: a browser to drive, and Bitwarden's own CLI",
+  "devDependencies": {
+    "@bitwarden/cli": "2026.9.0",
+    "playwright": "1.60.0"
+  }
+}

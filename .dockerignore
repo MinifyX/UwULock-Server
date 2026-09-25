@@ -4,3 +4,8 @@ data
 .github
 docs
 *.md
+web/node_modules
+web/dist
+web/wasm/target
+web/src/wasm/pkg
+scripts/e2e/node_modules

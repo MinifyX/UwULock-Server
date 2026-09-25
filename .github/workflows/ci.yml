@@ -3,6 +3,11 @@ name: CI
 # Tests, the scripts and the container image on every push that changes code; documentation-only
 # pushes skip it. A `v…` tag also publishes: the image with its tags, and a GitHub release with
 # install.sh, update.sh, compose.yaml and env.example, each with its checksum.
+#
+# The jobs run side by side where they can: the server's tests, the web vault (its WebAssembly
+# and its page), the scripts, the audit. The binaries wait for the web vault, which goes into
+# them; the end-to-end test (a browser and Bitwarden's own CLI against the release binary) and
+# the install test wait for the binaries.
 on:
   push:
     branches: [main]
@@ -77,8 +82,9 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - name: Everything anybody is told to run with bash, checked before anybody runs it
         run: |
-          for script in install.sh update.sh; do bash -n "$script"; done
-          shellcheck --severity=warning install.sh update.sh
+          for script in install.sh update.sh scripts/e2e/bw-cli.sh; do bash -n "$script"; done
+          shellcheck --severity=warning install.sh update.sh scripts/e2e/bw-cli.sh
+          for script in scripts/e2e/*.mjs web/scripts/*.mjs; do node --check "$script"; done
 
   version:
     name: Version
@@ -112,10 +118,62 @@ jobs:
       # Known vulnerabilities fail the job; "unmaintained" notices only show up in the log.
       - run: cargo audit --version || cargo install cargo-audit --locked
       - run: cargo audit
+      - name: The web vault's WebAssembly too
+        run: cargo audit --file web/wasm/Cargo.lock
+
+  web:
+    name: Web vault
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: web/wasm -> target
+          key: wasm
+      # A prebuilt wasm-bindgen, in exactly the version web/wasm pins: they have to match.
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: The crypto, as WebAssembly
+        run: pnpm wasm
+      - name: Its own tests, natively
+        working-directory: web/wasm
+        run: cargo test --locked
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm run build:web
+      - name: The build holds its crypto, compressed
+        run: |
+          ls dist/assets/*.wasm dist/assets/*.wasm.br >/dev/null
+          test -f dist/index.html.br
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: web-dist
+          path: web/dist
+          retention-days: 3
 
   binaries:
     name: Binaries
-    needs: [test, scripts]
+    needs: [test, scripts, web]
     runs-on: ubuntu-latest
     env:
       # The server knows its commit and, for a release, checks for newer releases instead of
@@ -126,6 +184,11 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
+      # The web vault goes into the binary (crates/uwulock-web/build.rs).
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-dist
+          path: web/dist
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
@@ -149,11 +212,82 @@ jobs:
           cp target/aarch64-unknown-linux-gnu/release/uwulock-server dist/arm64/
           dist/amd64/uwulock-server --version
           file dist/arm64/uwulock-server | grep -q aarch64
+          # Both carry the web vault: a binary without it would serve and simply have none.
+          for arch in amd64 arm64; do grep -q 'core_bg-.*\.wasm' "dist/$arch/uwulock-server"; done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: binaries
           path: dist
           retention-days: 3
+
+  e2e:
+    name: A browser and Bitwarden's CLI
+    needs: binaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: binaries
+          path: dist
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: scripts/e2e/package.json
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: scripts/e2e/pnpm-lock.yaml
+      - name: A browser, and Bitwarden's CLI
+        working-directory: scripts/e2e
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chromium-headless-shell
+          echo "$PWD/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: The release binary, with a certificate from a test CA
+        run: |
+          chmod +x dist/amd64/uwulock-server
+          tls="$RUNNER_TEMP/tls"
+          mkdir -p "$tls" "$RUNNER_TEMP/data"
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 1 \
+            -subj "/CN=UwULock test CA" -addext basicConstraints=critical,CA:TRUE \
+            -addext keyUsage=critical,keyCertSign -keyout "$tls/ca.key" -out "$tls/ca.pem"
+          openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj /CN=localhost \
+            -keyout "$tls/key.pem" -out "$tls/leaf.csr"
+          printf 'subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n' > "$tls/ext"
+          openssl x509 -req -in "$tls/leaf.csr" -CA "$tls/ca.pem" -CAkey "$tls/ca.key" -CAcreateserial \
+            -days 1 -extfile "$tls/ext" -out "$tls/cert.pem"
+          {
+            echo "UWULOCK_DATA=$RUNNER_TEMP/data"
+            echo "UWULOCK_LISTEN=127.0.0.1:8443"
+            echo "UWULOCK_PUBLIC=https://localhost:8443"
+            echo "UWULOCK_TLS=files"
+            echo "UWULOCK_TLS_CERT=$tls/cert.pem"
+            echo "UWULOCK_TLS_KEY=$tls/key.pem"
+            echo "UWULOCK_UPDATE_CHECK=off"
+            echo "NODE_EXTRA_CA_CERTS=$tls/ca.pem"
+          } >> "$GITHUB_ENV"
+      - name: Start it, and invite the first admin
+        run: |
+          dist/amd64/uwulock-server invite --admin nyu@example.com | tail -1 > "$RUNNER_TEMP/link"
+          nohup dist/amd64/uwulock-server serve > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do dist/amd64/uwulock-server health && break; sleep 1; done
+          curl -sf --cacert "$NODE_EXTRA_CA_CERTS" https://localhost:8443/ | grep -q '<div id="root">'
+      - name: The web vault and the admin portal, in a browser
+        run: node scripts/e2e/web.mjs "$(cat "$RUNNER_TEMP/link")" "$RUNNER_TEMP/shots"
+      - name: Bitwarden's CLI, with the account the browser made
+        run: scripts/e2e/bw-cli.sh https://localhost:8443 nyu@example.com 'correct horse battery staple'
+      - name: What the server said
+        if: always()
+        run: cat "$RUNNER_TEMP/server.log"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: e2e-screenshots
+          path: ${{ runner.temp }}/shots
+          retention-days: 7
 
   install:
     name: Install and update
@@ -184,13 +318,15 @@ jobs:
           sudo chown root:root /opt
           sudo chmod 755 /opt
           sudo bash install.sh --yes --no-pull --from-checkout --version 0.0.1 \
-            --behind-proxy https://vault.example.com | tee install.log
+            --behind-proxy https://vault.example.com --admin admin@example.com | tee install.log
           test "$(sudo stat -c %a /opt/uwulock/.env)" = 600
           sudo grep -qx 'UWULOCK_PUBLIC=https://vault.example.com' /opt/uwulock/.env
           sudo grep -qx 'UWULOCK_TLS=off' /opt/uwulock/.env
           sudo grep -qx 'UWULOCK_BIND=127.0.0.1:8443' /opt/uwulock/.env
           sudo grep -qx 'UWULOCK_TRUST_FORWARDED=on' /opt/uwulock/.env
           grep -q 'Server URL    https://vault.example.com' install.log
+          # The first admin's invitation, as a link to register with.
+          grep -q 'https://vault.example.com/#/finish-signup?token=' install.log
           curl -sf http://127.0.0.1:8443/healthz | jq -e '.ok == true'
           curl -sf http://127.0.0.1:8443/alive
           # Only on loopback, where nothing but the proxy reaches it.
@@ -273,7 +409,7 @@ jobs:
   image:
     name: Container image
     if: github.event_name != 'pull_request'
-    needs: [test, acme, scripts, audit, install, version]
+    needs: [test, acme, scripts, audit, web, e2e, install, version]
     runs-on: ubuntu-latest
     permissions:
       contents: read

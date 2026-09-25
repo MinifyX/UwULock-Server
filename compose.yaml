@@ -27,6 +27,15 @@ services:
       UWULOCK_UPDATE_CHECK: ${UWULOCK_UPDATE_CHECK:-on}
       # What counts as an update is what this machine follows.
       UWULOCK_CHANNEL: ${UWULOCK_VERSION:-latest}
+      # Where a new server starts; the admin portal changes them later, in the database.
+      UWULOCK_LANGUAGE: ${UWULOCK_LANGUAGE:-}
+      UWULOCK_SMTP_HOST: ${UWULOCK_SMTP_HOST:-}
+      UWULOCK_SMTP_PORT: ${UWULOCK_SMTP_PORT:-}
+      UWULOCK_SMTP_SECURITY: ${UWULOCK_SMTP_SECURITY:-}
+      UWULOCK_SMTP_USERNAME: ${UWULOCK_SMTP_USERNAME:-}
+      UWULOCK_SMTP_PASSWORD: ${UWULOCK_SMTP_PASSWORD:-}
+      UWULOCK_SMTP_FROM: ${UWULOCK_SMTP_FROM:-}
+      UWULOCK_SMTP_FROM_NAME: ${UWULOCK_SMTP_FROM_NAME:-}
     ports:
       - "${UWULOCK_BIND:-443}:8443"   # the clients: TLS of its own, or plain HTTP for a proxy
     volumes:

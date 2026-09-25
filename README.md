@@ -28,10 +28,26 @@ teams and SSO.
   you pass on a changed version, or run one for others, its source stays open too.
 - **No support.** Issues and pull requests are okay, but I might answer late or not at all.
 
-> **Status: 0.0.1, the foundation.** It installs, serves over Let's Encrypt or behind a proxy,
-> updates itself safely and backs itself up — but it does not keep a vault yet. Accounts and
-> sync, the part the Bitwarden apps need, come in 0.1. Keep your Vaultwarden until 0.2, which
-> brings it over, devices and all. The [plan](docs/plan.md) has every step (in German).
+> **Status: 0.1, a vault for one person — beta.** Accounts by invitation, the vault with
+> folders, trash, archive and import, two-step login, and the official Bitwarden apps, browser
+> extension and CLI on top; a web vault of its own and an admin portal. No organisations,
+> attachments or sends yet, and no real-time sync (the apps sync when opened). Keep your
+> Vaultwarden until 0.2, which brings it over, devices and all. The [plan](docs/plan.md) has
+> every step (in German).
+
+## What is in 0.1
+
+- **The official Bitwarden clients work**: browser extension, mobile apps, desktop app and
+  `bw` CLI log in (with two-step login), sync, and save — tested in CI with Bitwarden's own CLI.
+- **UwULock's own web vault** at `/`, in the look of the UwULock app: the vault in three panes,
+  several items at once, the generator, import and export (Bitwarden JSON and CSV), and every
+  account setting — master password, key derivation, address, new keys, devices, two-step
+  login with an authenticator app or codes by mail. The crypto runs in the browser, as
+  WebAssembly: the same code the UwULock app uses.
+- **An admin portal** at `/admin`: users, invitations, mail and other settings, the event log,
+  the server's log, backups and the update notice. Admins are ordinary accounts with the admin
+  right.
+- **Registration only by invitation**: by mail, or as a link to pass on by hand.
 
 ## What it will and won't do
 
@@ -56,14 +72,18 @@ sudo bash install.sh
 ```
 
 It installs Docker when it is missing, asks whether the server gets its own certificate from
-Let's Encrypt or sits behind your proxy, sets up `/opt/uwulock` and starts it. Without questions:
+Let's Encrypt or sits behind your proxy, sets up `/opt/uwulock`, starts it — and invites you as
+the first admin: the link to register with is shown at the end. Without questions:
 
 ```bash
-sudo bash install.sh --domain vault.example.com --yes
-sudo bash install.sh --behind-proxy https://vault.example.com --yes
+sudo bash install.sh --domain vault.example.com --admin you@example.com --yes
+sudo bash install.sh --behind-proxy https://vault.example.com --admin you@example.com --yes
 # the proxy runs as a container here: the server joins its Docker network
 sudo bash install.sh --behind-proxy https://vault.example.com --proxy-network proxy --yes
 ```
+
+Everybody else you invite in the admin portal. Mail (for invitations and codes) is set up there
+too, or in `.env` before the first start.
 
 [docs/deployment.md](docs/deployment.md) has the rest: Caddy and nginx in front, your own
 certificate, backups, every setting.
@@ -83,29 +103,44 @@ version.
 | Path                    | What lives there                                                           |
 | ----------------------- | -------------------------------------------------------------------------- |
 | `crates/uwulock-store`  | The database: SQLite now, behind methods PostgreSQL can implement later     |
-| `crates/uwulock-api`    | HTTP: Bitwarden's API, and UwULock's own under `/uwu/v1`                    |
+| `crates/uwulock-api`    | HTTP: Bitwarden's API, UwULock's own and the admin API under `/uwu/v1`      |
+| `crates/uwulock-mail`   | SMTP, and what the mails say, in German and English                        |
+| `crates/uwulock-web`    | The web vault's files, embedded into the binary                             |
 | `crates/uwulock-server` | The program: settings, TLS and Let's Encrypt, commands, backups, updates   |
 | `crates/uwulock-bench`  | The same load against any Bitwarden-compatible server, for comparisons     |
+| `crates/uwulock-e2e`    | UwULock's own client against the real server                               |
+| `web/`                  | The web vault and the admin portal (React), and `web/wasm`, their crypto    |
+| `scripts/e2e/`          | A browser and Bitwarden's CLI against a running server                     |
 | `docker/`, `compose.yaml`, `install.sh`, `update.sh` | The container and how it gets onto a machine  |
 | `docs/`                 | Plan, deployment, performance                                              |
 
 ## Development
 
-Requirements: Rust stable. Docker for the container and the scripts.
+Requirements: Rust stable. For the web vault Node 24 with pnpm, the `wasm32-unknown-unknown`
+target and `wasm-bindgen` in the version `web/wasm/Cargo.toml` pins. Docker for the container
+and the scripts.
 
 ```bash
 cargo run -p uwulock-server          # plain HTTP on 0.0.0.0:8443, data in ./data
+cargo run -p uwulock-server -- invite --admin you@example.com
 cargo test --workspace
 cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+
+cd web && pnpm install && pnpm build # the web vault, into web/dist; then build the server again
+pnpm dev                             # the web vault on :5173, talking to the server on :8443
 ```
+
+The web vault needs a secure context for its crypto: `localhost`, or https.
 
 The Let's Encrypt test needs Pebble, Let's Encrypt's test CA; CI runs it, and the comment on
 `a_certificate_from_an_acme_ca` in `crates/uwulock-server/tests/serve.rs` says how to run it
 locally.
 
-Releasing: set the version in `Cargo.toml`, add its section to `CHANGELOG.md`, commit, tag
-`v<version>` and push both. CI checks that they match, tests everything, builds and scans the
-image, pushes it to GHCR and creates the GitHub release with the scripts.
+Releasing: set the version in `Cargo.toml` (and `web/package.json`), add its section to
+`CHANGELOG.md`, commit, tag `v<version>` and push both. CI checks that they match, tests
+everything — the server, the web vault, a browser and Bitwarden's CLI against the release
+binary, install and update — builds and scans the image, pushes it to GHCR and creates the
+GitHub release with the scripts.
 
 ## Documentation
 
