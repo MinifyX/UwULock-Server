@@ -134,7 +134,7 @@ fn roots(extra: &[rustls::pki_types::CertificateDer<'static>]) -> rustls::Client
 /// needs port 443). Run by hand:
 ///
 /// ```sh
-/// docker run -d -p 14000:14000 -e PEBBLE_VA_ALWAYS_VALID=1 ghcr.io/letsencrypt/pebble
+/// docker run -d -p 14000:14000 -e PEBBLE_VA_ALWAYS_VALID=1 -e PEBBLE_VA_NOSLEEP=1 ghcr.io/letsencrypt/pebble
 /// curl -fsSLo /tmp/pebble.minica.pem https://raw.githubusercontent.com/letsencrypt/pebble/main/test/certs/pebble.minica.pem
 /// UWULOCK_TEST_PEBBLE=https://localhost:14000/dir UWULOCK_TEST_PEBBLE_CA=/tmp/pebble.minica.pem \
 ///   cargo test -p uwulock-server --test serve -- --ignored
@@ -155,9 +155,10 @@ async fn a_certificate_from_an_acme_ca() {
     let server = start(config.clone()).await;
     config.listen = server.addr;
 
-    // Healthy means: a TLS handshake under that name worked, so the certificate is there.
+    // Healthy means: a TLS handshake under that name worked, so the certificate is there. Pebble
+    // takes its time on purpose, and retries back off, so this waits generously.
     let mut last = String::new();
-    for _ in 0..60 {
+    for _ in 0..240 {
         match uwulock_server::health::check(&config).await {
             Ok(()) => {
                 assert!(dir.path().join("acme").read_dir().unwrap().next().is_some(), "the certificate is kept");
@@ -168,5 +169,5 @@ async fn a_certificate_from_an_acme_ca() {
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    panic!("no certificate after 30 seconds: {last}");
+    panic!("no certificate after two minutes: {last}");
 }

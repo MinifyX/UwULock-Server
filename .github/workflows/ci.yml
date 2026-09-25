@@ -51,6 +51,8 @@ jobs:
         image: ghcr.io/letsencrypt/pebble@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
         env:
           PEBBLE_VA_ALWAYS_VALID: "1"
+          # No random pause before each validation: it only makes the test slow and flaky.
+          PEBBLE_VA_NOSLEEP: "1"
         ports:
           - 14000:14000
     steps:
