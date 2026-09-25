@@ -5,6 +5,7 @@
  */
 
 const PATHS = {
+  archive: 'M3.5 5h17v4h-17z M5.5 9v10h13V9 M10 13h4',
   house: 'M4 11.5 12 5l8 6.5 M6.5 9.5V19h11V9.5 M10 19v-5h4v5',
   briefcase: 'M4 8h16v11H4z M9 8V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2 M4 13h16',
   folder: 'M3.5 6.5a1 1 0 0 1 1-1h4.2l2 2h8.8a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1Z',

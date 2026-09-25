@@ -1,8 +1,10 @@
 import { listen } from '../lib/events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  bulkItems,
   copyField,
   deleteFolder,
+  moveItems,
   saveFolder,
   vaultItems,
   vaultOverview,
@@ -32,6 +34,7 @@ export type Filter =
   | { kind: 'type'; type: ItemKind }
   | { kind: 'folder'; id: string | null }
   | { kind: 'collection'; id: string }
+  | { kind: 'archive' }
   | { kind: 'trash' };
 
 const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
@@ -45,6 +48,9 @@ const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
 function matches(filter: Filter, item: ItemSummary): boolean {
   if (filter.kind === 'trash') return item.deleted;
   if (item.deleted) return false;
+  // Archived items are out of the way: only in the archive.
+  if (filter.kind === 'archive') return item.archived;
+  if (item.archived) return false;
   switch (filter.kind) {
     case 'all':
       return true;
@@ -89,6 +95,10 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
     null,
   );
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
+  /** Items ticked for doing something to all of them at once. */
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [lastChecked, setLastChecked] = useState<string | null>(null);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
 
   const reload = useCallback(async () => {
@@ -112,11 +122,12 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
   }, [reload, status.accountId]);
 
   const counts = useMemo(() => {
-    const live = items.filter((i) => !i.deleted);
+    const live = items.filter((i) => !i.deleted && !i.archived);
     return {
       all: live.length,
       favorites: live.filter((i) => i.favorite).length,
-      trash: items.length - live.length,
+      trash: items.filter((i) => i.deleted).length,
+      archive: items.filter((i) => i.archived && !i.deleted).length,
       type: (type: ItemKind) => live.filter((i) => i.kind === type).length,
       folder: (id: string | null) =>
         live.filter((i) => !i.organizationId && i.folderId === id).length,
@@ -187,15 +198,57 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
         ? t('Favoriten')
         : filter.kind === 'trash'
           ? t('Papierkorb')
-          : filter.kind === 'type'
-            ? t(TYPES.find((x) => x.type === filter.type)?.label ?? '')
-            : filter.kind === 'folder'
-              ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
-              : (overview?.collections.find((c) => c.id === filter.id)?.name ?? '');
+          : filter.kind === 'archive'
+            ? t('Archiv')
+            : filter.kind === 'type'
+              ? t(TYPES.find((x) => x.type === filter.type)?.label ?? '')
+              : filter.kind === 'folder'
+                ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
+                : (overview?.collections.find((c) => c.id === filter.id)?.name ?? '');
 
   const pick = (next: Filter) => {
     setFilter(next);
     setQuery('');
+    setChecked(new Set());
+  };
+
+  // A ticked item that is no longer shown is no longer ticked.
+  useEffect(() => {
+    setChecked((current) => {
+      const shown = new Set(visible.map((item) => item.id));
+      const kept = [...current].filter((id) => shown.has(id));
+      return kept.length === current.size ? current : new Set(kept);
+    });
+  }, [visible]);
+
+  /** Tick or untick; with Shift, everything from the last ticked one to this one. */
+  const toggle = (id: string, range: boolean) => {
+    setChecked((current) => {
+      const next = new Set(current);
+      if (range && lastChecked) {
+        const from = visible.findIndex((item) => item.id === lastChecked);
+        const to = visible.findIndex((item) => item.id === id);
+        if (from >= 0 && to >= 0) {
+          for (const item of visible.slice(Math.min(from, to), Math.max(from, to) + 1))
+            next.add(item.id);
+          return next;
+        }
+      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setLastChecked(id);
+  };
+
+  const bulk = async (work: () => Promise<void>, done: string) => {
+    try {
+      await work();
+      toast(done);
+      setChecked(new Set());
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
   };
 
   const nav = (target: Filter, icon: IconName, label: string, count: number) => (
@@ -316,9 +369,12 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
           </div>
         ))}
 
-        {settings.showTrash && counts.trash > 0 && (
+        {(counts.archive > 0 || (settings.showTrash && counts.trash > 0)) && (
           <ul className="nav-list nav-trash">
-            {nav({ kind: 'trash' }, 'trash', t('Papierkorb'), counts.trash)}
+            {counts.archive > 0 && nav({ kind: 'archive' }, 'archive', t('Archiv'), counts.archive)}
+            {settings.showTrash &&
+              counts.trash > 0 &&
+              nav({ kind: 'trash' }, 'trash', t('Papierkorb'), counts.trash)}
           </ul>
         )}
 
@@ -351,24 +407,106 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
               }}
             />
           </label>
-          <p className="list-title">
-            <span>{title}</span>
-            <span className="list-count">{visible.length}</span>
-            <span className="spacer" />
-            <button
-              className="new-item"
-              aria-haspopup="menu"
-              aria-expanded={Boolean(newMenu)}
-              title={t('Neuer Eintrag')}
-              onClick={(event) => {
-                const rect = event.currentTarget.getBoundingClientRect();
-                setNewMenu({ x: rect.right - 180, y: rect.bottom + 4 });
-              }}
-            >
-              <Icon name="plus" size={15} />
-              {t('Neu')}
-            </button>
-          </p>
+          {checked.size > 0 ? (
+            <div className="bulk-bar" role="toolbar" aria-label={t('Ausgewählte Einträge')}>
+              <span className="bulk-count">{t('{n} ausgewählt', { n: checked.size })}</span>
+              <span className="spacer" />
+              {filter.kind === 'trash' ? (
+                <>
+                  <button
+                    className="quiet"
+                    onClick={() =>
+                      void bulk(() => bulkItems('restore', [...checked]), t('Wiederhergestellt ✧'))
+                    }
+                  >
+                    {t('Wiederherstellen')}
+                  </button>
+                  <button className="quiet danger-text" onClick={() => setConfirmBulkDelete(true)}>
+                    {t('Endgültig löschen')}
+                  </button>
+                </>
+              ) : (
+                <>
+                  {overview && overview.folders.length > 0 && (
+                    <select
+                      className="select"
+                      value=""
+                      aria-label={t('In Ordner verschieben')}
+                      onChange={(e) => {
+                        const target = e.target.value === '-' ? null : e.target.value;
+                        void bulk(() => moveItems([...checked], target), t('Verschoben ✧'));
+                      }}
+                    >
+                      <option value="" disabled>
+                        {t('Verschieben …')}
+                      </option>
+                      <option value="-">{t('Ohne Ordner')}</option>
+                      {overview.folders.map((folder) => (
+                        <option key={folder.id} value={folder.id}>
+                          {folder.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button
+                    className="icon-button"
+                    title={filter.kind === 'archive' ? t('Aus dem Archiv holen') : t('Archivieren')}
+                    aria-label={
+                      filter.kind === 'archive' ? t('Aus dem Archiv holen') : t('Archivieren')
+                    }
+                    onClick={() =>
+                      void bulk(
+                        () =>
+                          bulkItems(filter.kind === 'archive' ? 'unarchive' : 'archive', [
+                            ...checked,
+                          ]),
+                        filter.kind === 'archive' ? t('Aus dem Archiv geholt ✧') : t('Archiviert.'),
+                      )
+                    }
+                  >
+                    <Icon name="archive" size={15} />
+                  </button>
+                  <button
+                    className="icon-button"
+                    title={t('In den Papierkorb')}
+                    aria-label={t('In den Papierkorb')}
+                    onClick={() =>
+                      void bulk(() => bulkItems('trash', [...checked]), t('Im Papierkorb.'))
+                    }
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
+                </>
+              )}
+              <button
+                className="icon-button"
+                title={t('Auswahl aufheben')}
+                aria-label={t('Auswahl aufheben')}
+                onClick={() => setChecked(new Set())}
+              >
+                ×
+              </button>
+            </div>
+          ) : (
+            <p className="list-title">
+              <span>{title}</span>
+              <span className="list-count">{visible.length}</span>
+              <span className="spacer" />
+              <button
+                className="new-item"
+                aria-haspopup="menu"
+                aria-expanded={Boolean(newMenu)}
+                title={t('Neuer Eintrag')}
+                onClick={(event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setNewMenu({ x: rect.right - 180, y: rect.bottom + 4 });
+                }}
+              >
+                <Icon name="plus" size={15} />
+                {t('Neu')}
+              </button>
+            </p>
+          )}
         </div>
 
         {visible.length > 0 ? (
@@ -397,8 +535,25 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
                 role="option"
                 aria-selected={item.id === selected}
                 className="item-row"
-                onClick={() => setSelected(item.id)}
+                data-checked={checked.has(item.id) || undefined}
+                onClick={(event) => {
+                  if (event.ctrlKey || event.metaKey || event.shiftKey) {
+                    event.preventDefault();
+                    toggle(item.id, event.shiftKey);
+                  } else setSelected(item.id);
+                }}
               >
+                <input
+                  type="checkbox"
+                  className="item-check"
+                  checked={checked.has(item.id)}
+                  aria-label={t('{name} auswählen', { name: item.name || t('(ohne Namen)') })}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    toggle(item.id, event.shiftKey);
+                  }}
+                  onChange={() => undefined}
+                />
                 <ItemTile item={item} />
                 <span className="item-text">
                   <span className="item-name">{item.name || t('(ohne Namen)')}</span>
@@ -461,6 +616,35 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
           </div>
         )}
       </section>
+
+      {confirmBulkDelete && (
+        <Modal
+          title={t('Endgültig löschen?')}
+          tone="warning"
+          onCancel={() => setConfirmBulkDelete(false)}
+          footer={
+            <>
+              <span className="spacer" />
+              <button onClick={() => setConfirmBulkDelete(false)} data-secondary>
+                {t('Abbrechen')}
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  setConfirmBulkDelete(false);
+                  void bulk(() => bulkItems('delete', [...checked]), t('Gelöscht.'));
+                }}
+              >
+                {t('Endgültig löschen')}
+              </button>
+            </>
+          }
+        >
+          <p className="dialog-lead">
+            {t('{n} Einträge sind danach für immer weg, auf jedem Gerät.', { n: checked.size })}
+          </p>
+        </Modal>
+      )}
 
       {newMenu && (
         <ContextMenu

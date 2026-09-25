@@ -557,6 +557,26 @@ export const archiveItem = (id: string, archived: boolean) =>
     }),
   ).then(() => undefined);
 
+/** Several items at once: into the trash, out of it, gone for good, archived or not, moved. */
+export const bulkItems = (
+  what: 'trash' | 'restore' | 'delete' | 'archive' | 'unarchive',
+  ids: string[],
+) => {
+  const path = {
+    trash: ['/api/ciphers/delete', 'PUT'],
+    restore: ['/api/ciphers/restore', 'PUT'],
+    delete: ['/api/ciphers', 'DELETE'],
+    archive: ['/api/ciphers/archive', 'PUT'],
+    unarchive: ['/api/ciphers/unarchive', 'PUT'],
+  }[what];
+  return changed(request(path[0]!, { method: path[1], body: { ids } })).then(() => undefined);
+};
+
+export const moveItems = (ids: string[], folderId: string | null) =>
+  changed(request('/api/ciphers/move', { method: 'PUT', body: { ids, folderId } })).then(
+    () => undefined,
+  );
+
 export const saveFolder = async (id: string | null, folderName: string): Promise<string> => {
   const encrypted = await call((core) => core.encryptText(folderName.trim()));
   const folder = await changed(

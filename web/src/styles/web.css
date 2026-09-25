@@ -625,3 +625,44 @@ a {
     overflow-x: auto;
   }
 }
+
+/* ── Several items at once ─────────────────────────────── */
+
+.item-check {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 -4px 0 0;
+  accent-color: var(--uwu-pink-solid);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  cursor: pointer;
+}
+
+.item-row:hover .item-check,
+.item-check:focus-visible,
+.item-list:has(.item-check:checked) .item-check {
+  opacity: 1;
+}
+
+.item-row[data-checked] {
+  background: var(--uwu-pink-tint);
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.bulk-count {
+  font-weight: 700;
+}
+
+.bulk-bar .select {
+  padding: 4px 8px;
+  font-size: 12.5px;
+}

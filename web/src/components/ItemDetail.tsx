@@ -4,6 +4,7 @@ import {
   deleteItem,
   failure,
   openItemUri,
+  archiveItem,
   restoreItem,
   revealField,
   setFavorite,
@@ -397,6 +398,9 @@ export function ItemDetail({
               </span>
             )}
             {summary.deleted && <span className="chip chip-muted">{t('Im Papierkorb')}</span>}
+            {summary.archived && !summary.deleted && (
+              <span className="chip chip-muted">{t('Im Archiv')}</span>
+            )}
           </p>
         </div>
         <div className="detail-tools">
@@ -439,6 +443,21 @@ export function ItemDetail({
                   size={15}
                   className={summary.favorite ? 'badge-star' : undefined}
                 />
+              </button>
+              <button
+                className="icon-button"
+                disabled={busy}
+                aria-pressed={summary.archived}
+                title={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
+                aria-label={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
+                onClick={() =>
+                  void act(
+                    () => archiveItem(id, !summary.archived),
+                    summary.archived ? t('Aus dem Archiv geholt ✧') : t('Archiviert.'),
+                  )
+                }
+              >
+                <Icon name="archive" size={15} />
               </button>
               <button
                 className="icon-button"

@@ -96,6 +96,22 @@ try {
   await unlockOrLogin();
   await page.locator('.item-list').getByText('Router').first().waitFor({ timeout: 30000 });
 
+  step('several items at once: archive and back');
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Sichere Notiz' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Notiz');
+  await page.getByRole('button', { name: 'Speichern' }).click();
+  await page.locator('.item-list').getByText('Notiz').first().waitFor();
+  for (const name of ['Router', 'Notiz']) await page.getByLabel(`${name} auswählen`).check({ force: true });
+  await snap('bulk-selected');
+  await page.getByRole('toolbar').getByRole('button', { name: 'Archivieren' }).click();
+  const sidebar = page.getByRole('navigation', { name: 'Tresor' });
+  await sidebar.getByRole('button', { name: /^Archiv/ }).click();
+  for (const name of ['Router', 'Notiz']) await page.getByLabel(`${name} auswählen`).check({ force: true });
+  await page.getByRole('toolbar').getByRole('button', { name: 'Aus dem Archiv holen' }).click();
+  await sidebar.getByRole('button', { name: /^Alle Einträge/ }).click();
+  await page.locator('.item-list').getByText('Router').first().waitFor();
+
   step('the settings');
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
   for (const section of ['Konto', 'Geräte', 'Import & Export', 'Zwei-Schritt-Anmeldung']) {
