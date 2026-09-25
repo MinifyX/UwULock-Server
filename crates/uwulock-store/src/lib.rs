@@ -11,6 +11,7 @@
 mod accounts;
 mod admin;
 mod backup;
+pub mod backups;
 pub mod clock;
 mod migrations;
 mod sqlite;
@@ -70,8 +71,9 @@ impl Default for Options {
 #[derive(Clone)]
 pub struct Store {
     backend: Arc<Backend>,
-    /// Who the requests are from, by user id: see [`Store::session_user`].
-    sessions: Arc<RwLock<HashMap<String, SessionUser>>>,
+    /// Who the requests are from, by user id, and since when that is known: see
+    /// [`Store::session_user`].
+    sessions: Arc<RwLock<HashMap<String, (SessionUser, std::time::Instant)>>>,
 }
 
 enum Backend {

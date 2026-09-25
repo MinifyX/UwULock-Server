@@ -1,6 +1,6 @@
 [package]
 name = "uwulock-api"
-description = "UwULock Server's HTTP side: the Bitwarden-compatible API, and UwULock's own under /uwu"
+description = "UwULock Server's HTTP side: the Bitwarden-compatible API, UwULock's own under /uwu, the web vault"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,15 +8,24 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+uwulock-mail.workspace = true
 uwulock-store.workspace = true
+uwulock-web.workspace = true
 
+argon2.workspace = true
 axum.workspace = true
+base64.workspace = true
+parking_lot.workspace = true
+ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
+tokio.workspace = true
 tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -29,6 +29,8 @@ axum = { version = "0.8", default-features = false, features = ["http1", "http2"
 axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+# Timeouts for reading a request's head, below axum-server.
+hyper-util = { version = "0.1", features = ["tokio"] }
 # Mail over SMTP, TLS by rustls with `ring` like everything else here.
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1-rustls-tls"] }
 libc = "0.2"

@@ -3,8 +3,9 @@
 //! Every request a client makes asks who it is — whether the account still exists, is not
 //! disabled, whether the session's security stamp is still the account's, whether the device is
 //! still logged in. That is answered from memory ([`Store::session_user`]), kept in step by every
-//! method here that changes one of those things. Nothing else writes to the database while the
-//! server runs, so the copy cannot drift.
+//! method here that changes one of those things. The one other writer is the command line
+//! (`uwulock-server admin …` in a second process), so what memory holds is read again after
+//! half a minute at the latest.
 
 use crate::{Result, Store, StoreError, clock};
 use rusqlite::{OptionalExtension, Row, Transaction, params};
@@ -233,6 +234,9 @@ pub enum CodeRefusal {
     TooManyAttempts,
 }
 
+/// How long a session is answered from memory before it is read again.
+const SESSION_MEMORY: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Wrong codes allowed before a code is thrown away.
 pub const CODE_ATTEMPTS: i64 = 5;
 
@@ -311,7 +315,9 @@ impl Store {
 
     /// Who a request is from, from memory. Nothing for an account that is gone.
     pub async fn session_user(&self, id: &str) -> Result<Option<SessionUser>> {
-        if let Some(found) = self.sessions.read().get(id) {
+        if let Some((found, since)) = self.sessions.read().get(id)
+            && since.elapsed() < SESSION_MEMORY
+        {
             return Ok(Some(found.clone()));
         }
         let owned = id.to_string();
@@ -326,7 +332,7 @@ impl Store {
             })
             .await?;
         if let Some(session) = &loaded {
-            self.sessions.write().insert(id.to_string(), session.clone());
+            self.sessions.write().insert(id.to_string(), (session.clone(), std::time::Instant::now()));
         }
         Ok(loaded)
     }
@@ -486,14 +492,17 @@ impl Store {
         Ok(new)
     }
 
-    /// The device a refresh token belongs to, if it is still valid — and a new expiry for it,
-    /// since a device in use stays logged in.
-    pub async fn refresh_device(
+    /// The device a refresh token belongs to, if it is still valid — with a new expiry, from
+    /// `expires` given the device's type, since a device in use stays logged in.
+    pub async fn refresh_device<F>(
         &self,
         refresh_hash: Vec<u8>,
-        expires: String,
+        expires: F,
         ip: Option<String>,
-    ) -> Result<Option<Device>> {
+    ) -> Result<Option<Device>>
+    where
+        F: FnOnce(i64) -> String + Send + 'static,
+    {
         self.sqlite_write(move |tx| {
             let now = clock::now();
             let found = tx
@@ -506,7 +515,7 @@ impl Store {
                 tx.execute(
                     "UPDATE devices SET last_seen = ?3, last_ip = coalesce(?4, last_ip), refresh_expires = ?5 \
                      WHERE user_id = ?1 AND id = ?2",
-                    params![device.user_id, device.id, now, ip, expires],
+                    params![device.user_id, device.id, now, ip, expires(device.kind)],
                 )?;
             }
             Ok(found)
@@ -884,7 +893,7 @@ pub(crate) mod tests {
         let session = store.session_user(&user.id).await.unwrap().unwrap();
         assert_ne!(session.user.security_stamp, old);
         assert!(session.devices.is_empty(), "a new stamp logs every device out");
-        assert!(store.refresh_device(vec![2; 32], clock::in_seconds(60), None).await.unwrap().is_none());
+        assert!(store.refresh_device(vec![2; 32], |_| clock::in_seconds(60), None).await.unwrap().is_none());
     }
 
     #[tokio::test]
@@ -892,10 +901,10 @@ pub(crate) mod tests {
         let (store, _dir) = store();
         let user = store.create_user(new_user("nyu@example.com")).await.unwrap();
         store.log_in_device(login(&user.id, "one", 7)).await.unwrap();
-        let device = store.refresh_device(vec![7; 32], clock::in_seconds(-5), None).await.unwrap().unwrap();
+        let device = store.refresh_device(vec![7; 32], |_| clock::in_seconds(-5), None).await.unwrap().unwrap();
         assert_eq!(device.id, "one");
-        assert!(store.refresh_device(vec![7; 32], clock::in_seconds(60), None).await.unwrap().is_none(), "ran out");
-        assert!(store.refresh_device(vec![8; 32], clock::in_seconds(60), None).await.unwrap().is_none(), "unknown");
+        assert!(store.refresh_device(vec![7; 32], |_| clock::in_seconds(60), None).await.unwrap().is_none(), "ran out");
+        assert!(store.refresh_device(vec![8; 32], |_| clock::in_seconds(60), None).await.unwrap().is_none(), "unknown");
     }
 
     #[tokio::test]
