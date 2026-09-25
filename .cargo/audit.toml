@@ -1,0 +1,12 @@
+# What `cargo audit` lets pass, and why. Read by the audit job for both lockfiles.
+
+[advisories]
+ignore = [
+    # RUSTSEC-2023-0071, "Marvin": a timing side channel when an RSA private key decrypts, in the
+    # `rsa` crate, with no fixed release yet. It comes in through UwULock's `uwulock-core`: here
+    # only in the tests (uwulock-e2e), and in the web vault, which decrypts with RSA nothing but
+    # organisation keys — which this server does not have yet. Using it would need somebody who
+    # can make the victim's browser decrypt many chosen values and time each. The UwULock app's
+    # own review (security-review-2026-09) weighs it the same. Look again when `rsa` 0.10 is out.
+    "RUSTSEC-2023-0071",
+]
