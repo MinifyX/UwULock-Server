@@ -349,12 +349,21 @@ async fn put_settings(
     Json(mut new): Json<Settings>,
 ) -> ApiResult<Json<Value>> {
     let current = state.settings();
-    // A password left out means: keep the one there is.
+    // A password left out means: keep the one there is — for the same account on the same mail
+    // server only. Otherwise whoever holds an admin session could point the settings at a server
+    // of their own, and the stored password would log in there.
     if let (Some(smtp), Some(old)) = (new.smtp.as_mut(), current.smtp.as_ref())
         && smtp.password.as_deref().is_none_or(str::is_empty)
-        && smtp.username == old.username
+        && old.password.as_deref().is_some_and(|password| !password.is_empty())
     {
-        smtp.password = old.password.clone();
+        let same_server = smtp.host.trim().eq_ignore_ascii_case(old.host.trim())
+            && smtp.port == old.port
+            && smtp.security == old.security;
+        if same_server && smtp.username == old.username {
+            smtp.password = old.password.clone();
+        } else if !smtp.host.trim().is_empty() && smtp.username.as_deref().is_some_and(|name| !name.is_empty()) {
+            return Err(ApiError::bad("The mail server changed: enter its password again."));
+        }
     }
     if let Some(smtp) = &new.smtp
         && smtp.host.trim().is_empty()
@@ -595,6 +604,13 @@ mod tests {
         assert!(events.as_array().unwrap().len() >= 4);
     }
 
+    /// The settings as the portal sends them back, with the password left out.
+    fn again_body(settings: &Settings) -> Value {
+        let mut body = serde_json::to_value(settings).unwrap();
+        body["smtp"]["password"] = Value::Null;
+        body
+    }
+
     #[tokio::test]
     async fn settings_keep_the_mail_password_to_themselves() {
         let server = TestServer::new().await;
@@ -610,8 +626,15 @@ mod tests {
         again["invitationDays"] = json!(5);
         server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), again).await;
         let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
-        assert_eq!(stored.smtp.unwrap().password.as_deref(), Some("s3cret"), "kept");
+        assert_eq!(stored.smtp.as_ref().unwrap().password.as_deref(), Some("s3cret"), "kept");
         assert_eq!(stored.invitation_days, 5);
+
+        let mut elsewhere = again_body(&stored);
+        elsewhere["smtp"]["host"] = json!("mail.attacker.example");
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), elsewhere).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the password does not go to another server");
+        let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
+        assert_eq!(stored.smtp.unwrap().host, "mail.example.com");
 
         let wrong = json!({"invitationDays": 0});
         assert_eq!(

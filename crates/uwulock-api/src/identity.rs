@@ -251,6 +251,25 @@ async fn log(
     }
 }
 
+/// Refused when `to` has had enough mails from this server lately that somebody else asked for
+/// — or `user`, if a logged-in account asks, has sent enough of them.
+pub(crate) fn mail_allowed(state: &AppState, to: &str, user: Option<&str>) -> ApiResult<()> {
+    let to_ok = state.limits.mail.take(format!("to:{}", normalize_email(to)));
+    let user_ok = user.is_none_or(|user| state.limits.mail.take(format!("from:{user}")));
+    if to_ok && user_ok {
+        Ok(())
+    } else {
+        Err(ApiError::too_many("Too many mails to this address. Wait a few minutes and try again."))
+    }
+}
+
+/// A mail that did not go out, for a request that asked for it: what went wrong goes to the log,
+/// where an admin sees it, and not to whoever asked.
+pub(crate) fn mail_failed(error: impl std::fmt::Display) -> ApiError {
+    tracing::warn!(%error, "a mail did not go out");
+    ApiError::bad("The mail did not go out. Try again later, or ask an admin.")
+}
+
 /// Send a mail without making the request wait for the mail server.
 pub(crate) fn send_later(state: &AppState, to: &str, mail: Mail, language: Language) {
     let mailer = state.mailer.clone();
@@ -537,6 +556,8 @@ async fn send_verification_email(
     if !state.mailer.enabled() {
         return Err(ApiError::bad(BY_INVITATION));
     }
+    // Every new mail makes the link before it useless: nobody may do that over and over.
+    mail_allowed(&state, &email, None)?;
     crate::admin::invite(&state, &email, invitation.admin, invitation.invited_by.clone()).await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }

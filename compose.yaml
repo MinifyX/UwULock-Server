@@ -2,7 +2,7 @@
 #
 # install.sh sets all of this up for you. By hand it is:
 #
-#   1. cp .env.example .env   and set UWULOCK_PUBLIC and UWULOCK_TLS
+#   1. install -m 0600 .env.example .env   and set UWULOCK_PUBLIC and UWULOCK_TLS
 #   2. docker compose up -d
 #   3. docker compose ps      until it says healthy
 #
@@ -20,7 +20,8 @@ services:
     restart: unless-stopped
     environment:
       UWULOCK_PUBLIC: ${UWULOCK_PUBLIC:?set UWULOCK_PUBLIC in .env}
-      UWULOCK_TLS: ${UWULOCK_TLS:-off}
+      # No default: without it, the server would speak plain HTTP on port 443 to anybody.
+      UWULOCK_TLS: ${UWULOCK_TLS:?set UWULOCK_TLS in .env}
       UWULOCK_ACME_EMAIL: ${UWULOCK_ACME_EMAIL:-}
       UWULOCK_ACME_DIRECTORY: ${UWULOCK_ACME_DIRECTORY:-letsencrypt}
       UWULOCK_TRUST_FORWARDED: ${UWULOCK_TRUST_FORWARDED:-off}

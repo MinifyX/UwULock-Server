@@ -9,3 +9,11 @@ web/dist
 web/wasm/target
 web/src/wasm/pkg
 scripts/e2e/node_modules
+# Secrets never go into a build, not even into a stage that is thrown away: its cache keeps them.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx

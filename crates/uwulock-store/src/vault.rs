@@ -401,6 +401,13 @@ impl Store {
                 if have("SELECT id FROM folders WHERE user_id = ?1")? != given {
                     return Ok(false);
                 }
+                // Every item stays in one of the user's own folders, or in none.
+                if ciphers
+                    .iter()
+                    .any(|cipher| cipher.folder_id.as_ref().is_some_and(|id| given.binary_search(id).is_err()))
+                {
+                    return Ok(false);
+                }
                 let mut given: Vec<String> = ciphers.iter().map(|cipher| cipher.id.clone()).collect();
                 given.sort();
                 if have("SELECT id FROM ciphers WHERE user_id = ?1")? != given {

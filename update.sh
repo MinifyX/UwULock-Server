@@ -146,7 +146,11 @@ fetch_checked() {
 }
 
 hash_of() { sha256sum "$1" | cut -d' ' -f1; }
-looks_like_version() { case "${1:-}" in [0-9]*) return 0 ;; *) return 1 ;; esac; }
+# What a version or a channel may look like, before it goes into a URL or an image tag: letters,
+# digits, dots, dashes and underscores, and no "..", which curl would follow up and out of this
+# repository's releases.
+valid_version() { [[ "${1:-}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] && [[ "$1" != *..* ]]; }
+looks_like_version() { valid_version "${1:-}" && [[ "$1" == [0-9]* ]]; }
 
 # A value on its way into the .env has to be one line of plain characters, wherever it came from:
 # a flag, or a compose.yaml somebody wrote by hand.
@@ -213,8 +217,22 @@ fi
 
 if $from_checkout; then
   [ -n "$here" ] && [ -f "$here/compose.yaml" ] || die "--from-checkout, but there is no compose.yaml next to this script"
-  [ -z "$(find "$here" -maxdepth 0 -perm -0002 2>/dev/null)" ] ||
-    die "--from-checkout, but anybody may write to $here; nothing from there is used as root"
+  # What comes from the checkout runs as root, so the same rules hold for it as for $dir.
+  owned_right "$here" || die "--from-checkout, but somebody other than root or you may change $here"
+  if [ -L "$here/compose.yaml" ] || ! owned_right "$here/compose.yaml"; then
+    die "--from-checkout, but somebody other than root or you may change $here/compose.yaml"
+  fi
+  above="$here"
+  while [ "$above" != / ]; do
+    above=$(dirname "$above")
+    owned_right "$above" above || die "--from-checkout, but somebody other than root or you may change $above"
+  done
+fi
+
+# The .env holds the mail password: root's alone to read.
+if [ "$(stat -c %a "$dir/.env")" != 600 ]; then
+  chmod 0600 "$dir/.env"
+  step "made .env readable by root only"
 fi
 
 cd "$dir" || die "cannot go into $dir"
@@ -268,11 +286,11 @@ wait_healthy() {
 }
 
 if [ -n "$version" ]; then
-  plain_value "$version" || die "a version is letters, digits, dots, dashes and underscores"
+  valid_version "$version" || die "a version is letters, digits, dots, dashes and underscores"
 fi
 # What this machine follows after this run, and so where its files come from.
 target="${version:-$(env_value UWULOCK_VERSION || printf latest)}"
-plain_value "$target" || target=latest
+valid_version "$target" || target=latest
 
 printf '\n  UwULock Server, update\n  ~~~~~~~~~~~~~~~~~~~~~~\n\n'
 
@@ -328,6 +346,7 @@ lift_into_env() {
   case "$value" in
     "" | '${UWULOCK_VERSION'*) ;;
     *)
+      valid_version "$value" || die "the image tag in $file is not a version: $value"
       step "moving the image tag $value into .env"
       set_env UWULOCK_VERSION "$value"
       ;;

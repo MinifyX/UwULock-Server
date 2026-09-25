@@ -8,7 +8,7 @@
 use crate::auth::{self, ClientIp, Session};
 use crate::ciphers::{CipherData, apply};
 use crate::errors::{ApiError, ApiResult};
-use crate::identity::{KdfData, clean_hint};
+use crate::identity::{KdfData, clean_hint, mail_allowed, mail_failed};
 use crate::two_factor::number_or_string;
 use crate::{AppState, json as out};
 use axum::extract::{Path, State};
@@ -83,9 +83,14 @@ pub(crate) async fn check_password(state: &AppState, user: &User, hash: Option<&
     let Some(hash) = hash.filter(|hash| !hash.is_empty()) else {
         return Err(ApiError::bad("No validation provided"));
     };
+    // A session that is not its owner's — a token that got away — does not get to guess.
+    if !state.limits.password.allows(&user.id) {
+        return Err(ApiError::too_many("Too many wrong passwords. Wait a few minutes and try again."));
+    }
     if auth::verify_password(state.config.hash_cost, Some(&user.password_hash), hash).await {
         Ok(())
     } else {
+        state.limits.password.take(user.id.clone());
         Err(ApiError::bad("Invalid password"))
     }
 }
@@ -260,13 +265,18 @@ async fn change_password(
     Json(data): Json<ChangePassword>,
 ) -> ApiResult<StatusCode> {
     check_password(&state, &session.user, Some(&data.master_password_hash)).await?;
-    let (hash, key, _) = new_credentials(
+    let (hash, key, kdf) = new_credentials(
         &session.user,
         data.authentication_data,
         data.unlock_data,
         data.new_master_password_hash,
         data.key,
     )?;
+    // A new password keeps the key derivation; the account would not unlock with the one the
+    // client used otherwise. Changing it is /api/accounts/kdf.
+    if kdf.is_some_and(|kdf| kdf.check().ok() != Some(session.user.kdf)) {
+        return Err(ApiError::bad("Changing the key derivation is not possible with a new password."));
+    }
     let hint = clean_hint(&state, data.master_password_hint)?;
     let password_hash = auth::hash_password(state.config.hash_cost, &hash).await?;
     state
@@ -491,12 +501,14 @@ async fn email_token(
         return Err(ApiError::bad("Changing the address needs mail, and this server cannot send any."));
     }
     let new_email = normalize_email(&data.new_email);
-    if !new_email.contains('@') {
+    let (local, domain) = new_email.split_once('@').unwrap_or_default();
+    if local.is_empty() || !domain.contains('.') || new_email.chars().any(|c| c.is_whitespace() || c.is_control()) {
         return Err(ApiError::bad("That is not an email address."));
     }
     if state.store.user_by_email(&new_email).await?.is_some() {
         return Err(ApiError::bad("Email already in use"));
     }
+    mail_allowed(&state, &new_email, Some(&session.user.id))?;
     let code = auth::random_code(6);
     state
         .store
@@ -512,7 +524,7 @@ async fn email_token(
         .mailer
         .send(&new_email, &Mail::EmailChange { code }, Language::from_code(&session.user.language))
         .await
-        .map_err(|error| ApiError::bad(format!("The mail did not go out: {error}")))?;
+        .map_err(mail_failed)?;
     Ok(StatusCode::OK)
 }
 
@@ -616,16 +628,12 @@ async fn password_hint(
     if !state.mailer.enabled() {
         return Err(ApiError::bad("This server cannot send mail, so it cannot send your hint either."));
     }
-    match state.store.user_by_email(&data.email).await? {
-        Some(user) => {
-            let mail = Mail::PasswordHint { hint: user.password_hint.clone() };
-            crate::identity::send_later(&state, &user.email, mail, Language::from_code(&user.language));
-        }
-        // As long as a mail would have taken, so the answer does not tell which addresses have
-        // an account.
-        None => {
-            tokio::time::sleep(std::time::Duration::from_millis(300 + u64::from(auth::random_bytes(1)[0]) * 3)).await
-        }
+    // The same for an address with an account and one without, so the answer does not tell
+    // which is which: the limit counts either way, and the mail goes out in the background.
+    mail_allowed(&state, &data.email, None)?;
+    if let Some(user) = state.store.user_by_email(&data.email).await? {
+        let mail = Mail::PasswordHint { hint: user.password_hint.clone() };
+        crate::identity::send_later(&state, &user.email, mail, Language::from_code(&user.language));
     }
     Ok(StatusCode::OK)
 }
