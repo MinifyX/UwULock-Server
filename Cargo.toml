@@ -7,6 +7,7 @@ members = [
     "crates/uwulock-api",
     "crates/uwulock-server",
     "crates/uwulock-bench",
+    "crates/uwulock-e2e",
 ]
 
 [workspace.package]
@@ -19,6 +20,7 @@ rust-version = "1.89"
 [workspace.dependencies]
 uwulock-api = { path = "crates/uwulock-api" }
 uwulock-mail = { path = "crates/uwulock-mail" }
+uwulock-server = { path = "crates/uwulock-server" }
 uwulock-store = { path = "crates/uwulock-store" }
 uwulock-web = { path = "crates/uwulock-web" }
 
@@ -79,6 +81,12 @@ debug = false
 opt-level = 3
 
 [profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.pbkdf2]
+opt-level = 3
+
+[profile.dev.package.sha2]
 opt-level = 3
 
 [profile.dev.package.ring]

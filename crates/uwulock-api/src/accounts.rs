@@ -29,6 +29,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/accounts/profile", get(profile).put(update_profile).post(update_profile))
         .route("/api/accounts/avatar", put(avatar))
         .route("/api/accounts/keys", post(set_keys))
+        .route("/api/accounts/key-management/user-key-id", post(set_user_key_id))
         .route("/api/users/{id}/public-key", get(public_key))
         .route("/api/accounts/password", post(change_password))
         .route("/api/accounts/kdf", post(change_kdf))
@@ -54,6 +55,27 @@ pub(crate) fn routes() -> Router<AppState> {
 /// What brings a whole vault along, and may be large.
 pub(crate) fn vault_routes() -> Router<AppState> {
     Router::new().route("/api/accounts/key-management/rotate-user-account-keys", post(rotate_keys))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserKeyId {
+    user_key_id: String,
+}
+
+/// Newer clients name the user key once, after their first login with it, and send the name
+/// here. It comes back in every sync; a key rotation clears it.
+async fn set_user_key_id(
+    State(state): State<AppState>,
+    session: Session,
+    Json(data): Json<UserKeyId>,
+) -> ApiResult<StatusCode> {
+    if session.user.user_key_id.is_some() {
+        return Err(ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "Unexpected data"));
+    }
+    let id = data.user_key_id;
+    state.store.update_user(&session.user.id, move |user| user.user_key_id = Some(id)).await?;
+    Ok(StatusCode::OK)
 }
 
 /// Refused unless `hash` is the account's master password hash.

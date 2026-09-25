@@ -31,6 +31,7 @@ pub struct User {
     pub password_hash: String,
     pub password_hint: Option<String>,
     pub user_key: String,
+    pub user_key_id: Option<String>,
     pub private_key: Option<String>,
     pub public_key: Option<String>,
     pub kdf: Kdf,
@@ -50,7 +51,8 @@ pub struct User {
 
 const USER_COLUMNS: &str = "id, email, name, password_hash, password_hint, user_key, private_key, public_key, \
      kdf_type, kdf_iterations, kdf_memory, kdf_parallelism, security_stamp, language, avatar_color, \
-     equivalent_domains, excluded_globals, recovery_code, admin, disabled, created, updated, revision, last_login";
+     equivalent_domains, excluded_globals, recovery_code, admin, disabled, created, updated, revision, last_login, \
+     user_key_id";
 
 fn user_from(row: &Row<'_>) -> rusqlite::Result<User> {
     Ok(User {
@@ -75,6 +77,7 @@ fn user_from(row: &Row<'_>) -> rusqlite::Result<User> {
         updated: row.get(21)?,
         revision: row.get(22)?,
         last_login: row.get(23)?,
+        user_key_id: row.get(24)?,
     })
 }
 
@@ -90,7 +93,7 @@ pub(crate) fn save_user_in(tx: &Transaction<'_>, user: &User) -> rusqlite::Resul
          private_key = ?7, public_key = ?8, kdf_type = ?9, kdf_iterations = ?10, kdf_memory = ?11, \
          kdf_parallelism = ?12, security_stamp = ?13, language = ?14, avatar_color = ?15, \
          equivalent_domains = ?16, excluded_globals = ?17, recovery_code = ?18, admin = ?19, disabled = ?20, \
-         updated = ?21, revision = ?22, last_login = ?23 WHERE id = ?1",
+         updated = ?21, revision = ?22, last_login = ?23, user_key_id = ?24 WHERE id = ?1",
     )?
     .execute(params![
         user.id,
@@ -116,6 +119,7 @@ pub(crate) fn save_user_in(tx: &Transaction<'_>, user: &User) -> rusqlite::Resul
         user.updated,
         user.revision,
         user.last_login,
+        user.user_key_id,
     ])?;
     Ok(())
 }
@@ -408,9 +412,9 @@ impl Store {
             .query_map([], |row| {
                 Ok(UserOverview {
                     user: user_from(row)?,
-                    devices: row.get(24)?,
-                    ciphers: row.get(25)?,
-                    two_factor: row.get(26)?,
+                    devices: row.get(25)?,
+                    ciphers: row.get(26)?,
+                    two_factor: row.get(27)?,
                 })
             })?
             .collect()

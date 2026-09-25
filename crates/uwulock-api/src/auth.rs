@@ -365,6 +365,7 @@ mod tests {
             password_hash: String::new(),
             password_hint: None,
             user_key: String::new(),
+            user_key_id: None,
             private_key: None,
             public_key: None,
             kdf: uwulock_store::Kdf { kind: 0, iterations: 600_000, memory: None, parallelism: None },

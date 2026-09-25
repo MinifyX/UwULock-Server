@@ -15,6 +15,8 @@ CREATE TABLE users (
     password_hint      TEXT,
     -- The user key, wrapped under the master key by the client. The server cannot open it.
     user_key           TEXT NOT NULL,
+    -- What newer clients call the user key, so they notice when it changes. Theirs to set.
+    user_key_id        TEXT,
     private_key        TEXT,
     public_key         TEXT,
     kdf_type           INTEGER NOT NULL,

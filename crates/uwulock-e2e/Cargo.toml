@@ -1,0 +1,24 @@
+[package]
+name = "uwulock-e2e"
+description = "UwULock's own client against the real server: the tests that say UwULock and UwULock Server work together"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+
+[dev-dependencies]
+uwulock-api.workspace = true
+uwulock-server.workspace = true
+uwulock-store.workspace = true
+# UwULock's client, at a fixed commit: what the desktop app uses to log in, sync and save.
+uwulock-bitwarden = { git = "https://github.com/MinifyX/UwULock-Client", rev = "3f120ff1d5a1421ba17531a7d911f7ed7ea59c7b" }
+reqwest.workspace = true
+rustls.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
+zeroize = "1"

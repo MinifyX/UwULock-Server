@@ -420,6 +420,8 @@ impl Store {
                     write_cipher(tx, &cipher)?;
                 }
                 let mut user = user;
+                // A new key has a new name, which the clients will tell.
+                user.user_key_id = None;
                 user.updated = now.clone();
                 user.revision = now;
                 crate::accounts::save_user_in(tx, &user)?;

@@ -249,7 +249,7 @@ async fn sync(
                 "masterKeyWrappedUserKey": user.user_key,
                 "salt": user.email,
             },
-            "userKeyId": null,
+            "userKeyId": user.user_key_id,
         })
         .to_string(),
     );
