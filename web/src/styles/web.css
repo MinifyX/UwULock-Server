@@ -7,6 +7,11 @@ a {
   color: var(--uwu-pink-ink);
 }
 
+/* "Alle Einträge 3": the count a little apart from its title. */
+.list-title {
+  gap: 6px;
+}
+
 /* ── The bar ───────────────────────────────────────────── */
 
 .titlebar-brand {
@@ -92,7 +97,7 @@ a {
   background: var(--uwu-canvas);
   color: var(--uwu-ink);
   min-width: 0;
-  width: 220px;
+  width: 170px;
 }
 
 .advanced summary {

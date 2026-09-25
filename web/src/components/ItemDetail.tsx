@@ -4,7 +4,6 @@ import {
   deleteItem,
   failure,
   openItemUri,
-  openWebVault,
   restoreItem,
   revealField,
   setFavorite,
@@ -752,15 +751,6 @@ export function ItemDetail({
               ]
                 .filter(Boolean)
                 .join(' · ')}
-            </p>
-            <p className="detail-beta">
-              <button
-                className="link-button"
-                onClick={() => void openWebVault().catch(() => undefined)}
-              >
-                {t('Im Web-Tresor öffnen')}
-                <Icon name="external" size={12} />
-              </button>
             </p>
           </footer>
         </>

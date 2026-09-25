@@ -259,6 +259,7 @@ function SecretField({
     <textarea
       className="mono"
       rows={4}
+      aria-label={label}
       value={secret.value}
       placeholder={kept ? '••••••••••••' : undefined}
       spellCheck={false}
@@ -268,6 +269,7 @@ function SecretField({
     <input
       type="text"
       className="mono"
+      aria-label={label}
       value={secret.value}
       placeholder={kept ? '••••••••••••' : undefined}
       spellCheck={false}
