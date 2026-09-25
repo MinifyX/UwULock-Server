@@ -2,6 +2,8 @@
 resolver = "3"
 members = [
     "crates/uwulock-store",
+    "crates/uwulock-mail",
+    "crates/uwulock-web",
     "crates/uwulock-api",
     "crates/uwulock-server",
     "crates/uwulock-bench",
@@ -16,18 +18,27 @@ rust-version = "1.89"
 
 [workspace.dependencies]
 uwulock-api = { path = "crates/uwulock-api" }
+uwulock-mail = { path = "crates/uwulock-mail" }
 uwulock-store = { path = "crates/uwulock-store" }
+uwulock-web = { path = "crates/uwulock-web" }
 
-axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
+# The server's own hash of what the clients send instead of the master password.
+argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "std"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query", "form"] }
 # TLS with the server's own certificate files or one from Let's Encrypt; the provider is chosen below.
 axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
+# Mail over SMTP, TLS by rustls with `ring` like everything else here.
+lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1-rustls-tls"] }
 libc = "0.2"
 parking_lot = "0.12"
 # Health check, update check and the benchmark: rustls with `ring`, set up by hand, so nothing
 # pulls in a second crypto library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "http2"] }
 # Bundled SQLite, so the server never depends on whichever libsqlite3 is around.
+# Signing tokens, hashing, random numbers and TOTP: the crypto rustls brings along anyway.
+ring = "0.17"
 rusqlite = { version = "0.40", features = ["bundled"] }
 # `ring` rather than aws-lc: it needs no C toolchain beyond a compiler, which keeps the arm64
 # cross build simple.
@@ -36,7 +47,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tls12", "webpki-roots", "axum"] }
 rustls-pemfile = "2"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `raw_value`: what the clients sent for an item goes back out without being parsed again.
+serde_json = { version = "1", features = ["raw_value"] }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net", "fs"] }
@@ -51,6 +63,24 @@ webpki-roots = "1"
 # Tests only.
 rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
 tempfile = "3"
+
+# Tests log in and out all the time: the crypto behind that is built optimised even in a debug
+# build, where Argon2 would otherwise take a second per login. Debug info is kept to line tables,
+# and none for dependencies, which makes the target directory a fraction of its size.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+[profile.dev.package.ring]
+opt-level = 3
 
 [profile.release]
 codegen-units = 1

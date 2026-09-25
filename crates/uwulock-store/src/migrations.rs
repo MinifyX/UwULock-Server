@@ -7,7 +7,8 @@
 use crate::{Result, StoreError};
 use rusqlite::Connection;
 
-const STEPS: &[&str] = &[include_str!("../migrations/sqlite/0001_server.sql")];
+const STEPS: &[&str] =
+    &[include_str!("../migrations/sqlite/0001_server.sql"), include_str!("../migrations/sqlite/0002_accounts.sql")];
 
 /// The schema this build writes.
 pub const SCHEMA_VERSION: i64 = STEPS.len() as i64;

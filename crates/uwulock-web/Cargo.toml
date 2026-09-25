@@ -1,0 +1,11 @@
+[package]
+name = "uwulock-web"
+description = "UwULock Server's web vault and admin portal, built from web/ and embedded into the binary"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]

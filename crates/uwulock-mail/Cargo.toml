@@ -1,6 +1,6 @@
 [package]
-name = "uwulock-store"
-description = "UwULock Server's database: SQLite today, behind methods that a PostgreSQL backend can implement later"
+name = "uwulock-mail"
+description = "UwULock Server's mail: SMTP, and what it writes, in German and English"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,14 +8,12 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+lettre.workspace = true
 parking_lot.workspace = true
-rusqlite.workspace = true
+serde.workspace = true
 thiserror.workspace = true
-time.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-uuid.workspace = true
 
 [dev-dependencies]
-tempfile.workspace = true
 tokio.workspace = true
