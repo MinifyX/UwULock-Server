@@ -358,6 +358,8 @@ export const loginSendEmail = async () => {
 
 export const loginCancel = async () => {
   pending = null;
+  // The master key from the first step is wiped too, not left until the next lock.
+  if (!unlocked) await call((core) => core.lock());
 };
 
 /** After a reload: the session is still there, the keys are not. */
