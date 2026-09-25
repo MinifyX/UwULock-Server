@@ -10,6 +10,7 @@
 #
 #   sudo bash install.sh --domain vault.example.com --yes
 #   sudo bash install.sh --behind-proxy https://vault.example.com --yes
+#   sudo bash install.sh --behind-proxy https://vault.example.com --proxy-network proxy --yes
 #
 #   --dir DIR              where UwULock Server lives (default /opt/uwulock)
 #   --domain NAME          the server gets its own certificate from Let's Encrypt for NAME. NAME
@@ -18,6 +19,11 @@
 #   --acme-staging         Let's Encrypt's test CA, for trying things out (browsers won't trust it)
 #   --behind-proxy URL     a reverse proxy in front does TLS and answers on URL, like
 #                          https://vault.example.com; the server then listens on 127.0.0.1 only
+#   --proxy-network NET    the proxy runs as a container on this machine, in the Docker network
+#                          NET: the server joins NET instead of taking a port here, and the proxy
+#                          reaches it at http://uwulock:8443
+#   --proxy-ip ADDRESS     a fixed IPv4 address for the server in NET, needed in ipvlan and
+#                          macvlan networks; the proxy then reaches it at http://ADDRESS:8443
 #   --bind X               where it listens here: a port, or address:port (default 443 with
 #                          --domain, 127.0.0.1:8443 behind a proxy)
 #   --version TAG          latest (default), beta, edge, or an exact version like 0.1.0
@@ -41,6 +47,8 @@ domain=""
 acme_email=""
 acme_directory=letsencrypt
 proxy=""
+proxy_network=""
+proxy_ip=""
 bind=""
 version=latest
 update_check=on
@@ -63,6 +71,8 @@ while [ $# -gt 0 ]; do
     --acme-email) acme_email="${2:?--acme-email needs an address}"; shift 2 ;;
     --acme-staging) acme_directory=staging; shift ;;
     --behind-proxy) proxy="${2:?--behind-proxy needs the address the proxy answers on}"; shift 2 ;;
+    --proxy-network) proxy_network="${2:?--proxy-network needs the name of a Docker network}"; shift 2 ;;
+    --proxy-ip) proxy_ip="${2:?--proxy-ip needs an address}"; shift 2 ;;
     --bind) bind="${2:?--bind needs a port}"; shift 2 ;;
     --version) version="${2:?--version needs a tag}"; shift 2 ;;
     --no-update-check) update_check=off; shift ;;
@@ -72,7 +82,7 @@ while [ $# -gt 0 ]; do
     --yes | -y) ask=false; shift ;;
     -h | --help)
       # Piped into bash, there is no file to read the help from.
-      if [ -f "$0" ]; then sed -n '2,31p' "$0" | sed 's/^# \{0,1\}//'; else
+      if [ -f "$0" ]; then sed -n '2,/^set /{/^#/p}' "$0" | sed 's/^# \{0,1\}//'; else
         printf 'Download it first to read the help: %s/latest/download/install.sh\n' "$releases"
       fi
       exit 0
@@ -225,6 +235,15 @@ valid_bind() {
 port_of() { printf '%s' "${1##*:}"; }
 on_loopback() { case "$1" in 127.0.0.1:* | "[::1]:"*) return 0 ;; *) return 1 ;; esac; }
 
+# A Docker network's name, the characters Docker allows in one.
+valid_network() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$ ]]; }
+
+valid_ipv4() {
+  [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+  local part
+  for part in ${1//./ }; do [ $((10#$part)) -le 255 ] || return 1; done
+}
+
 # ── the answers, checked before anything happens ──────────────────────────────────────────────
 # Every one of them goes into the .env or a download address, so each is one line of plain
 # characters: a line break in one would become a second setting that Compose reads as its own.
@@ -258,6 +277,15 @@ fi
 # anybody could pass on whatever address they like; Docker's ports get past ufw, too.
 if [ -n "$proxy" ] && [ -n "$bind" ] && ! on_loopback "$bind"; then
   die "behind a proxy the server listens on this machine only: --bind 127.0.0.1:$(port_of "$bind")"
+fi
+if [ -n "$proxy_network" ]; then
+  valid_network "$proxy_network" || die "--proxy-network wants the name of a Docker network, not $proxy_network"
+  [ -n "$domain" ] && die "--proxy-network is for a proxy in front of the server, not with --domain"
+  [ -n "$bind" ] && die "--proxy-network or --bind, not both: in the proxy's network the server takes no port here"
+fi
+if [ -n "$proxy_ip" ]; then
+  [ -n "$proxy_network" ] || die "--proxy-ip is an address in the proxy's network: it needs --proxy-network too"
+  valid_ipv4 "$proxy_ip" || die "--proxy-ip wants an IPv4 address like 192.0.2.10, not $proxy_ip"
 fi
 if $from_checkout && [ -n "$(find "$here" -maxdepth 0 -perm -0002 2>/dev/null)" ]; then
   die "--from-checkout, but anybody may write to $here; nothing from there is installed as root"
@@ -349,7 +377,15 @@ free_from() {
 # ── how the clients reach it ──────────────────────────────────────────────────────────────────
 # The Bitwarden apps and the browser extension only talk to a server with a certificate the
 # system trusts. So either the server gets one itself, or something in front of it has one.
-if [ -z "$domain" ] && [ -z "$proxy" ]; then
+if [ -z "$domain" ] && [ -z "$proxy" ] && [ -n "$proxy_network" ]; then
+  # A proxy's network was given, so it is the proxy.
+  proxy=$(askfor "The https address the proxy answers on, like https://vault.example.com")
+  proxy="${proxy%/}"
+  case "$proxy" in https://*) ;; *) proxy="https://$proxy" ;; esac
+  case "${proxy#https://}" in
+    "" | */* | *[!a-zA-Z0-9.:_-]*) die "that is not an address: $proxy" ;;
+  esac
+elif [ -z "$domain" ] && [ -z "$proxy" ]; then
   cat <<'CHOICE'
   How do your clients reach this server? The Bitwarden apps and the browser extension need
   https with a real certificate, so one of two ways:
@@ -387,6 +423,61 @@ CHOICE
   esac
 fi
 
+# A proxy that runs as a container reaches nothing on this machine's 127.0.0.1: that is its own.
+# So the server joins the proxy's Docker network instead, and takes no port here at all.
+if [ -n "$proxy" ] && [ -z "$proxy_network" ] && [ -z "$bind" ] && $ask && have_tty; then
+  cat <<'NETWORK'
+
+  Does the proxy run as a Docker container on this machine? Then it cannot reach the server on
+  127.0.0.1, which inside its container is its own. The server joins the proxy's Docker network
+  instead. The networks here:
+
+NETWORK
+  docker network ls --format '{{.Name}}  ({{.Driver}})' </dev/null 2>/dev/null |
+    grep -vE '^(bridge|host|none)  ' | sed 's/^/    /'
+  printf '\n'
+  proxy_network=$(askfor "The proxy's network (Enter if the proxy does not run in Docker here)")
+  if [ -n "$proxy_network" ]; then
+    valid_network "$proxy_network" || die "that is not the name of a Docker network: $proxy_network"
+  fi
+fi
+
+if [ -n "$proxy_network" ]; then
+  network_driver=$(docker network inspect --format '{{.Driver}}' "$proxy_network" </dev/null 2>/dev/null) ||
+    die "there is no Docker network $proxy_network here. docker network ls lists them"
+  case "$network_driver" in
+    host | null) die "$proxy_network is not a network a container can join by itself" ;;
+  esac
+  # Docker's own default network knows no names, and a container cannot join it from Compose.
+  [ "$proxy_network" = bridge ] &&
+    die "Docker's default network knows no names. Put the proxy in a network of its own: docker network create proxy"
+  # In an ipvlan or macvlan network the proxy reaches the server at an address in your network, so
+  # it has to be one that stays, and one no other machine uses.
+  case "$network_driver" in
+    ipvlan | macvlan)
+      if [ -z "$proxy_ip" ]; then
+        subnet=$(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$proxy_network" </dev/null 2>/dev/null)
+        proxy_ip=$(askfor "$proxy_network is a $network_driver network ($subnet). A free address in it for the server")
+        [ -n "$proxy_ip" ] || die "$proxy_network is a $network_driver network: the server needs a fixed address in it, --proxy-ip ADDRESS"
+      fi
+      ;;
+  esac
+  if [ -n "$proxy_ip" ]; then
+    valid_ipv4 "$proxy_ip" || die "that is not an IPv4 address: $proxy_ip"
+    taken=$(docker network inspect --format '{{range .Containers}}{{.IPv4Address}} {{end}}' "$proxy_network" </dev/null 2>/dev/null)
+    case " $taken" in *" $proxy_ip/"*) die "$proxy_ip is taken in $proxy_network already" ;; esac
+  fi
+  # The override takes compose.yaml's port away with !reset, which Compose knows since 2.24.
+  compose_version=$(docker compose version --short </dev/null 2>/dev/null)
+  compose_version="${compose_version#v}"
+  IFS=. read -r compose_major compose_minor _ <<<"$compose_version"
+  if [ "${compose_major:-0}" -lt 2 ] || { [ "$compose_major" -eq 2 ] && [ "${compose_minor:-0}" -lt 24 ]; }; then
+    die "joining the proxy's network needs Docker Compose 2.24 or newer, and this is $compose_version"
+  fi
+  [ -e "$dir/compose.override.yaml" ] &&
+    die "there is a $dir/compose.override.yaml already, and joining the proxy's network would write one"
+fi
+
 if [ -n "$domain" ]; then
   # Let's Encrypt knocks on port 443 of the name, and nowhere else.
   if [ -z "$bind" ]; then
@@ -401,6 +492,11 @@ if [ -n "$domain" ]; then
     warn "$domain does not resolve yet. Let's Encrypt can only issue the certificate once it points here."
   fi
   public="https://$domain"
+elif [ -n "$proxy_network" ]; then
+  # No port here; this is only what the server falls back to if the override ever goes.
+  bind=127.0.0.1:8443
+  if [ -n "$proxy_ip" ]; then upstream="http://$proxy_ip:8443"; else upstream="http://$service:8443"; fi
+  public="$proxy"
 else
   if [ -z "$bind" ]; then
     bind=127.0.0.1:8443
@@ -416,6 +512,7 @@ else
   elif port_busy "$(port_of "$bind")"; then
     warn "--bind points at $bind, and that one is taken as well"
   fi
+  upstream="http://$bind"
   public="$proxy"
 fi
 
@@ -446,6 +543,24 @@ else
 fi
 step "wrote $dir/.env"
 
+# Compose lays compose.override.yaml over compose.yaml by itself, and update.sh leaves it alone.
+if [ -n "$proxy_network" ]; then
+  {
+    printf '# Written by install.sh: the reverse proxy runs as a container in the Docker network\n'
+    printf '# %s, so the server joins that network and takes no port on this machine.\n' "$proxy_network"
+    printf '# The proxy reaches it at %s.\n' "$upstream"
+    printf 'services:\n  %s:\n    ports: !reset []\n    networks:\n' "$service"
+    if [ -n "$proxy_ip" ]; then
+      printf '      "%s":\n        ipv4_address: %s\n' "$proxy_network" "$proxy_ip"
+    else
+      printf '      "%s": {}\n' "$proxy_network"
+    fi
+    printf '\nnetworks:\n  "%s":\n    name: "%s"\n    external: true\n' "$proxy_network" "$proxy_network"
+  } >"$dir/compose.override.yaml"
+  chmod 0644 "$dir/compose.override.yaml"
+  step "wrote $dir/compose.override.yaml: the server joins $proxy_network"
+fi
+
 # update.sh replaces a compose.yaml it knows it put here, and this is how it knows.
 {
   printf '# Written by install.sh and update.sh: what they put here, so they know what they may replace.\n'
@@ -462,8 +577,10 @@ give_up() {
   docker compose logs --tail 20 "$service" </dev/null 2>/dev/null | sed 's/^/      /' >&2
   docker compose down </dev/null >/dev/null 2>&1
   mv -f "$dir/.env" "$dir/.env.failed"
+  # Left behind, it would lay itself over the next try, whatever that one is told.
+  [ -n "$proxy_network" ] && mv -f "$dir/compose.override.yaml" "$dir/compose.override.yaml.failed"
   die "$1
-      Your answers are in $dir/.env.failed. Once the cause is fixed, run install.sh again."
+      Your answers are in $dir/.env.failed$([ -n "$proxy_network" ] && printf ' and compose.override.yaml.failed'). Once the cause is fixed, run install.sh again."
 }
 
 if $pull; then
@@ -520,9 +637,17 @@ DONE
 
 if [ -n "$proxy" ]; then
   cat <<PROXY
-  Your reverse proxy sends $proxy to http://$bind now, with its own certificate
-  for that name. Until it does, no client can reach the server. Examples for Caddy and nginx:
-  https://github.com/$repo/blob/main/docs/deployment.md#behind-a-reverse-proxy
+  Your reverse proxy sends $proxy to $upstream now, with its own certificate
+  for that name. Until it does, no client can reach the server. In Caddy:
+
+    ${proxy#https://} {
+        reverse_proxy $upstream
+    }
+
+  nginx and the rest: https://github.com/$repo/blob/main/docs/deployment.md#behind-a-reverse-proxy
 
 PROXY
+  if [ -n "$proxy_network" ]; then
+    printf '  The server takes no port on this machine: only containers in %s reach it.\n\n' "$proxy_network"
+  fi
 fi

@@ -61,6 +61,8 @@ Let's Encrypt or sits behind your proxy, sets up `/opt/uwulock` and starts it. W
 ```bash
 sudo bash install.sh --domain vault.example.com --yes
 sudo bash install.sh --behind-proxy https://vault.example.com --yes
+# the proxy runs as a container here: the server joins its Docker network
+sudo bash install.sh --behind-proxy https://vault.example.com --proxy-network proxy --yes
 ```
 
 [docs/deployment.md](docs/deployment.md) has the rest: Caddy and nginx in front, your own

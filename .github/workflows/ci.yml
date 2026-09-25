@@ -248,6 +248,24 @@ jobs:
             sleep 2
           done
           test "$(sudo docker inspect uwulock --format '{{.State.Health.Status}}')" = healthy
+      - name: Install again, next to a proxy in a container
+        run: |
+          (cd /opt/uwulock && sudo docker compose down -v)
+          sudo rm -rf /opt/uwulock
+          sudo docker network create --subnet 198.51.100.0/24 proxy-test
+          sudo bash install.sh --yes --no-pull --from-checkout --version 0.0.1 \
+            --behind-proxy https://vault.example.com \
+            --proxy-network proxy-test --proxy-ip 198.51.100.10 | tee install.log
+          grep -q 'reverse_proxy http://198.51.100.10:8443' install.log
+          # In the proxy's network, by address and by name, and on no port of this machine.
+          sudo docker run --rm --network proxy-test alpine:3 wget -qO- http://198.51.100.10:8443/alive
+          sudo docker run --rm --network proxy-test alpine:3 wget -qO- http://uwulock:8443/alive
+          test -z "$(sudo docker port uwulock)"
+          # update.sh takes the override along.
+          cd /opt/uwulock
+          sudo bash update.sh --yes --no-pull --no-self-update --keep-compose --version 0.0.2
+          test "$(sudo docker inspect uwulock --format '{{.State.Health.Status}}')" = healthy
+          sudo docker run --rm --network proxy-test alpine:3 wget -qO- http://198.51.100.10:8443/alive
       - name: What the server said
         if: always()
         run: cd /opt/uwulock && sudo docker compose logs --no-color || true

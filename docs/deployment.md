@@ -97,6 +97,42 @@ server {
 (`$connection_upgrade` is the usual `map $http_upgrade $connection_upgrade { default upgrade; '' close; }`
 in the `http` block.)
 
+### A proxy in a container
+
+When the proxy itself runs as a Docker container on the same machine, `127.0.0.1` inside it is
+the proxy's own, not the machine's: `reverse_proxy 127.0.0.1:8443` answers 502. The server joins
+the proxy's Docker network instead and takes no port on the machine at all:
+
+```bash
+sudo bash install.sh --behind-proxy https://vault.example.com --proxy-network proxy --yes
+```
+
+The proxy then reaches it at `http://uwulock:8443`. In an ipvlan or macvlan network, where every
+container has an address of your network and the proxy reaches services by it, the server needs a
+fixed one that no other machine uses:
+
+```bash
+sudo bash install.sh --behind-proxy https://vault.example.com \
+  --proxy-network dmz --proxy-ip 192.0.2.64 --yes
+```
+
+and the proxy passes on to `http://192.0.2.64:8443`. Without the flags, install.sh asks for the
+network once you choose the proxy. What it writes is `compose.override.yaml` next to
+`compose.yaml`, which update.sh leaves alone; by hand it is:
+
+```yaml
+services:
+  uwulock:
+    ports: !reset []        # Compose 2.24 or newer
+    networks:
+      proxy: {}             # or, in ipvlan/macvlan:  dmz: { ipv4_address: 192.0.2.64 }
+networks:
+  proxy:
+    external: true
+```
+
+then `docker compose up -d`.
+
 ## With your own certificate
 
 `UWULOCK_TLS=files`, with `UWULOCK_TLS_CERT` and `UWULOCK_TLS_KEY` pointing at PEM files inside

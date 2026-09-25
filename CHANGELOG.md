@@ -3,6 +3,21 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.0.2
+
+**A reverse proxy in a container.** Behind a proxy that runs as a Docker container on the same
+machine, the server listened on `127.0.0.1` — which inside the proxy's container is the proxy
+itself, so it answered 502.
+
+- **`install.sh --proxy-network NET`** puts the server into the proxy's Docker network instead of
+  onto a port of the machine; the proxy reaches it at `http://uwulock:8443`. Asked for, too, when
+  you choose the proxy without flags. A port on the machine that something else has already, like
+  8443, no longer matters then.
+- **`--proxy-ip ADDRESS`** gives it a fixed address in that network, which ipvlan and macvlan
+  networks need: the proxy passes on to `http://ADDRESS:8443`.
+- The address the proxy has to pass on to, and the lines for Caddy, are printed at the end.
+- How it looks by hand, as a `compose.override.yaml`: [docs/deployment.md](docs/deployment.md#a-proxy-in-a-container).
+
 ## 0.0.1
 
 **The foundation.** UwULock Server runs, updates itself safely and backs itself up — but it does
