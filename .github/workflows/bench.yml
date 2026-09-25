@@ -1,0 +1,96 @@
+name: Benchmark
+
+# UwULock Server and Vaultwarden, the same load on the same machine, one after the other. The
+# numbers go into the run's summary. A shared CI machine is a noisy place to measure, so what
+# counts is the difference between the two in one run, not one run against the next.
+#
+# Weekly, and by hand. The scenarios grow with the server: /alive today; prelogin, login and a
+# sync of a seeded vault once there are accounts.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per scenario
+        default: "15"
+      workers:
+        description: Requests in flight at once
+        default: "32"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Vaultwarden to compare with. Raised by hand, so a change in the numbers is a change in one
+  # of the two and not in both at once.
+  VAULTWARDEN: vaultwarden/server:1.37.3
+  SECONDS_PER_SCENARIO: ${{ inputs.seconds || '15' }}
+  WORKERS: ${{ inputs.workers || '32' }}
+
+jobs:
+  bench:
+    name: UwULock Server and Vaultwarden
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release
+      - run: cargo build --release --locked -p uwulock-server -p uwulock-bench
+      - name: Start both
+        run: |
+          mkdir -p "$RUNNER_TEMP/uwulock"
+          UWULOCK_DATA="$RUNNER_TEMP/uwulock" UWULOCK_LISTEN=127.0.0.1:18443 UWULOCK_UPDATE_CHECK=off \
+            nohup target/release/uwulock-server serve >"$RUNNER_TEMP/uwulock.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/uwulock.pid"
+          # Host network, like UwULock Server beside it: Docker's port forwarding would cost Vaultwarden time
+          # that is not its own.
+          docker run -d --name vaultwarden --network host -e ROCKET_ADDRESS=127.0.0.1 -e ROCKET_PORT=18080 \
+            -v vaultwarden-bench:/data "$VAULTWARDEN"
+          for _ in $(seq 1 60); do
+            curl -sf http://127.0.0.1:18443/alive >/dev/null && curl -sf http://127.0.0.1:18080/alive >/dev/null && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18443/alive
+          curl -sf http://127.0.0.1:18080/alive
+      - name: Memory while idle
+        run: |
+          sleep 5
+          uwulock_kib=$(ps -o rss= -p "$(cat "$RUNNER_TEMP/uwulock.pid")" | tr -d ' ')
+          vaultwarden_kib=$(ps -o rss= -p "$(docker inspect -f '{{.State.Pid}}' vaultwarden)" | tr -d ' ')
+          echo "UWULOCK_IDLE_MIB=$(( uwulock_kib / 1024 ))" >> "$GITHUB_ENV"
+          echo "VAULTWARDEN_IDLE_MIB=$(( vaultwarden_kib / 1024 ))" >> "$GITHUB_ENV"
+      - name: Load
+        run: |
+          for scenario in alive; do
+            target/release/uwulock-bench --target http://127.0.0.1:18443 --scenario "$scenario" \
+              --workers "$WORKERS" --seconds "$SECONDS_PER_SCENARIO" --label "UwULock Server" --json >> results.jsonl
+            target/release/uwulock-bench --target http://127.0.0.1:18080 --scenario "$scenario" \
+              --workers "$WORKERS" --seconds "$SECONDS_PER_SCENARIO" --label "Vaultwarden ${VAULTWARDEN#*:}" --json >> results.jsonl
+          done
+          cat results.jsonl
+      - name: Summary
+        run: |
+          {
+            echo "## UwULock Server and Vaultwarden"
+            echo
+            echo "$WORKERS requests in flight, $SECONDS_PER_SCENARIO seconds per scenario, one shared CI machine."
+            echo
+            echo "| Server | Scenario | Requests/s | p50 ms | p90 ms | p99 ms | Errors |"
+            echo "| --- | --- | ---: | ---: | ---: | ---: | ---: |"
+            jq -r '"| \(.label) | \(.scenario) | \(.per_second | floor) | \(.p50_ms * 100 | round / 100) | \(.p90_ms * 100 | round / 100) | \(.p99_ms * 100 | round / 100) | \(.errors) |"' results.jsonl
+            echo
+            echo "| Server | Memory while idle |"
+            echo "| --- | ---: |"
+            echo "| UwULock Server | ${UWULOCK_IDLE_MIB} MiB |"
+            echo "| Vaultwarden ${VAULTWARDEN#*:} | ${VAULTWARDEN_IDLE_MIB} MiB |"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-results
+          path: results.jsonl

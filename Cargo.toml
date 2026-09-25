@@ -1,0 +1,60 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/uwulock-store",
+    "crates/uwulock-api",
+    "crates/uwulock-server",
+    "crates/uwulock-bench",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "AGPL-3.0-only"
+repository = "https://github.com/MinifyX/UwULock-Server"
+rust-version = "1.89"
+
+[workspace.dependencies]
+uwulock-api = { path = "crates/uwulock-api" }
+uwulock-store = { path = "crates/uwulock-store" }
+
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query"] }
+# TLS with the server's own certificate files or one from Let's Encrypt; the provider is chosen below.
+axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+parking_lot = "0.12"
+# Health check, update check and the benchmark: rustls with `ring`, set up by hand, so nothing
+# pulls in a second crypto library.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "http2"] }
+# Bundled SQLite, so the server never depends on whichever libsqlite3 is around.
+rusqlite = { version = "0.40", features = ["bundled"] }
+# `ring` rather than aws-lc: it needs no C toolchain beyond a compiler, which keeps the arm64
+# cross build simple.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+# Certificates from Let's Encrypt over TLS-ALPN-01: port 443 is all it needs, no port 80.
+rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tls12", "webpki-roots", "axum"] }
+rustls-pemfile = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net", "fs"] }
+tokio-stream = "0.1"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "set-header", "limit", "timeout", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+webpki-roots = "1"
+
+# Tests only.
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "pem", "ring"] }
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+# No `panic = "abort"`: a bug in one request should fail that request, not the whole server.
+lto = "thin"
+opt-level = 3
+strip = true

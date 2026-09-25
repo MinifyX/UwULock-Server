@@ -1,0 +1,23 @@
+[package]
+name = "uwulock-api"
+description = "UwULock Server's HTTP side: the Bitwarden-compatible API, and UwULock's own under /uwu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+uwulock-store.workspace = true
+
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio.workspace = true

@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Nyu, the UwULock padlock cat">
+  <title>Nyu</title>
+  <!--
+    Nyu's hull for UwULock: a padlock. The shackle arches up between the ears,
+    a keyhole sits on her forehead, and the plate on the lock body is her face
+    (same place as UwUSSH's terminal and UwURDP's screen, so every mood fits).
+  -->
+
+  <!-- die-cut white edge -->
+  <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="20" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M83 84 V56 A45 45 0 0 1 173 56 V84 H147 V56 A19 19 0 0 0 109 56 V84 Z"/>
+    <path d="M62 88 L80 36 L114 88 Z"/>
+    <path d="M142 88 L176 36 L194 88 Z"/>
+    <rect x="28" y="74" width="200" height="146" rx="24"/>
+  </g>
+
+  <!-- shackle, behind the ears -->
+  <path d="M83 84 V56 A45 45 0 0 1 173 56 V84 H147 V56 A19 19 0 0 0 109 56 V84 Z" fill="#C9B6F0" stroke="#4B1D3F" stroke-width="9" stroke-linejoin="round"/>
+
+  <!-- ears -->
+  <g stroke="#4B1D3F" stroke-width="9" stroke-linejoin="round">
+    <path d="M62 88 L80 36 L114 88 Z" fill="#FF6FA6"/>
+    <path d="M142 88 L176 36 L194 88 Z" fill="#FF6FA6"/>
+  </g>
+  <path d="M76 82 L84 52 L100 82 Z" fill="#FFB8D3"/>
+  <path d="M156 82 L172 52 L180 82 Z" fill="#FFB8D3"/>
+
+  <!-- lock body -->
+  <rect x="28" y="74" width="200" height="146" rx="24" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="9"/>
+
+  <!-- keyhole -->
+  <g fill="#4B1D3F">
+    <circle cx="128" cy="95" r="6.5"/>
+    <path d="M124.5 98 L122 108.5 H134 L131.5 98 Z"/>
+  </g>
+
+  <!-- plate = face -->
+  <rect x="44" y="116" width="168" height="88" rx="16" fill="#FFB8D3" stroke="#4B1D3F" stroke-width="7"/>
+
+  <ellipse cx="74" cy="168" rx="12" ry="7.5" fill="#FF4D8D" opacity="0.5"/>
+  <ellipse cx="182" cy="168" rx="12" ry="7.5" fill="#FF4D8D" opacity="0.5"/>
+
+  <g fill="none" stroke="#4B1D3F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 142 Q102 160 116 142"/>
+    <path d="M140 142 Q154 160 168 142"/>
+    <path d="M112 170 q8 13 16 0 q8 13 16 0"/>
+  </g>
+</svg>

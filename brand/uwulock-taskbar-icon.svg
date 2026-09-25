@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="UwULock: a padlock with cat ears">
+  <title>UwULock</title>
+  <!--
+    Taskbar, window and Linux menus: Nyu alone, upright, no tile. A padlock,
+    shackle between the ears and a golden keyhole on the dark plate, so it
+    reads as a password vault; the ears and blush say Nyu. The white die-cut
+    edge keeps it visible on dark and light taskbars.
+  -->
+  <g transform="translate(256 262) scale(1.22) translate(-256 -250)"><g stroke-linecap="round" stroke-linejoin="round">
+    <g fill="#FFFFFF" stroke="#FFFFFF" stroke-width="40">
+      <path d="M194 160 V110 A62 62 0 0 1 318 110 V160 H288 V110 A32 32 0 0 0 224 110 V160 Z"/>
+      <path d="M118 196 L132 100 Q135 82 151 91 L230 150 Z"/>
+      <path d="M394 196 L380 100 Q377 82 361 91 L282 150 Z"/>
+      <rect x="100" y="140" width="312" height="220" rx="46"/>
+    </g>
+    <path d="M194 160 V110 A62 62 0 0 1 318 110 V160 H288 V110 A32 32 0 0 0 224 110 V160 Z" fill="#C9B6F0" stroke="#4B1D3F" stroke-width="17"/>
+    <g fill="#FF6FA6" stroke="#4B1D3F" stroke-width="17">
+      <path d="M118 196 L132 100 Q135 82 151 91 L230 150 Z"/>
+      <path d="M394 196 L380 100 Q377 82 361 91 L282 150 Z"/>
+    </g>
+    <g fill="#FFB8D3">
+      <path d="M148 140 L152 118 Q153 110 160 114 L192 138 Z"/>
+      <path d="M364 140 L360 118 Q359 110 352 114 L320 138 Z"/>
+    </g>
+    <rect x="100" y="140" width="312" height="220" rx="46" fill="#FF6FA6" stroke="#4B1D3F" stroke-width="17"/>
+    <rect x="126" y="166" width="260" height="168" rx="26" fill="#2A2458"/>
+    <path d="M256 194 a30 30 0 0 1 17 54.7 L284 302 H228 L239 248.7 A30 30 0 0 1 256 194 Z" fill="#FFD66E" stroke="#4B1D3F" stroke-width="10"/>
+    <g fill="#FF4D8D" opacity="0.75"><ellipse cx="164" cy="306" rx="14" ry="8"/><ellipse cx="348" cy="306" rx="14" ry="8"/></g>
+  </g></g>
+</svg>

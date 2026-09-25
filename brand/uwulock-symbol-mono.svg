@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="none" stroke="currentColor" role="img" aria-label="Nyu, the UwULock padlock cat">
+  <title>Nyu (mono)</title>
+  <!-- One colour, outlines only: the shackle, the lock body, the plate as a face. -->
+  <g stroke-width="9" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M96 74 V56 A32 32 0 0 1 160 56 V74"/>
+    <path d="M62 88 L80 36 L114 88"/>
+    <path d="M142 88 L176 36 L194 88"/>
+    <rect x="28" y="74" width="200" height="146" rx="24"/>
+    <rect x="44" y="116" width="168" height="88" rx="16"/>
+  </g>
+  <g stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 142 Q102 160 116 142"/>
+    <path d="M140 142 Q154 160 168 142"/>
+    <path d="M112 170 q8 13 16 0 q8 13 16 0"/>
+  </g>
+  <g fill="currentColor" stroke="none">
+    <circle cx="128" cy="95" r="6"/>
+    <path d="M124.5 98 L122 108 H134 L131.5 98 Z"/>
+  </g>
+</svg>

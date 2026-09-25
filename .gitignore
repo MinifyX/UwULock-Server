@@ -1,0 +1,29 @@
+# Build output
+target/
+dist/
+node_modules/
+
+# Local data of a dev server
+/data/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Keys, certificates and passwords never belong in this public repository
+*.key
+*.pem
+*.p12
+*.pfx
+*.password
+*.secret
+
+# Editors and OS
+.vscode/*
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

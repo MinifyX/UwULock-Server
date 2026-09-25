@@ -1,0 +1,55 @@
+# UwULock Server
+#
+# install.sh sets all of this up for you. By hand it is:
+#
+#   1. cp .env.example .env   and set UWULOCK_PUBLIC and UWULOCK_TLS
+#   2. docker compose up -d
+#   3. docker compose ps      until it says healthy
+#
+# The next version: update.sh, next to this file. Everything that differs from one machine to
+# the next lives in .env, so update.sh can put the next version's compose.yaml here.
+#
+# The whole story, with Let's Encrypt, a reverse proxy, backups and updates: docs/deployment.md.
+
+name: uwulock
+
+services:
+  uwulock:
+    image: ghcr.io/minifyx/uwulock-server:${UWULOCK_VERSION:-latest}
+    container_name: uwulock
+    restart: unless-stopped
+    environment:
+      UWULOCK_PUBLIC: ${UWULOCK_PUBLIC:?set UWULOCK_PUBLIC in .env}
+      UWULOCK_TLS: ${UWULOCK_TLS:-off}
+      UWULOCK_ACME_EMAIL: ${UWULOCK_ACME_EMAIL:-}
+      UWULOCK_ACME_DIRECTORY: ${UWULOCK_ACME_DIRECTORY:-letsencrypt}
+      UWULOCK_TRUST_FORWARDED: ${UWULOCK_TRUST_FORWARDED:-off}
+      UWULOCK_UPDATE_CHECK: ${UWULOCK_UPDATE_CHECK:-on}
+      # What counts as an update is what this machine follows.
+      UWULOCK_CHANNEL: ${UWULOCK_VERSION:-latest}
+    ports:
+      - "${UWULOCK_BIND:-443}:8443"   # the clients: TLS of its own, or plain HTTP for a proxy
+    volumes:
+      - uwulock-data:/data
+    stop_grace_period: 10s
+    # Docker keeps a container's log for ever unless told otherwise. Thirty megabytes, then the
+    # oldest goes.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Hardening: the server runs as an unprivileged user (uid 10001) on a read-only root file
+    # system; only the data volume and a small /tmp are writable. It listens above 1024, so it
+    # keeps no Linux capability at all.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  uwulock-data:
+    name: uwulock_uwulock-data
