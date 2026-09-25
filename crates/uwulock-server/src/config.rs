@@ -227,7 +227,7 @@ fn normalize_public(value: &str) -> Result<String, String> {
         return Err(format!("UWULOCK_PUBLIC must be an http(s) address: {value}"));
     }
     let (host, port) = match rest.rsplit_once(':') {
-        Some((host, port)) if !host.ends_with(':') && !(host.starts_with('[') && !host.ends_with(']')) => {
+        Some((host, port)) if !host.ends_with(':') && (!host.starts_with('[') || host.ends_with(']')) => {
             (host, Some(port))
         }
         _ => (rest, None),

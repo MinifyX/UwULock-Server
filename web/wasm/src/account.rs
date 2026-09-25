@@ -111,9 +111,13 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str) -> Result<V
             ));
         }
         let mut item = item.clone();
-        // An item with a key of its own keeps it; only the wrapping is new.
+        // An item with a key of its own keeps it; only the wrapping is new. One without has its
+        // passkeys under the user key, which the core carries through as they are: those are
+        // encrypted again here, or they would stay under the key this is meant to replace.
         if let Some(own) = &item.key {
             item.wrapped_key = Some(EncString::encrypt(&own.to_bytes(), &new_key).to_string());
+        } else if let Some(passkeys) = item.login.as_mut().and_then(|login| login.passkeys.as_mut()) {
+            crate::transfer::reseal_passkeys(passkeys, &unlocked.user_key, &new_key)?;
         }
         let mut sealed = serde_json::to_value(item.seal(&new_key)?)?;
         sealed["id"] = Value::String(item.id.clone());

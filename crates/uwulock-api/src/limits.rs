@@ -20,8 +20,9 @@ use std::time::{Duration, Instant};
 
 /// Past this many buckets, the full ones are forgotten.
 const TIDY_AT: usize = 10_000;
-/// Past this many that are all in use, a new key gets no bucket, and no try. Only somebody with
-/// a great many addresses gets here, and then refusing is safer than forgetting.
+/// Past this many that are all in use, the tenth that was used longest ago is forgotten. Only
+/// somebody with a great many addresses gets here; refusing every new one instead would lock
+/// everybody else out.
 const MOST: usize = 100_000;
 
 pub struct Limiter<K = IpAddr> {
@@ -72,7 +73,11 @@ impl<K: Hash + Eq> Limiter<K> {
         let mut buckets = self.buckets.lock();
         self.tidy(&mut buckets, now);
         if buckets.map.len() >= MOST && !buckets.map.contains_key(&key) {
-            return false;
+            let mut times: Vec<Instant> = buckets.map.values().map(|(_, at)| *at).collect();
+            let cut = MOST / 10;
+            let (_, oldest, _) = times.select_nth_unstable(cut);
+            let oldest = *oldest;
+            buckets.map.retain(|_, (_, at)| *at > oldest);
         }
         let (tokens, at) = buckets.map.entry(key).or_insert((self.burst, now));
         let refilled = self.refilled(*tokens, *at, now);
@@ -175,14 +180,17 @@ mod tests {
     }
 
     #[test]
-    fn a_full_table_gives_no_new_bucket() {
+    fn a_full_table_forgets_what_was_used_longest_ago() {
         let limiter = Limiter::new(1, Duration::from_secs(3600));
-        let now = Instant::now();
+        let start = Instant::now();
         for n in 0..MOST as u32 {
-            assert!(limiter.take_at(n, now));
+            assert!(limiter.take_at(n, start + Duration::from_millis(u64::from(n))));
         }
-        assert!(!limiter.take_at(u32::MAX, now), "nothing to forget, so no room");
-        assert!(limiter.allows(&u32::MAX), "asking does not take anything");
+        let later = start + Duration::from_secs(1000);
+        assert!(limiter.take_at(u32::MAX, later), "a newcomer still gets a try");
+        assert!(!limiter.allows(&u32::MAX));
+        assert!(!limiter.take_at(MOST as u32 - 1, later), "the recent ones are remembered");
+        assert!(limiter.buckets.lock().map.len() < MOST);
     }
 
     #[test]

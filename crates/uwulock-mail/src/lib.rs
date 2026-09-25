@@ -86,10 +86,32 @@ impl SmtpSettings {
         .map_err(|error| MailError::Settings(error.to_string()))?;
         let mut builder = builder.port(self.port).timeout(Some(Duration::from_secs(20)));
         if let Some(username) = self.username.as_ref().filter(|name| !name.is_empty()) {
+            if self.security == Security::None && !nearby(host) {
+                return Err(MailError::Settings(
+                    "a password goes to a mail server only over TLS or STARTTLS, unless the server is on this machine or its network".into(),
+                ));
+            }
             builder =
                 builder.credentials(Credentials::new(username.clone(), self.password.clone().unwrap_or_default()));
         }
         Ok(builder.build())
+    }
+}
+
+/// A mail server that is on this machine or its own network, where a password without TLS
+/// crosses nothing it should not: `localhost`, a name without a dot (a container next to this
+/// one), or a loopback or private address.
+fn nearby(host: &str) -> bool {
+    let host = host.trim().trim_start_matches('[').trim_end_matches(']');
+    if host.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback() || (ip.segments()[0] & 0xfe00) == 0xfc00 || (ip.segments()[0] & 0xffc0) == 0xfe80
+        }
+        Err(_) => !host.contains('.'),
     }
 }
 

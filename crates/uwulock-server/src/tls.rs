@@ -12,10 +12,15 @@ use rustls::ServerConfig;
 use rustls::crypto::ring;
 use rustls_acme::AcmeConfig;
 use rustls_acme::caches::DirCache;
+use std::future::Future;
+use std::io;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_stream::StreamExt;
 
 /// HTTP/2 first, like every browser and app wants it; 1.1 for everybody else.
@@ -48,18 +53,129 @@ pub async fn serve(
         .keep_alive_timeout(Duration::from_secs(20))
         .max_concurrent_streams(256);
     match &config.tls {
-        TlsMode::Off => server.serve(service).await,
+        TlsMode::Off => server.acceptor(Deadline(axum_server::accept::DefaultAcceptor)).serve(service).await,
         TlsMode::Files { cert, key } => {
             let tls = RustlsConfig::from_config(from_files(cert, key)?);
             watch_files(tls.clone(), cert.clone(), key.clone());
-            server.acceptor(axum_server::tls_rustls::RustlsAcceptor::new(tls)).serve(service).await
+            server.acceptor(Deadline(axum_server::tls_rustls::RustlsAcceptor::new(tls))).serve(service).await
         }
         TlsMode::Acme(acme) => {
             let acceptor = acme_acceptor(acme, &config.acme_cache())?;
-            server.acceptor(acceptor).serve(service).await
+            server.acceptor(Deadline(acceptor)).serve(service).await
         }
     }
     .map_err(|error| error.to_string())
+}
+
+/// How long a connection gets for its TLS handshake.
+const HANDSHAKE: Duration = Duration::from_secs(10);
+/// How long a connection may go without a byte either way before it is closed. Longer than the
+/// HTTP/2 ping interval, so a client that answers pings stays.
+const IDLE: Duration = Duration::from_secs(90);
+
+/// Puts a deadline on every connection: the TLS handshake has to be done in [`HANDSHAKE`], and
+/// after that a connection on which nothing moves for [`IDLE`] is closed. Without it, a
+/// connection that sends nothing at all — not even the first byte hyper waits for to tell
+/// HTTP/1 from HTTP/2 — would hold its socket for ever, and a few thousand of them would use up
+/// every file descriptor the server has.
+#[derive(Clone)]
+struct Deadline<A>(A);
+
+impl<I, S, A> axum_server::accept::Accept<I, S> for Deadline<A>
+where
+    A: axum_server::accept::Accept<I, S>,
+    A::Future: Send + 'static,
+    A::Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    A::Service: Send + 'static,
+{
+    type Stream = Idle<A::Stream>;
+    type Service = A::Service;
+    type Future = Pin<Box<dyn Future<Output = io::Result<(Self::Stream, Self::Service)>> + Send>>;
+
+    fn accept(&self, stream: I, service: S) -> Self::Future {
+        let accepting = self.0.accept(stream, service);
+        Box::pin(async move {
+            let (stream, service) = tokio::time::timeout(HANDSHAKE, accepting)
+                .await
+                .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
+            Ok((Idle::new(stream, IDLE), service))
+        })
+    }
+}
+
+/// A stream that fails once nothing has been read or written on it for a while.
+pub struct Idle<S> {
+    inner: S,
+    after: Duration,
+    deadline: Pin<Box<tokio::time::Sleep>>,
+}
+
+impl<S> Idle<S> {
+    fn new(inner: S, after: Duration) -> Self {
+        Idle { inner, after, deadline: Box::pin(tokio::time::sleep(after)) }
+    }
+
+    fn moved(&mut self) {
+        self.deadline.as_mut().reset(tokio::time::Instant::now() + self.after);
+    }
+
+    /// Pending while there is time left; an error once it ran out.
+    fn check(&mut self, cx: &mut Context<'_>) -> Poll<io::Error> {
+        self.deadline.as_mut().poll(cx).map(|()| io::Error::from(io::ErrorKind::TimedOut))
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for Idle<S> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<io::Result<()>> {
+        match Pin::new(&mut self.inner).poll_read(cx, buf) {
+            Poll::Ready(result) => {
+                self.moved();
+                Poll::Ready(result)
+            }
+            Poll::Pending => self.check(cx).map(Err),
+        }
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for Idle<S> {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, data: &[u8]) -> Poll<io::Result<usize>> {
+        match Pin::new(&mut self.inner).poll_write(cx, data) {
+            Poll::Ready(result) => {
+                self.moved();
+                Poll::Ready(result)
+            }
+            Poll::Pending => self.check(cx).map(Err),
+        }
+    }
+
+    fn poll_write_vectored(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        data: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        match Pin::new(&mut self.inner).poll_write_vectored(cx, data) {
+            Poll::Ready(result) => {
+                self.moved();
+                Poll::Ready(result)
+            }
+            Poll::Pending => self.check(cx).map(Err),
+        }
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.inner.is_write_vectored()
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        match Pin::new(&mut self.inner).poll_flush(cx) {
+            Poll::Pending => self.check(cx).map(Err),
+            ready => ready,
+        }
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
 }
 
 /// A TLS configuration from a certificate chain and a key in PEM files.
@@ -165,4 +281,21 @@ fn client_trusting(ca: &Path) -> Result<Arc<rustls::ClientConfig>, String> {
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok(Arc::new(client))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn a_connection_on_which_nothing_moves_is_closed() {
+        let (ours, mut theirs) = tokio::io::duplex(64);
+        let mut idle = Idle::new(ours, Duration::from_millis(50));
+        let mut buffer = [0u8; 8];
+        theirs.write_all(b"hi").await.unwrap();
+        assert_eq!(idle.read(&mut buffer).await.unwrap(), 2, "what arrives in time is read");
+        let error = idle.read(&mut buffer).await.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    }
 }

@@ -7,7 +7,7 @@
  * synced again — the server answers that in one request.
  */
 
-import { emit } from './events';
+import { emit, listen } from './events';
 import { getSettings } from './settings';
 import { call, callJson } from './web/core';
 import { ApiError, currentSession, deviceId, deviceType, request, setSession } from './web/http';
@@ -377,6 +377,9 @@ export const unlock = async (password: string): Promise<Status> => {
 };
 
 export const lock = async () => {
+  // Whatever was copied from the vault goes with it, as soon as the page may touch the clipboard.
+  clearDue = toClear !== null;
+  void clearClipboard();
   await call((core) => core.lock());
   unlocked = false;
   await announce();
@@ -390,6 +393,8 @@ export const logout = async (_id?: string): Promise<Status> => {
     }).catch(() => undefined);
   }
   setSession(null);
+  clearDue = toClear !== null;
+  void clearClipboard();
   await call((core) => core.lock());
   unlocked = false;
   name = null;
@@ -419,6 +424,24 @@ setInterval(() => {
   if (unlocked && autoLockMinutes && Date.now() - lastActive > autoLockMinutes * 60_000)
     void lock();
 }, 15_000);
+
+// A session the server ended — "log out everywhere" on another device, a new master password,
+// an admin — closes an open vault here too, keys and all, instead of leaving it readable in a
+// tab somebody else may be sitting at.
+void listen('session-ended', () => {
+  void call((core) => core.lock()).finally(() => {
+    unlocked = false;
+    name = null;
+    profile = null;
+    void announce();
+  });
+});
+
+// Asked now and then, so a vault nobody syncs notices that too.
+setInterval(() => {
+  if (unlocked && currentSession())
+    void request('/api/accounts/revision-date').catch(() => undefined);
+}, 5 * 60_000);
 
 // ── The vault ─────────────────────────────────────────────
 
@@ -463,18 +486,47 @@ export const revealField = (id: string, field: string) =>
   call((core) => core.reveal(id, field, Date.now() / 1000));
 
 let clearTimer: number | undefined;
+/** What is still to be taken off the clipboard, once the time is up. */
+let toClear: string | null = null;
+let clearDue = false;
+
+/**
+ * Take what was copied off the clipboard, if it is still there. A browser lets a page at the
+ * clipboard only while it has the focus — and when the time is up, the person has usually gone
+ * to another window to paste. So this is tried when the time is up, and again whenever the page
+ * is back in use, until it worked.
+ */
+async function clearClipboard() {
+  if (!toClear || !clearDue || !document.hasFocus()) return;
+  const copied = toClear;
+  try {
+    // Reading may be refused where writing is not: then it is cleared either way.
+    const now = await navigator.clipboard.readText().catch(() => copied);
+    if (now === copied) await navigator.clipboard.writeText('');
+    if (toClear === copied) {
+      toClear = null;
+      clearDue = false;
+    }
+  } catch {
+    // Not now; the next time the page is used.
+  }
+}
+
+for (const name of ['focus', 'pointerdown', 'keydown']) {
+  window.addEventListener(name, () => void clearClipboard(), true);
+}
 
 /** Copy `text`, and take it off the clipboard again after the configured time. */
 async function copy(text: string) {
   await navigator.clipboard.writeText(text);
   window.clearTimeout(clearTimer);
   const seconds = clipboardSeconds ?? getSettings().clipboardClear;
+  toClear = seconds ? text : null;
+  clearDue = false;
   if (seconds) {
     clearTimer = window.setTimeout(() => {
-      void navigator.clipboard
-        .readText()
-        .then((now) => (now === text ? navigator.clipboard.writeText('') : undefined))
-        .catch(() => navigator.clipboard.writeText('').catch(() => undefined));
+      clearDue = true;
+      void clearClipboard();
     }, seconds * 1000);
   }
 }

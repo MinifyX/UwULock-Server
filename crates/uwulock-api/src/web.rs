@@ -75,6 +75,11 @@ fn respond(asset: &'static Asset, request: &HeaderMap) -> Response {
     if asset.content_type.starts_with("text/html") {
         headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONTENT_SECURITY_POLICY));
         headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+        // A page that opened the vault gets no handle on it, to send it somewhere else later.
+        headers.insert(
+            axum::http::HeaderName::from_static("cross-origin-opener-policy"),
+            HeaderValue::from_static("same-origin"),
+        );
     }
     response
 }

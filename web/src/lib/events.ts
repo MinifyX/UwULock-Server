@@ -4,6 +4,7 @@
  *
  * - `vault-status` — the vault's state changed; the payload is the new `Status`.
  * - `vault-changed` — items or folders changed; read them again.
+ * - `session-ended` — the server ended this browser's session; the vault closes.
  */
 
 type Listener = (event: { payload: unknown }) => void;

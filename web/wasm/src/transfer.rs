@@ -7,10 +7,83 @@ use crate::{Failure, Result, Unlocked};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
-use uwulock_core::crypto::EncString;
+use uwulock_core::crypto::{EncString, SymmetricKey};
 use uwulock_core::vault::{Field, FieldKind, Item, ItemKind, LoginUri, PasswordHistory, Secret};
 use uwulock_core::wire::CipherRequest;
 use zeroize::Zeroizing;
+
+// ── Passkeys ──────────────────────────────────────────────
+//
+// A passkey is kept the way Bitwarden keeps it: every field encrypted, like everything else in
+// an item, but `creationDate`. The core carries them through as they are, so what comes in from
+// a file, and what goes out into one, is encrypted and decrypted here.
+
+/// The one field of a passkey that is not encrypted.
+const PLAIN_PASSKEY_FIELD: &str = "creationDate";
+
+fn passkey_fields(passkey: &mut Value) -> Result<&mut Map<String, Value>> {
+    match passkey {
+        Value::Object(map) => Ok(map),
+        _ => Err(Failure::new("invalid", "A passkey in the file is not an object.")),
+    }
+}
+
+/// Passkeys from a file, where they are plain, encrypted under `key` before they go anywhere.
+/// A field that is encrypted under `key` already — a file this vault wrote before — stays.
+pub(crate) fn seal_passkeys(passkeys: &mut [Value], key: &SymmetricKey) -> Result<()> {
+    for passkey in passkeys {
+        for (name, value) in passkey_fields(passkey)?.iter_mut() {
+            if name == PLAIN_PASSKEY_FIELD {
+                continue;
+            }
+            let plain = match value {
+                Value::Null => continue,
+                Value::String(text) => {
+                    if text.parse::<EncString>().is_ok_and(|sealed| sealed.decrypt(key).is_ok()) {
+                        continue;
+                    }
+                    Zeroizing::new(text.clone())
+                }
+                Value::Bool(_) | Value::Number(_) => Zeroizing::new(value.to_string()),
+                _ => return Err(Failure::new("invalid", "A passkey in the file has a field of an unexpected shape.")),
+            };
+            *value = Value::String(EncString::encrypt(plain.as_bytes(), key).to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Passkeys encrypted under `from`, encrypted under `to` instead: for a new user key.
+pub(crate) fn reseal_passkeys(passkeys: &mut [Value], from: &SymmetricKey, to: &SymmetricKey) -> Result<()> {
+    for passkey in passkeys {
+        for (name, value) in passkey_fields(passkey)?.iter_mut() {
+            if name == PLAIN_PASSKEY_FIELD {
+                continue;
+            }
+            if let Value::String(text) = value {
+                let plain = text.parse::<EncString>()?.decrypt(from)?;
+                *text = EncString::encrypt(&plain, to).to_string();
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Passkeys as a file has them: decrypted.
+fn open_passkeys(passkeys: &[Value], key: &SymmetricKey) -> Result<Vec<Value>> {
+    let mut out = passkeys.to_vec();
+    for passkey in &mut out {
+        for (name, value) in passkey_fields(passkey)?.iter_mut() {
+            if name == PLAIN_PASSKEY_FIELD {
+                continue;
+            }
+            if let Value::String(text) = value {
+                *text = text.parse::<EncString>()?.decrypt_string(key)?.to_string();
+            }
+        }
+    }
+    Ok(out)
+}
 
 // ── Export ────────────────────────────────────────────────
 
@@ -38,7 +111,7 @@ fn export_json(unlocked: &Unlocked, items: &[&Item]) -> Result<String> {
     let folders: Vec<Value> = unlocked.vault.folders.iter().map(|f| json!({ "id": f.id, "name": f.name })).collect();
     let items: Vec<Value> = items
         .iter()
-        .map(|item| {
+        .map(|item| -> Result<Value> {
             let mut out = json!({
                 "id": item.id,
                 "organizationId": null,
@@ -68,8 +141,12 @@ fn export_json(unlocked: &Unlocked, items: &[&Item]) -> Result<String> {
             match item.kind {
                 ItemKind::Login => {
                     let login = item.login.as_ref();
+                    let passkeys = match login.and_then(|l| l.passkeys.as_deref()) {
+                        Some(passkeys) => open_passkeys(passkeys, item.key.as_ref().unwrap_or(&unlocked.user_key))?,
+                        None => Vec::new(),
+                    };
                     out["login"] = json!({
-                        "fido2Credentials": login.and_then(|l| l.passkeys.clone()).unwrap_or_default(),
+                        "fido2Credentials": passkeys,
                         "uris": login.map(|l| l.uris.iter().map(|u| json!({ "match": u.match_kind, "uri": u.uri.as_str() })).collect::<Vec<_>>()).unwrap_or_default(),
                         "username": login.map_or(Value::Null, |l| secret(&l.username)),
                         "password": login.map_or(Value::Null, |l| secret(&l.password)),
@@ -104,10 +181,28 @@ fn export_json(unlocked: &Unlocked, items: &[&Item]) -> Result<String> {
                     });
                 }
             }
-            out
+            Ok(out)
         })
-        .collect();
+        .collect::<Result<_>>()?;
     Ok(serde_json::to_string_pretty(&json!({ "encrypted": false, "folders": folders, "items": items }))?)
+}
+
+/// What a spreadsheet would take for a formula at the start of a cell.
+const FORMULA_START: [char; 6] = ['=', '+', '-', '@', '\t', '\r'];
+
+/// A descriptive cell — a name, a note, a folder, a URI — that a spreadsheet would run as a
+/// formula gets a `'` in front, which makes it text. Usernames and passwords stay exactly as
+/// they are: they have to come back the same.
+fn not_a_formula(value: String) -> String {
+    if value.starts_with(FORMULA_START) { format!("'{value}") } else { value }
+}
+
+/// The other way, on import: the `'` [`not_a_formula`] put there goes again.
+fn formula_back(value: String) -> String {
+    match value.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(FORMULA_START) => rest.to_string(),
+        _ => value,
+    }
 }
 
 fn csv_cell(value: &str) -> String {
@@ -127,14 +222,14 @@ fn export_csv(unlocked: &Unlocked, items: &[&Item]) -> String {
             .collect::<Vec<_>>()
             .join("\n");
         let cells = [
-            item.folder_id.as_deref().and_then(|id| folder_name.get(id)).copied().unwrap_or_default().to_string(),
+            not_a_formula(item.folder_id.as_deref().and_then(|id| folder_name.get(id)).copied().unwrap_or_default().to_string()),
             if item.favorite { "1".into() } else { String::new() },
             if item.kind == ItemKind::Login { "login".into() } else { "note".into() },
-            item.name.to_string(),
-            text(&item.notes).unwrap_or_default(),
-            fields,
+            not_a_formula(item.name.to_string()),
+            not_a_formula(text(&item.notes).unwrap_or_default()),
+            not_a_formula(fields),
             u8::from(item.reprompt).to_string(),
-            login.map(|l| l.uris.iter().map(|u| u.uri.to_string()).collect::<Vec<_>>().join(",")).unwrap_or_default(),
+            not_a_formula(login.map(|l| l.uris.iter().map(|u| u.uri.to_string()).collect::<Vec<_>>().join(",")).unwrap_or_default()),
             login.and_then(|l| text(&l.username)).unwrap_or_default(),
             login.and_then(|l| text(&l.password)).unwrap_or_default(),
             login.and_then(|l| text(&l.totp)).unwrap_or_default(),
@@ -176,13 +271,19 @@ fn field_kind(value: Option<&Value>) -> FieldKind {
 }
 
 pub fn import(unlocked: &Unlocked, format: &str, text: &str, now: &str) -> Result<Import> {
-    let (items, folder_names, in_folder) = match format {
+    let (mut items, folder_names, in_folder) = match format {
         "json" => read_json(text, now)?,
         "csv" => read_csv(text)?,
         other => return Err(Failure::new("invalid", format!("unknown import format {other}"))),
     };
     let key = &unlocked.user_key;
     let mut ciphers = Vec::with_capacity(items.len());
+    for item in &mut items {
+        // A new item has no key of its own: what is in it is sealed under the user key.
+        if let Some(passkeys) = item.login.as_mut().and_then(|login| login.passkeys.as_mut()) {
+            seal_passkeys(passkeys, item.key.as_ref().unwrap_or(key))?;
+        }
+    }
     for item in &items {
         item.can_save().map_err(|error| Failure::new("invalid", format!("“{}”: {error}", item.name.as_str())))?;
         ciphers.push(item.seal(key)?);
@@ -363,6 +464,8 @@ fn read_csv(text: &str) -> Result<Read> {
     let column = |name: &str| header.iter().position(|h| h.trim().eq_ignore_ascii_case(name));
     let name_column = column("name").ok_or_else(|| Failure::new("invalid", "This is not a Bitwarden CSV export (no name column)."))?;
     let get = |row: &[String], name: &str| column(name).and_then(|index| row.get(index)).map(|cell| cell.trim()).filter(|cell| !cell.is_empty()).map(str::to_string);
+    // The columns an export guards against spreadsheets with a `'`.
+    let get_text = |row: &[String], name: &str| get(row, name).map(formula_back);
     let mut items = Vec::new();
     let mut folders: Vec<String> = Vec::new();
     let mut in_folder = Vec::new();
@@ -372,15 +475,15 @@ fn read_csv(text: &str) -> Result<Read> {
             _ => ItemKind::Login,
         };
         let mut item = Item::new(kind);
-        item.name = Zeroizing::new(row.get(name_column).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| "?".into()));
-        item.notes = get(&row, "notes").map(Zeroizing::new);
+        item.name = Zeroizing::new(row.get(name_column).cloned().filter(|n| !n.trim().is_empty()).map(formula_back).unwrap_or_else(|| "?".into()));
+        item.notes = get_text(&row, "notes").map(Zeroizing::new);
         item.favorite = get(&row, "favorite").as_deref() == Some("1");
         item.reprompt = get(&row, "reprompt").as_deref() == Some("1");
         if let Some(login) = item.login.as_mut() {
             login.username = get(&row, "login_username").map(Zeroizing::new);
             login.password = get(&row, "login_password").map(Zeroizing::new);
             login.totp = get(&row, "login_totp").map(Zeroizing::new);
-            login.uris = get(&row, "login_uri")
+            login.uris = get_text(&row, "login_uri")
                 .map(|uris| {
                     uris.split(',')
                         .map(str::trim)
@@ -390,7 +493,7 @@ fn read_csv(text: &str) -> Result<Read> {
                 })
                 .unwrap_or_default();
         }
-        item.fields = get(&row, "fields")
+        item.fields = get_text(&row, "fields")
             .map(|fields| {
                 fields
                     .lines()
@@ -406,7 +509,7 @@ fn read_csv(text: &str) -> Result<Read> {
                     .collect()
             })
             .unwrap_or_default();
-        if let Some(folder) = get(&row, "folder") {
+        if let Some(folder) = get_text(&row, "folder") {
             let index = match folders.iter().position(|name| *name == folder) {
                 Some(index) => index,
                 None => {
@@ -466,5 +569,63 @@ mod tests {
         assert_eq!(items[0].password_history[0].password.as_str(), "old");
         assert_eq!(items[1].card.as_ref().unwrap().code.as_ref().unwrap().as_str(), "123");
         assert!(read_json(r#"{"encrypted": true, "items": []}"#, "").is_err());
+    }
+}
+
+#[cfg(test)]
+mod passkey_tests {
+    use super::*;
+
+    #[test]
+    fn a_formula_is_text_in_a_spreadsheet_and_comes_back() {
+        assert_eq!(not_a_formula("=HYPERLINK(\"x\")".into()), "'=HYPERLINK(\"x\")");
+        assert_eq!(not_a_formula("-dash".into()), "'-dash");
+        assert_eq!(not_a_formula("plain".into()), "plain");
+        assert_eq!(formula_back("'=1+1".into()), "=1+1");
+        assert_eq!(formula_back("'quoted".into()), "'quoted", "a quote of its own stays");
+    }
+
+    #[test]
+    fn passkeys_go_in_encrypted_and_come_out_plain() {
+        let key = SymmetricKey::generate();
+        let plain = json!({
+            "credentialId": "cred-1",
+            "keyValue": "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg",
+            "rpId": "example.com",
+            "counter": 0,
+            "discoverable": true,
+            "userHandle": null,
+            "creationDate": "2026-01-01T00:00:00.000Z",
+        });
+        let mut passkeys = vec![plain.clone()];
+        seal_passkeys(&mut passkeys, &key).unwrap();
+        let sealed = &passkeys[0];
+        for name in ["credentialId", "keyValue", "rpId", "counter", "discoverable"] {
+            let text = sealed[name].as_str().unwrap();
+            assert!(text.parse::<EncString>().is_ok(), "{name} is encrypted: {text}");
+            assert!(!text.contains("example.com") && !text.contains("MIGH"));
+        }
+        assert_eq!(sealed["creationDate"], plain["creationDate"]);
+        assert!(sealed["userHandle"].is_null());
+
+        let again = passkeys.clone();
+        seal_passkeys(&mut passkeys, &key).unwrap();
+        assert_eq!(passkeys, again, "what is encrypted under the key already stays");
+
+        let opened = open_passkeys(&passkeys, &key).unwrap();
+        assert_eq!(opened[0]["keyValue"], plain["keyValue"]);
+        assert_eq!(opened[0]["counter"], "0");
+
+        let new_key = SymmetricKey::generate();
+        reseal_passkeys(&mut passkeys, &key, &new_key).unwrap();
+        assert!(open_passkeys(&passkeys, &key).is_err(), "the old key opens nothing any more");
+        assert_eq!(open_passkeys(&passkeys, &new_key).unwrap()[0]["rpId"], "example.com");
+    }
+
+    #[test]
+    fn a_passkey_that_is_not_an_object_is_refused() {
+        let key = SymmetricKey::generate();
+        assert!(seal_passkeys(&mut [json!("nope")], &key).is_err());
+        assert!(seal_passkeys(&mut [json!({"keyValue": {"nested": 1}})], &key).is_err());
     }
 }

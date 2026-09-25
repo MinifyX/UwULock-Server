@@ -267,7 +267,7 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_ACME_EMAIL` | — | Where Let's Encrypt writes about certificates that did not renew. |
 | `UWULOCK_ACME_DIRECTORY` | `letsencrypt` | `letsencrypt`, `staging`, or the https address of another ACME directory. |
 | `UWULOCK_TLS_CERT`, `UWULOCK_TLS_KEY` | `/data/tls/cert.pem`, `/data/tls/key.pem` | The PEM files for `files`. |
-| `UWULOCK_TRUST_FORWARDED` | `off` | Believe `X-Forwarded-For`. Only behind a proxy that sets it. |
+| `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For`. Only behind a proxy that sets it. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
 | `UWULOCK_LANGUAGE` | `de` | Invitations, and new accounts until their owner picks: `de` or `en`. Start value; the admin portal changes it. |
 | `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |

@@ -73,7 +73,16 @@ pub struct Store {
     backend: Arc<Backend>,
     /// Who the requests are from, by user id, and since when that is known: see
     /// [`Store::session_user`].
-    sessions: Arc<RwLock<HashMap<String, (SessionUser, std::time::Instant)>>>,
+    sessions: Arc<RwLock<Sessions>>,
+}
+
+/// Who the requests are from, in memory.
+#[derive(Default)]
+pub(crate) struct Sessions {
+    pub(crate) by_user: HashMap<String, (SessionUser, std::time::Instant)>,
+    /// Counts up whenever something is forgotten: a lookup that read the database before that
+    /// does not put what it read into memory afterwards, where it would outlive a new stamp.
+    pub(crate) forgotten: u64,
 }
 
 enum Backend {

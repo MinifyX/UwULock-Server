@@ -215,6 +215,11 @@ fn apply(item: &mut Item, draft: Draft, now: &str) -> Result<()> {
 /// The draft over the item `id` (or a new one), encrypted for the server.
 pub fn seal(unlocked: &Unlocked, id: &str, draft: Draft, now: &str) -> Result<CipherRequest> {
     let mut item = if id.is_empty() { Item::new(draft.kind) } else { find(unlocked, id)?.clone() };
+    // An item behind the master password re-prompt is not changed before the prompt is answered:
+    // the editor never had its values, and a save would turn the prompt off and keep them.
+    if !id.is_empty() && item.reprompt && !unlocked.reprompt_ok.contains(id) {
+        return Err(Failure::new("refused", "Enter your master password to open this item first."));
+    }
     if item.kind != draft.kind {
         return Err(Failure::new("invalid", "An item keeps its kind."));
     }

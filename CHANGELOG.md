@@ -3,6 +3,48 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.1.0-beta.2
+
+**A security release.** A review of the whole server, the web vault and the scripts, and what
+it found, fixed. Update with `sudo bash update.sh`. One setting changes: `UWULOCK_TLS` has to be
+in `.env` now (`install.sh` has always written it); without it, Compose refuses to start rather
+than serve plain HTTP on port 443.
+
+- **Imported passkeys are encrypted.** A Bitwarden JSON export carries passkeys in plain text,
+  and an import passed them on as they were, so their private keys reached the server
+  unencrypted. They are encrypted in the browser now, like everything else in an item; an export
+  decrypts them again, and a new user key encrypts them anew. Whoever imported passkeys before:
+  delete those items and import the file again.
+- **Rate limits that hold.** Behind a proxy the address it added counts, not the one a client
+  claims in `X-Forwarded-For`. An IPv6 address counts by its /64. The second step of a login and
+  a wrong master password in a logged-in session are limited per account too, and every mail
+  somebody can make the server send (a hint, an invitation again, a code) per address.
+- **Connections that send nothing are closed**: ten seconds for the TLS handshake, and a
+  connection on which nothing moves for 90 seconds is closed, so idle sockets cannot use up the
+  server's file descriptors.
+- **Less for an attacker to learn or leave behind**: the password hint answers the same for every
+  address; a login's username is at most 254 characters, and no log line can be longer than
+  4 KiB or make a second, made-up one; SMTP errors go to the log, not to whoever asked; the
+  Argon2 hashes run a few at a time, so many logins at once cannot take all memory.
+- **The mail password stays with its server.** Pointing the settings at another mail server asks
+  for the password again, and a password is never sent without TLS to a server that is not on
+  this machine or its network.
+- **The web vault** closes itself, keys and all, when the server ends its session (logged out
+  everywhere, a new password, an admin); the admin portal locks the vault right after login; the
+  clipboard is cleared once the page may do it, and on lock; an item behind the master password
+  prompt cannot be saved over before the prompt; a CSV export does not start a cell with a
+  spreadsheet formula; the master password is wiped from the WebAssembly memory; the notes field
+  sends nothing to a spell checker; invitation tokens stay out of request URLs.
+- **Headers**: `Strict-Transport-Security` whenever the server is reached over https, and
+  `Cross-Origin-Opener-Policy` for the web vault.
+- **install.sh and update.sh**: the install directory and everything above it have to be
+  root's, so nobody else can swap what runs as root; a version is checked before it goes into
+  a download address; `.env` is made readable by root only.
+- **Releases** are built without caches from earlier CI runs, no CI job keeps its git
+  credentials, and secrets stay out of the Docker build context.
+- A session in memory no longer outlives a new security stamp by a few seconds, and a key
+  rotation keeps every item in one of the account's own folders.
+
 ## 0.1.0-beta.1
 
 **A vault for one person, with a web vault and an admin portal.** The official Bitwarden apps,

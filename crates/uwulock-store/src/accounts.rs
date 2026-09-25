@@ -319,11 +319,15 @@ impl Store {
 
     /// Who a request is from, from memory. Nothing for an account that is gone.
     pub async fn session_user(&self, id: &str) -> Result<Option<SessionUser>> {
-        if let Some((found, since)) = self.sessions.read().get(id)
-            && since.elapsed() < SESSION_MEMORY
-        {
-            return Ok(Some(found.clone()));
-        }
+        let forgotten = {
+            let sessions = self.sessions.read();
+            if let Some((found, since)) = sessions.by_user.get(id)
+                && since.elapsed() < SESSION_MEMORY
+            {
+                return Ok(Some(found.clone()));
+            }
+            sessions.forgotten
+        };
         let owned = id.to_string();
         let loaded = self
             .sqlite_read(move |conn| {
@@ -336,14 +340,19 @@ impl Store {
             })
             .await?;
         if let Some(session) = &loaded {
-            self.sessions.write().insert(id.to_string(), (session.clone(), std::time::Instant::now()));
+            let mut sessions = self.sessions.write();
+            if sessions.forgotten == forgotten {
+                sessions.by_user.insert(id.to_string(), (session.clone(), std::time::Instant::now()));
+            }
         }
         Ok(loaded)
     }
 
     /// Forget what memory holds for `user_id`; the next request reads it again.
     pub(crate) fn forget_session_of(&self, user_id: &str) {
-        self.sessions.write().remove(user_id);
+        let mut sessions = self.sessions.write();
+        sessions.forgotten += 1;
+        sessions.by_user.remove(user_id);
     }
 
     /// Change a user in one step: `change` gets the user as the database has it now and says

@@ -119,10 +119,11 @@ pub fn kdf_from(text: &str) -> Result<Kdf> {
 
 /// The master key from the password, kept for [`unlock`]; the hash the server gets.
 #[wasm_bindgen(js_name = deriveLogin)]
-pub fn derive_login(email: &str, password: &str, kdf: &str) -> Result<String, JsValue> {
+pub fn derive_login(email: &str, password: String, kdf: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
     let kdf = kdf_from(kdf)?;
-    let master = crypto::master_key(password, email, kdf).map_err(Failure::from)?;
-    let hash = crypto::master_password_hash(&master, password);
+    let master = crypto::master_key(&password, email, kdf).map_err(Failure::from)?;
+    let hash = crypto::master_password_hash(&master, &password);
     PENDING.with(|cell| *cell.borrow_mut() = Some(master));
     Ok(hash)
 }
@@ -224,10 +225,15 @@ pub fn totp(id: &str, now: f64) -> Result<String, JsValue> {
 }
 
 /// The master password again, for an item that asks for it before showing anything.
+///
+/// Every password comes in as a `String`, not a `&str`: wasm-bindgen hands a `String` over, so
+/// it is wiped here when it drops, where the copy behind a `&str` would be freed as it is and
+/// linger in the module's memory.
 #[wasm_bindgen(js_name = verifyReprompt)]
-pub fn verify_reprompt(id: &str, password: &str) -> Result<(), JsValue> {
+pub fn verify_reprompt(id: &str, password: String) -> Result<(), JsValue> {
+    let password = Zeroizing::new(password);
     with_unlocked(|unlocked| {
-        account::check_password(unlocked, password)?;
+        account::check_password(unlocked, &password)?;
         unlocked.reprompt_ok.insert(id.to_string());
         Ok(())
     })?;
@@ -258,8 +264,9 @@ pub fn generate(options: &str) -> Result<String, JsValue> {
 
 /// How strong a password is, in bits, for the strength meter.
 #[wasm_bindgen(js_name = entropyBits)]
-pub fn entropy_bits(password: &str) -> u32 {
-    uwulock_core::generator::entropy_bits(password)
+pub fn entropy_bits(password: String) -> u32 {
+    let password = Zeroizing::new(password);
+    uwulock_core::generator::entropy_bits(&password)
 }
 
 // ── The account ───────────────────────────────────────────
@@ -268,41 +275,47 @@ pub fn entropy_bits(password: &str) -> u32 {
 /// for the RSA key pair the page made with WebCrypto — its private key wrapped under the user
 /// key. `private_key` is PKCS#8 DER, base64.
 #[wasm_bindgen(js_name = newAccount)]
-pub fn new_account(email: &str, password: &str, kdf: &str, private_key: &str) -> Result<String, JsValue> {
-    Ok(json(&account::new_account(email, password, &kdf_from(kdf)?, private_key)?)?)
+pub fn new_account(email: &str, password: String, kdf: &str, private_key: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    Ok(json(&account::new_account(email, &password, &kdf_from(kdf)?, private_key)?)?)
 }
 
 /// For changing the master password: the current hash, and the new one with the user key wrapped
 /// under the new master key.
 #[wasm_bindgen(js_name = changePassword)]
-pub fn change_password(current: &str, new: &str) -> Result<String, JsValue> {
-    Ok(with_unlocked(|unlocked| json(&account::rewrap(unlocked, current, new, None, None)?))?)
+pub fn change_password(current: String, new: String) -> Result<String, JsValue> {
+    let (current, new) = (Zeroizing::new(current), Zeroizing::new(new));
+    Ok(with_unlocked(|unlocked| json(&account::rewrap(unlocked, &current, &new, None, None)?))?)
 }
 
 /// For changing the KDF.
 #[wasm_bindgen(js_name = changeKdf)]
-pub fn change_kdf(password: &str, kdf: &str) -> Result<String, JsValue> {
+pub fn change_kdf(password: String, kdf: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
     let kdf = kdf_from(kdf)?;
-    Ok(with_unlocked(|unlocked| json(&account::rewrap(unlocked, password, password, Some(kdf), None)?))?)
+    Ok(with_unlocked(|unlocked| json(&account::rewrap(unlocked, &password, &password, Some(kdf), None)?))?)
 }
 
 /// For moving to another address, which is the salt of the master key.
 #[wasm_bindgen(js_name = changeEmail)]
-pub fn change_email(password: &str, email: &str) -> Result<String, JsValue> {
-    Ok(with_unlocked(|unlocked| json(&account::rewrap(unlocked, password, password, None, Some(email))?))?)
+pub fn change_email(password: String, email: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    Ok(with_unlocked(|unlocked| json(&account::rewrap(unlocked, &password, &password, None, Some(email))?))?)
 }
 
 /// The master password hash, checked against the unlocked key first: for everything the
 /// server asks the password for.
 #[wasm_bindgen(js_name = passwordHash)]
-pub fn password_hash(password: &str) -> Result<String, JsValue> {
-    Ok(with_unlocked(|unlocked| account::check_password(unlocked, password))?)
+pub fn password_hash(password: String) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    Ok(with_unlocked(|unlocked| account::check_password(unlocked, &password))?)
 }
 
 /// Everything for a new user key: the body of `rotate-user-account-keys`.
 #[wasm_bindgen]
-pub fn rotate(password: &str, public_key: &str) -> Result<String, JsValue> {
-    Ok(with_unlocked(|unlocked| json(&account::rotate(unlocked, password, public_key)?))?)
+pub fn rotate(password: String, public_key: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    Ok(with_unlocked(|unlocked| json(&account::rotate(unlocked, &password, public_key)?))?)
 }
 
 // ── Import and export ─────────────────────────────────────

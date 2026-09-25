@@ -91,9 +91,29 @@ impl<S: Subscriber> Layer<S> for LogLayer {
             time: uwulock_store::clock::now(),
             level,
             target: event.metadata().target().to_string(),
-            message: visitor.0,
+            message: tidy(visitor.0),
         });
     }
+}
+
+/// The longest a line is kept: the buffer holds thousands, and a request can put a lot into one.
+const LINE_MAX: usize = 4096;
+
+/// One line, however much or whatever somebody put into it: a line break or an escape sequence
+/// from a request does not make a second, made-up line in the admin portal.
+fn tidy(mut message: String) -> String {
+    if message.chars().any(char::is_control) {
+        message = message.chars().map(|c| if c.is_control() { '\u{fffd}' } else { c }).collect();
+    }
+    if message.len() > LINE_MAX {
+        let mut end = LINE_MAX;
+        while !message.is_char_boundary(end) {
+            end -= 1;
+        }
+        message.truncate(end);
+        message.push('…');
+    }
+    message
 }
 
 /// The message first, then `key=value` for every other field.
@@ -151,5 +171,18 @@ mod tests {
         assert_eq!(warnings.iter().map(|line| line.level).collect::<Vec<_>>(), ["warn", "error"]);
         assert_eq!(warnings[1].message, "broken code=5");
         assert!(buffer.lines(all[2].seq, "trace", 100).is_empty(), "nothing newer");
+    }
+
+    #[test]
+    fn a_line_stays_one_line_and_short() {
+        let buffer = LogBuffer::new(3);
+        let subscriber = tracing_subscriber::registry().with(buffer.layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(email = %"x\n2026-01-01 INFO made up", "login refused");
+            tracing::info!(email = %"y".repeat(10_000), "login refused");
+        });
+        let lines = buffer.lines(0, "trace", 100);
+        assert!(!lines[0].message.contains('\n'), "{}", lines[0].message);
+        assert!(lines[1].message.len() <= LINE_MAX + '…'.len_utf8());
     }
 }

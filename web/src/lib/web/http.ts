@@ -7,6 +7,8 @@
  * once, on the next request that needs it.
  */
 
+import { emit } from '../events';
+
 export type Session = {
   email: string;
   accessToken: string;
@@ -137,6 +139,8 @@ async function refresh(): Promise<void> {
     const body = (await parse(response)) as Record<string, unknown> | null;
     if (!response.ok || !body) {
       setSession(null);
+      // Logged out elsewhere, by a new password, or by an admin: whatever is open here closes.
+      emit('session-ended');
       throw new ApiError(401, 'The session has ended. Log in again.', body);
     }
     setSession({

@@ -338,6 +338,8 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
   const [loading, setLoading] = useState(Boolean(summary));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Behind the master password re-prompt: nothing to edit, and nothing to save over it.
+  const [locked, setLocked] = useState(false);
   const [generator, setGenerator] = useState<null | 'password'>(null);
   const [nextKey, setNextKey] = useState(1000);
   const id = summary?.id ?? null;
@@ -350,6 +352,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
         if (stopped) return;
         if (detail.locked) {
           setError(t('Dieser Eintrag fragt zuerst nach deinem Master-Passwort.'));
+          setLocked(true);
           return;
         }
         const next = formOf(summary, detail);
@@ -414,7 +417,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
               type="submit"
               form="item-editor"
               className="primary"
-              disabled={busy || loading || !form.name.trim()}
+              disabled={busy || loading || locked || !form.name.trim()}
             >
               {busy ? t('Speichert …') : t('Speichern')}
             </button>
@@ -713,6 +716,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
             <Field label={t('Notizen')}>
               <textarea
                 rows={kind === 'note' ? 8 : 3}
+                spellCheck={false}
                 value={form.notes}
                 onChange={(e) => set({ notes: e.target.value })}
               />
