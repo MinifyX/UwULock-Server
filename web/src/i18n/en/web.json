@@ -286,5 +286,7 @@
   "Überall abmelden?": "Log out everywhere?",
   "Übersicht": "Overview",
   "„Auf diesem Gerät merken“ lässt den zweiten Schritt 30 Tage lang weg.": "“Remember this device” skips the second step for 30 days.",
-  "„System“ folgt der Einstellung des Systems.": "“System” follows the system's setting."
+  "„System“ folgt der Einstellung des Systems.": "“System” follows the system's setting.",
+  "Backup herunterladen?": "Download the backup?",
+  "Ein Backup ist die ganze Datenbank: jeder Tresor, verschlüsselt, und die Schlüssel des Servers. Bewahre es so sicher auf wie deine Passwörter.": "A backup is the whole database: every vault, encrypted, and the server's own keys. Keep it as safe as your passwords."
 }

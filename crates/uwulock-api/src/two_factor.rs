@@ -8,7 +8,7 @@
 use crate::accounts::check_password;
 use crate::auth::{self, ClientIp, Session, client_version};
 use crate::errors::{ApiError, ApiResult};
-use crate::identity::{TokenForm, send_later};
+use crate::identity::{TokenForm, mail_allowed, mail_failed, send_later};
 use crate::{AppState, totp};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
@@ -130,63 +130,83 @@ pub(crate) async fn check_login(
         return Err(required());
     };
     let provider = provider.unwrap_or(usable[0].kind);
-    match provider {
-        REMEMBER => {
-            let remembered = device.is_some_and(|device| {
-                device
-                    .remember_hash
-                    .as_deref()
-                    .is_some_and(|hash| auth::constant_time_eq(hash, &auth::sha256(code.as_bytes())))
-                    && device.remember_expires.as_deref().is_some_and(|expires| expires > clock::now().as_str())
-            });
-            if !remembered {
-                return Err(required());
-            }
-            // The device stays remembered; no new token.
-            return Ok(None);
-        }
-        RECOVERY => {
-            let given = code.replace(' ', "").to_lowercase();
-            let right = user.recovery_code.as_ref().is_some_and(|stored| {
-                auth::constant_time_eq(stored.replace(' ', "").to_lowercase().as_bytes(), given.as_bytes())
-            });
-            if !right {
-                return Err(ApiError::bad("Recovery code is incorrect. Try again."));
-            }
-            state.store.remove_two_factor(&user.id, None).await?;
-            let event = Event {
-                kind: "two-factor-recovered".into(),
-                user_id: Some(user.id.clone()),
-                email: Some(user.email.clone()),
-                ip: Some(ip.to_string()),
-                ..Event::default()
-            };
-            let _ = state.store.log_event(event).await;
-            if state.mailer.enabled() {
-                send_later(state, &user.email, Mail::RecoveryUsed, Language::from_code(&user.language));
-            }
-            return Ok(None);
-        }
-        AUTHENTICATOR if usable.iter().any(|factor| factor.kind == AUTHENTICATOR) => {
-            let factor = factors.iter().find(|factor| factor.kind == AUTHENTICATOR).expect("listed as usable");
-            let secret = totp::base32_decode(&factor.data).unwrap_or_default();
-            let step = totp::matching_step(&secret, code, auth::now_seconds())
-                .ok_or_else(|| ApiError::bad("The code from the authenticator app is wrong. Try again."))?;
-            if !state.store.use_totp_step(&user.id, step).await? {
-                return Err(ApiError::bad("This code was used already. Wait for the next one."));
-            }
-        }
-        EMAIL if usable.iter().any(|factor| factor.kind == EMAIL) => {
-            match state.store.take_code(&user.id, LOGIN_CODE, auth::sha256(code.as_bytes())).await? {
-                Ok(_) => {}
-                Err(CodeRefusal::Wrong) => return Err(ApiError::bad("The code from the mail is wrong. Try again.")),
-                Err(CodeRefusal::Missing | CodeRefusal::TooManyAttempts) => {
-                    return Err(ApiError::bad("There is no valid code any more. Send a new one."));
+    // Whoever gets here knows the password. What stops them guessing six digits from many
+    // addresses is this limit per account.
+    if !state.limits.two_factor.allows(&user.id) {
+        return Err(ApiError::too_many("Too many wrong codes. Wait a few minutes and try again."));
+    }
+    // Whether the code was right, and a device may be remembered for it.
+    let checked: ApiResult<bool> = async {
+        match provider {
+            REMEMBER => {
+                let remembered = device.is_some_and(|device| {
+                    device
+                        .remember_hash
+                        .as_deref()
+                        .is_some_and(|hash| auth::constant_time_eq(hash, &auth::sha256(code.as_bytes())))
+                        && device.remember_expires.as_deref().is_some_and(|expires| expires > clock::now().as_str())
+                });
+                if !remembered {
+                    return Err(required());
                 }
-                Err(CodeRefusal::Expired) => return Err(ApiError::bad("The code has expired. Send a new one.")),
+                // The device stays remembered; no new token.
+                return Ok(false);
             }
+            RECOVERY => {
+                let given = code.replace(' ', "").to_lowercase();
+                let right = user.recovery_code.as_ref().is_some_and(|stored| {
+                    auth::constant_time_eq(stored.replace(' ', "").to_lowercase().as_bytes(), given.as_bytes())
+                });
+                if !right {
+                    return Err(ApiError::bad("Recovery code is incorrect. Try again."));
+                }
+                state.store.remove_two_factor(&user.id, None).await?;
+                let event = Event {
+                    kind: "two-factor-recovered".into(),
+                    user_id: Some(user.id.clone()),
+                    email: Some(user.email.clone()),
+                    ip: Some(ip.to_string()),
+                    ..Event::default()
+                };
+                let _ = state.store.log_event(event).await;
+                if state.mailer.enabled() {
+                    send_later(state, &user.email, Mail::RecoveryUsed, Language::from_code(&user.language));
+                }
+                return Ok(false);
+            }
+            AUTHENTICATOR if usable.iter().any(|factor| factor.kind == AUTHENTICATOR) => {
+                let factor = factors.iter().find(|factor| factor.kind == AUTHENTICATOR).expect("listed as usable");
+                let secret = totp::base32_decode(&factor.data).unwrap_or_default();
+                let step = totp::matching_step(&secret, code, auth::now_seconds())
+                    .ok_or_else(|| ApiError::bad("The code from the authenticator app is wrong. Try again."))?;
+                if !state.store.use_totp_step(&user.id, step).await? {
+                    return Err(ApiError::bad("This code was used already. Wait for the next one."));
+                }
+            }
+            EMAIL if usable.iter().any(|factor| factor.kind == EMAIL) => {
+                match state.store.take_code(&user.id, LOGIN_CODE, auth::sha256(code.as_bytes())).await? {
+                    Ok(_) => {}
+                    Err(CodeRefusal::Wrong) => {
+                        return Err(ApiError::bad("The code from the mail is wrong. Try again."));
+                    }
+                    Err(CodeRefusal::Missing | CodeRefusal::TooManyAttempts) => {
+                        return Err(ApiError::bad("There is no valid code any more. Send a new one."));
+                    }
+                    Err(CodeRefusal::Expired) => return Err(ApiError::bad("The code has expired. Send a new one.")),
+                }
+            }
+            _ => return Err(required()),
         }
-        _ => return Err(required()),
+        Ok(true)
+    }
+    .await;
+    match checked {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(error) => {
+            state.limits.two_factor.take(user.id.clone());
+            return Err(error);
+        }
     }
     let remember = form.get("twofactorremember") == Some("1") && state.settings().remember_two_factor;
     Ok(remember.then(|| auth::random_token(32)))
@@ -195,6 +215,7 @@ pub(crate) async fn check_login(
 /// A new login code, to the address two-step login by mail goes to.
 async fn send_code(state: &AppState, user: &User, data: &str) -> ApiResult<()> {
     let address = code_address(data).ok_or_else(|| ApiError::internal("two-step login by mail has no address"))?;
+    mail_allowed(state, &address, None)?;
     let code = auth::random_code(6);
     state
         .store
@@ -408,9 +429,10 @@ async fn send_setup_code(
         return Err(ApiError::bad("This server cannot send mail, so two-step login by mail is not available."));
     }
     let address = request.email.trim().to_string();
-    if !address.contains('@') {
+    if !address.contains('@') || address.chars().any(char::is_control) {
         return Err(ApiError::bad("That is not an email address."));
     }
+    mail_allowed(&state, &address, Some(&session.user.id))?;
     let code = auth::random_code(6);
     state
         .store
@@ -426,7 +448,7 @@ async fn send_setup_code(
         .mailer
         .send(&address, &Mail::TwoFactorSetup { code }, Language::from_code(&session.user.language))
         .await
-        .map_err(|error| ApiError::bad(format!("The mail did not go out: {error}")))?;
+        .map_err(mail_failed)?;
     Ok(StatusCode::OK)
 }
 

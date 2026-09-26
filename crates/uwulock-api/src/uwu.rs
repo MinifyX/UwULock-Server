@@ -4,9 +4,9 @@
 use crate::AppState;
 use crate::auth::{ClientIp, Session, device_type_name};
 use crate::errors::{ApiError, ApiResult};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::routing::{delete, get, put};
+use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -16,7 +16,7 @@ use uwulock_store::clock;
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/uwu/v1/info", get(info))
-        .route("/uwu/v1/invitation", get(invitation))
+        .route("/uwu/v1/invitation", post(invitation))
         .route("/uwu/v1/account", get(account))
         .route("/uwu/v1/account/language", put(set_language))
         .route("/uwu/v1/devices", get(devices))
@@ -40,11 +40,12 @@ struct InvitationQuery {
 }
 
 /// Whether an invitation link still works, and for which address: the web vault asks before it
-/// shows the form to register.
+/// shows the form to register. The token comes in the body, not the address, where a proxy's
+/// access log would keep it.
 async fn invitation(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
-    Query(query): Query<InvitationQuery>,
+    Json(query): Json<InvitationQuery>,
 ) -> ApiResult<Json<Value>> {
     if !state.limits.anonymous.check(ip) {
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
@@ -135,9 +136,10 @@ mod tests {
     async fn an_invitation_link_says_who_it_is_for() {
         let server = TestServer::new().await;
         let token = server.invite("nyu@example.com", false).await;
-        let found = json(server.get(&format!("/uwu/v1/invitation?token={token}")).await).await;
+        let found = json(server.call("POST", "/uwu/v1/invitation", None, json!({ "token": token })).await).await;
         assert_eq!(found["email"], "nyu@example.com");
-        assert_eq!(server.get("/uwu/v1/invitation?token=nope").await.status(), StatusCode::NOT_FOUND);
+        let wrong = server.call("POST", "/uwu/v1/invitation", None, json!({ "token": "nope" })).await;
+        assert_eq!(wrong.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

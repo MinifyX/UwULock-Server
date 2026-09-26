@@ -141,7 +141,9 @@ impl Store {
         })
         .await?;
         // Revisions and logged-in devices may have changed for anyone.
-        self.sessions.write().clear();
+        let mut sessions = self.sessions.write();
+        sessions.by_user.clear();
+        sessions.forgotten += 1;
         Ok(())
     }
 

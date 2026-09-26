@@ -76,7 +76,7 @@ export const setLanguage = (language: 'de' | 'en') =>
 export type Invitation = { email: string; expires: string; language: string };
 
 export const invitation = (token: string) =>
-  request<Invitation>(`/uwu/v1/invitation?token=${encodeURIComponent(token)}`, { auth: false });
+  request<Invitation>('/uwu/v1/invitation', { method: 'POST', body: { token }, auth: false });
 
 /**
  * A new account from an invitation: an RSA key pair from the browser's own crypto, the user key

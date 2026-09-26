@@ -81,7 +81,11 @@ async fn password_login(
     let device_name = form.require("devicename", "device_name")?;
     let device_type: i64 = form.require("devicetype", "device_type")?.trim().parse().unwrap_or(14);
     if scope != "api offline_access" {
-        return Err(ApiError::bad(format!("Scope ({scope}) not supported")));
+        return Err(ApiError::bad("Scope not supported"));
+    }
+    // An address is never this long; what is, is not kept in the event log either.
+    if username.len() > MAX_EMAIL || device_name.len() > 256 || device_id.len() > 256 {
+        return Err(ApiError::bad("Username or password is incorrect. Try again"));
     }
     if !state.limits.login.check(ip) {
         return Err(ApiError::too_many("Too many login requests. Wait a minute and try again."));
@@ -237,7 +241,7 @@ async fn log(
     let event = Event {
         kind: kind.into(),
         user_id: user.map(|user| user.id.clone()),
-        email: Some(normalize_email(email)),
+        email: Some(normalize_email(email).chars().take(MAX_EMAIL).collect()),
         ip: Some(ip.to_string()),
         device_type: Some(device_type),
         detail: Some(detail.chars().take(200).collect()),
@@ -247,8 +251,33 @@ async fn log(
         tracing::warn!(%error, "could not write an event");
     }
     if kind != "login" {
-        tracing::info!(%ip, email = %normalize_email(email), kind, detail, "login refused");
+        tracing::info!(%ip, email = ?normalize_email(email), kind, detail, "login refused");
     }
+}
+
+/// The longest address anything here takes: RFC 5321 allows 254 characters.
+pub(crate) const MAX_EMAIL: usize = 254;
+
+/// Refused when `to` has had enough mails from this server lately that somebody else asked for
+/// — or `user`, if a logged-in account asks, has sent enough of them.
+pub(crate) fn mail_allowed(state: &AppState, to: &str, user: Option<&str>) -> ApiResult<()> {
+    if to.len() > MAX_EMAIL {
+        return Err(ApiError::bad("That is not an email address."));
+    }
+    let to_ok = state.limits.mail.take(format!("to:{}", normalize_email(to)));
+    let user_ok = user.is_none_or(|user| state.limits.mail.take(format!("from:{user}")));
+    if to_ok && user_ok {
+        Ok(())
+    } else {
+        Err(ApiError::too_many("Too many mails to this address. Wait a few minutes and try again."))
+    }
+}
+
+/// A mail that did not go out, for a request that asked for it: what went wrong goes to the log,
+/// where an admin sees it, and not to whoever asked.
+pub(crate) fn mail_failed(error: impl std::fmt::Display) -> ApiError {
+    tracing::warn!(%error, "a mail did not go out");
+    ApiError::bad("The mail did not go out. Try again later, or ask an admin.")
 }
 
 /// Send a mail without making the request wait for the mail server.
@@ -537,6 +566,8 @@ async fn send_verification_email(
     if !state.mailer.enabled() {
         return Err(ApiError::bad(BY_INVITATION));
     }
+    // Every new mail makes the link before it useless: nobody may do that over and over.
+    mail_allowed(&state, &email, None)?;
     crate::admin::invite(&state, &email, invitation.admin, invitation.invited_by.clone()).await?;
     Ok(StatusCode::NO_CONTENT.into_response())
 }

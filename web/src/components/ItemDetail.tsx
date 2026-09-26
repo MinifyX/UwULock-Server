@@ -468,7 +468,11 @@ export function ItemDetail({
               >
                 <Icon name="trash" size={15} />
               </button>
-              <button className="primary" disabled={busy || summary.broken} onClick={onEdit}>
+              <button
+                className="primary"
+                disabled={busy || summary.broken || !!d?.locked}
+                onClick={onEdit}
+              >
                 <Icon name="pencil" size={15} />
                 {t('Bearbeiten')}
               </button>

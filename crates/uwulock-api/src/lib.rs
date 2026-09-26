@@ -143,11 +143,15 @@ const VAULT_BODY_LIMIT: usize = 64 * 1024 * 1024;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub fn router(state: AppState) -> Router {
+    // Served over https (by this server or a proxy in front), the browser is told to never try
+    // plain http for it again: a first visit by http is where a network could slip in a vault
+    // page of its own that reads the master password.
+    let https = state.config.public.starts_with("https://");
     let whole_vault = Router::new()
         .merge(ciphers::vault_routes())
         .merge(accounts::vault_routes())
         .layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT));
-    Router::new()
+    let router = Router::new()
         .merge(health::routes())
         .merge(identity::routes())
         .merge(accounts::routes())
@@ -172,7 +176,8 @@ pub fn router(state: AppState) -> Router {
         .layer(header("x-robots-tag", "noindex, nofollow"))
         .layer(header("x-frame-options", "SAMEORIGIN"))
         .layer(header("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"))
-        .layer(header("cache-control", "no-store"))
+        .layer(header("cache-control", "no-store"));
+    if https { router.layer(header("strict-transport-security", "max-age=63072000")) } else { router }
 }
 
 fn header(name: &'static str, value: &'static str) -> SetResponseHeaderLayer<HeaderValue> {

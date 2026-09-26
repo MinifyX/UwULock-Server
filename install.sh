@@ -295,8 +295,53 @@ valid_email() { [[ "$1" =~ ^[a-zA-Z0-9._+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; }
 if [ -n "$admin" ]; then
   valid_email "$admin" || die "--admin wants an address like you@example.com, not $admin"
 fi
-if $from_checkout && [ -n "$(find "$here" -maxdepth 0 -perm -0002 2>/dev/null)" ]; then
-  die "--from-checkout, but anybody may write to $here; nothing from there is installed as root"
+
+# What is in the directory runs as root: Compose starts whatever compose.yaml and .env say. So it
+# has to belong to root, or to the admin who ran sudo, and nobody else may write to it — nor to a
+# directory above it, where somebody could swap it out. A directory anybody may write to is fine
+# above it only with the sticky bit, which keeps them from renaming what is not theirs (/tmp, say).
+# The same rules as update.sh's.
+admin_uid="${SUDO_UID:-0}"
+owned_right() {
+  local owner mode
+  owner=$(stat -c %u "$1" 2>/dev/null) && mode=$(stat -c %a "$1" 2>/dev/null) || return 1
+  { [ "$owner" = 0 ] || [ "$owner" = "$admin_uid" ]; } || return 1
+  if [ $((8#$mode & 8#022)) -ne 0 ]; then
+    [ "${2:-}" = above ] || return 1
+    [ $((8#$mode & 8#1000)) -ne 0 ] || return 1
+  fi
+}
+# $1 and every directory above it.
+trusted_path() {
+  local above="$1"
+  while [ "$above" != / ]; do
+    above=$(dirname "$above")
+    owned_right "$above" above || die "$above may be changed by someone other than root, and what is in $1 runs as root. Install into a directory only root may change, like /opt/uwulock."
+  done
+}
+case "$dir" in
+  /*) ;;
+  *) dir="$PWD/$dir" ;;
+esac
+dir=$(realpath -m -- "$dir") || die "there is no way to $dir"
+[ "$dir" != / ] || die "--dir / is not a directory to install into"
+if [ -L "$dir" ]; then
+  die "$dir is a link; install into the directory itself"
+elif [ -e "$dir" ]; then
+  [ -d "$dir" ] || die "$dir is not a directory"
+  owned_right "$dir" || die "$dir may be changed by someone other than root. Make it root's and writable only by root: sudo chown root: $dir && sudo chmod go-w $dir"
+fi
+trusted_path "$dir"
+if $from_checkout; then
+  # What comes from the checkout is installed as root, so the same rules hold for it.
+  owned_right "$here" || die "--from-checkout, but somebody other than root or you may change $here"
+  for name in compose.yaml .env.example update.sh; do
+    [ ! -e "$here/$name" ] && continue
+    if [ -L "$here/$name" ] || ! owned_right "$here/$name"; then
+      die "--from-checkout, but somebody other than root or you may change $here/$name"
+    fi
+  done
+  trusted_path "$here"
 fi
 
 if $ask && ! have_tty; then
@@ -539,6 +584,8 @@ files_from=""
 $from_checkout || files_from=$(release_base "$version")
 step "setting up $dir"
 install -d -m 0755 "$dir"
+[ -L "$dir" ] && die "$dir became a link while installing"
+owned_right "$dir" || die "$dir may be changed by someone other than root"
 take compose.yaml "$dir/compose.yaml"
 take .env.example "$dir/.env.example" env.example
 take update.sh "$dir/update.sh"

@@ -32,7 +32,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/admin/events", get(events))
         .route("/uwu/v1/admin/logs", get(logs))
         .route("/uwu/v1/admin/backups", get(list_backups).post(create_backup))
-        .route("/uwu/v1/admin/backups/{name}", get(download_backup))
+        .route("/uwu/v1/admin/backups/{name}", post(download_backup))
 }
 
 async fn record(state: &AppState, admin: &Admin, detail: String) {
@@ -349,12 +349,21 @@ async fn put_settings(
     Json(mut new): Json<Settings>,
 ) -> ApiResult<Json<Value>> {
     let current = state.settings();
-    // A password left out means: keep the one there is.
+    // A password left out means: keep the one there is — for the same account on the same mail
+    // server only. Otherwise whoever holds an admin session could point the settings at a server
+    // of their own, and the stored password would log in there.
     if let (Some(smtp), Some(old)) = (new.smtp.as_mut(), current.smtp.as_ref())
         && smtp.password.as_deref().is_none_or(str::is_empty)
-        && smtp.username == old.username
+        && old.password.as_deref().is_some_and(|password| !password.is_empty())
     {
-        smtp.password = old.password.clone();
+        let same_server = smtp.host.trim().eq_ignore_ascii_case(old.host.trim())
+            && smtp.port == old.port
+            && smtp.security == old.security;
+        if same_server && smtp.username == old.username {
+            smtp.password = old.password.clone();
+        } else if !smtp.host.trim().is_empty() && smtp.username.as_deref().is_some_and(|name| !name.is_empty()) {
+            return Err(ApiError::bad("The mail server changed: enter its password again."));
+        }
     }
     if let Some(smtp) = &new.smtp
         && smtp.host.trim().is_empty()
@@ -488,7 +497,17 @@ async fn create_backup(State(state): State<AppState>, admin: Admin) -> ApiResult
 }
 
 /// A backup to take home. Only names the list has: nothing else on the disk comes out here.
-async fn download_backup(State(state): State<AppState>, admin: Admin, Path(name): Path<String>) -> ApiResult<Response> {
+///
+/// A backup is the whole database — every vault, and the server's own keys, the one that signs
+/// access tokens among them — so it takes the admin's master password as well as a session: a
+/// session token that got away is not enough to carry everything off.
+async fn download_backup(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path(name): Path<String>,
+    Json(secret): Json<crate::two_factor::Secret>,
+) -> ApiResult<Response> {
+    crate::accounts::check_password(&state, &admin.0.user, secret.master_password_hash.as_deref()).await?;
     if !backups::list(&state.config.backups).iter().any(|(known, _)| *known == name) {
         return Err(ApiError::not_found("There is no such backup."));
     }
@@ -595,6 +614,13 @@ mod tests {
         assert!(events.as_array().unwrap().len() >= 4);
     }
 
+    /// The settings as the portal sends them back, with the password left out.
+    fn again_body(settings: &Settings) -> Value {
+        let mut body = serde_json::to_value(settings).unwrap();
+        body["smtp"]["password"] = Value::Null;
+        body
+    }
+
     #[tokio::test]
     async fn settings_keep_the_mail_password_to_themselves() {
         let server = TestServer::new().await;
@@ -610,8 +636,15 @@ mod tests {
         again["invitationDays"] = json!(5);
         server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), again).await;
         let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
-        assert_eq!(stored.smtp.unwrap().password.as_deref(), Some("s3cret"), "kept");
+        assert_eq!(stored.smtp.as_ref().unwrap().password.as_deref(), Some("s3cret"), "kept");
         assert_eq!(stored.invitation_days, 5);
+
+        let mut elsewhere = again_body(&stored);
+        elsewhere["smtp"]["host"] = json!("mail.attacker.example");
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), elsewhere).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the password does not go to another server");
+        let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
+        assert_eq!(stored.smtp.unwrap().host, "mail.example.com");
 
         let wrong = json!({"invitationDays": 0});
         assert_eq!(
@@ -628,11 +661,15 @@ mod tests {
         let name = written["name"].as_str().unwrap();
         let list = json(server.get_as(&admin.token, "/uwu/v1/admin/backups").await).await;
         assert_eq!(list[0]["name"], name);
-        let download = server.get_as(&admin.token, &format!("/uwu/v1/admin/backups/{name}")).await;
+        let path = format!("/uwu/v1/admin/backups/{name}");
+        let wrong = server.call("POST", &path, Some(&admin.token), json!({"masterPasswordHash": "wrong"})).await;
+        assert_eq!(wrong.status(), StatusCode::BAD_REQUEST, "not without the master password");
+        let secret = json!({"masterPasswordHash": password_hash("admin@example.com")});
+        let download = server.call("POST", &path, Some(&admin.token), secret.clone()).await;
         assert_eq!(download.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(download.into_body(), usize::MAX).await.unwrap();
         assert!(bytes.starts_with(b"SQLite format 3"));
-        let sneaky = server.get_as(&admin.token, "/uwu/v1/admin/backups/..%2Fuwulock.db").await;
+        let sneaky = server.call("POST", "/uwu/v1/admin/backups/..%2Fuwulock.db", Some(&admin.token), secret).await;
         assert_eq!(sneaky.status(), StatusCode::NOT_FOUND);
         let overview = json(server.get_as(&admin.token, "/uwu/v1/admin/overview").await).await;
         assert_eq!(overview["backups"], 1);

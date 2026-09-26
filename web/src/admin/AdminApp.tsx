@@ -4,7 +4,7 @@ import { LoginScreen } from '../components/LoginScreen';
 import { NyuScene } from '../components/nyu/scenes';
 import { TitleBar } from '../components/TitleBar';
 import { account, type AccountInfo } from '../lib/account';
-import { logout, vaultStatus, type Status } from '../lib/api';
+import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { go, useRoute } from '../lib/route';
@@ -53,7 +53,9 @@ export function AdminApp() {
 
   let body;
   if (status === null) body = null;
-  else if (status.state === 'logged-out') body = <LoginScreen onDone={setStatus} />;
+  // The portal needs the session, not the vault: logging in opens the vault, and it is locked
+  // again at once, so no key and nothing decrypted stays in an admin tab.
+  else if (status.state === 'logged-out') body = <LoginScreen onDone={() => void lock()} />;
   else if (info === null) body = null;
   else if (info === 'none' || !info.admin) {
     body = (

@@ -169,7 +169,18 @@ try {
     await snap(`admin-${name.toLowerCase()}`);
   }
   await page.getByRole('button', { name: 'Jetzt ein Backup schreiben' }).click();
-  await page.getByRole('button', { name: 'Herunterladen' }).first().waitFor();
+  await page.getByRole('button', { name: 'Herunterladen' }).first().click();
+  // A backup is the whole database: it takes the master password, and a wrong one gets nothing.
+  await page.locator('.modal input[type=password]').fill('not the password');
+  await page.locator('.modal').getByRole('button', { name: 'Herunterladen' }).click();
+  await page.locator('.modal .form-error').waitFor();
+  await page.locator('.modal input[type=password]').fill(password);
+  const [backup] = await Promise.all([
+    page.waitForEvent('download'),
+    page.locator('.modal').getByRole('button', { name: 'Herunterladen' }).click(),
+  ]);
+  if (!/^uwulock-.*\.db$/.test(backup.suggestedFilename()))
+    throw new Error(`the backup came as ${backup.suggestedFilename()}`);
 
   if (problems.length) throw new Error(problems.join('\n'));
   console.log('web vault and admin portal: all good');

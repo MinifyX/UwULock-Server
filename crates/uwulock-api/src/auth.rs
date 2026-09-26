@@ -225,12 +225,26 @@ impl HashCost {
     }
 }
 
+/// How many hashes run at once. Each takes its memory (19 MiB by default) for as long as it runs;
+/// without a bound, many logins at the same moment — from many addresses, which the rate limits
+/// do not stop — would take as much memory as they like. The rest wait their turn.
+fn hashing() -> &'static tokio::sync::Semaphore {
+    static HASHING: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
+    HASHING.get_or_init(|| {
+        let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
+        tokio::sync::Semaphore::new((cores * 2).clamp(2, 32))
+    })
+}
+
 /// Hash what the client sent in place of the master password. Off the async threads: it takes
 /// a few dozen milliseconds on purpose.
 pub async fn hash_password(cost: HashCost, secret: &str) -> ApiResult<String> {
     use argon2::password_hash::{PasswordHasher, SaltString};
     let secret = secret.to_string();
+    let turn = hashing().acquire().await.map_err(ApiError::internal)?;
     tokio::task::spawn_blocking(move || {
+        // Held until the hash is done, even when the request that wanted it is gone.
+        let _turn = turn;
         let salt = SaltString::encode_b64(&random_bytes(16)).map_err(ApiError::internal)?;
         cost.argon2().hash_password(secret.as_bytes(), &salt).map(|hash| hash.to_string()).map_err(ApiError::internal)
     })
@@ -245,14 +259,18 @@ pub async fn verify_password(cost: HashCost, hash: Option<&str>, secret: &str) -
     use argon2::password_hash::{PasswordHash, PasswordVerifier};
     let hash = hash.map(str::to_string);
     let secret = secret.to_string();
-    tokio::task::spawn_blocking(move || match hash {
-        Some(hash) => PasswordHash::new(&hash)
-            .is_ok_and(|parsed| argon2::Argon2::default().verify_password(secret.as_bytes(), &parsed).is_ok()),
-        None => {
-            use argon2::password_hash::{PasswordHasher, SaltString};
-            let salt = SaltString::encode_b64(&[0u8; 16]).expect("a fixed salt");
-            let _ = cost.argon2().hash_password(secret.as_bytes(), &salt);
-            false
+    let Ok(turn) = hashing().acquire().await else { return false };
+    tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        match hash {
+            Some(hash) => PasswordHash::new(&hash)
+                .is_ok_and(|parsed| argon2::Argon2::default().verify_password(secret.as_bytes(), &parsed).is_ok()),
+            None => {
+                use argon2::password_hash::{PasswordHasher, SaltString};
+                let salt = SaltString::encode_b64(&[0u8; 16]).expect("a fixed salt");
+                let _ = cost.argon2().hash_password(secret.as_bytes(), &salt);
+                false
+            }
         }
     })
     .await
@@ -261,8 +279,12 @@ pub async fn verify_password(cost: HashCost, hash: Option<&str>, secret: &str) -
 
 // ── Where a request comes from ────────────────────────────
 
-/// The address a request comes from: the peer's, or behind a trusted proxy the first one in
+/// The address a request comes from: the peer's, or behind a trusted proxy the last one in
 /// `X-Forwarded-For` (or `X-Real-IP`).
+///
+/// The last, not the first: a proxy like nginx with `$proxy_add_x_forwarded_for` appends the
+/// address it sees to whatever the client sent, so everything before that is the client's to
+/// make up — and with it, a fresh rate limit on every request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ClientIp(pub IpAddr);
 
@@ -276,10 +298,12 @@ impl FromRequestParts<AppState> for ClientIp {
 
 pub(crate) fn client_ip(parts: &Parts, trust_forwarded: bool) -> IpAddr {
     if trust_forwarded {
-        let header = |name: &str| parts.headers.get(name).and_then(|value| value.to_str().ok());
-        let forwarded = header("x-forwarded-for")
-            .and_then(|list| list.split(',').next())
-            .or_else(|| header("x-real-ip"))
+        // Several headers of the same name count as one list, in order.
+        let forwarded_for = parts.headers.get_all("x-forwarded-for").into_iter().next_back();
+        let forwarded = forwarded_for
+            .and_then(|value| value.to_str().ok())
+            .and_then(|list| list.rsplit(',').next())
+            .or_else(|| parts.headers.get("x-real-ip").and_then(|value| value.to_str().ok()))
             .and_then(|value| value.trim().parse::<IpAddr>().ok());
         if let Some(ip) = forwarded {
             return canonical(ip);
@@ -446,6 +470,29 @@ mod tests {
             assert_eq!(code.len(), 6);
             assert!(code.chars().all(|c| c.is_ascii_digit()));
         }
+    }
+
+    #[test]
+    fn behind_a_proxy_the_address_it_added_counts() {
+        let parts = |headers: &[(&str, &str)]| {
+            let mut request = axum::http::Request::get("/");
+            for (name, value) in headers {
+                request = request.header(*name, *value);
+            }
+            let mut parts = request.body(()).unwrap().into_parts().0;
+            parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+            parts
+        };
+        // nginx appends what it sees to what the client sent.
+        let spoofed = parts(&[("x-forwarded-for", "203.0.113.9, 198.51.100.7")]);
+        assert_eq!(client_ip(&spoofed, true), IpAddr::from([198, 51, 100, 7]));
+        assert_eq!(client_ip(&spoofed, false), IpAddr::from([127, 0, 0, 1]), "not believed unless trusted");
+        let two = parts(&[("x-forwarded-for", "203.0.113.9"), ("x-forwarded-for", "198.51.100.7")]);
+        assert_eq!(client_ip(&two, true), IpAddr::from([198, 51, 100, 7]));
+        let real = parts(&[("x-real-ip", "198.51.100.8")]);
+        assert_eq!(client_ip(&real, true), IpAddr::from([198, 51, 100, 8]));
+        let garbage = parts(&[("x-forwarded-for", "not an address")]);
+        assert_eq!(client_ip(&garbage, true), IpAddr::from([127, 0, 0, 1]));
     }
 
     #[test]

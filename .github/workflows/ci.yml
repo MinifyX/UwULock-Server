@@ -38,10 +38,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # A release is built from nothing any earlier run left behind.
+        if: github.ref_type != 'tag'
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --all-targets --locked
@@ -62,8 +66,12 @@ jobs:
           - 14000:14000
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # A release is built from nothing any earlier run left behind.
+        if: github.ref_type != 'tag'
       - name: The CA certificate Pebble's own HTTPS uses
         run: |
           curl -fsSLo "$RUNNER_TEMP/pebble.minica.pem" \
@@ -80,6 +88,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - name: Everything anybody is told to run with bash, checked before anybody runs it
         run: |
           for script in install.sh update.sh scripts/e2e/bw-cli.sh; do bash -n "$script"; done
@@ -113,8 +123,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # A release is built from nothing any earlier run left behind.
+        if: github.ref_type != 'tag'
       # Known vulnerabilities fail the job; "unmaintained" notices only show up in the log.
       - run: cargo audit --version || cargo install cargo-audit --locked
       - run: cargo audit
@@ -135,6 +149,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # A release is built from nothing any earlier run left behind.
+        if: github.ref_type != 'tag'
         with:
           workspaces: web/wasm -> target
           key: wasm
@@ -148,7 +164,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 24
-          cache: pnpm
+          cache: ${{ github.ref_type != 'tag' && 'pnpm' || '' }}
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - name: The crypto, as WebAssembly
@@ -195,6 +211,8 @@ jobs:
       - name: Cross compiler for arm64
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # A release is built from nothing any earlier run left behind.
+        if: github.ref_type != 'tag'
         with:
           key: release
       - name: Build amd64
@@ -453,8 +471,8 @@ jobs:
           platforms: linux/amd64
           load: true
           tags: uwulock-server:scan
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: ${{ github.ref_type != 'tag' && 'type=gha' || '' }}
+          cache-to: ${{ github.ref_type != 'tag' && 'type=gha,mode=max' || '' }}
       - name: Install Trivy
         env:
           VERSION: "0.74.0"
@@ -480,8 +498,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: ${{ github.ref_type != 'tag' && 'type=gha' || '' }}
+          cache-to: ${{ github.ref_type != 'tag' && 'type=gha,mode=max' || '' }}
       - name: Check what was pushed starts too
         run: docker run --rm "${IMAGE}:sha-${GITHUB_SHA::7}" --version
 
