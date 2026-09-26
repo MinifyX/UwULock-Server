@@ -1,6 +1,8 @@
 /** The admin portal's API (`/uwu/v1/admin`): what the server says, typed. */
 
-import { download, request } from './web/http';
+import { prelogin } from './api';
+import { call } from './web/core';
+import { ApiError, currentSession, download, request } from './web/http';
 
 export type Overview = {
   version: string;
@@ -149,5 +151,20 @@ export const logs = (after: number, level: string) =>
   request<LogLine[]>(`${base}/logs?after=${after}&level=${encodeURIComponent(level)}&limit=1000`);
 export const backups = () => request<Backup[]>(`${base}/backups`);
 export const createBackup = () => request<Backup>(`${base}/backups`, { method: 'POST', body: {} });
-export const downloadBackup = (name: string) =>
-  download(`${base}/backups/${encodeURIComponent(name)}`);
+/**
+ * A backup, for the master password. The portal keeps no vault open, so the hash is derived
+ * here from the password and the account's key derivation, and the master key it takes is
+ * wiped again right after.
+ */
+export async function downloadBackup(name: string, password: string): Promise<Blob> {
+  const email = currentSession()?.email;
+  if (!email) throw new ApiError(401, 'The session has ended. Log in again.', null);
+  const kdf = await prelogin(email);
+  let masterPasswordHash: string;
+  try {
+    masterPasswordHash = await call((core) => core.deriveLogin(email, password, kdf));
+  } finally {
+    await call((core) => core.lock());
+  }
+  return download(`${base}/backups/${encodeURIComponent(name)}`, { masterPasswordHash });
+}

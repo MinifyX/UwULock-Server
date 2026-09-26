@@ -196,11 +196,20 @@ export async function request<T = unknown>(path: string, options: Options = {}):
   return body as T;
 }
 
-/** A file from the server, with the access token: for downloads the browser cannot fetch itself. */
-export async function download(path: string): Promise<Blob> {
+/**
+ * A file from the server, with the access token: for downloads the browser cannot fetch itself.
+ * With a `body`, it is asked for by POST, with that JSON.
+ */
+export async function download(path: string, body?: unknown): Promise<Blob> {
   if (session && session.expiresAt - Date.now() < 60_000) await refresh();
+  const extra: Record<string, string> = session
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
+  if (body !== undefined) extra['Content-Type'] = 'application/json';
   const response = await fetch(path, {
-    headers: headers(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
+    method: body !== undefined ? 'POST' : 'GET',
+    headers: headers(extra),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!response.ok)
     throw new ApiError(response.status, messageOf(response.status, await parse(response)), null);

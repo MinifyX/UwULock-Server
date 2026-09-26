@@ -35,6 +35,8 @@ than serve plain HTTP on port 443.
   prompt cannot be saved over before the prompt; a CSV export does not start a cell with a
   spreadsheet formula; the master password is wiped from the WebAssembly memory; the notes field
   sends nothing to a spell checker; invitation tokens stay out of request URLs.
+- **A backup takes the master password.** It is the whole database, the server's own keys among
+  them, so downloading one in the admin portal asks for the admin's master password too.
 - **Headers**: `Strict-Transport-Security` whenever the server is reached over https, and
   `Cross-Origin-Opener-Policy` for the web vault.
 - **install.sh and update.sh**: the install directory and everything above it have to be

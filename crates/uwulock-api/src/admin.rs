@@ -32,7 +32,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/admin/events", get(events))
         .route("/uwu/v1/admin/logs", get(logs))
         .route("/uwu/v1/admin/backups", get(list_backups).post(create_backup))
-        .route("/uwu/v1/admin/backups/{name}", get(download_backup))
+        .route("/uwu/v1/admin/backups/{name}", post(download_backup))
 }
 
 async fn record(state: &AppState, admin: &Admin, detail: String) {
@@ -497,7 +497,17 @@ async fn create_backup(State(state): State<AppState>, admin: Admin) -> ApiResult
 }
 
 /// A backup to take home. Only names the list has: nothing else on the disk comes out here.
-async fn download_backup(State(state): State<AppState>, admin: Admin, Path(name): Path<String>) -> ApiResult<Response> {
+///
+/// A backup is the whole database — every vault, and the server's own keys, the one that signs
+/// access tokens among them — so it takes the admin's master password as well as a session: a
+/// session token that got away is not enough to carry everything off.
+async fn download_backup(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path(name): Path<String>,
+    Json(secret): Json<crate::two_factor::Secret>,
+) -> ApiResult<Response> {
+    crate::accounts::check_password(&state, &admin.0.user, secret.master_password_hash.as_deref()).await?;
     if !backups::list(&state.config.backups).iter().any(|(known, _)| *known == name) {
         return Err(ApiError::not_found("There is no such backup."));
     }
@@ -651,11 +661,15 @@ mod tests {
         let name = written["name"].as_str().unwrap();
         let list = json(server.get_as(&admin.token, "/uwu/v1/admin/backups").await).await;
         assert_eq!(list[0]["name"], name);
-        let download = server.get_as(&admin.token, &format!("/uwu/v1/admin/backups/{name}")).await;
+        let path = format!("/uwu/v1/admin/backups/{name}");
+        let wrong = server.call("POST", &path, Some(&admin.token), json!({"masterPasswordHash": "wrong"})).await;
+        assert_eq!(wrong.status(), StatusCode::BAD_REQUEST, "not without the master password");
+        let secret = json!({"masterPasswordHash": password_hash("admin@example.com")});
+        let download = server.call("POST", &path, Some(&admin.token), secret.clone()).await;
         assert_eq!(download.status(), StatusCode::OK);
         let bytes = axum::body::to_bytes(download.into_body(), usize::MAX).await.unwrap();
         assert!(bytes.starts_with(b"SQLite format 3"));
-        let sneaky = server.get_as(&admin.token, "/uwu/v1/admin/backups/..%2Fuwulock.db").await;
+        let sneaky = server.call("POST", "/uwu/v1/admin/backups/..%2Fuwulock.db", Some(&admin.token), secret).await;
         assert_eq!(sneaky.status(), StatusCode::NOT_FOUND);
         let overview = json(server.get_as(&admin.token, "/uwu/v1/admin/overview").await).await;
         assert_eq!(overview["backups"], 1);

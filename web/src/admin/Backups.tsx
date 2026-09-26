@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { save } from '../components/web/controls';
+import { PasswordPrompt, save } from '../components/web/controls';
 import { backups, createBackup, downloadBackup, type Backup } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
@@ -25,6 +25,8 @@ export function Backups() {
   useLanguage();
   const [list, setList] = useState<Backup[] | null>(null);
   const [busy, setBusy] = useState(false);
+  /** The backup the master password is being asked for. */
+  const [taking, setTaking] = useState<string | null>(null);
   const load = useCallback(() => {
     backups().then(setList, (e) => toast(errorText(e), 'error'));
   }, []);
@@ -74,22 +76,27 @@ export function Backups() {
               </td>
               <td>{bytes(backup.bytes)}</td>
               <td className="row-actions">
-                <button
-                  onClick={async () => {
-                    try {
-                      save(await downloadBackup(backup.name), backup.name);
-                    } catch (e) {
-                      toast(errorText(e), 'error');
-                    }
-                  }}
-                >
-                  {t('Herunterladen')}
-                </button>
+                <button onClick={() => setTaking(backup.name)}>{t('Herunterladen')}</button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+      {taking && (
+        <PasswordPrompt
+          title={t('Backup herunterladen?')}
+          tone="warning"
+          lead={t(
+            'Ein Backup ist die ganze Datenbank: jeder Tresor, verschlüsselt, und die Schlüssel des Servers. Bewahre es so sicher auf wie deine Passwörter.',
+          )}
+          confirm={t('Herunterladen')}
+          onCancel={() => setTaking(null)}
+          action={async (password) => {
+            save(await downloadBackup(taking, password), taking);
+            setTaking(null);
+          }}
+        />
+      )}
       {list?.length === 0 && (
         <p className="empty-note">
           {t('Noch keine Backups. Das erste schreibt der Server zehn Minuten nach dem Start.')}
