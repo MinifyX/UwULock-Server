@@ -3,6 +3,7 @@ import { overview, type Overview as Data } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { ago, bytes, seconds } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
+import { History } from './History';
 
 function uptime(total: number): string {
   const days = Math.floor(total / 86400);
@@ -97,6 +98,7 @@ export function Overview() {
         />
         {update.channel && <Fact label={t('Kanal')} value={update.channel} />}
       </div>
+      <History />
     </>
   );
 }

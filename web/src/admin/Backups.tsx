@@ -1,25 +1,29 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PasswordPrompt, save } from '../components/web/controls';
-import { backups, createBackup, downloadBackup, type Backup } from '../lib/admin';
+import { backups, createBackup, downloadBackup, restoreBackup, type Backup } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
 
-/** What the time stamp in a backup's name says: `2026-09-25-031000`. */
+/**
+ * What the time stamp in a backup's name says: `2026-09-25-031000`, and whether it is the one
+ * written just before a backup went back.
+ */
 function stampText(stamp: string | null): string {
-  const match = stamp?.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+  const match = stamp?.match(/^(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})(-before-restore)?/);
   if (!match) return stamp ?? '';
-  const [, y, m, d, hh, mm] = match;
-  return new Date(
+  const [, y, m, d, hh, mm, , before] = match;
+  const when = new Date(
     Date.UTC(Number(y), Number(m) - 1, Number(d), Number(hh), Number(mm)),
   ).toLocaleString();
+  return before ? t('{when}, vor dem Zurückspielen', { when }) : when;
 }
 
 /**
  * Every night and before every update the server writes a backup, and keeps seven. Here one
- * can be written now, and taken home — putting one back stays on the command line, with the
- * server stopped.
+ * can be written now, taken home, or put back while the server runs — what was there is
+ * written as a backup first, so that step can be undone the same way.
  */
 export function Backups() {
   useLanguage();
@@ -27,6 +31,7 @@ export function Backups() {
   const [busy, setBusy] = useState(false);
   /** The backup the master password is being asked for. */
   const [taking, setTaking] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
   const load = useCallback(() => {
     backups().then(setList, (e) => toast(errorText(e), 'error'));
   }, []);
@@ -36,7 +41,7 @@ export function Backups() {
     <>
       <p className="settings-lead">
         {t(
-          'Backups liegen im selben Volume wie die Datenbank. Gegen eine kaputte Platte hilft nur eine Kopie woanders: Lade ab und zu eines herunter. Zurückspielen geht auf der Kommandozeile: docker compose run --rm uwulock restore.',
+          'Backups liegen im selben Volume wie die Datenbank. Gegen eine kaputte Platte hilft nur eine Kopie woanders: Lade ab und zu eines herunter. Beim Zurückspielen wird der jetzige Stand vorher selbst ein Backup – so lässt es sich auf demselben Weg rückgängig machen.',
         )}
       </p>
       <div className="form-actions">
@@ -77,6 +82,7 @@ export function Backups() {
               <td>{bytes(backup.bytes)}</td>
               <td className="row-actions">
                 <button onClick={() => setTaking(backup.name)}>{t('Herunterladen')}</button>
+                <button onClick={() => setRestoring(backup.name)}>{t('Zurückspielen')}</button>
               </td>
             </tr>
           ))}
@@ -94,6 +100,27 @@ export function Backups() {
           action={async (password) => {
             save(await downloadBackup(taking, password), taking);
             setTaking(null);
+          }}
+        />
+      )}
+      {restoring && (
+        <PasswordPrompt
+          title={t('Dieses Backup zurückspielen?')}
+          tone="warning"
+          lead={t(
+            'Alles kommt auf den Stand von {when}: Konten, Tresore, Einstellungen. Was seitdem dazukam, ist dann weg – außer im Backup, das jetzt vorher geschrieben wird. Angemeldete Geräte synchronisieren neu.',
+            { when: stampText(list?.find((b) => b.name === restoring)?.time ?? null) },
+          )}
+          confirm={t('Zurückspielen')}
+          onCancel={() => setRestoring(null)}
+          action={async (password) => {
+            const done = await restoreBackup(restoring, password);
+            setRestoring(null);
+            toast(
+              t('Zurückgespielt ✧ Der Stand davor ist jetzt {name}.', { name: done.before }),
+              'info',
+            );
+            load();
           }}
         />
       )}

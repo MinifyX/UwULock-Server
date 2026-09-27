@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import { ResultLine, Row, Segmented, Toggle, type Result } from '../components/web/controls';
-import { saveSettings, settings as load, testMail, type Settings, type Smtp } from '../lib/admin';
+import {
+  saveSettings,
+  settings as load,
+  testMail,
+  testPush,
+  type Push,
+  type Settings,
+  type Smtp,
+} from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
+
+const EMPTY_PUSH: Push = { installationId: '', installationKey: '', region: 'eu' };
 
 const EMPTY_SMTP: Smtp = {
   host: '',
@@ -37,6 +47,8 @@ export function AdminSettings({ me }: { me: string }) {
   if (!draft || !current) return <ResultLine result={result} />;
   const smtp = draft.smtp ?? EMPTY_SMTP;
   const setSmtp = (change: Partial<Smtp>) => setDraft({ ...draft, smtp: { ...smtp, ...change } });
+  const push = draft.push ?? EMPTY_PUSH;
+  const setPush = (change: Partial<Push>) => setDraft({ ...draft, push: { ...push, ...change } });
   const dirty = JSON.stringify(draft) !== JSON.stringify(current);
 
   const save = async () => {
@@ -161,6 +173,38 @@ export function AdminSettings({ me }: { me: string }) {
         </select>
       </Row>
       <Row
+        label={t('Nutzer dürfen einladen')}
+        description={t(
+          'Sonst nur Admins. Einladungen von Nutzern machen nie Admins; im Tresor unter Einstellungen → Einladen.',
+        )}
+      >
+        <Toggle
+          label={t('Nutzer dürfen einladen')}
+          checked={draft.usersMayInvite}
+          onChange={(usersMayInvite) => setDraft({ ...draft, usersMayInvite })}
+        />
+      </Row>
+      {draft.usersMayInvite && (
+        <Row
+          label={t('Einladungen pro Nutzer')}
+          description={t(
+            'So viele Leute holt ein Nutzer höchstens her, offene Einladungen mitgezählt.',
+          )}
+        >
+          <select
+            className="select"
+            value={draft.invitationsPerUser}
+            onChange={(e) => setDraft({ ...draft, invitationsPerUser: Number(e.target.value) })}
+          >
+            {[1, 2, 3, 5, 10, 20, 50, 100].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </Row>
+      )}
+      <Row
         label={t('Sprache neuer Konten')}
         description={t('Für Einladungen, und bis jemand selbst eine wählt.')}
       >
@@ -204,6 +248,114 @@ export function AdminSettings({ me }: { me: string }) {
           onChange={(rememberTwoFactor) => setDraft({ ...draft, rememberTwoFactor })}
         />
       </Row>
+
+      <h2 className="settings-heading">{t('Dateien und Passwortprüfung')}</h2>
+      <Row
+        label={t('Größte Datei')}
+        description={t('Für Anhänge und Sends. Hinter einem Proxy muss der sie auch durchlassen.')}
+      >
+        <select
+          className="select"
+          value={draft.maxFileMb}
+          onChange={(e) => setDraft({ ...draft, maxFileMb: Number(e.target.value) })}
+        >
+          {[...new Set([25, 100, 250, 500, 1024, 2048, 4096, draft.maxFileMb])]
+            .sort((a, b) => a - b)
+            .map((mb) => (
+              <option key={mb} value={mb}>
+                {mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`}
+              </option>
+            ))}
+        </select>
+      </Row>
+      <Row
+        label={t('Datenlecks prüfen')}
+        description={t(
+          'Die Passwortprüfung im Tresor fragt Have I Been Pwned über diesen Server – nur die ersten fünf Zeichen eines Hashes verlassen ihn.',
+        )}
+      >
+        <Toggle
+          label={t('Datenlecks prüfen')}
+          checked={draft.hibp}
+          onChange={(hibp) => setDraft({ ...draft, hibp })}
+        />
+      </Row>
+
+      <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
+      <p className="settings-lead">
+        {t(
+          'Weckt die Bitwarden-Apps, wenn sich etwas ändert. Dafür braucht es eine Installations-ID und einen Schlüssel von bitwarden.com/host – kostenlos, und nur mit der Region, in der sie gemacht wurden. Ohne Push synchronisieren die Apps beim Öffnen.',
+        )}{' '}
+        <a href="https://bitwarden.com/host/" target="_blank" rel="noreferrer">
+          bitwarden.com/host
+        </a>
+      </p>
+      <Row label={t('Push über Bitwarden')}>
+        <Toggle
+          label={t('Push über Bitwarden')}
+          checked={draft.push !== null}
+          onChange={(on) => setDraft({ ...draft, push: on ? (current.push ?? EMPTY_PUSH) : null })}
+        />
+      </Row>
+      {draft.push && (
+        <div className="field-grid wide">
+          <div className="field">
+            <span>{t('Region')}</span>
+            <Segmented
+              label={t('Region')}
+              value={push.region}
+              onChange={(region) => setPush({ region })}
+              options={[
+                { value: 'eu', label: 'EU' },
+                { value: 'us', label: 'US' },
+              ]}
+            />
+          </div>
+          <label className="field">
+            <span>{t('Installations-ID')}</span>
+            <input
+              value={push.installationId}
+              onChange={(e) => setPush({ installationId: e.target.value })}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <label className="field">
+            <span>{t('Installations-Schlüssel')}</span>
+            <PasswordInput
+              value={push.installationKey ?? ''}
+              onChange={(installationKey) => setPush({ installationKey })}
+              autoComplete="new-password"
+            />
+            {push.installationKeySet && !push.installationKey && (
+              <small className="field-hint">
+                {t('Ein Schlüssel ist gespeichert. Leer lassen behält ihn.')}
+              </small>
+            )}
+          </label>
+          <div className="field">
+            <span aria-hidden>&nbsp;</span>
+            <button
+              disabled={busy || dirty || !current.push}
+              title={dirty ? t('Erst speichern') : undefined}
+              onClick={async () => {
+                setBusy(true);
+                setResult(null);
+                try {
+                  await testPush();
+                  setResult({ tone: 'info', text: t('Der Relay nimmt ID und Schlüssel an ✧') });
+                } catch (e) {
+                  setResult({ tone: 'error', text: errorText(e) });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {t('Verbindung testen')}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="form-actions sticky-actions">
         <span className="inline-form">

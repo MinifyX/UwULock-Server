@@ -11,6 +11,7 @@ import { Row, Segmented, Toggle } from './web/controls';
 import { DeviceSettings } from './web/DeviceSettings';
 import { EmergencySettings } from './web/EmergencySettings';
 import { PasskeySettings } from './web/PasskeySettings';
+import { InviteSettings } from './web/InviteSettings';
 import { TransferSettings } from './web/TransferSettings';
 import { TwoFactorSettings } from './web/TwoFactorSettings';
 
@@ -22,6 +23,7 @@ export type SettingsSection =
   | 'passkeys'
   | 'emergency'
   | 'devices'
+  | 'invite'
   | 'transfer'
   | 'about';
 
@@ -33,6 +35,7 @@ const SECTIONS: { id: SettingsSection; label: string; needsLogin: boolean }[] = 
   { id: 'passkeys', label: N_('Passkeys'), needsLogin: true },
   { id: 'emergency', label: N_('Notfallzugriff'), needsLogin: true },
   { id: 'devices', label: N_('Geräte'), needsLogin: true },
+  { id: 'invite', label: N_('Einladen'), needsLogin: true },
   { id: 'transfer', label: N_('Import & Export'), needsLogin: true },
   { id: 'about', label: N_('Über UwULock'), needsLogin: false },
 ];
@@ -197,7 +200,9 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   useLanguage();
   const [section, setSection] = useState<SettingsSection>(initial);
   const loggedIn = status.state === 'unlocked';
-  const sections = SECTIONS.filter((s) => loggedIn || !s.needsLogin);
+  const sections = SECTIONS.filter(
+    (s) => (loggedIn || !s.needsLogin) && (s.id !== 'invite' || info?.mayInvite),
+  );
   return (
     <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
       <div className="settings">
@@ -225,6 +230,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
           {section === 'passkeys' && loggedIn && <PasskeySettings />}
           {section === 'emergency' && loggedIn && <EmergencySettings mail={info?.mail ?? false} />}
           {section === 'devices' && loggedIn && <DeviceSettings onClose={onClose} />}
+          {section === 'invite' && loggedIn && <InviteSettings />}
           {section === 'transfer' && loggedIn && <TransferSettings />}
           {section === 'about' && <About />}
         </div>

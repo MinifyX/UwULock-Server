@@ -171,5 +171,6 @@
   "Der Server ist nicht erreichbar: {reason}": "Can't reach the server: {reason}",
   "gerade eben": "just now",
   "Server": "Server",
-  "Auf diesem Gerät merken": "Remember on this device"
+  "Auf diesem Gerät merken": "Remember on this device",
+  "Prüfung": "Check"
 }
