@@ -131,7 +131,7 @@ server {
     server_name vault.example.com;
     # ssl_certificate ... ssl_certificate_key ...
 
-    client_max_body_size 525M;  # attachments and sends, once they are there
+    client_max_body_size 525M;  # attachments and Sends: 500 MB by default, see the admin portal
 
     location / {
         proxy_pass http://127.0.0.1:8443;
@@ -251,6 +251,11 @@ sudo docker compose up -d
 ```
 
 The database that was there is kept next to it as `uwulock.db.before-restore-<time>`.
+
+Attachments and the files of Sends are not in the database: they are files next to it, in
+`/data/attachments` and `/data/sends`, encrypted by the clients. Copy those along with the
+backups. A file whose attachment or Send is deleted stays another week before the nightly sweep
+takes it, so a backup from that week that is put back still finds its files.
 
 ## Settings
 

@@ -6,7 +6,8 @@ für eigene Funktionen — ohne dass die offizielle Bitwarden-Browsererweiterung
 CLI aufhören zu funktionieren.
 
 Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
-Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden.
+Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufe 4 ist vorgezogen und fertig; mit
+Stufe 2 und 3 wird daraus 0.4.
 
 ## Leitlinien
 
@@ -109,13 +110,24 @@ abhängt oder erst mit mehr Nutzern wichtig wird:
 - Admin-Portal: Push-Relay einrichten (mit Stufe 2), Registrierungsregeln über Einladungen
   hinaus, Statistik über die Zeit, Backups zurückspielen
 
-### Stufe 4 — Alles, was Vaultwarden für Einzelne kann (1.0)
+### Stufe 4 — Alles, was Vaultwarden für Einzelne kann (0.4, Beta)
 
-- Anhänge, Sends (Text und Datei, öffentlicher Link)
-- Notfallzugriff
-- WebAuthn / FIDO2 als zweiter Faktor, Anmeldung mit Passkey
-- „Mit Gerät anmelden", API-Keys für die CLI
-- Sicherheitsprüfung wie beim Client
+Vorgezogen vor Stufe 2 und 3, weil der Umzug von Vaultwarden Anhänge, Sends und Notfallzugriffe
+mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf echten Geräten.
+
+- [x] Anhänge (hochladen, herunterladen per Link mit Token, bis 500 MB, im Admin-Portal
+      änderbar), in Web-Tresor, offiziellen Clients und `bw`-CLI
+- [x] Sends: Text und Datei, Passwort, Ablauf, Löschdatum, Zugriffszähler; öffentliche Seite im
+      Web-Tresor; der neue `send_access`-Weg der Bitwarden-Clients ab 2026.6 und der alte
+- [x] Notfallzugriff: einladen, annehmen, bestätigen (mit Fingerabdruck-Satz), anfragen,
+      Wartezeit, freigeben/ablehnen, ansehen, übernehmen; Mails dazu
+- [x] WebAuthn / FIDO2 als zweiter Faktor (eigene Prüfung mit `ring`, dazu die
+      Connector-Seiten für Erweiterung und Apps), Anmeldung mit Passkey im Web-Tresor, mit PRF
+      auch Entsperren
+- [x] „Mit Gerät anmelden" (auch für Adressen ohne Konto gleich beantwortet), API-Key für die
+      CLI
+- [x] Passwortprüfung im Web-Tresor: schwach, mehrfach, ohne https, Datenlecks über den eigenen
+      Server bei Have I Been Pwned (k-Anonymität, im Admin-Portal abschaltbar)
 
 ### Stufe 5 — Firma
 
