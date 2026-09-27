@@ -29,10 +29,13 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/admin/invitations/{email}", delete(delete_invitation))
         .route("/uwu/v1/admin/settings", get(get_settings).put(put_settings))
         .route("/uwu/v1/admin/settings/test-mail", post(test_mail))
+        .route("/uwu/v1/admin/settings/test-push", post(test_push))
+        .route("/uwu/v1/admin/stats", get(daily_stats))
         .route("/uwu/v1/admin/events", get(events))
         .route("/uwu/v1/admin/logs", get(logs))
         .route("/uwu/v1/admin/backups", get(list_backups).post(create_backup))
         .route("/uwu/v1/admin/backups/{name}", post(download_backup))
+        .route("/uwu/v1/admin/backups/{name}/restore", post(restore_backup))
 }
 
 async fn record(state: &AppState, admin: &Admin, detail: String) {
@@ -226,8 +229,16 @@ fn user_json(overview: &UserOverview) -> Value {
 }
 
 async fn users(State(state): State<AppState>, _admin: Admin) -> ApiResult<Json<Value>> {
-    let users = state.store.users().await?;
-    Ok(Json(json!(users.iter().map(user_json).collect::<Vec<_>>())))
+    let (users, storage) = tokio::try_join!(state.store.users(), state.store.storage_by_user())?;
+    let list: Vec<Value> = users
+        .iter()
+        .map(|overview| {
+            let mut user = user_json(overview);
+            user["storageBytes"] = storage.get(&overview.user.id).copied().unwrap_or(0).into();
+            user
+        })
+        .collect();
+    Ok(Json(json!(list)))
 }
 
 async fn user_action(
@@ -339,6 +350,10 @@ fn settings_json(settings: &Settings) -> Value {
             smtp.remove("password").is_some_and(|password| password.as_str().is_some_and(|text| !text.is_empty()));
         smtp.insert("passwordSet".into(), set.into());
     }
+    if let Some(push) = value.get_mut("push").and_then(Value::as_object_mut) {
+        let set = push.remove("installationKey").is_some_and(|key| key.as_str().is_some_and(|text| !text.is_empty()));
+        push.insert("installationKeySet".into(), set.into());
+    }
     value["mailEnabled"] = settings.smtp.as_ref().is_some_and(|smtp| smtp.is_set()).into();
     value
 }
@@ -374,9 +389,27 @@ async fn put_settings(
     {
         new.smtp = None;
     }
+    // The relay's key, the same way: kept for the same installation only.
+    if let Some(push) = new.push.as_mut()
+        && push.installation_key.is_empty()
+    {
+        match current.push.as_ref() {
+            Some(old) if old.installation_id == push.installation_id.trim() && old.region == push.region => {
+                push.installation_key = old.installation_key.clone();
+            }
+            _ => return Err(ApiError::bad("The push relay needs the installation key.")),
+        }
+    }
+    if let Some(push) = new.push.as_mut() {
+        push.installation_id = push.installation_id.trim().to_string();
+        push.installation_key = push.installation_key.trim().to_string();
+    }
     new.check().map_err(ApiError::bad)?;
     state.mailer.configure(new.smtp.as_ref()).map_err(|error| ApiError::bad(error.to_string()))?;
     new.save(&state.store).await?;
+    if new.push != current.push {
+        state.relay.reset();
+    }
     *state.settings.write() = new.clone();
     record(&state, &admin, "changed the settings".into()).await;
     Ok(Json(settings_json(&new)))
@@ -393,6 +426,15 @@ async fn test_mail(State(state): State<AppState>, admin: Admin, Json(data): Json
     }
     let language = Language::from_code(&admin.0.user.language);
     state.mailer.send(data.to.trim(), &Mail::Test, language).await.map_err(|error| ApiError::bad(error.to_string()))?;
+    Ok(StatusCode::OK)
+}
+
+/// Whether the relay takes the saved installation id and key: it is asked for a token.
+async fn test_push(State(state): State<AppState>, _admin: Admin) -> ApiResult<StatusCode> {
+    let Some(push) = state.settings().push else {
+        return Err(ApiError::bad("There is no push relay set up yet. Save the settings first."));
+    };
+    state.relay.check(&push).await.map_err(|error| ApiError::bad(format!("The relay did not take it: {error}")))?;
     Ok(StatusCode::OK)
 }
 
@@ -480,6 +522,37 @@ async fn overview(State(state): State<AppState>, _admin: Admin) -> ApiResult<Jso
     })))
 }
 
+#[derive(Deserialize)]
+struct StatsQuery {
+    #[serde(default)]
+    days: Option<i64>,
+}
+
+/// The numbers of every day there are, for the portal's charts.
+async fn daily_stats(
+    State(state): State<AppState>,
+    _admin: Admin,
+    Query(query): Query<StatsQuery>,
+) -> ApiResult<Json<Value>> {
+    let days = state.store.daily_stats(query.days.unwrap_or(90).clamp(1, 3660)).await?;
+    let list: Vec<Value> = days
+        .iter()
+        .map(|day| {
+            json!({
+                "day": day.day,
+                "users": day.users,
+                "devices": day.devices,
+                "ciphers": day.ciphers,
+                "sends": day.sends,
+                "fileBytes": day.file_bytes,
+                "logins": day.logins,
+                "failedLogins": day.failed_logins,
+            })
+        })
+        .collect();
+    Ok(Json(json!(list)))
+}
+
 // ── Backups ───────────────────────────────────────────────
 
 async fn list_backups(State(state): State<AppState>, _admin: Admin) -> Json<Value> {
@@ -525,6 +598,48 @@ async fn download_backup(
         bytes,
     )
         .into_response())
+}
+
+/// Put a backup back while the server runs, like `uwulock-server restore` with it stopped. The
+/// master password, as for a download; only a backup of this server (the same signing key), and
+/// first a backup of how it is now, so the step can be undone.
+async fn restore_backup(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path(name): Path<String>,
+    Json(secret): Json<crate::two_factor::Secret>,
+) -> ApiResult<Json<Value>> {
+    crate::accounts::check_password(&state, &admin.0.user, secret.master_password_hash.as_deref()).await?;
+    if !backups::list(&state.config.backups).iter().any(|(known, _)| *known == name) {
+        return Err(ApiError::not_found("There is no such backup."));
+    }
+    let path = state.config.backups.join(&name);
+    let theirs = uwulock_store::setting_in(&path, auth::TOKEN_KEY).map_err(ApiError::bad)?;
+    if theirs.is_none() || theirs != state.store.setting(auth::TOKEN_KEY).await? {
+        return Err(ApiError::bad("This backup is of another server; it can only go back with the command line."));
+    }
+    // Its own name, and never one that is there: a restore undone within the second is one too.
+    let stamp = backups::stamp(backups::now_ms());
+    let aside = (1..)
+        .map(|n| match n {
+            1 => format!("uwulock-{stamp}-before-restore.db"),
+            n => format!("uwulock-{stamp}-before-restore-{n}.db"),
+        })
+        .map(|name| state.config.backups.join(name))
+        .find(|path| !path.exists())
+        .expect("a free name");
+    let before = backups::write(&state.store, &state.config.backups, Some(aside)).await.map_err(ApiError::bad)?;
+    let before = before.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+    state.store.restore_online(&path).await.map_err(ApiError::bad)?;
+    // The settings are the backup's now, and so is everything read from them.
+    let settings = Settings::load(&state.store, &state.config.start_settings).await.map_err(ApiError::internal)?;
+    if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
+        tracing::warn!(%error, "the mail server of the restored settings");
+    }
+    state.relay.reset();
+    *state.settings.write() = settings;
+    record(&state, &admin, format!("restored the backup {name} (what was there before: {before})")).await;
+    Ok(Json(json!({ "restored": name, "before": before })))
 }
 
 #[cfg(test)]
@@ -678,5 +793,86 @@ mod tests {
         let overview = json(server.get_as(&admin.token, "/uwu/v1/admin/overview").await).await;
         assert_eq!(overview["backups"], 1);
         assert_eq!(overview["users"], 1);
+    }
+
+    #[tokio::test]
+    async fn a_backup_goes_back_while_the_server_runs() {
+        let server = TestServer::new().await;
+        let admin = admin(&server).await;
+        let written = json(server.call("POST", "/uwu/v1/admin/backups", Some(&admin.token), json!({})).await).await;
+        let name = written["name"].as_str().unwrap().to_string();
+        server.invite("later@example.com", false).await;
+
+        let path = format!("/uwu/v1/admin/backups/{name}/restore");
+        let wrong = server.call("POST", &path, Some(&admin.token), json!({"masterPasswordHash": "wrong"})).await;
+        assert_eq!(wrong.status(), StatusCode::BAD_REQUEST, "not without the master password");
+        let secret = json!({"masterPasswordHash": password_hash("admin@example.com")});
+        let response = server.call("POST", &path, Some(&admin.token), secret.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let before = json(response).await["before"].as_str().unwrap().to_string();
+        assert!(server.state.store.invitation("later@example.com").await.unwrap().is_none(), "as it was");
+        let list = json(server.get_as(&admin.token, "/uwu/v1/admin/backups").await).await;
+        assert_eq!(list[0]["name"], before.as_str(), "how it was just now is the newest backup");
+
+        // The step back undoes it.
+        let path = format!("/uwu/v1/admin/backups/{before}/restore");
+        let response = server.call("POST", &path, Some(&admin.token), secret.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(server.state.store.invitation("later@example.com").await.unwrap().is_some());
+
+        // Somebody else's server does not come in this way.
+        let other = TestServer::new().await;
+        let theirs = other.state.config.backups.join("uwulock-2026-01-01-000000.db");
+        other.state.store.backup_to(&theirs).await.unwrap();
+        std::fs::copy(&theirs, server.state.config.backups.join("uwulock-2026-01-01-000000.db")).unwrap();
+        let path = "/uwu/v1/admin/backups/uwulock-2026-01-01-000000.db/restore";
+        let response = server.call("POST", path, Some(&admin.token), secret).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(server.state.store.invitation("later@example.com").await.unwrap().is_some(), "nothing changed");
+    }
+
+    #[tokio::test]
+    async fn the_relay_s_key_stays_on_the_server() {
+        let (url, _told) = fake_relay().await;
+        let push = uwulock_notify::relay::RelaySettings {
+            installation_id: "inst".into(),
+            installation_key: "secret".into(),
+            region: url,
+        };
+        let server = TestServer::with_settings(Settings { push: Some(push), ..Settings::default() }).await;
+        let admin = admin(&server).await;
+        let shown = json(server.get_as(&admin.token, "/uwu/v1/admin/settings").await).await;
+        assert!(shown["push"].get("installationKey").is_none());
+        assert_eq!(shown["push"]["installationKeySet"], true);
+        let tested = server.call("POST", "/uwu/v1/admin/settings/test-push", Some(&admin.token), json!({})).await;
+        assert_eq!(tested.status(), StatusCode::OK);
+
+        let mut changed = shown.clone();
+        changed["push"] = json!({"installationId": "inst", "installationKey": "", "region": "eu"});
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed.clone()).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "another region, so the key again");
+        changed["push"]["installationKey"] = json!("key-2");
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        changed["push"]["installationKey"] = json!("");
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed.clone()).await;
+        assert_eq!(response.status(), StatusCode::OK, "left empty, it is kept");
+        assert_eq!(server.state.settings().push.unwrap().installation_key, "key-2");
+        changed["push"]["installationId"] = json!("somebody-else");
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "never for another installation");
+    }
+
+    #[tokio::test]
+    async fn numbers_over_time_and_files_per_account() {
+        let server = TestServer::new().await;
+        let admin = admin(&server).await;
+        server.state.store.record_day().await.unwrap();
+        let days = json(server.get_as(&admin.token, "/uwu/v1/admin/stats?days=30").await).await;
+        assert_eq!(days.as_array().unwrap().len(), 1);
+        assert_eq!(days[0]["users"], 1);
+        assert!(days[0]["logins"].as_i64().unwrap() >= 1);
+        let users = json(server.get_as(&admin.token, "/uwu/v1/admin/users").await).await;
+        assert_eq!(users[0]["storageBytes"], 0);
     }
 }

@@ -27,6 +27,7 @@ mod folders;
 mod health;
 mod hibp;
 mod identity;
+mod invitations;
 mod json;
 mod limits;
 mod logs;
@@ -208,6 +209,7 @@ pub fn router(state: AppState) -> Router {
         .merge(two_factor::routes())
         .merge(meta::routes())
         .merge(uwu::routes())
+        .merge(invitations::routes())
         .merge(admin::routes())
         .merge(whole_vault)
         .merge(web::routes())

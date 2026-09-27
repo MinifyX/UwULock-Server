@@ -33,7 +33,7 @@ pub const REFRESH_DAYS_MOBILE: i64 = 90;
 /// How long "remember this device" skips two-step login.
 pub const REMEMBER_DAYS: i64 = 30;
 
-const TOKEN_KEY: &str = "token_key";
+pub(crate) const TOKEN_KEY: &str = "token_key";
 
 /// `bytes` random bytes, from the operating system.
 pub fn random_bytes(bytes: usize) -> Vec<u8> {

@@ -205,3 +205,26 @@ fn urlencode(value: &str) -> String {
         })
         .collect()
 }
+
+pub(crate) type Pushed = tokio::sync::mpsc::UnboundedSender<(String, Value)>;
+
+/// Bitwarden's push relay, on this machine: it hands on what it was told.
+pub(crate) async fn fake_relay() -> (String, tokio::sync::mpsc::UnboundedReceiver<(String, Value)>) {
+    use axum::extract::State;
+    use axum::routing::post;
+    let (tell, told) = tokio::sync::mpsc::unbounded_channel();
+    let app = axum::Router::new()
+        .route("/connect/token", post(|| async { axum::Json(json!({"access_token": "relay", "expires_in": 3600})) }))
+        .route(
+            "/push/{*rest}",
+            post(|State(tell): State<Pushed>, uri: axum::http::Uri, body: String| async move {
+                let _ = tell.send((uri.path().to_string(), serde_json::from_str(&body).unwrap_or(Value::Null)));
+                StatusCode::OK
+            }),
+        )
+        .with_state(tell);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{address}"), told)
+}

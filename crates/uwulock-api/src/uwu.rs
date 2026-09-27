@@ -74,6 +74,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "rememberTwoFactor": settings.remember_two_factor,
         "hibp": settings.hibp,
         "maxFileMb": settings.max_file_mb,
+        "mayInvite": settings.users_may_invite || session.user.admin,
         "hasHint": session.user.password_hint.is_some(),
         "twoFactor": factors.iter().filter(|factor| factor.enabled).map(|factor| factor.kind).collect::<Vec<_>>(),
         "created": session.user.created,
