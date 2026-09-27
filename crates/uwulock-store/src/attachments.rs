@@ -44,20 +44,50 @@ pub struct AttachmentKey {
     pub key: String,
 }
 
-/// The item `cipher_id` of `user_id`, with its revision moved on: what a change to its
-/// attachments does. Nothing when it is not theirs.
-fn touch_cipher(tx: &Transaction<'_>, user_id: &str, cipher_id: &str) -> rusqlite::Result<Option<Cipher>> {
+/// Whose an item is: a user's, or an organisation's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Owner {
+    User(String),
+    Org(String),
+}
+
+impl Owner {
+    /// For `user_id`'s own item, or — `org` given — the organisation's.
+    pub fn of(user_id: &str, org: Option<&str>) -> Owner {
+        match org {
+            Some(org) => Owner::Org(org.to_string()),
+            None => Owner::User(user_id.to_string()),
+        }
+    }
+}
+
+/// The item `cipher_id` of `owner`, with its revision moved on: what a change to its attachments
+/// does. Nothing when it is not theirs. The users whose revision moved come back too.
+fn touch_cipher(
+    tx: &Transaction<'_>,
+    owner: &Owner,
+    cipher_id: &str,
+) -> rusqlite::Result<Option<(Cipher, Vec<String>)>> {
     let now = clock::now();
-    if tx
-        .execute("UPDATE ciphers SET revision = ?3 WHERE id = ?1 AND user_id = ?2", params![cipher_id, user_id, now])?
-        == 0
-    {
+    let (sql, key) = match owner {
+        Owner::User(id) => ("UPDATE ciphers SET revision = ?3 WHERE id = ?1 AND user_id = ?2", id),
+        Owner::Org(id) => ("UPDATE ciphers SET revision = ?3 WHERE id = ?1 AND organization_id = ?2", id),
+    };
+    if tx.execute(sql, params![cipher_id, key, now])? == 0 {
         return Ok(None);
     }
-    bump_revision(tx, user_id)?;
-    tx.prepare_cached(&format!("SELECT {CIPHER_COLUMNS} FROM ciphers WHERE id = ?1"))?
+    let users = match owner {
+        Owner::User(id) => vec![id.clone()],
+        Owner::Org(id) => crate::organizations::member_users(tx, id)?,
+    };
+    for user in &users {
+        bump_revision(tx, user)?;
+    }
+    let cipher = tx
+        .prepare_cached(&format!("SELECT {CIPHER_COLUMNS} FROM ciphers WHERE id = ?1"))?
         .query_row([cipher_id], cipher_from)
-        .optional()
+        .optional()?;
+    Ok(cipher.map(|cipher| (cipher, users)))
 }
 
 /// Write new names and keys for those of `keys` that are attachments of `cipher_id`. The rest
@@ -87,6 +117,21 @@ impl Store {
         .await
     }
 
+    /// Those that arrived, of the items `cipher_ids`: an organisation's items in a sync.
+    pub async fn attachments_of(&self, cipher_ids: Vec<String>) -> Result<Vec<Attachment>> {
+        self.sqlite_read(move |conn| {
+            let mut statement = conn.prepare_cached(&format!(
+                "SELECT {COLUMNS} FROM attachments WHERE cipher_id = ?1 AND uploaded ORDER BY created"
+            ))?;
+            let mut all = Vec::new();
+            for id in &cipher_ids {
+                all.extend(statement.query_map([id], attachment_from)?.collect::<rusqlite::Result<Vec<_>>>()?);
+            }
+            Ok(all)
+        })
+        .await
+    }
+
     /// The attachments of one item that arrived.
     pub async fn attachments(&self, cipher_id: &str) -> Result<Vec<Attachment>> {
         let cipher_id = cipher_id.to_string();
@@ -111,13 +156,13 @@ impl Store {
         .await
     }
 
-    /// A new attachment on one of the user's items, before (or, `uploaded`, after) its file
+    /// A new attachment on one of `owner`'s items, before (or, `uploaded`, after) its file
     /// arrived. The item as it is afterwards; nothing when it is not theirs.
-    pub async fn add_attachment(&self, user_id: &str, attachment: Attachment) -> Result<Option<Cipher>> {
-        let owned = user_id.to_string();
-        let cipher = self
+    pub async fn add_attachment(&self, owner: &Owner, attachment: Attachment) -> Result<Option<Cipher>> {
+        let owned = owner.clone();
+        let changed = self
             .sqlite_write(move |tx| {
-                let Some(cipher) = touch_cipher(tx, &owned, &attachment.cipher_id)? else { return Ok(None) };
+                let Some(changed) = touch_cipher(tx, &owned, &attachment.cipher_id)? else { return Ok(None) };
                 tx.execute(
                     &format!("INSERT INTO attachments ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)"),
                     params![
@@ -130,52 +175,60 @@ impl Store {
                         attachment.created,
                     ],
                 )?;
-                Ok(Some(cipher))
+                Ok(Some(changed))
             })
             .await?;
-        self.forget_session_of(user_id);
-        Ok(cipher)
+        Ok(self.forget_changed(changed))
     }
 
-    /// The file of an announced attachment arrived, with `size` bytes.
-    pub async fn attachment_uploaded(&self, user_id: &str, cipher_id: &str, id: &str, size: i64) -> Result<bool> {
-        let (owned, cipher_id, id) = (user_id.to_string(), cipher_id.to_string(), id.to_string());
-        let done = self
+    fn forget_changed(&self, changed: Option<(Cipher, Vec<String>)>) -> Option<Cipher> {
+        let (cipher, users) = changed?;
+        for user in &users {
+            self.forget_session_of(user);
+        }
+        Some(cipher)
+    }
+
+    /// The file of an announced attachment arrived, with `size` bytes. The item as it is now.
+    pub async fn attachment_uploaded(
+        &self,
+        owner: &Owner,
+        cipher_id: &str,
+        id: &str,
+        size: i64,
+    ) -> Result<Option<Cipher>> {
+        let (owned, cipher_id, id) = (owner.clone(), cipher_id.to_string(), id.to_string());
+        let changed = self
             .sqlite_write(move |tx| {
-                if touch_cipher(tx, &owned, &cipher_id)?.is_none() {
-                    return Ok(false);
-                }
-                Ok(tx.execute(
+                let Some(changed) = touch_cipher(tx, &owned, &cipher_id)? else { return Ok(None) };
+                let done = tx.execute(
                     "UPDATE attachments SET uploaded = 1, size = ?3 WHERE id = ?1 AND cipher_id = ?2",
                     params![id, cipher_id, size],
-                )? > 0)
+                )? > 0;
+                Ok(done.then_some(changed))
             })
             .await?;
-        self.forget_session_of(user_id);
-        Ok(done)
+        Ok(self.forget_changed(changed))
     }
 
     /// The attachment goes; its file is swept away later. The item as it is afterwards; nothing
-    /// when the item is not the user's or has no such attachment.
-    pub async fn delete_attachment(&self, user_id: &str, cipher_id: &str, id: &str) -> Result<Option<Cipher>> {
-        let (owned, cipher_id, id) = (user_id.to_string(), cipher_id.to_string(), id.to_string());
-        let cipher = self
+    /// when the item is not `owner`'s or has no such attachment.
+    pub async fn delete_attachment(&self, owner: &Owner, cipher_id: &str, id: &str) -> Result<Option<Cipher>> {
+        let (owned, cipher_id, id) = (owner.clone(), cipher_id.to_string(), id.to_string());
+        let changed = self
             .sqlite_write(move |tx| {
-                let theirs: bool = tx.query_row(
-                    "SELECT EXISTS (SELECT 1 FROM ciphers WHERE id = ?1 AND user_id = ?2)",
-                    [&cipher_id, &owned],
-                    |row| row.get(0),
-                )?;
-                if !theirs
-                    || tx.execute("DELETE FROM attachments WHERE id = ?1 AND cipher_id = ?2", [&id, &cipher_id])? == 0
-                {
-                    return Ok(None);
+                let Some(changed) = touch_cipher(tx, &owned, &cipher_id)? else { return Ok(None) };
+                if tx.execute("DELETE FROM attachments WHERE id = ?1 AND cipher_id = ?2", [&id, &cipher_id])? == 0 {
+                    // Nothing changed after all: the transaction rolls back.
+                    return Err(rusqlite::Error::QueryReturnedNoRows);
                 }
-                touch_cipher(tx, &owned, &cipher_id)
+                Ok(Some(changed))
             })
-            .await?;
-        self.forget_session_of(user_id);
-        Ok(cipher)
+            .await;
+        match changed {
+            Err(crate::StoreError::Sqlite(rusqlite::Error::QueryReturnedNoRows)) => Ok(None),
+            other => Ok(self.forget_changed(other?)),
+        }
     }
 
     /// Bytes in the user's attachments, for the admin portal.
@@ -232,17 +285,18 @@ mod tests {
         store.save_cipher(cipher(&user.id, "c1", None)).await.unwrap();
         let before = store.cipher(&user.id, "c1").await.unwrap().unwrap().revision;
 
-        let changed = store.add_attachment(&user.id, attachment("c1", "a1")).await.unwrap().unwrap();
+        let changed =
+            store.add_attachment(&Owner::User(user.id.clone()), attachment("c1", "a1")).await.unwrap().unwrap();
         assert!(changed.revision > before, "the item changed");
         assert!(store.attachments_of_user(&user.id).await.unwrap().is_empty(), "not there yet");
         assert!(store.attachment("c1", "a1").await.unwrap().is_some());
 
-        assert!(store.attachment_uploaded(&user.id, "c1", "a1", 1000).await.unwrap());
+        assert!(store.attachment_uploaded(&Owner::User(user.id.clone()), "c1", "a1", 1000).await.unwrap().is_some());
         let listed = store.attachments_of_user(&user.id).await.unwrap();
         assert_eq!((listed.len(), listed[0].size), (1, 1000));
         assert_eq!(store.attachment_bytes(&user.id).await.unwrap(), 1000);
 
-        assert!(store.delete_attachment(&user.id, "c1", "a1").await.unwrap().is_some());
+        assert!(store.delete_attachment(&Owner::User(user.id.clone()), "c1", "a1").await.unwrap().is_some());
         assert!(store.attachments("c1").await.unwrap().is_empty());
         assert!(!store.attachment_exists("c1", "a1").await.unwrap());
     }
@@ -253,10 +307,10 @@ mod tests {
         let nyu = store.create_user(new_user("nyu@example.com")).await.unwrap();
         let other = store.create_user(new_user("other@example.com")).await.unwrap();
         store.save_cipher(cipher(&nyu.id, "c1", None)).await.unwrap();
-        store.add_attachment(&nyu.id, attachment("c1", "a1")).await.unwrap().unwrap();
-        assert!(store.add_attachment(&other.id, attachment("c1", "a2")).await.unwrap().is_none());
-        assert!(!store.attachment_uploaded(&other.id, "c1", "a1", 5).await.unwrap());
-        assert!(store.delete_attachment(&other.id, "c1", "a1").await.unwrap().is_none());
+        store.add_attachment(&Owner::User(nyu.id.clone()), attachment("c1", "a1")).await.unwrap().unwrap();
+        assert!(store.add_attachment(&Owner::User(other.id.clone()), attachment("c1", "a2")).await.unwrap().is_none());
+        assert!(store.attachment_uploaded(&Owner::User(other.id.clone()), "c1", "a1", 5).await.unwrap().is_none());
+        assert!(store.delete_attachment(&Owner::User(other.id.clone()), "c1", "a1").await.unwrap().is_none());
         assert!(store.attachment("c1", "a1").await.unwrap().is_some());
     }
 
@@ -265,7 +319,7 @@ mod tests {
         let (store, _dir) = store();
         let user = store.create_user(new_user("nyu@example.com")).await.unwrap();
         store.save_cipher(cipher(&user.id, "c1", None)).await.unwrap();
-        store.add_attachment(&user.id, attachment("c1", "a1")).await.unwrap();
+        store.add_attachment(&Owner::User(user.id.clone()), attachment("c1", "a1")).await.unwrap();
         store.bulk(&user.id, vec!["c1".into()], crate::Bulk::Delete).await.unwrap();
         assert!(!store.attachment_exists("c1", "a1").await.unwrap());
     }
