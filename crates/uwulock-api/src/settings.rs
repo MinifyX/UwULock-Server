@@ -22,6 +22,11 @@ pub struct Settings {
     pub password_hints: bool,
     /// Whether "remember this device" may skip two-step login for 30 days.
     pub remember_two_factor: bool,
+    /// The largest attachment or Send file, in MiB.
+    pub max_file_mb: u32,
+    /// Whether the web vault's password check may ask Have I Been Pwned, through this server,
+    /// whether a password was in a breach.
+    pub hibp: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +38,8 @@ impl Default for Settings {
             new_device_mail: true,
             password_hints: true,
             remember_two_factor: true,
+            max_file_mb: 500,
+            hibp: true,
         }
     }
 }
@@ -54,6 +61,9 @@ impl Settings {
     pub fn check(&self) -> Result<(), String> {
         if !(1..=90).contains(&self.invitation_days) {
             return Err("Invitations can last from 1 to 90 days.".into());
+        }
+        if !(1..=4096).contains(&self.max_file_mb) {
+            return Err("Files can be from 1 MB to 4096 MB.".into());
         }
         if let Some(smtp) = &self.smtp
             && (smtp.host.trim().is_empty() || smtp.port == 0 || smtp.from.trim().is_empty())

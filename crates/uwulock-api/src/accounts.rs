@@ -43,6 +43,8 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/accounts/revision-date", get(revision_date))
         .route("/api/accounts/password-hint", post(password_hint))
         .route("/api/accounts/verify-password", post(verify_password))
+        .route("/api/accounts/api-key", post(api_key))
+        .route("/api/accounts/rotate-api-key", post(rotate_api_key))
         .route("/api/accounts/request-otp", post(no_otp))
         .route("/api/accounts/verify-otp", post(no_otp))
         .route("/api/devices", get(devices))
@@ -366,12 +368,29 @@ struct MasterPasswordUnlockData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct EmergencyUnlockData {
+    id: String,
+    key_encrypted: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyUnlockData {
+    id: String,
+    encrypted_user_key: String,
+    encrypted_public_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AccountUnlockData {
     master_password_unlock_data: MasterPasswordUnlockData,
     #[serde(default)]
-    emergency_access_unlock_data: Vec<Value>,
+    emergency_access_unlock_data: Vec<EmergencyUnlockData>,
     #[serde(default)]
     organization_account_recovery_unlock_data: Vec<Value>,
+    #[serde(default)]
+    passkey_unlock_data: Vec<PasskeyUnlockData>,
 }
 
 #[derive(Deserialize)]
@@ -393,7 +412,7 @@ struct AccountData {
     ciphers: Vec<CipherData>,
     folders: Vec<FolderKeyData>,
     #[serde(default)]
-    sends: Vec<Value>,
+    sends: Vec<crate::sends::SendData>,
 }
 
 #[derive(Deserialize)]
@@ -426,21 +445,31 @@ async fn rotate_keys(
     if Some(&data.account_keys.account_public_key) != user.public_key.as_ref() {
         return Err(ApiError::bad("Changing the asymmetric keypair is not possible during key rotation"));
     }
-    if !data.account_unlock_data.emergency_access_unlock_data.is_empty()
-        || !data.account_unlock_data.organization_account_recovery_unlock_data.is_empty()
-        || !data.account_data.sends.is_empty()
-    {
-        return Err(ApiError::bad("This server has no emergency access, organisations or sends to rotate."));
+    if !data.account_unlock_data.organization_account_recovery_unlock_data.is_empty() {
+        return Err(ApiError::bad("This server has no organisations to rotate."));
     }
     crate::ciphers::validate_batch(&data.account_data.ciphers)?;
 
     let existing: HashMap<String, uwulock_store::Cipher> =
         state.store.ciphers(&user.id).await?.into_iter().map(|cipher| (cipher.id.clone(), cipher)).collect();
     let mut ciphers = Vec::with_capacity(data.account_data.ciphers.len());
+    let mut attachments = Vec::new();
     for item in data.account_data.ciphers {
         let id = item.id.clone().ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
         let current = existing.get(&id).cloned().ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+        let keys = item.attachment_keys();
+        if !keys.is_empty() {
+            attachments.push((id, keys));
+        }
         ciphers.push(apply(item, current)?);
+    }
+    let existing: HashMap<String, uwulock_store::sends::Send> =
+        state.store.sends(&user.id).await?.into_iter().map(|send| (send.id.clone(), send)).collect();
+    let mut sends = Vec::with_capacity(data.account_data.sends.len());
+    for send in data.account_data.sends {
+        let id = send.id.clone().ok_or_else(|| ApiError::bad("Send doesn't exist"))?;
+        let current = existing.get(&id).cloned().ok_or_else(|| ApiError::bad("Send doesn't exist"))?;
+        sends.push(crate::sends::apply(&state, send, current).await?);
     }
     let folders: Vec<(String, String)> = data
         .account_data
@@ -454,8 +483,29 @@ async fn rotate_keys(
     rotated.user_key = unlock.master_key_encrypted_user_key;
     rotated.password_hash = auth::hash_password(state.config.hash_cost, &unlock.master_key_authentication_hash).await?;
     rotated.security_stamp = uuid::Uuid::new_v4().to_string();
-    if !state.store.rotate_keys(rotated, folders, ciphers).await? {
-        return Err(ApiError::bad("All existing ciphers and folders must be included in the rotation"));
+    let rotation = uwulock_store::Rotation {
+        user: rotated,
+        folders,
+        ciphers,
+        attachments,
+        sends,
+        emergency: data
+            .account_unlock_data
+            .emergency_access_unlock_data
+            .into_iter()
+            .map(|access| (access.id, access.key_encrypted))
+            .collect(),
+        passkeys: data
+            .account_unlock_data
+            .passkey_unlock_data
+            .into_iter()
+            .map(|passkey| (passkey.id, passkey.encrypted_user_key, passkey.encrypted_public_key))
+            .collect(),
+    };
+    if !state.store.rotate_keys(rotation).await? {
+        return Err(ApiError::bad(
+            "All existing ciphers, folders, sends, emergency contacts and passkeys must be included in the rotation",
+        ));
     }
     tracing::info!(user = %user.id, "user key rotated");
     Ok(StatusCode::OK)
@@ -577,6 +627,30 @@ async fn change_email(
         .await?;
     tracing::info!(user = %session.user.id, "address changed");
     Ok(StatusCode::OK)
+}
+
+// ── The API key ───────────────────────────────────────────
+
+/// The CLI's API key, made on first ask. After the master password, like everything secret.
+async fn api_key(
+    State(state): State<AppState>,
+    session: Session,
+    Json(data): Json<SecretData>,
+) -> ApiResult<Json<Value>> {
+    check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
+    let (key, revision) = state.store.api_key(&session.user.id, auth::random_token(24)).await?;
+    Ok(Json(json!({ "apiKey": key, "revisionDate": revision, "object": "apiKey" })))
+}
+
+async fn rotate_api_key(
+    State(state): State<AppState>,
+    session: Session,
+    Json(data): Json<SecretData>,
+) -> ApiResult<Json<Value>> {
+    check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
+    let (key, revision) = state.store.rotate_api_key(&session.user.id, auth::random_token(24)).await?;
+    tracing::info!(user = %session.user.id, "API key rotated");
+    Ok(Json(json!({ "apiKey": key, "revisionDate": revision, "object": "apiKey" })))
 }
 
 /// Addresses are proven by the invitation, so there is nothing left to verify.
@@ -859,6 +933,41 @@ mod tests {
         let again = server.login("nyu@example.com", "d2").await;
         assert_eq!(server.call("DELETE", "/api/accounts", Some(&again.token), secret).await.status(), StatusCode::OK);
         assert!(server.state.store.user_by_email("nyu@example.com").await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn the_cli_logs_in_with_its_api_key() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let secret = json!({"masterPasswordHash": password_hash("nyu@example.com")});
+        let key = json(server.call("POST", "/api/accounts/api-key", Some(&account.token), secret.clone()).await).await;
+        let key = key["apiKey"].as_str().unwrap().to_string();
+        let client_id = format!("user.{}", account.id);
+        let login = |secret: String| {
+            vec![
+                ("grant_type", "client_credentials".to_string()),
+                ("client_id", client_id.clone()),
+                ("client_secret", secret),
+                ("scope", "api".into()),
+                ("deviceType", "25".into()),
+                ("deviceIdentifier", "cli".into()),
+                ("deviceName", "linux".into()),
+            ]
+        };
+        let fields = login(key.clone());
+        let form: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let response = server.form("/identity/connect/token", &form).await;
+        assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+        let body = json(response).await;
+        assert_eq!(body["Key"], "2.userkey|userkey|userkey");
+        assert!(body.get("refresh_token").is_none());
+
+        let rotated =
+            json(server.call("POST", "/api/accounts/rotate-api-key", Some(&account.token), secret).await).await;
+        assert_ne!(rotated["apiKey"], key.as_str());
+        let response = server.form("/identity/connect/token", &form).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the old key is gone");
+        assert_eq!(json(response).await["error"], "invalid_client");
     }
 
     #[tokio::test]

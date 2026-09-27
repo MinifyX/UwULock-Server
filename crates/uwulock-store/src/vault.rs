@@ -50,10 +50,10 @@ pub struct Cipher {
     pub archived: Option<String>,
 }
 
-const CIPHER_COLUMNS: &str = "id, user_id, folder_id, type, name, notes, key, data, fields, password_history, favorite, \
+pub(crate) const CIPHER_COLUMNS: &str = "id, user_id, folder_id, type, name, notes, key, data, fields, password_history, favorite, \
      reprompt, created, revision, deleted, archived";
 
-fn cipher_from(row: &Row<'_>) -> rusqlite::Result<Cipher> {
+pub(crate) fn cipher_from(row: &Row<'_>) -> rusqlite::Result<Cipher> {
     Ok(Cipher {
         id: row.get(0)?,
         user_id: row.get(1)?,
@@ -109,6 +109,23 @@ fn write_cipher(tx: &Transaction<'_>, cipher: &Cipher) -> rusqlite::Result<()> {
 pub struct VaultContents {
     pub folders: Vec<Folder>,
     pub ciphers: Vec<Cipher>,
+}
+
+/// Everything a key rotation brings, for [`Store::rotate_keys`].
+#[derive(Debug, Clone)]
+pub struct Rotation {
+    pub user: crate::User,
+    /// Folder ids and their names under the new key.
+    pub folders: Vec<(String, String)>,
+    pub ciphers: Vec<Cipher>,
+    /// New names and keys of attachments, by item.
+    pub attachments: Vec<(String, Vec<crate::AttachmentKey>)>,
+    pub sends: Vec<crate::sends::Send>,
+    /// Emergency contact ids and the new user key wrapped for each.
+    pub emergency: Vec<(String, String)>,
+    /// Passkeys that unlock: id, the new user key wrapped for its key pair, and its public key
+    /// under the new user key.
+    pub passkeys: Vec<(String, String, String)>,
 }
 
 /// What a change to several items at once does to each.
@@ -252,7 +269,16 @@ impl Store {
 
     /// Write an item as it is now, new or changed. Its revision is set to now, and handed back.
     /// Nothing when an item of that id belongs to somebody else, or its folder does.
-    pub async fn save_cipher(&self, mut cipher: Cipher) -> Result<Option<Cipher>> {
+    pub async fn save_cipher(&self, cipher: Cipher) -> Result<Option<Cipher>> {
+        self.save_cipher_with(cipher, Vec::new()).await
+    }
+
+    /// [`Store::save_cipher`], with new names and keys for its attachments in the same step.
+    pub async fn save_cipher_with(
+        &self,
+        mut cipher: Cipher,
+        attachments: Vec<crate::AttachmentKey>,
+    ) -> Result<Option<Cipher>> {
         let user_id = cipher.user_id.clone();
         let saved = self
             .sqlite_write(move |tx| {
@@ -267,6 +293,7 @@ impl Store {
                 }
                 cipher.revision = clock::now();
                 write_cipher(tx, &cipher)?;
+                crate::attachments::set_keys(tx, &cipher.id, &attachments)?;
                 bump_revision(tx, &cipher.user_id)?;
                 Ok(Some(cipher))
             })
@@ -376,18 +403,15 @@ impl Store {
     }
 
     /// New keys for a whole account at once, as a key rotation brings them: the user's wrapped
-    /// user key and private key, every folder name and every item. Refused (`false`) unless the
-    /// folders and items given are exactly the ones the user has — a rotation that missed one
-    /// would leave it under a key nobody has any more.
-    pub async fn rotate_keys(
-        &self,
-        user: crate::User,
-        folders: Vec<(String, String)>,
-        ciphers: Vec<Cipher>,
-    ) -> Result<bool> {
-        let user_id = user.id.clone();
+    /// user key and private key, every folder name, every item and its attachments, every Send,
+    /// every emergency contact's key and every passkey that unlocks. Refused (`false`) unless
+    /// all of them are there — a rotation that missed one would leave it under a key nobody has
+    /// any more.
+    pub async fn rotate_keys(&self, rotation: Rotation) -> Result<bool> {
+        let user_id = rotation.user.id.clone();
         let done = self
             .sqlite_write(move |tx| {
+                let Rotation { user, folders, ciphers, attachments, sends, emergency, passkeys } = rotation;
                 let have = |sql: &str| -> rusqlite::Result<Vec<String>> {
                     let mut ids = tx
                         .prepare(sql)?
@@ -396,8 +420,12 @@ impl Store {
                     ids.sort();
                     Ok(ids)
                 };
-                let mut given: Vec<String> = folders.iter().map(|(id, _)| id.clone()).collect();
-                given.sort();
+                let sorted = |ids: Vec<String>| {
+                    let mut ids = ids;
+                    ids.sort();
+                    ids
+                };
+                let given = sorted(folders.iter().map(|(id, _)| id.clone()).collect());
                 if have("SELECT id FROM folders WHERE user_id = ?1")? != given {
                     return Ok(false);
                 }
@@ -408,9 +436,22 @@ impl Store {
                 {
                     return Ok(false);
                 }
-                let mut given: Vec<String> = ciphers.iter().map(|cipher| cipher.id.clone()).collect();
-                given.sort();
-                if have("SELECT id FROM ciphers WHERE user_id = ?1")? != given {
+                if have("SELECT id FROM ciphers WHERE user_id = ?1")?
+                    != sorted(ciphers.iter().map(|cipher| cipher.id.clone()).collect())
+                {
+                    return Ok(false);
+                }
+                if have("SELECT id FROM sends WHERE user_id = ?1")?
+                    != sorted(sends.iter().map(|send| send.id.clone()).collect())
+                {
+                    return Ok(false);
+                }
+                if have("SELECT id FROM passkeys WHERE user_id = ?1 AND supports_prf")?
+                    != sorted(passkeys.iter().map(|(id, _, _)| id.clone()).collect())
+                {
+                    return Ok(false);
+                }
+                if !crate::emergency::rotate_keys(tx, &user.id, &emergency)? {
                     return Ok(false);
                 }
                 let now = clock::now();
@@ -425,6 +466,22 @@ impl Store {
                     cipher.user_id = user.id.clone();
                     cipher.revision = now.clone();
                     write_cipher(tx, &cipher)?;
+                }
+                for (cipher_id, keys) in &attachments {
+                    crate::attachments::set_keys(tx, cipher_id, keys)?;
+                }
+                for send in &sends {
+                    let mut send = send.clone();
+                    send.user_id = user.id.clone();
+                    send.revision = now.clone();
+                    crate::sends::write_send(tx, &send)?;
+                }
+                for (id, user_key, public_key) in &passkeys {
+                    tx.execute(
+                        "UPDATE passkeys SET encrypted_user_key = ?3, encrypted_public_key = ?4 \
+                         WHERE id = ?1 AND user_id = ?2",
+                        params![id, user.id, user_key, public_key],
+                    )?;
                 }
                 let mut user = user;
                 // A new key has a new name, which the clients will tell.
@@ -457,11 +514,11 @@ fn folder_is_theirs(tx: &Transaction<'_>, user_id: &str, folder_id: Option<&str>
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::accounts::tests::{new_user, store};
 
-    fn cipher(user_id: &str, id: &str, folder: Option<&str>) -> Cipher {
+    pub(crate) fn cipher(user_id: &str, id: &str, folder: Option<&str>) -> Cipher {
         Cipher {
             id: id.into(),
             user_id: user_id.into(),
@@ -559,17 +616,21 @@ mod tests {
         rotated.user_key = "new key".into();
         let mut a = cipher(&user.id, "a", None);
         a.name = "new".into();
-        assert!(
-            !store
-                .rotate_keys(rotated.clone(), vec![(folder.id.clone(), "new".into())], vec![a.clone()])
-                .await
-                .unwrap()
-        );
+        let rotation = |user: crate::User, ciphers: Vec<Cipher>| Rotation {
+            user,
+            folders: vec![(folder.id.clone(), "new".into())],
+            ciphers,
+            attachments: Vec::new(),
+            sends: Vec::new(),
+            emergency: Vec::new(),
+            passkeys: Vec::new(),
+        };
+        assert!(!store.rotate_keys(rotation(rotated.clone(), vec![a.clone()])).await.unwrap());
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().user_key, user.user_key, "nothing changed");
 
         let mut b = cipher(&user.id, "b", None);
         b.name = "new".into();
-        assert!(store.rotate_keys(rotated, vec![(folder.id.clone(), "new".into())], vec![a, b]).await.unwrap());
+        assert!(store.rotate_keys(rotation(rotated, vec![a, b])).await.unwrap());
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().user_key, "new key");
         assert!(store.ciphers(&user.id).await.unwrap().iter().all(|cipher| cipher.name == "new"));
         assert_eq!(store.folder(&user.id, &folder.id).await.unwrap().unwrap().name, "new");

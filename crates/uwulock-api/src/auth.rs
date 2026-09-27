@@ -100,6 +100,15 @@ pub struct Claims {
     pub amr: Vec<String>,
 }
 
+/// What a download link's or a Send's token says: which, until when, and what for (in the
+/// issuer, so no such token passes as an access token or as the other kind).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LinkClaims {
+    sub: String,
+    exp: i64,
+    iss: String,
+}
+
 impl Tokens {
     /// The signing key from the database, made there on the first start.
     pub async fn load(store: &uwulock_store::Store, public: &str) -> Result<Self, String> {
@@ -135,7 +144,46 @@ impl Tokens {
         (self.sign(&claims), ACCESS_SECONDS)
     }
 
-    fn sign(&self, claims: &Claims) -> String {
+    /// A token for one file, `subject`, that works for `seconds`: download links carry it.
+    pub fn file_token(&self, subject: &str, seconds: i64) -> String {
+        let claims =
+            LinkClaims { sub: subject.to_string(), exp: now_seconds() + seconds, iss: self.link_issuer("file") };
+        self.sign(&claims)
+    }
+
+    /// Whether `token` is a file token for `subject` that has not run out.
+    pub fn check_file_token(&self, token: &str, subject: &str) -> bool {
+        self.verify_link(token, "file").is_some_and(|claims| claims.sub == subject)
+    }
+
+    /// A token that opens one Send, `send_id`, for a short while: what the send access grant
+    /// hands out after the password.
+    pub fn send_token(&self, send_id: &str) -> (String, i64) {
+        let seconds = 2 * 60;
+        let claims =
+            LinkClaims { sub: send_id.to_string(), exp: now_seconds() + seconds, iss: self.link_issuer("send") };
+        (self.sign(&claims), seconds)
+    }
+
+    /// The Send a send access token opens.
+    pub fn check_send_token(&self, token: &str) -> Option<String> {
+        self.verify_link(token, "send").map(|claims| claims.sub)
+    }
+
+    fn link_issuer(&self, what: &str) -> String {
+        format!("{}|{what}", self.issuer.trim_end_matches("|login"))
+    }
+
+    fn verify_link(&self, token: &str, what: &str) -> Option<LinkClaims> {
+        let (signed, signature) = token.trim().rsplit_once('.')?;
+        let signature = URL_SAFE_NO_PAD.decode(signature).ok()?;
+        UnparsedPublicKey::new(&ED25519, self.key.public_key().as_ref()).verify(signed.as_bytes(), &signature).ok()?;
+        let (_, payload) = signed.split_once('.')?;
+        let claims: LinkClaims = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(payload).ok()?).ok()?;
+        (claims.iss == self.link_issuer(what) && now_seconds() < claims.exp).then_some(claims)
+    }
+
+    fn sign(&self, claims: &impl Serialize) -> String {
         let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","typ":"JWT"}"#);
         let payload = URL_SAFE_NO_PAD.encode(serde_json::to_vec(claims).expect("claims serialize"));
         let signed = format!("{header}.{payload}");
@@ -440,6 +488,22 @@ mod tests {
         assert!(tokens.verify("not.a.token").is_none());
         let (other, _dir2) = self::tokens().await;
         assert!(other.verify(&token).is_none(), "another server's key");
+    }
+
+    #[tokio::test]
+    async fn link_tokens_open_one_thing_and_nothing_else() {
+        let (tokens, _dir) = tokens().await;
+        let file = tokens.file_token("c1/a1", 60);
+        assert!(tokens.check_file_token(&file, "c1/a1"));
+        assert!(!tokens.check_file_token(&file, "c1/a2"));
+        assert!(tokens.verify(&file).is_none(), "not an access token");
+        assert!(tokens.check_send_token(&file).is_none(), "not a Send token");
+        let (send, _) = tokens.send_token("s1");
+        assert_eq!(tokens.check_send_token(&send).as_deref(), Some("s1"));
+        assert!(!tokens.check_file_token(&send, "s1"));
+        let (login, _) = tokens.access_token(&user(), "d", 3, "browser");
+        assert!(!tokens.check_file_token(&login, "u1"), "an access token opens no file");
+        assert!(!tokens.check_file_token(&tokens.file_token("c1/a1", -1), "c1/a1"), "ran out");
     }
 
     #[tokio::test]

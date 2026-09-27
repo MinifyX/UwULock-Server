@@ -10,10 +10,15 @@
 
 mod accounts;
 mod admin;
+mod attachments;
+mod auth_requests;
 mod backup;
 pub mod backups;
 pub mod clock;
+pub mod emergency;
 mod migrations;
+mod passkeys;
+pub mod sends;
 mod sqlite;
 mod vault;
 
@@ -22,9 +27,13 @@ pub use accounts::{
     UserOverview, normalize_email,
 };
 pub use admin::{EVENT_DAYS, Event, Stats};
+pub use attachments::{Attachment, AttachmentKey};
+pub use auth_requests::{AUTH_REQUEST_SECONDS, AuthRequest};
 pub use backup::restore;
+pub use emergency::EmergencyAccess;
 pub use migrations::SCHEMA_VERSION;
-pub use vault::{Bulk, Cipher, Folder, VaultContents};
+pub use passkeys::{MAX_PASSKEYS, Passkey};
+pub use vault::{Bulk, Cipher, Folder, Rotation, VaultContents};
 
 use parking_lot::RwLock;
 use std::collections::HashMap;

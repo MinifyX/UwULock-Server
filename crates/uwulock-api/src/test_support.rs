@@ -42,6 +42,8 @@ impl TestServer {
             trust_forwarded: false,
             hash_cost: HashCost::cheap(),
             backups: dir.path().join("backups"),
+            data: dir.path().to_path_buf(),
+            hibp_url: "http://127.0.0.1:9".into(),
             start_settings: settings,
         };
         let mut state = AppState::new(store, config, "0.0.0-test", LogBuffer::new(100)).await.unwrap();

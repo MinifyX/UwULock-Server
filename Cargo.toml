@@ -26,7 +26,7 @@ uwulock-web = { path = "crates/uwulock-web" }
 
 # The server's own hash of what the clients send instead of the master password.
 argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "std"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query", "form"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query", "form", "multipart"] }
 # TLS with the server's own certificate files or one from Let's Encrypt; the provider is chosen below.
 axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
 base64 = "0.22"
@@ -40,6 +40,8 @@ parking_lot = "0.12"
 # Health check, update check and the benchmark: rustls with `ring`, set up by hand, so nothing
 # pulls in a second crypto library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "http2"] }
+# WebAuthn: what authenticators send is CBOR.
+ciborium = "0.2"
 # Bundled SQLite, so the server never depends on whichever libsqlite3 is around.
 # Signing tokens, hashing, random numbers and TOTP: the crypto rustls brings along anyway.
 ring = "0.17"
@@ -57,6 +59,8 @@ thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing", "macros"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "time", "sync", "net", "fs"] }
 tokio-stream = "0.1"
+# Files go out as they are read from disk.
+tokio-util = { version = "0.7", features = ["io"] }
 tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "set-header", "limit", "timeout", "trace"] }
 tracing = "0.1"
