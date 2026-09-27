@@ -187,6 +187,77 @@ try {
   if (!/^uwulock-.*\.db$/.test(backup.suggestedFilename()))
     throw new Error(`the backup came as ${backup.suggestedFilename()}`);
 
+  step('a backup goes back while the server runs');
+  await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
+  await page.getByLabel('E-Mail-Adresse').fill('later@example.com');
+  await page.getByRole('button', { name: 'Einladen' }).click();
+  await page.locator('.admin-table').getByText('later@example.com').waitFor();
+  await page.getByRole('navigation').getByRole('button', { name: 'Backups' }).click();
+  await page.getByRole('button', { name: 'Zurückspielen' }).first().click();
+  await page.locator('.modal input[type=password]').fill(password);
+  await page.locator('.modal').getByRole('button', { name: 'Zurückspielen' }).click();
+  await page.getByText(/vor dem Zurückspielen/).first().waitFor({ timeout: 30000 });
+  await snap('admin-restored');
+  await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
+  await page.locator('.admin-table').getByText('mika@example.com').waitFor();
+  if (await page.locator('.admin-table').getByText('later@example.com').count())
+    throw new Error('the invitation made after the backup is still there');
+
+  step('on a phone');
+  const phone = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+    locale: 'de-DE',
+  });
+  const mobile = await phone.newPage();
+  mobile.on('pageerror', (error) => problems.push(`phone: page error: ${error.message}`));
+  const phoneSnap = async (name) => {
+    if (shots) await mobile.screenshot({ path: `${shots}/${String(++shot).padStart(2, '0')}-phone-${name}.png` });
+  };
+  const noSideways = async (where) => {
+    const wide = await mobile.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    if (wide > 0) throw new Error(`${where}: ${wide}px wider than the phone`);
+  };
+  await mobile.goto(origin);
+  await mobile.getByLabel('E-Mail-Adresse').fill(email);
+  await mobile.locator('input[type=password]').first().fill(password);
+  await mobile.getByRole('button', { name: 'Anmelden', exact: true }).click();
+  await mobile.getByPlaceholder(/Tresor durchsuchen/).waitFor({ timeout: 30000 });
+  if (await mobile.locator('.sidebar').isVisible()) throw new Error('the sidebar takes the phone');
+  await mobile.locator('.bottom-nav').waitFor();
+  await noSideways('the list');
+  await phoneSnap('list');
+  await mobile.locator('.item-row').first().click();
+  await mobile.locator('.detail-pane .detail').waitFor();
+  if (await mobile.locator('.list-pane').isVisible()) throw new Error('list and item at once');
+  await noSideways('an item');
+  await phoneSnap('item');
+  await mobile.getByRole('button', { name: 'Zurück' }).click();
+  await mobile.locator('.list-pane').waitFor();
+  await mobile.locator('.bottom-nav').getByRole('button', { name: 'Mehr' }).click();
+  await mobile.locator('.sidebar').waitFor();
+  await phoneSnap('menu');
+  await mobile.locator('.bottom-nav').getByRole('button', { name: 'Sends' }).click();
+  await mobile.locator('.list-pane').getByText('Sends').first().waitFor();
+  await mobile.locator('.bottom-nav').getByRole('button', { name: 'Alle' }).click();
+  await mobile.getByRole('button', { name: 'Neu', exact: true }).click();
+  await mobile.getByRole('menuitem', { name: 'Login' }).click();
+  await mobile.locator('.modal').getByLabel('Name', { exact: true }).waitFor();
+  await noSideways('the editor');
+  await phoneSnap('editor');
+  await mobile.keyboard.press('Escape');
+  await mobile.goto(`${origin}/admin`);
+  await mobile.locator('.stat-grid').waitFor({ timeout: 30000 });
+  await noSideways('the admin portal');
+  await phoneSnap('admin');
+  await mobile.getByRole('navigation').getByRole('button', { name: 'Nutzer' }).click();
+  await mobile.locator('.admin-table').getByText(email).waitFor();
+  await noSideways('the users');
+  await phoneSnap('admin-users');
+  await phone.close();
+
   if (problems.length) throw new Error(problems.join('\n'));
   console.log('web vault and admin portal: all good');
 } catch (error) {

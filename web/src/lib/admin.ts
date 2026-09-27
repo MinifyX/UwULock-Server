@@ -48,6 +48,8 @@ export type User = {
   ciphers: number;
   twoFactor: boolean;
   kdf: string;
+  /** Attachments and the files of Sends. */
+  storageBytes: number;
 };
 
 export type UserDevice = {
@@ -82,6 +84,14 @@ export type Smtp = {
   fromName: string | null;
 };
 
+export type Push = {
+  installationId: string;
+  /** Only sent, never shown: `installationKeySet` says whether there is one. */
+  installationKey?: string;
+  installationKeySet?: boolean;
+  region: 'us' | 'eu';
+};
+
 export type Settings = {
   smtp: Smtp | null;
   defaultLanguage: 'de' | 'en';
@@ -89,7 +99,24 @@ export type Settings = {
   newDeviceMail: boolean;
   passwordHints: boolean;
   rememberTwoFactor: boolean;
+  maxFileMb: number;
+  hibp: boolean;
+  push: Push | null;
+  usersMayInvite: boolean;
+  invitationsPerUser: number;
   mailEnabled?: boolean;
+};
+
+/** One day of the numbers over time. */
+export type Day = {
+  day: string;
+  users: number;
+  devices: number;
+  ciphers: number;
+  sends: number;
+  fileBytes: number;
+  logins: number;
+  failedLogins: number;
 };
 
 export type Event = {
@@ -141,6 +168,8 @@ export const settings = () => request<Settings>(`${base}/settings`);
 export const saveSettings = (next: Settings) =>
   request<Settings>(`${base}/settings`, { method: 'PUT', body: next });
 export const testMail = (to: string) => request(`${base}/settings/test-mail`, { body: { to } });
+export const testPush = () => request(`${base}/settings/test-push`, { body: {} });
+export const stats = (days: number) => request<Day[]>(`${base}/stats?days=${days}`);
 export const events = (kind: string | null, before: number | null) => {
   const query = new URLSearchParams({ limit: '100' });
   if (kind) query.set('kind', kind);
@@ -156,15 +185,27 @@ export const createBackup = () => request<Backup>(`${base}/backups`, { method: '
  * here from the password and the account's key derivation, and the master key it takes is
  * wiped again right after.
  */
-export async function downloadBackup(name: string, password: string): Promise<Blob> {
+async function passwordHash(password: string): Promise<string> {
   const email = currentSession()?.email;
   if (!email) throw new ApiError(401, 'The session has ended. Log in again.', null);
   const kdf = await prelogin(email);
-  let masterPasswordHash: string;
   try {
-    masterPasswordHash = await call((core) => core.deriveLogin(email, password, kdf));
+    return await call((core) => core.deriveLogin(email, password, kdf));
   } finally {
     await call((core) => core.lock());
   }
+}
+
+export async function downloadBackup(name: string, password: string): Promise<Blob> {
+  const masterPasswordHash = await passwordHash(password);
   return download(`${base}/backups/${encodeURIComponent(name)}`, { masterPasswordHash });
+}
+
+/** Put a backup back while the server runs; what was there becomes a backup of its own. */
+export async function restoreBackup(name: string, password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<{ restored: string; before: string }>(
+    `${base}/backups/${encodeURIComponent(name)}/restore`,
+    { body: { masterPasswordHash } },
+  );
 }

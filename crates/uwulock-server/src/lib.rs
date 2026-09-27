@@ -150,13 +150,17 @@ pub async fn shutdown_signal() {
 
 /// Once a day: a backup, and the old ones swept away — backups, events, codes, invitations and
 /// sessions that ran out, items that were in the trash for 30 days, Sends past their deletion
-/// date, files nothing claims any more. Every hour: emergency access whose wait is over.
+/// date, files nothing claims any more. Every hour: emergency access whose wait is over, and the
+/// day's numbers for the admin portal.
 pub fn spawn_maintenance(config: Config, state: AppState) {
     let hourly = state.clone();
     tokio::spawn(async move {
         loop {
             if let Err(error) = uwulock_api::emergency::tend(&hourly).await {
                 tracing::warn!(error = %error.message(), "looking after emergency access did not work");
+            }
+            if let Err(error) = hourly.store.record_day().await {
+                tracing::warn!(%error, "the numbers of the day were not written down");
             }
             tokio::time::sleep(Duration::from_secs(60 * 60)).await;
         }

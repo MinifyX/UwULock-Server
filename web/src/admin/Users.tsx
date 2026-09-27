@@ -11,7 +11,7 @@ import {
   type UserDevice,
 } from '../lib/admin';
 import { errorText } from '../lib/errors';
-import { ago, seconds, when } from '../lib/format';
+import { ago, bytes, seconds, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
 
@@ -59,6 +59,7 @@ export function Users({ me }: { me: string }) {
             <th>{t('Konto')}</th>
             <th>{t('Einträge')}</th>
             <th>{t('Geräte')}</th>
+            <th>{t('Dateien')}</th>
             <th>{t('Zuletzt angemeldet')}</th>
             <th aria-label={t('Aktionen')} />
           </tr>
@@ -168,6 +169,7 @@ function UserRow({
         </td>
         <td>{user.ciphers}</td>
         <td>{user.devices}</td>
+        <td>{user.storageBytes ? bytes(user.storageBytes) : '–'}</td>
         <td title={when(user.lastLogin) ?? ''}>{ago(seconds(user.lastLogin))}</td>
         <td className="row-actions">
           <button onClick={onToggle}>{open ? t('Weniger') : t('Mehr')}</button>
@@ -175,7 +177,7 @@ function UserRow({
       </tr>
       {open && (
         <tr className="row-detail">
-          <td colSpan={5}>
+          <td colSpan={6}>
             <p className="row-facts">
               {t('Angelegt {date} · Sprache {language} · {kdf}', {
                 date: when(user.created) ?? '',

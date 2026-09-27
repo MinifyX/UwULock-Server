@@ -16,6 +16,8 @@ export type AccountInfo = {
   rememberTwoFactor: boolean;
   hibp: boolean;
   maxFileMb: number;
+  /** Whether this account may invite people (in the settings, under Invite). */
+  mayInvite: boolean;
   hasHint: boolean;
   twoFactor: number[];
   created: string;
@@ -324,3 +326,24 @@ export async function importVault(format: 'json' | 'csv', text: string): Promise
   await request('/api/ciphers/import', { body });
   return body.count;
 }
+
+// ── Inviting people ───────────────────────────────────────
+
+export type MyInvitation = { email: string; created: string; expires: string; expired: boolean };
+
+export type MyInvitations = {
+  allowed: boolean;
+  /** How many one may bring in; none for admins. */
+  quota: number | null;
+  used: number;
+  invitations: MyInvitation[];
+};
+
+export const myInvitations = () => request<MyInvitations>('/uwu/v1/invitations');
+export const invitePerson = (email: string) =>
+  request<{ email: string; link: string; mailed: boolean; expires: string }>(
+    '/uwu/v1/invitations',
+    { body: { email } },
+  );
+export const withdrawInvitation = (email: string) =>
+  request(`/uwu/v1/invitations/${encodeURIComponent(email)}`, { method: 'DELETE' });

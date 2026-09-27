@@ -286,7 +286,10 @@ try {
   await settings(nyu, 'Notfallzugriff');
   await nyu.getByRole('button', { name: 'Einladen …' }).click();
   await nyu.getByLabel('E-Mail-Adresse ihres Kontos').fill('friend@example.com');
-  await nyu.getByRole('button', { name: 'Einladen', exact: true }).click();
+  await nyu
+    .getByRole('dialog', { name: 'Vertrauensperson einladen' })
+    .getByRole('button', { name: 'Einladen', exact: true })
+    .click();
   await nyu.getByText('Eingeladen ✧').waitFor();
   // Without mail, an invitation to an account is accepted at once.
   await nyu.getByRole('button', { name: 'Bestätigen …' }).click();

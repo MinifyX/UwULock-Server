@@ -30,6 +30,10 @@ pub struct Settings {
     /// Bitwarden's push relay, for waking the phone apps: installation id and key from
     /// bitwarden.com/host. None: the apps sync when they are opened.
     pub push: Option<uwulock_notify::relay::RelaySettings>,
+    /// Whether every account may invite people, not only admins.
+    pub users_may_invite: bool,
+    /// How many accounts one user may bring in, counting invitations that still work.
+    pub invitations_per_user: u32,
 }
 
 impl Default for Settings {
@@ -44,6 +48,8 @@ impl Default for Settings {
             max_file_mb: 500,
             hibp: true,
             push: None,
+            users_may_invite: false,
+            invitations_per_user: 5,
         }
     }
 }
@@ -65,6 +71,9 @@ impl Settings {
     pub fn check(&self) -> Result<(), String> {
         if !(1..=90).contains(&self.invitation_days) {
             return Err("Invitations can last from 1 to 90 days.".into());
+        }
+        if !(1..=100).contains(&self.invitations_per_user) {
+            return Err("A user may bring in from 1 to 100 people.".into());
         }
         if !(1..=4096).contains(&self.max_file_mb) {
             return Err("Files can be from 1 MB to 4096 MB.".into());

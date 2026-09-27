@@ -119,10 +119,10 @@ async fn serve(mut socket: WebSocket, mut listening: Listening) {
 #[cfg(test)]
 mod tests {
     use crate::Settings;
-    use crate::test_support::{TestServer, json};
+    use crate::test_support::{TestServer, fake_relay, json};
     use axum::http::StatusCode;
     use futures_util::{SinkExt, StreamExt};
-    use serde_json::{Value, json};
+    use serde_json::json;
     use std::net::SocketAddr;
     use std::time::Duration;
     use tokio_tungstenite::tungstenite::Message;
@@ -211,32 +211,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let message = next(&mut waiting).await;
         assert!(contains(&message, "AuthRequestResponseRecieved") && contains(&message, &id));
-    }
-
-    type Pushed = tokio::sync::mpsc::UnboundedSender<(String, Value)>;
-
-    /// Bitwarden's push relay, on this machine: it hands on what it was told.
-    async fn fake_relay() -> (String, tokio::sync::mpsc::UnboundedReceiver<(String, Value)>) {
-        use axum::extract::State;
-        use axum::routing::post;
-        let (tell, told) = tokio::sync::mpsc::unbounded_channel();
-        let app = axum::Router::new()
-            .route(
-                "/connect/token",
-                post(|| async { axum::Json(json!({"access_token": "relay", "expires_in": 3600})) }),
-            )
-            .route(
-                "/push/{*rest}",
-                post(|State(tell): State<Pushed>, uri: axum::http::Uri, body: String| async move {
-                    let _ = tell.send((uri.path().to_string(), serde_json::from_str(&body).unwrap_or(Value::Null)));
-                    StatusCode::OK
-                }),
-            )
-            .with_state(tell);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        (format!("http://{address}"), told)
     }
 
     #[tokio::test]

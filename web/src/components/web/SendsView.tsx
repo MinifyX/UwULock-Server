@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '../../lib/events';
 import { errorText } from '../../lib/errors';
 import {
@@ -16,6 +16,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
+import { BackToList, Panes } from '../panes';
 import { PasswordInput } from '../PasswordInput';
 
 /**
@@ -28,6 +29,7 @@ export function SendsView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ send: Send | null; kind: SendKind } | null>(null);
   const [deleting, setDeleting] = useState<Send | null>(null);
+  const { showDetail } = useContext(Panes);
 
   const reload = useCallback(() => {
     sendsList().then(setSends, (e) => toast(errorText(e), 'error'));
@@ -76,7 +78,10 @@ export function SendsView() {
                 role="option"
                 aria-selected={send.id === current?.id}
                 className="item-row"
-                onClick={() => setSelected(send.id)}
+                onClick={() => {
+                  setSelected(send.id);
+                  showDetail();
+                }}
               >
                 <span className="item-tile" data-hue="2">
                   <Icon name={send.kind === 1 ? 'file' : 'note'} size={18} />
@@ -104,6 +109,7 @@ export function SendsView() {
       </section>
 
       <section className="detail-pane">
+        <BackToList />
         {current ? (
           <article className="detail" aria-label={current.name}>
             <header className="detail-head">
