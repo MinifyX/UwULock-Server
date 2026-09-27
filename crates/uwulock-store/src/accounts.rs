@@ -699,6 +699,16 @@ impl Store {
         Ok(())
     }
 
+    /// New data for a way of two-step login that is on, like a security key's counter.
+    pub async fn set_two_factor_data(&self, user_id: &str, kind: i64, data: String) -> Result<()> {
+        let owned = user_id.to_string();
+        self.sqlite_write(move |tx| {
+            tx.execute("UPDATE two_factor SET data = ?3 WHERE user_id = ?1 AND type = ?2", params![owned, kind, data])
+                .map(drop)
+        })
+        .await
+    }
+
     /// Turn off one way of two-step login, or all of them (`None`). With the last one gone, the
     /// recovery code and remembered devices go too.
     pub async fn remove_two_factor(&self, user_id: &str, kind: Option<i64>) -> Result<()> {

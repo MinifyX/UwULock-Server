@@ -22,17 +22,20 @@ mod errors;
 pub mod files;
 mod folders;
 mod health;
+mod hibp;
 mod identity;
 mod json;
 mod limits;
 mod logs;
 mod meta;
+mod passkeys;
 mod sends;
 mod settings;
 mod totp;
 mod two_factor;
 mod uwu;
 mod web;
+mod webauthn;
 
 pub use admin::{Invited, invite};
 pub use auth::{HashCost, Tokens};
@@ -105,6 +108,12 @@ pub struct AppState {
     pub logs: Arc<LogBuffer>,
     pub update: Arc<RwLock<UpdateInfo>>,
     pub started: std::time::Instant,
+    /// Who WebAuthn is for: this server's host and origin.
+    pub party: webauthn::Party,
+    /// WebAuthn challenges that wait for their answer.
+    pub challenges: Arc<webauthn::Challenges>,
+    /// What Have I Been Pwned answered lately.
+    pub hibp: Arc<hibp::Cache>,
 }
 
 impl AppState {
@@ -118,6 +127,7 @@ impl AppState {
         let settings = Settings::load(&store, &config.start_settings).await?;
         let mailer = Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
         let tokens = Tokens::load(&store, &config.public).await?;
+        let party = webauthn::Party::from_public(&config.public);
         Ok(AppState {
             store,
             version,
@@ -129,6 +139,9 @@ impl AppState {
             logs,
             update: Arc::default(),
             started: std::time::Instant::now(),
+            party,
+            challenges: Arc::default(),
+            hibp: Arc::default(),
         })
     }
 
@@ -171,6 +184,8 @@ pub fn router(state: AppState) -> Router {
         .merge(sends::routes())
         .merge(emergency::routes())
         .merge(auth_requests::routes())
+        .merge(passkeys::routes())
+        .merge(hibp::routes())
         .merge(folders::routes())
         .merge(two_factor::routes())
         .merge(meta::routes())

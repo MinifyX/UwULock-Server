@@ -34,7 +34,16 @@ impl TestServer {
         Self::with_settings(Settings::default()).await
     }
 
+    /// With Have I Been Pwned at `url`.
+    pub(crate) async fn with_hibp(url: &str) -> Self {
+        Self::build(Settings::default(), url).await
+    }
+
     pub(crate) async fn with_settings(settings: Settings) -> Self {
+        Self::build(settings, "http://127.0.0.1:9").await
+    }
+
+    async fn build(settings: Settings, hibp_url: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open_sqlite(&dir.path().join("uwulock.db"), &uwulock_store::Options { readers: 2 }).unwrap();
         let config = ApiConfig {
@@ -43,7 +52,7 @@ impl TestServer {
             hash_cost: HashCost::cheap(),
             backups: dir.path().join("backups"),
             data: dir.path().to_path_buf(),
-            hibp_url: "http://127.0.0.1:9".into(),
+            hibp_url: hibp_url.into(),
             start_settings: settings,
         };
         let mut state = AppState::new(store, config, "0.0.0-test", LogBuffer::new(100)).await.unwrap();

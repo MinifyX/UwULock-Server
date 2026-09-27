@@ -30,7 +30,11 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
         "version": state.version,
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
-        "features": ["vault", "folders", "trash", "archive", "import", "two-factor-authenticator", "two-factor-email", "admin"],
+        "features": [
+            "vault", "folders", "trash", "archive", "import", "attachments", "sends", "emergency-access",
+            "two-factor-authenticator", "two-factor-email", "two-factor-webauthn", "passkeys", "login-with-device",
+            "api-key", "hibp", "admin",
+        ],
     }))
 }
 
@@ -68,6 +72,8 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "mail": state.mailer.enabled(),
         "passwordHints": settings.password_hints,
         "rememberTwoFactor": settings.remember_two_factor,
+        "hibp": settings.hibp,
+        "maxFileMb": settings.max_file_mb,
         "hasHint": session.user.password_hint.is_some(),
         "twoFactor": factors.iter().filter(|factor| factor.enabled).map(|factor| factor.kind).collect::<Vec<_>>(),
         "created": session.user.created,

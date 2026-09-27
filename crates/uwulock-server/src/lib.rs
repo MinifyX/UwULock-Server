@@ -102,6 +102,27 @@ pub async fn run(
     tls::serve(listener, app, &config, handle).await
 }
 
+/// Files of attachments and Sends nothing claims any more, a week after.
+async fn sweep_files(config: &Config, state: &AppState) {
+    let store = state.store.clone();
+    let attachments = uwulock_api::files::sweep(&config.data_dir.join("attachments"), |cipher, id| {
+        let store = store.clone();
+        async move { store.attachment_exists(&cipher, &id).await.unwrap_or(true) }
+    })
+    .await;
+    let store = state.store.clone();
+    let sends = uwulock_api::files::sweep(&config.data_dir.join("sends"), |send, _| {
+        let store = store.clone();
+        async move { store.send_exists(&send).await.unwrap_or(true) }
+    })
+    .await;
+    match (attachments, sends) {
+        (Ok(0), Ok(0)) => {}
+        (Ok(attachments), Ok(sends)) => tracing::info!(attachments, sends, "files nothing claims were deleted"),
+        (Err(error), _) | (_, Err(error)) => tracing::warn!(%error, "sweeping up files did not work"),
+    }
+}
+
 /// Ctrl-C at a terminal, SIGTERM from `docker stop`. The second matters more: a process that is
 /// PID 1 in a container and has no handler for it does not stop at all, and gets killed ten
 /// seconds later.
@@ -126,8 +147,18 @@ pub async fn shutdown_signal() {
 }
 
 /// Once a day: a backup, and the old ones swept away — backups, events, codes, invitations and
-/// sessions that ran out, items that were in the trash for 30 days.
+/// sessions that ran out, items that were in the trash for 30 days, Sends past their deletion
+/// date, files nothing claims any more. Every hour: emergency access whose wait is over.
 pub fn spawn_maintenance(config: Config, state: AppState) {
+    let hourly = state.clone();
+    tokio::spawn(async move {
+        loop {
+            if let Err(error) = uwulock_api::emergency::tend(&hourly).await {
+                tracing::warn!(error = %error.message(), "looking after emergency access did not work");
+            }
+            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+        }
+    });
     tokio::spawn(async move {
         // Not at once on start: a server that is restarted in a loop should not write a backup
         // every time.
@@ -136,6 +167,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             if let Err(error) = state.store.sweep().await {
                 tracing::warn!(%error, "sweeping up did not work");
             }
+            sweep_files(&config, &state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");

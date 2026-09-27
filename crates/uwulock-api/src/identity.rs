@@ -63,6 +63,7 @@ async fn token(
         Some("password") => password_login(&state, ip, &headers, &form).await,
         Some("refresh_token") => refresh(&state, ip, &form).await,
         Some("client_credentials") => api_key_login(&state, ip, &form).await,
+        Some("webauthn") => crate::passkeys::grant(&state, ip, &form).await,
         Some("send_access") => crate::sends::grant(&state, ip, form.get("sendid"), form.get("passwordhashb64")).await,
         _ => Err(ApiError::bad("Invalid type")),
     }
