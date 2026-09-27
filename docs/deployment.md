@@ -54,7 +54,10 @@ sudo docker compose exec uwulock uwulock-server invite --admin you@example.com
 
 (`install.sh --admin you@example.com` does exactly that at the end.) The link is printed; when
 the server can send mail, it goes out by mail as well. Everybody else an admin invites in the
-admin portal at `/admin`, where the link is shown too, for passing on by hand.
+admin portal at `/admin`, where the link is shown too, for passing on by hand. With *Users may
+invite* in the portal's settings, every account can invite people too — in the web vault under
+Settings → Invite, up to the number of people the settings allow (open invitations count), and
+never as an admin.
 
 Admins are ordinary accounts with the admin right. The portal shows accounts, devices, the event
 log (logins, refused logins, what admins did), the server's log, backups and whether there is an
@@ -289,10 +292,31 @@ sudo docker compose up -d
 
 The database that was there is kept next to it as `uwulock.db.before-restore-<time>`.
 
+The admin portal puts a backup back without stopping anything (Backups → Restore, with the
+master password): how things are right then is written as a backup first
+(`uwulock-<time>-before-restore.db`), so the step can be undone the same way. It only takes
+backups of this server; one of another server goes back on the command line as above.
+
 Attachments and the files of Sends are not in the database: they are files next to it, in
 `/data/attachments` and `/data/sends`, encrypted by the clients. Copy those along with the
 backups. A file whose attachment or Send is deleted stays another week before the nightly sweep
 takes it, so a backup from that week that is put back still finds its files.
+
+## Push notifications for the phone apps
+
+Bitwarden's apps for iOS and Android learn about changes through Bitwarden's push relay; without
+it they sync when they are opened. The browser extension, the desktop apps and the web vault do
+not need it: they keep a WebSocket to the server (`/notifications/hub`, which a proxy has to pass
+on, see above).
+
+1. Get an installation id and key at <https://bitwarden.com/host/> — free, and for the region
+   you pick there (US or EU).
+2. Admin portal → Settings → *Push for the phone apps*: switch it on, choose the region, enter
+   id and key, save, and *Test the connection*.
+3. The apps register when they next log in or start.
+
+The server then sends the relay the ids of the changed item, folder or Send and of the account —
+never anything of a vault's content.
 
 ## Settings
 

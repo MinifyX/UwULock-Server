@@ -6,8 +6,8 @@ für eigene Funktionen — ohne dass die offizielle Bitwarden-Browsererweiterung
 CLI aufhören zu funktionieren.
 
 Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
-Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufe 4 ist vorgezogen und fertig, Stufe 2
-auch; mit Stufe 3 wird daraus 0.4.
+Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind fertig und werden
+zusammen 0.4.
 
 ## Leitlinien
 
@@ -111,14 +111,22 @@ Jede Stufe ist ein Release und für sich nutzbar.
       lokalen Fake-Relay. Einrichten im Admin-Portal: Stufe 3.
 - Ab hier kann der eigene Tresor umziehen.
 
-### Stufe 3 — Web-Tresor und Admin-Portal ausbauen (0.3)
+### Stufe 3 — Web-Tresor und Admin-Portal ausbauen (0.4, Beta)
 
 Das Grundgerüst beider kam schon mit 0.1. Hier kommt dazu, was davon von späteren Stufen
 abhängt oder erst mit mehr Nutzern wichtig wird:
 
-- Web-Tresor: Anhänge und Sends (mit Stufe 4), eine Ansicht fürs Handy
-- Admin-Portal: Push-Relay einrichten (mit Stufe 2), Registrierungsregeln über Einladungen
-  hinaus, Statistik über die Zeit, Backups zurückspielen
+- [x] Web-Tresor: Anhänge und Sends (mit Stufe 4); eine Ansicht fürs Handy (unter 760 px eine
+      Ebene nach der anderen — Liste, Eintrag, Menü — mit Leiste unten, Dialoge über den ganzen
+      Bildschirm); das Admin-Portal ebenso. Der Browsertest läuft zusätzlich mit 390×844.
+- [x] Admin-Portal: Push-Relay einrichten und testen (Schlüssel bleibt auf dem Server), größte
+      Datei, Passwortprüfung an/aus, Speicher pro Nutzer
+- [x] Einladungen über Admins hinaus: „Nutzer dürfen einladen“, mit Kontingent pro Nutzer (offene
+      Einladungen zählen mit), nie als Admin; im Tresor unter Einstellungen → Einladen
+- [x] Statistik über die Zeit: eine Zeile pro Tag (`daily_stats`, stündlich geschrieben),
+      Diagramme für Nutzer, Einträge, Dateien, Anmeldungen
+- [x] Backups im laufenden Betrieb zurückspielen (Master-Passwort; SQLite-Backup-API in die
+      laufende Datenbank, vorher ein Backup des jetzigen Stands; nur Backups dieses Servers)
 
 ### Stufe 4 — Alles, was Vaultwarden für Einzelne kann (0.4, Beta)
 
