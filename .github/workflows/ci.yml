@@ -6,8 +6,8 @@ name: CI
 #
 # The jobs run side by side where they can: the server's tests, the web vault (its WebAssembly
 # and its page), the scripts, the audit. The binaries wait for the web vault, which goes into
-# them; the end-to-end test (a browser and Bitwarden's own CLI against the release binary) and
-# the install test wait for the binaries.
+# them; the end-to-end test (a browser and Bitwarden's own CLI against the release binary), the
+# move from a real Vaultwarden and the install test wait for the binaries.
 on:
   push:
     branches: [main]
@@ -92,8 +92,8 @@ jobs:
           persist-credentials: false
       - name: Everything anybody is told to run with bash, checked before anybody runs it
         run: |
-          for script in install.sh update.sh scripts/e2e/bw-cli.sh; do bash -n "$script"; done
-          shellcheck --severity=warning install.sh update.sh scripts/e2e/bw-cli.sh
+          for script in install.sh update.sh scripts/e2e/*.sh; do bash -n "$script"; done
+          shellcheck --severity=warning install.sh update.sh scripts/e2e/*.sh
           for script in scripts/e2e/*.mjs web/scripts/*.mjs; do node --check "$script"; done
 
   version:
@@ -268,19 +268,10 @@ jobs:
         run: |
           chmod +x dist/amd64/uwulock-server
           tls="$RUNNER_TEMP/tls"
-          mkdir -p "$tls" "$RUNNER_TEMP/data"
-          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 1 \
-            -subj "/CN=UwULock test CA" -addext basicConstraints=critical,CA:TRUE \
-            -addext keyUsage=critical,keyCertSign -keyout "$tls/ca.key" -out "$tls/ca.pem"
-          openssl req -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -subj /CN=localhost \
-            -keyout "$tls/key.pem" -out "$tls/leaf.csr"
-          printf 'subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\n' > "$tls/ext"
-          openssl x509 -req -in "$tls/leaf.csr" -CA "$tls/ca.pem" -CAkey "$tls/ca.key" -CAcreateserial \
-            -days 1 -extfile "$tls/ext" -out "$tls/cert.pem"
-          # WebAuthn refuses a site whose certificate the browser only waves through: this makes
-          # Chromium trust the test certificate for real.
-          spki=$(openssl x509 -in "$tls/cert.pem" -pubkey -noout | openssl pkey -pubin -outform der |
-            openssl dgst -sha256 -binary | base64)
+          mkdir -p "$RUNNER_TEMP/data"
+          # WebAuthn refuses a site whose certificate the browser only waves through: the key's
+          # hash makes Chromium trust the test certificate for real.
+          spki=$(scripts/e2e/test-ca.sh "$tls")
           {
             echo "UWULOCK_DATA=$RUNNER_TEMP/data"
             echo "UWULOCK_LISTEN=127.0.0.1:8443"
@@ -319,6 +310,78 @@ jobs:
           name: e2e-screenshots
           path: ${{ runner.temp }}/shots
           retention-days: 7
+
+  vaultwarden:
+    name: Moving in from Vaultwarden
+    needs: binaries
+    runs-on: ubuntu-latest
+    env:
+      VAULTWARDEN: vaultwarden/server:1.37.3
+      # The newest CLI wants an endpoint Vaultwarden does not have yet; this one fills it.
+      BW_FOR_VAULTWARDEN: "2026.8.0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: binaries
+          path: dist
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          package_json_file: scripts/e2e/package.json
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: scripts/e2e/pnpm-lock.yaml
+      - name: Bitwarden's CLI, twice, and Vaultwarden
+        run: |
+          (cd scripts/e2e && pnpm install --frozen-lockfile)
+          echo "$PWD/scripts/e2e/node_modules/.bin" >> "$GITHUB_PATH"
+          npm install --silent --no-audit --no-fund --prefix "$RUNNER_TEMP/bw-vw" "@bitwarden/cli@$BW_FOR_VAULTWARDEN"
+          docker pull -q "$VAULTWARDEN"
+      - name: A Vaultwarden, filled
+        run: |
+          scripts/e2e/test-ca.sh "$RUNNER_TEMP/tls" >/dev/null
+          echo "NODE_EXTRA_CA_CERTS=$RUNNER_TEMP/tls/ca.pem" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/vw"
+          docker run -d --name vaultwarden -p 127.0.0.1:8444:8444 -v "$RUNNER_TEMP/vw:/data" \
+            -v "$RUNNER_TEMP/tls:/ssl:ro" -e SIGNUPS_ALLOWED=true -e ROCKET_PORT=8444 \
+            -e 'ROCKET_TLS={certs="/ssl/cert.pem",key="/ssl/key.pem"}' -e DOMAIN=https://localhost:8444 \
+            "$VAULTWARDEN"
+          for _ in $(seq 1 30); do curl -sf --cacert "$RUNNER_TEMP/tls/ca.pem" https://localhost:8444/alive && break; sleep 1; done
+          NODE_EXTRA_CA_CERTS="$RUNNER_TEMP/tls/ca.pem" BW="$RUNNER_TEMP/bw-vw/node_modules/.bin/bw" \
+            node scripts/e2e/vaultwarden.mjs seed https://localhost:8444 "$RUNNER_TEMP/state.json"
+          docker stop vaultwarden
+      - name: Moved over, with a dry run first
+        env:
+          UWULOCK_DATA: ${{ runner.temp }}/data
+        run: |
+          chmod +x dist/amd64/uwulock-server
+          dist/amd64/uwulock-server import-vaultwarden "$RUNNER_TEMP/vw" --dry-run | tee "$RUNNER_TEMP/dry-run"
+          grep -q 'Nothing was imported' "$RUNNER_TEMP/dry-run"
+          dist/amd64/uwulock-server import-vaultwarden "$RUNNER_TEMP/vw" --admin nyu@example.com | tee "$RUNNER_TEMP/import"
+          grep -qx 'accounts:          2' "$RUNNER_TEMP/import"
+          ls "$UWULOCK_DATA"/backups/uwulock-*.db
+      - name: The same accounts, against UwULock
+        env:
+          UWULOCK_DATA: ${{ runner.temp }}/data
+          UWULOCK_LISTEN: 127.0.0.1:8443
+          UWULOCK_PUBLIC: https://localhost:8443
+          UWULOCK_TLS: files
+          UWULOCK_TLS_CERT: ${{ runner.temp }}/tls/cert.pem
+          UWULOCK_TLS_KEY: ${{ runner.temp }}/tls/key.pem
+          UWULOCK_UPDATE_CHECK: "off"
+        run: |
+          nohup dist/amd64/uwulock-server serve > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 1 30); do dist/amd64/uwulock-server health && break; sleep 1; done
+          node scripts/e2e/vaultwarden.mjs check https://localhost:8443 "$RUNNER_TEMP/state.json"
+      - name: What the servers said
+        if: failure()
+        run: |
+          docker logs vaultwarden 2>&1 | tail -50 || true
+          cat "$RUNNER_TEMP/server.log" || true
 
   install:
     name: Install and update
@@ -440,7 +503,7 @@ jobs:
   image:
     name: Container image
     if: github.event_name != 'pull_request'
-    needs: [test, acme, scripts, audit, web, e2e, install, version]
+    needs: [test, acme, scripts, audit, web, e2e, vaultwarden, install, version]
     runs-on: ubuntu-latest
     permissions:
       contents: read
