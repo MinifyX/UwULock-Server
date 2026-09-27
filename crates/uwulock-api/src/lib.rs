@@ -74,6 +74,8 @@ pub struct ApiConfig {
     pub data: PathBuf,
     /// Have I Been Pwned's range API, which the password check asks through this server.
     pub hibp_url: String,
+    /// How many logins one address may try at once.
+    pub login_attempts: u32,
     /// The settings a new server starts with, until an admin saves others.
     pub start_settings: Settings,
 }
@@ -128,6 +130,7 @@ impl AppState {
         let mailer = Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
         let tokens = Tokens::load(&store, &config.public).await?;
         let party = webauthn::Party::from_public(&config.public);
+        let limits = Arc::new(Limits::with_login_attempts(config.login_attempts));
         Ok(AppState {
             store,
             version,
@@ -135,7 +138,7 @@ impl AppState {
             tokens: Arc::new(tokens),
             mailer,
             settings: Arc::new(RwLock::new(settings)),
-            limits: Arc::new(Limits::default()),
+            limits,
             logs,
             update: Arc::default(),
             started: std::time::Instant::now(),

@@ -37,6 +37,7 @@ pub async fn app_state(config: &Config, store: Store, logs: Arc<LogBuffer>) -> R
         backups: config.backups(),
         data: config.data_dir.clone(),
         hibp_url: "https://api.pwnedpasswords.com".into(),
+        login_attempts: config.login_attempts,
         start_settings: config.start_settings.clone(),
     };
     let state = AppState::new(store, api, updates::build().version, logs).await?;

@@ -53,6 +53,7 @@ impl TestServer {
             backups: dir.path().join("backups"),
             data: dir.path().to_path_buf(),
             hibp_url: hibp_url.into(),
+            login_attempts: 10,
             start_settings: settings,
         };
         let mut state = AppState::new(store, config, "0.0.0-test", LogBuffer::new(100)).await.unwrap();

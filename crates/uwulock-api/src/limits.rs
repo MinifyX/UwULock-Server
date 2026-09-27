@@ -142,6 +142,11 @@ impl Default for Limits {
 }
 
 impl Limits {
+    /// The defaults, with `attempts` logins at once per address.
+    pub fn with_login_attempts(attempts: u32) -> Self {
+        Limits { login: Limiter::new(attempts, Duration::from_secs(60)), ..Limits::default() }
+    }
+
     /// Limits no test runs into.
     pub fn generous() -> Self {
         fn generous<K: Hash + Eq>() -> Limiter<K> {
