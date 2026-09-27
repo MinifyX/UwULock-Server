@@ -271,6 +271,9 @@ async fn user_action(
         }
         _ => return Err(ApiError::not_found("Not found.")),
     }
+    if matches!(action.as_str(), "disable" | "log-out") {
+        crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
+    }
     record(&state, &admin, format!("{action} for {}", target.email)).await;
     let overview = state
         .store
@@ -287,6 +290,7 @@ async fn delete_user(State(state): State<AppState>, admin: Admin, Path(id): Path
     if target.id == admin.0.user.id {
         return Err(ApiError::bad("Delete your own account in your settings, not here."));
     }
+    crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
     state.store.delete_user(&id).await?;
     record(&state, &admin, format!("deleted the account {}", target.email)).await;
     Ok(StatusCode::OK)

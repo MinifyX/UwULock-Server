@@ -7,7 +7,8 @@
 use crate::accounts::check_password;
 use crate::auth::{Session, client_version};
 use crate::errors::{ApiError, ApiResult};
-use crate::{AppState, json as out};
+use crate::json::View;
+use crate::{AppState, json as out, notify};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -16,7 +17,8 @@ use axum::{Json, Router};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use uwulock_store::{Attachment, AttachmentKey, Bulk, Cipher, Folder, clock};
+use uwulock_notify::Kind;
+use uwulock_store::{Attachment, AttachmentKey, Bulk, Cipher, Folder, OrgCipher, clock};
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -117,6 +119,11 @@ pub(crate) struct AttachmentData {
 }
 
 impl CipherData {
+    /// The organisation the client says the item is in.
+    pub(crate) fn organization_id(&self) -> Option<String> {
+        self.organization_id.clone()
+    }
+
     /// What `attachments2` says, for the store.
     pub(crate) fn attachment_keys(&self) -> Vec<AttachmentKey> {
         self.attachments2
@@ -145,10 +152,11 @@ impl CipherData {
     }
 }
 
-/// `data` over `into`: everything an item is, except its id, owner and times.
-pub(crate) fn apply(mut data: CipherData, mut into: Cipher) -> ApiResult<Cipher> {
-    if data.organization_id.is_some() {
-        return Err(ApiError::bad("Organisations are not available on this server yet."));
+/// `data` over `into`: everything an item is, except its id, owner and times. `org` is the
+/// organisation the item is in (or goes to); the data has to say the same.
+pub(crate) fn apply(mut data: CipherData, mut into: Cipher, org: Option<&str>) -> ApiResult<Cipher> {
+    if data.organization_id.as_deref() != org {
+        return Err(ApiError::bad("The item's organization does not match."));
     }
     if out::type_key(data.kind).is_none() {
         return Err(ApiError::bad("Invalid type"));
@@ -197,6 +205,7 @@ fn new_cipher(user_id: &str) -> Cipher {
     Cipher {
         id: uuid::Uuid::new_v4().to_string(),
         user_id: user_id.to_string(),
+        organization_id: None,
         folder_id: None,
         kind: 1,
         name: String::new(),
@@ -223,7 +232,7 @@ pub(crate) async fn cipher_json(state: &AppState, cipher: &Cipher) -> ApiResult<
     let attachments = state.store.attachments(&cipher.id).await?;
     let rendered = (!attachments.is_empty())
         .then(|| crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS).to_string());
-    Ok(out::cipher(cipher, rendered.as_deref()))
+    Ok(out::cipher(cipher, &View::own(rendered.as_deref())))
 }
 
 /// The attachments of all of a user's items, as JSON by item id: one query, for a list.
@@ -238,14 +247,65 @@ pub(crate) async fn attachments_by_cipher(state: &AppState, user_id: &str) -> Ap
         .collect())
 }
 
-/// Items as a list, with their attachments.
-async fn list_json(state: &AppState, user_id: &str, ciphers: &[Cipher]) -> ApiResult<Response> {
+/// The user's items and the organisations' they see, as a JSON list, `keep` choosing which.
+async fn list_json(state: &AppState, user_id: &str, keep: impl Fn(&str) -> bool) -> ApiResult<Response> {
+    let (own, orgs) = tokio::try_join!(state.store.ciphers(user_id), state.store.org_vault(user_id))?;
     let attachments = attachments_by_cipher(state, user_id).await?;
-    Ok(json_text(out::cipher_list(ciphers, &attachments)))
+    let org_attachments = crate::organizations::attachments_of(state, &orgs.ciphers).await?;
+    let mut body = String::from("{\"object\":\"list\",\"continuationToken\":null,\"data\":[");
+    let mut first = true;
+    for cipher in own.iter().filter(|cipher| keep(&cipher.id)) {
+        if !first {
+            body.push(',');
+        }
+        first = false;
+        out::write_cipher(&mut body, cipher, &View::own(attachments.get(&cipher.id).map(String::as_str)));
+    }
+    for item in orgs.ciphers.iter().filter(|item| keep(&item.cipher.id)) {
+        if !first {
+            body.push(',');
+        }
+        first = false;
+        let view = View {
+            attachments: org_attachments.get(&item.cipher.id).map(String::as_str),
+            collection_ids: &item.collection_ids,
+            access: item.access,
+        };
+        out::write_cipher(&mut body, &item.cipher, &view);
+    }
+    body.push_str("]}");
+    Ok(json_text(body))
 }
 
-async fn owned(state: &AppState, session: &Session, id: &str) -> ApiResult<Cipher> {
-    state.store.cipher(&session.user.id, id).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))
+/// An item the user may see: their own, or an organisation's.
+pub(crate) enum Found {
+    Own(Cipher),
+    Org(OrgCipher),
+}
+
+pub(crate) async fn find(state: &AppState, session: &Session, id: &str) -> ApiResult<Found> {
+    if let Some(cipher) = state.store.cipher(&session.user.id, id).await? {
+        return Ok(Found::Own(cipher));
+    }
+    match state.store.org_cipher(&session.user.id, id).await? {
+        Some(item) => Ok(Found::Org(item)),
+        None => Err(ApiError::bad("Cipher doesn't exist")),
+    }
+}
+
+pub(crate) async fn found_json(state: &AppState, found: &Found) -> ApiResult<String> {
+    match found {
+        Found::Own(cipher) => cipher_json(state, cipher).await,
+        Found::Org(item) => crate::organizations::org_cipher_json(state, item).await,
+    }
+}
+
+/// An organisation's item the user may change; refused when they may only look.
+fn writable(item: OrgCipher) -> ApiResult<OrgCipher> {
+    if item.access.read_only {
+        return Err(ApiError::new(StatusCode::FORBIDDEN, "You don't have permission to change this item."));
+    }
+    Ok(item)
 }
 
 // ── The whole vault ───────────────────────────────────────
@@ -256,8 +316,9 @@ struct SyncQuery {
     exclude_domains: Option<String>,
 }
 
-/// Everything, as one JSON: profile, folders, items (the trashed ones too), domains, and how the
-/// user key is unlocked. Built as text, most of it copied from the database as it is.
+/// Everything, as one JSON: profile, folders, items (the trashed ones too), the organisations'
+/// collections, policies and items, Sends, domains, and how the user key is unlocked. Built as
+/// text, most of it copied from the database as it is.
 async fn sync(
     State(state): State<AppState>,
     session: Session,
@@ -265,21 +326,43 @@ async fn sync(
     Query(query): Query<SyncQuery>,
 ) -> ApiResult<Response> {
     let user = &session.user;
-    let (vault, two_factor, sends) =
-        tokio::try_join!(state.store.vault(&user.id), state.store.two_factors(&user.id), state.store.sends(&user.id))?;
+    let (vault, two_factor, sends, orgs) = tokio::try_join!(
+        state.store.vault(&user.id),
+        state.store.two_factors(&user.id),
+        state.store.sends(&user.id),
+        state.store.org_vault(&user.id)
+    )?;
     let attachments = attachments_by_cipher(&state, &user.id).await?;
+    let org_attachments = crate::organizations::attachments_of(&state, &orgs.ciphers).await?;
     // SSH keys only for clients that know them; older ones break on them.
     let ssh = client_version(&headers).is_some_and(|version| version >= (2024, 12, 0));
     let exclude_domains = query
         .exclude_domains
         .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"));
 
-    let mut body = String::with_capacity(4096 + vault.ciphers.len() * 1200);
+    let memberships: Vec<Value> =
+        orgs.memberships.iter().map(|(org, member)| crate::organizations::profile_organization(org, member)).collect();
+    let mut body = String::with_capacity(4096 + (vault.ciphers.len() + orgs.ciphers.len()) * 1200);
     body.push_str("{\"object\":\"sync\",\"profile\":");
-    body.push_str(&out::profile(user, two_factor.iter().any(|factor| factor.enabled)).to_string());
+    body.push_str(&out::profile(user, two_factor.iter().any(|factor| factor.enabled), memberships).to_string());
     body.push_str(",\"folders\":");
     body.push_str(&Value::Array(vault.folders.iter().map(out::folder).collect()).to_string());
-    body.push_str(",\"collections\":[],\"policies\":[],\"policiesNew\":[],\"sends\":");
+    body.push_str(",\"collections\":");
+    body.push_str(
+        &Value::Array(
+            orgs.collections
+                .iter()
+                .map(|(collection, access)| crate::organizations::collection_json(collection, access))
+                .collect(),
+        )
+        .to_string(),
+    );
+    let policies = Value::Array(orgs.policies.iter().map(crate::organizations::policy_json).collect()).to_string();
+    body.push_str(",\"policies\":");
+    body.push_str(&policies);
+    body.push_str(",\"policiesNew\":");
+    body.push_str(&policies);
+    body.push_str(",\"sends\":");
     body.push_str(&Value::Array(sends.iter().map(crate::sends::render).collect()).to_string());
     body.push_str(",\"ciphers\":[");
     let mut first = true;
@@ -288,7 +371,19 @@ async fn sync(
             body.push(',');
         }
         first = false;
-        out::write_cipher(&mut body, cipher, attachments.get(&cipher.id).map(String::as_str));
+        out::write_cipher(&mut body, cipher, &View::own(attachments.get(&cipher.id).map(String::as_str)));
+    }
+    for item in orgs.ciphers.iter().filter(|item| ssh || item.cipher.kind != 5) {
+        if !first {
+            body.push(',');
+        }
+        first = false;
+        let view = View {
+            attachments: org_attachments.get(&item.cipher.id).map(String::as_str),
+            collection_ids: &item.collection_ids,
+            access: item.access,
+        };
+        out::write_cipher(&mut body, &item.cipher, &view);
     }
     body.push_str("],\"domains\":");
     body.push_str(&if exclude_domains { Value::Null } else { crate::meta::domains(user, false) }.to_string());
@@ -310,12 +405,12 @@ async fn sync(
 }
 
 async fn list(State(state): State<AppState>, session: Session) -> ApiResult<Response> {
-    let ciphers = state.store.ciphers(&session.user.id).await?;
-    list_json(&state, &session.user.id, &ciphers).await
+    list_json(&state, &session.user.id, |_| true).await
 }
 
 async fn one(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<Response> {
-    Ok(json_text(cipher_json(&state, &owned(&state, &session, &id).await?).await?))
+    let found = find(&state, &session, &id).await?;
+    Ok(json_text(found_json(&state, &found).await?))
 }
 
 // ── New and changed items ─────────────────────────────────
@@ -331,8 +426,12 @@ fn check_encrypted_for(session: &Session, data: &CipherData) -> ApiResult<()> {
 
 async fn create(State(state): State<AppState>, session: Session, Json(data): Json<CipherData>) -> ApiResult<Response> {
     check_encrypted_for(&session, &data)?;
-    let cipher = apply(data, new_cipher(&session.user.id))?;
-    Ok(json_text(cipher_json(&state, &save(&state, cipher).await?).await?))
+    if data.organization_id.is_some() {
+        return Err(ApiError::bad("An item of an organisation needs its collections: use /ciphers/create."));
+    }
+    let cipher = save(&state, apply(data, new_cipher(&session.user.id), None)?).await?;
+    notify::cipher(&state, &session, Kind::CipherCreate, &cipher);
+    Ok(json_text(cipher_json(&state, &cipher).await?))
 }
 
 #[derive(Deserialize)]
@@ -350,12 +449,37 @@ async fn create_wrapped(
     session: Session,
     Json(data): Json<Wrapped>,
 ) -> ApiResult<Response> {
-    if !data.collection_ids.is_empty() {
-        return Err(ApiError::bad("Organisations are not available on this server yet."));
-    }
     check_encrypted_for(&session, &data.cipher)?;
-    let cipher = apply(data.cipher, new_cipher(&session.user.id))?;
-    Ok(json_text(cipher_json(&state, &save(&state, cipher).await?).await?))
+    let Some(org) = data.cipher.organization_id() else {
+        if !data.collection_ids.is_empty() {
+            return Err(ApiError::bad("Collections are for an organisation's items."));
+        }
+        let cipher = save(&state, apply(data.cipher, new_cipher(&session.user.id), None)?).await?;
+        notify::cipher(&state, &session, Kind::CipherCreate, &cipher);
+        return Ok(json_text(cipher_json(&state, &cipher).await?));
+    };
+    crate::organizations::check_collections(&state, &session, &org, &data.collection_ids).await?;
+    let mut cipher = apply(data.cipher, new_cipher(""), Some(&org))?;
+    cipher.organization_id = Some(org);
+    let (saved, users) =
+        state.store.save_org_cipher(&session.user.id, cipher, Some(data.collection_ids.clone()), Vec::new()).await?;
+    crate::organizations::notify(&state, &session, Kind::CipherCreate, &saved, &data.collection_ids, &users);
+    let item = state
+        .store
+        .org_cipher(&session.user.id, &saved.id)
+        .await?
+        .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+    Ok(json_text(crate::organizations::org_cipher_json(&state, &item).await?))
+}
+
+fn check_revision(data: &CipherData, current: &Cipher) -> ApiResult<()> {
+    if let Some(known) = data.last_known_revision_date.as_deref().and_then(clock::parse)
+        && let Some(stored) = clock::parse(&current.revision)
+        && (stored - known).whole_seconds() > 1
+    {
+        return Err(ApiError::bad("The client copy of this cipher is out of date. Resync the client and try again."));
+    }
+    Ok(())
 }
 
 async fn update(
@@ -364,17 +488,32 @@ async fn update(
     Path(id): Path<String>,
     Json(data): Json<CipherData>,
 ) -> ApiResult<Response> {
-    let current = owned(&state, &session, &id).await?;
-    if let Some(known) = data.last_known_revision_date.as_deref().and_then(clock::parse)
-        && let Some(stored) = clock::parse(&current.revision)
-        && (stored - known).whole_seconds() > 1
-    {
-        return Err(ApiError::bad("The client copy of this cipher is out of date. Resync the client and try again."));
+    match find(&state, &session, &id).await? {
+        Found::Own(current) => {
+            check_revision(&data, &current)?;
+            let keys = data.attachment_keys();
+            let cipher = apply(data, current, None)?;
+            let saved =
+                state.store.save_cipher_with(cipher, keys).await?.ok_or_else(|| ApiError::bad("Invalid folder"))?;
+            notify::cipher(&state, &session, Kind::CipherUpdate, &saved);
+            Ok(json_text(cipher_json(&state, &saved).await?))
+        }
+        Found::Org(item) => {
+            let item = writable(item)?;
+            check_revision(&data, &item.cipher)?;
+            let keys = data.attachment_keys();
+            let org = item.cipher.organization_id.clone();
+            let cipher = apply(data, item.cipher, org.as_deref())?;
+            let (saved, users) = state.store.save_org_cipher(&session.user.id, cipher, None, keys).await?;
+            crate::organizations::notify(&state, &session, Kind::CipherUpdate, &saved, &item.collection_ids, &users);
+            let item = state
+                .store
+                .org_cipher(&session.user.id, &id)
+                .await?
+                .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+            Ok(json_text(crate::organizations::org_cipher_json(&state, &item).await?))
+        }
     }
-    let keys = data.attachment_keys();
-    let cipher = apply(data, current)?;
-    let saved = state.store.save_cipher_with(cipher, keys).await?.ok_or_else(|| ApiError::bad("Invalid folder"))?;
-    Ok(json_text(cipher_json(&state, &saved).await?))
 }
 
 #[derive(Deserialize)]
@@ -385,18 +524,33 @@ struct Partial {
     favorite: bool,
 }
 
-/// Only the folder and the favourite star, which are the user's and not encrypted.
+/// Only the folder and the favourite star, which are the user's and not encrypted — also for
+/// an organisation's item, where they are the user's alone.
 async fn partial(
     State(state): State<AppState>,
     session: Session,
     Path(id): Path<String>,
     Json(data): Json<Partial>,
 ) -> ApiResult<Response> {
-    let mut cipher =
-        state.store.cipher(&session.user.id, &id).await?.ok_or_else(|| ApiError::bad("Cipher does not exist"))?;
-    cipher.folder_id = data.folder_id;
-    cipher.favorite = data.favorite;
-    Ok(json_text(cipher_json(&state, &save(&state, cipher).await?).await?))
+    match find(&state, &session, &id).await? {
+        Found::Own(mut cipher) => {
+            cipher.folder_id = data.folder_id;
+            cipher.favorite = data.favorite;
+            let saved = save(&state, cipher).await?;
+            notify::cipher(&state, &session, Kind::CipherUpdate, &saved);
+            Ok(json_text(cipher_json(&state, &saved).await?))
+        }
+        Found::Org(item) => {
+            state.store.set_org_preference(&session.user.id, &id, data.folder_id, data.favorite).await?;
+            notify::cipher(&state, &session, Kind::CipherUpdate, &item.cipher);
+            let item = state
+                .store
+                .org_cipher(&session.user.id, &id)
+                .await?
+                .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+            Ok(json_text(crate::organizations::org_cipher_json(&state, &item).await?))
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -450,12 +604,13 @@ async fn import(State(state): State<AppState>, session: Session, Json(data): Jso
         data.folder_relationships.into_iter().map(|link| (link.key, link.value)).collect();
     let mut ciphers = Vec::with_capacity(data.ciphers.len());
     for (index, item) in data.ciphers.into_iter().enumerate() {
-        let mut cipher = apply(item, new_cipher(&user.id))?;
+        let mut cipher = apply(item, new_cipher(&user.id), None)?;
         cipher.folder_id = in_folder.get(&index).and_then(|folder| folder_ids.get(*folder)).cloned();
         ciphers.push(cipher);
     }
     let count = ciphers.len();
     state.store.import(&user.id, new_folders, ciphers).await?;
+    notify::user(&state, &user.id, Some(&session), Kind::Vault);
     tracing::info!(user = %user.id, items = count, "vault imported");
     Ok(StatusCode::OK)
 }
@@ -467,11 +622,57 @@ struct Ids {
     ids: Vec<String>,
 }
 
+fn kind_of(what: Bulk) -> Kind {
+    match what {
+        Bulk::Delete => Kind::CipherDelete,
+        _ => Kind::CipherUpdate,
+    }
+}
+
+/// Do `what` to those of `ids` the user may: their own, and organisations' they may change.
+/// The ids it was done to.
+async fn apply_bulk(state: &AppState, session: &Session, ids: Vec<String>, what: Bulk) -> ApiResult<Vec<String>> {
+    let mut done = state.store.bulk(&session.user.id, ids.clone(), what).await?;
+    if !done.is_empty() {
+        notify::user(state, &session.user.id, Some(session), Kind::Ciphers);
+    }
+    let rest: Vec<String> = ids.into_iter().filter(|id| !done.contains(id)).collect();
+    for id in rest {
+        let Some(item) = state.store.org_cipher(&session.user.id, &id).await? else { continue };
+        if item.access.read_only {
+            continue;
+        }
+        let org = item.cipher.organization_id.clone().unwrap_or_default();
+        let users = state.store.org_bulk(&org, &id, what).await?;
+        if !users.is_empty() {
+            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users);
+            done.push(id);
+        }
+    }
+    Ok(done)
+}
+
 async fn single(state: &AppState, session: &Session, id: String, what: Bulk) -> ApiResult<()> {
-    if state.store.bulk(&session.user.id, vec![id], what).await?.is_empty() {
-        return Err(ApiError::bad("Cipher doesn't exist"));
+    match find(state, session, &id).await? {
+        Found::Own(cipher) => {
+            state.store.bulk(&session.user.id, vec![id], what).await?;
+            let mut cipher = cipher;
+            cipher.revision = clock::now();
+            notify::cipher(state, session, kind_of(what), &cipher);
+        }
+        Found::Org(item) => {
+            let item = writable(item)?;
+            let org = item.cipher.organization_id.clone().unwrap_or_default();
+            let users = state.store.org_bulk(&org, &id, what).await?;
+            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users);
+        }
     }
     Ok(())
+}
+
+async fn after(state: &AppState, session: &Session, id: &str) -> ApiResult<Response> {
+    let found = find(state, session, id).await?;
+    Ok(json_text(found_json(state, &found).await?))
 }
 
 async fn trash(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<StatusCode> {
@@ -484,35 +685,33 @@ async fn hard_delete(State(state): State<AppState>, session: Session, Path(id): 
 
 async fn restore(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<Response> {
     single(&state, &session, id.clone(), Bulk::Restore).await?;
-    Ok(json_text(cipher_json(&state, &owned(&state, &session, &id).await?).await?))
+    after(&state, &session, &id).await
 }
 
 async fn archive(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<Response> {
     single(&state, &session, id.clone(), Bulk::Archive).await?;
-    Ok(json_text(cipher_json(&state, &owned(&state, &session, &id).await?).await?))
+    after(&state, &session, &id).await
 }
 
 async fn unarchive(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<Response> {
     single(&state, &session, id.clone(), Bulk::Unarchive).await?;
-    Ok(json_text(cipher_json(&state, &owned(&state, &session, &id).await?).await?))
+    after(&state, &session, &id).await
 }
 
 async fn bulk_trash(State(state): State<AppState>, session: Session, Json(data): Json<Ids>) -> ApiResult<StatusCode> {
-    state.store.bulk(&session.user.id, data.ids, Bulk::Trash).await?;
+    apply_bulk(&state, &session, data.ids, Bulk::Trash).await?;
     Ok(StatusCode::OK)
 }
 
 async fn bulk_delete(State(state): State<AppState>, session: Session, Json(data): Json<Ids>) -> ApiResult<StatusCode> {
-    state.store.bulk(&session.user.id, data.ids, Bulk::Delete).await?;
+    apply_bulk(&state, &session, data.ids, Bulk::Delete).await?;
     Ok(StatusCode::OK)
 }
 
 /// Several at once, answered with the items as they are afterwards.
 async fn bulk_listed(state: &AppState, session: &Session, ids: Vec<String>, what: Bulk) -> ApiResult<Response> {
-    let done = state.store.bulk(&session.user.id, ids, what).await?;
-    let ciphers: Vec<Cipher> =
-        state.store.ciphers(&session.user.id).await?.into_iter().filter(|cipher| done.contains(&cipher.id)).collect();
-    list_json(state, &session.user.id, &ciphers).await
+    let done = apply_bulk(state, session, ids, what).await?;
+    list_json(state, &session.user.id, |id| done.iter().any(|done| done == id)).await
 }
 
 async fn bulk_restore(State(state): State<AppState>, session: Session, Json(data): Json<Ids>) -> ApiResult<Response> {
@@ -535,20 +734,33 @@ struct Move {
     ids: Vec<String>,
 }
 
+/// Into a folder of the user's, or out of any: their own items, and organisations' items as
+/// far as the user files them.
 async fn move_ciphers(
     State(state): State<AppState>,
     session: Session,
     Json(data): Json<Move>,
 ) -> ApiResult<StatusCode> {
     let wanted = data.ids.len();
-    let moved = state
+    let own: Vec<String> = {
+        let mine = state.store.ciphers(&session.user.id).await?;
+        data.ids.iter().filter(|id| mine.iter().any(|cipher| &cipher.id == *id)).cloned().collect()
+    };
+    let mut moved = state
         .store
-        .move_ciphers(&session.user.id, data.ids, data.folder_id)
+        .move_ciphers(&session.user.id, own.clone(), data.folder_id.clone())
         .await?
         .ok_or_else(|| ApiError::bad("Invalid folder"))?;
+    for id in data.ids.iter().filter(|id| !own.contains(id)) {
+        if let Some(item) = state.store.org_cipher(&session.user.id, id).await? {
+            state.store.set_org_preference(&session.user.id, id, data.folder_id.clone(), item.cipher.favorite).await?;
+            moved += 1;
+        }
+    }
     if moved < wanted {
         return Err(ApiError::bad(format!("Not all ciphers are moved! {moved} of the selected {wanted} were moved.")));
     }
+    notify::user(&state, &session.user.id, Some(&session), Kind::Ciphers);
     Ok(StatusCode::OK)
 }
 
@@ -573,10 +785,11 @@ async fn purge(
     Json(data): Json<Purge>,
 ) -> ApiResult<StatusCode> {
     if query.organization_id.is_some() {
-        return Err(ApiError::bad("Organisations are not available on this server yet."));
+        return Err(ApiError::bad("Emptying an organisation's vault is not available on this server."));
     }
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
     state.store.purge_vault(&session.user.id).await?;
+    notify::user(&state, &session.user.id, Some(&session), Kind::Vault);
     tracing::info!(user = %session.user.id, "vault emptied");
     Ok(StatusCode::OK)
 }
@@ -755,14 +968,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn organisations_are_refused_for_now() {
+    async fn an_organisation_s_item_needs_its_collections() {
         let server = TestServer::new().await;
         let account = server.account("nyu@example.com").await;
         let mut item = login_item("2.a|a|a");
         item["organizationId"] = json!("5f7c2a1e-0000-4000-8000-000000000000");
         assert_eq!(
-            server.call("POST", "/api/ciphers", Some(&account.token), item).await.status(),
+            server.call("POST", "/api/ciphers", Some(&account.token), item.clone()).await.status(),
             StatusCode::BAD_REQUEST
+        );
+        let wrapped = json!({"cipher": item, "collectionIds": ["5f7c2a1e-0000-4000-8000-000000000001"]});
+        assert_eq!(
+            server.call("POST", "/api/ciphers/create", Some(&account.token), wrapped).await.status(),
+            StatusCode::BAD_REQUEST,
+            "not a member"
         );
     }
 }

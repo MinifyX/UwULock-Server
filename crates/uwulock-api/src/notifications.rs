@@ -5,20 +5,18 @@
 use crate::AppState;
 use crate::auth::ClientIp;
 use crate::errors::{ApiError, ApiResult};
+use axum::Router;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
 use axum::routing::get;
-use axum::Router;
 use serde::Deserialize;
 use std::time::Duration;
 use uwulock_notify::Listening;
 
 pub(crate) fn routes() -> Router<AppState> {
-    Router::new()
-        .route("/notifications/hub", get(hub))
-        .route("/notifications/anonymous-hub", get(anonymous_hub))
+    Router::new().route("/notifications/hub", get(hub)).route("/notifications/anonymous-hub", get(anonymous_hub))
 }
 
 /// How often the server pings: well inside any proxy's idle timeout, and the server's own.
@@ -43,7 +41,9 @@ async fn hub(
         .ok_or_else(ApiError::unauthorized)?;
     let claims = state.tokens.verify(&token).ok_or_else(ApiError::unauthorized)?;
     let Some(session) = state.store.session_user(&claims.sub).await? else { return Err(ApiError::unauthorized()) };
-    if session.user.disabled || session.user.security_stamp != claims.sstamp || !session.devices.contains(&claims.device)
+    if session.user.disabled
+        || session.user.security_stamp != claims.sstamp
+        || !session.devices.contains(&claims.device)
     {
         return Err(ApiError::unauthorized());
     }
@@ -66,7 +66,8 @@ async fn anonymous_hub(
     Query(query): Query<AnonymousQuery>,
     upgrade: WebSocketUpgrade,
 ) -> ApiResult<Response> {
-    let token = query.token.filter(|token| !token.is_empty() && token.len() <= 64).ok_or_else(ApiError::unauthorized)?;
+    let token =
+        query.token.filter(|token| !token.is_empty() && token.len() <= 64).ok_or_else(ApiError::unauthorized)?;
     let listening = state
         .hub
         .listen_anonymous(&token, ip)
@@ -112,5 +113,162 @@ async fn serve(mut socket: WebSocket, mut listening: Listening) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::Settings;
+    use crate::test_support::{TestServer, json};
+    use axum::http::StatusCode;
+    use futures_util::{SinkExt, StreamExt};
+    use serde_json::{Value, json};
+    use std::net::SocketAddr;
+    use std::time::Duration;
+    use tokio_tungstenite::tungstenite::Message;
+
+    /// The server on a real socket, for WebSockets.
+    async fn listen(server: &TestServer) -> SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = server.router.clone().into_make_service_with_connect_info::<SocketAddr>();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        address
+    }
+
+    type Socket = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+    /// The next message that is not a ping.
+    async fn next(socket: &mut Socket) -> Vec<u8> {
+        loop {
+            let message = tokio::time::timeout(Duration::from_secs(5), socket.next()).await.unwrap().unwrap().unwrap();
+            if let Message::Binary(data) = message
+                && data.as_ref() != uwulock_notify::ping().as_slice()
+            {
+                return data.to_vec();
+            }
+        }
+    }
+
+    async fn connect(url: String) -> Socket {
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+        socket.send(Message::text("{\"protocol\":\"messagepack\",\"version\":1}\u{1e}")).await.unwrap();
+        assert_eq!(next(&mut socket).await, uwulock_notify::HANDSHAKE_ANSWER);
+        socket
+    }
+
+    fn contains(haystack: &[u8], needle: &str) -> bool {
+        haystack.windows(needle.len()).any(|window| window == needle.as_bytes())
+    }
+
+    #[tokio::test]
+    async fn the_hub_tells_an_account_what_changed_and_nobody_else() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let other = server.account("other@example.com").await;
+        let address = listen(&server).await;
+
+        let refused = tokio_tungstenite::connect_async(format!("ws://{address}/notifications/hub")).await;
+        assert!(refused.is_err(), "not without a token");
+        let refused =
+            tokio_tungstenite::connect_async(format!("ws://{address}/notifications/hub?access_token=nonsense")).await;
+        assert!(refused.is_err(), "not with a wrong one");
+
+        let mut socket = connect(format!("ws://{address}/notifications/hub?access_token={}", nyu.token)).await;
+        let theirs = server.call("POST", "/api/folders", Some(&other.token), json!({"name": "2.o|o|o"})).await;
+        let theirs = json(theirs).await["id"].as_str().unwrap().to_string();
+        let mine = server.call("POST", "/api/folders", Some(&nyu.token), json!({"name": "2.f|f|f"})).await;
+        let mine = json(mine).await["id"].as_str().unwrap().to_string();
+
+        // Somebody else's folder would have come first.
+        let message = next(&mut socket).await;
+        assert!(contains(&message, "ReceiveMessage"), "{message:?}");
+        assert!(contains(&message, &mine) && !contains(&message, &theirs));
+    }
+
+    #[tokio::test]
+    async fn a_device_waiting_to_be_let_in_hears_the_answer() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let address = listen(&server).await;
+        let asked = server
+            .call(
+                "POST",
+                "/api/auth-requests",
+                None,
+                json!({
+                    "email": nyu.email, "publicKey": "cHVibGlj", "deviceIdentifier": "5d0e7b43-2a57-4d68-9d1c-0c1f2b3a4d5e",
+                    "accessCode": "abcdefghijklmnopqrstu", "type": 0, "fingerprintPhrase": "x"
+                }),
+            )
+            .await;
+        assert_eq!(asked.status(), StatusCode::OK);
+        let id = json(asked).await["id"].as_str().unwrap().to_string();
+
+        let mut waiting = connect(format!("ws://{address}/notifications/anonymous-hub?Token={id}")).await;
+        let answer = json!({"key": "4.a2V5", "masterPasswordHash": null, "deviceIdentifier": nyu.device, "requestApproved": true});
+        let response = server.call("PUT", &format!("/api/auth-requests/{id}"), Some(&nyu.token), answer).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let message = next(&mut waiting).await;
+        assert!(contains(&message, "AuthRequestResponseRecieved") && contains(&message, &id));
+    }
+
+    type Pushed = tokio::sync::mpsc::UnboundedSender<(String, Value)>;
+
+    /// Bitwarden's push relay, on this machine: it hands on what it was told.
+    async fn fake_relay() -> (String, tokio::sync::mpsc::UnboundedReceiver<(String, Value)>) {
+        use axum::extract::State;
+        use axum::routing::post;
+        let (tell, told) = tokio::sync::mpsc::unbounded_channel();
+        let app = axum::Router::new()
+            .route(
+                "/connect/token",
+                post(|| async { axum::Json(json!({"access_token": "relay", "expires_in": 3600})) }),
+            )
+            .route(
+                "/push/{*rest}",
+                post(|State(tell): State<Pushed>, uri: axum::http::Uri, body: String| async move {
+                    let _ = tell.send((uri.path().to_string(), serde_json::from_str(&body).unwrap_or(Value::Null)));
+                    StatusCode::OK
+                }),
+            )
+            .with_state(tell);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (format!("http://{address}"), told)
+    }
+
+    #[tokio::test]
+    async fn phones_are_woken_through_the_relay() {
+        let (url, mut told) = fake_relay().await;
+        let settings = Settings {
+            push: Some(uwulock_notify::relay::RelaySettings {
+                installation_id: "inst".into(),
+                installation_key: "key".into(),
+                region: url,
+            }),
+            ..Settings::default()
+        };
+        let server = TestServer::with_settings(settings).await;
+        let nyu = server.account("nyu@example.com").await;
+        let phone = server.login("nyu@example.com", "a3c1e9d4-7b2f-4c5e-8d6a-1f0e2b3c4d5e").await;
+        let path = format!("/api/devices/identifier/{}/token", phone.device);
+        let response = server.call("PUT", &path, Some(&phone.token), json!({"pushToken": "fcm-1"})).await;
+        assert!(response.status().is_success());
+        let mut next = async || tokio::time::timeout(Duration::from_secs(5), told.recv()).await.unwrap().unwrap();
+        let (path, registered) = next().await;
+        assert_eq!(path, "/push/register");
+        assert_eq!(registered["pushToken"], "fcm-1");
+        assert_eq!(registered["userId"], nyu.id.as_str());
+
+        // A change on the laptop wakes the phone.
+        let folder = server.call("POST", "/api/folders", Some(&nyu.token), json!({"name": "2.f|f|f"})).await;
+        let folder = json(folder).await["id"].as_str().unwrap().to_string();
+        let (path, sent) = next().await;
+        assert_eq!(path, "/push/send");
+        assert_eq!(sent["userId"], nyu.id.as_str());
+        assert_eq!(sent["payload"]["id"], folder.as_str());
+        assert_eq!(sent["identifier"], nyu.device.as_str());
     }
 }

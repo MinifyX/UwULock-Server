@@ -3,13 +3,14 @@
 
 use crate::auth::Session;
 use crate::errors::{ApiError, ApiResult};
-use crate::{AppState, json as out};
+use crate::{AppState, json as out, notify};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::Value;
+use uwulock_notify::Kind;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -43,6 +44,7 @@ async fn create(
         .save_folder(&session.user.id, None, data.name)
         .await?
         .ok_or_else(|| ApiError::bad("Invalid folder"))?;
+    notify::folder(&state, &session, Kind::FolderCreate, &folder.id, &folder.revision);
     Ok(Json(out::folder(&folder)))
 }
 
@@ -57,6 +59,7 @@ async fn rename(
         .save_folder(&session.user.id, Some(id), data.name)
         .await?
         .ok_or_else(|| ApiError::bad("Invalid folder"))?;
+    notify::folder(&state, &session, Kind::FolderUpdate, &folder.id, &folder.revision);
     Ok(Json(out::folder(&folder)))
 }
 
@@ -64,6 +67,7 @@ async fn delete(State(state): State<AppState>, session: Session, Path(id): Path<
     if !state.store.delete_folder(&session.user.id, &id).await? {
         return Err(ApiError::bad("Invalid folder"));
     }
+    notify::folder(&state, &session, Kind::FolderDelete, &id, &uwulock_store::clock::now());
     Ok(StatusCode::OK)
 }
 

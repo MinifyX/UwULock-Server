@@ -6,10 +6,10 @@
 //! client can ask for fresh.
 
 use crate::auth::Session;
-use crate::ciphers::{cipher_json, json_text};
+use crate::ciphers::{Found, cipher_json, find, found_json, json_text};
 use crate::errors::{ApiError, ApiResult};
 use crate::files::{self, LINK_SECONDS};
-use crate::{AppState, json as out};
+use crate::{AppState, json as out, notify};
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::Response;
@@ -17,7 +17,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use uwulock_store::{Attachment, Cipher, clock};
+use uwulock_notify::Kind;
+use uwulock_store::{Attachment, Cipher, Owner, clock};
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -61,8 +62,39 @@ pub(crate) fn render_one(state: &AppState, attachment: &Attachment, seconds: i64
     })
 }
 
-async fn own_cipher(state: &AppState, session: &Session, id: &str) -> ApiResult<Cipher> {
-    state.store.cipher(&session.user.id, id).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))
+/// An item the user may attach to: their own, or an organisation's they may change. Whose it
+/// is, and — for an organisation's — the collections it is in, for telling its members.
+async fn changeable(state: &AppState, session: &Session, id: &str) -> ApiResult<(Cipher, Owner, Vec<String>)> {
+    match find(state, session, id).await? {
+        Found::Own(cipher) => Ok((cipher, Owner::User(session.user.id.clone()), Vec::new())),
+        Found::Org(item) => {
+            if item.access.read_only {
+                return Err(ApiError::new(StatusCode::FORBIDDEN, "You don't have permission to change this item."));
+            }
+            let org = item.cipher.organization_id.clone().unwrap_or_default();
+            Ok((item.cipher, Owner::Org(org), item.collection_ids))
+        }
+    }
+}
+
+/// The item as the user sees it now, after a change to its attachments; its readers hear of it.
+async fn changed(state: &AppState, session: &Session, cipher: &Cipher, collections: &[String]) -> ApiResult<String> {
+    match &cipher.organization_id {
+        None => {
+            notify::cipher(state, session, Kind::CipherUpdate, cipher);
+            cipher_json(state, cipher).await
+        }
+        Some(org) => {
+            let users = state.store.org_members_users(org).await?;
+            crate::organizations::notify(state, session, Kind::CipherUpdate, cipher, collections, &users);
+            let item = state
+                .store
+                .org_cipher(&session.user.id, &cipher.id)
+                .await?
+                .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+            crate::organizations::org_cipher_json(state, &item).await
+        }
+    }
 }
 
 async fn one(
@@ -70,7 +102,7 @@ async fn one(
     session: Session,
     Path((id, attachment)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    own_cipher(&state, &session, &id).await?;
+    find(&state, &session, &id).await?;
     let attachment = state
         .store
         .attachment(&id, &attachment)
@@ -121,7 +153,7 @@ async fn announce(
     Path(id): Path<String>,
     Json(data): Json<Announce>,
 ) -> ApiResult<Json<Value>> {
-    let cipher = own_cipher(&state, &session, &id).await?;
+    let (cipher, owner, collections) = changeable(&state, &session, &id).await?;
     if let Some(known) = data.last_known_revision_date.as_deref().and_then(clock::parse)
         && let Some(stored) = clock::parse(&cipher.revision)
         && (stored - known).whole_seconds() > 1
@@ -148,12 +180,9 @@ async fn announce(
         created: clock::now(),
     };
     let attachment_id = attachment.id.clone();
-    let cipher = state
-        .store
-        .add_attachment(&session.user.id, attachment)
-        .await?
-        .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
-    let rendered = cipher_json(&state, &cipher).await?;
+    let cipher =
+        state.store.add_attachment(&owner, attachment).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+    let rendered = changed(&state, &session, &cipher, &collections).await?;
     Ok(Json(upload_answer(&cipher, &attachment_id, &rendered, data.admin_request == Some(true))))
 }
 
@@ -163,13 +192,13 @@ async fn renew(
     session: Session,
     Path((id, attachment)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
-    let cipher = own_cipher(&state, &session, &id).await?;
+    let (cipher, ..) = changeable(&state, &session, &id).await?;
     let found =
         state.store.attachment(&id, &attachment).await?.ok_or_else(|| ApiError::bad("Attachment doesn't exist"))?;
     if found.uploaded {
         return Err(ApiError::bad("The attachment is uploaded already."));
     }
-    let rendered = cipher_json(&state, &cipher).await?;
+    let rendered = found_json(&state, &find(&state, &session, &id).await?).await?;
     Ok(Json(upload_answer(&cipher, &found.id, &rendered, false)))
 }
 
@@ -182,7 +211,7 @@ async fn upload(
     Path((id, attachment)): Path<(String, String)>,
     form: Multipart,
 ) -> ApiResult<StatusCode> {
-    own_cipher(&state, &session, &id).await?;
+    let (_, owner, collections) = changeable(&state, &session, &id).await?;
     let announced =
         state.store.attachment(&id, &attachment).await?.ok_or_else(|| ApiError::bad("Attachment doesn't exist"))?;
     if announced.uploaded {
@@ -196,9 +225,12 @@ async fn upload(
         return Err(ApiError::bad("The file is smaller than announced."));
     }
     files::keep(&path).await?;
-    if !state.store.attachment_uploaded(&session.user.id, &id, &attachment, uploaded.size).await? {
-        return Err(ApiError::bad("Cipher doesn't exist"));
-    }
+    let cipher = state
+        .store
+        .attachment_uploaded(&owner, &id, &attachment, uploaded.size)
+        .await?
+        .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+    changed(&state, &session, &cipher, &collections).await?;
     Ok(StatusCode::OK)
 }
 
@@ -209,7 +241,7 @@ async fn upload_legacy(
     Path(id): Path<String>,
     form: Multipart,
 ) -> ApiResult<Response> {
-    own_cipher(&state, &session, &id).await?;
+    let (_, owner, collections) = changeable(&state, &session, &id).await?;
     let attachment_id = files::new_file_id();
     let path = files::attachment_path(&state, &id, &attachment_id)?;
     let uploaded = files::receive(form, &path, files::limit(&state)).await?;
@@ -228,12 +260,9 @@ async fn upload_legacy(
         uploaded: true,
         created: clock::now(),
     };
-    let cipher = state
-        .store
-        .add_attachment(&session.user.id, attachment)
-        .await?
-        .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
-    Ok(json_text(cipher_json(&state, &cipher).await?))
+    let cipher =
+        state.store.add_attachment(&owner, attachment).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
+    Ok(json_text(changed(&state, &session, &cipher, &collections).await?))
 }
 
 async fn delete(
@@ -241,12 +270,14 @@ async fn delete(
     session: Session,
     Path((id, attachment)): Path<(String, String)>,
 ) -> ApiResult<Json<Value>> {
+    let (_, owner, collections) = changeable(&state, &session, &id).await?;
     let cipher = state
         .store
-        .delete_attachment(&session.user.id, &id, &attachment)
+        .delete_attachment(&owner, &id, &attachment)
         .await?
         .ok_or_else(|| ApiError::bad("Attachment doesn't exist"))?;
-    let rendered: Value = serde_json::from_str(&cipher_json(&state, &cipher).await?).unwrap_or(Value::Null);
+    let rendered: Value =
+        serde_json::from_str(&changed(&state, &session, &cipher, &collections).await?).unwrap_or(Value::Null);
     Ok(Json(json!({ "cipher": rendered })))
 }
 

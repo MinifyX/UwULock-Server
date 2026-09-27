@@ -117,6 +117,13 @@ async fn password_login(
         log(state, "login-failed", Some(&user), username, ip, device_type, "account disabled").await;
         return Err(ApiError::bad("This account has been disabled."));
     }
+    // A hash that came over from Vaultwarden becomes one of this server's now that the password
+    // is here to make it from.
+    if by_request.is_none() && auth::is_legacy(&user.password_hash) {
+        let rehashed = auth::hash_password(state.config.hash_cost, password).await?;
+        state.store.update_user(&user.id, move |user| user.password_hash = rehashed).await?;
+        tracing::info!(user = %user.id, "a password hash from Vaultwarden was replaced");
+    }
 
     let known_device = state.store.device(&user.id, device_id).await?;
     // A device that another one let in has passed its second step with that.
@@ -294,15 +301,27 @@ fn invalid_grant() -> ApiError {
 
 async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> ApiResult<Response> {
     let Some(token) = form.get("refreshtoken") else { return Err(invalid_grant()) };
+    let token = token.trim();
+    // A device that moved over from Vaultwarden holds its refresh token: a JWT around the token
+    // Vaultwarden kept for the device.
+    let legacy = crate::vaultwarden::device_token(state, token).await;
+    let presented = legacy.as_deref().unwrap_or(token);
     let device = state
         .store
         .refresh_device(
-            auth::sha256(token.trim().as_bytes()),
+            auth::sha256(presented.as_bytes()),
             |kind| clock::in_seconds(refresh_days(kind) * 86_400),
             Some(ip.to_string()),
         )
         .await?
         .ok_or_else(invalid_grant)?;
+    let token = if legacy.is_some() {
+        let fresh = auth::random_token(64);
+        state.store.replace_refresh(&device.user_id, &device.id, auth::sha256(fresh.as_bytes())).await?;
+        fresh
+    } else {
+        token.to_string()
+    };
     let session = state.store.session_user(&device.user_id).await?.ok_or_else(invalid_grant)?;
     if session.user.disabled {
         return Err(invalid_grant());
@@ -313,7 +332,7 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
-        "refresh_token": token.trim(),
+        "refresh_token": token,
         "scope": "api offline_access",
     }))
     .into_response())

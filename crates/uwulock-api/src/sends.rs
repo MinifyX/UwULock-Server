@@ -9,7 +9,7 @@
 use crate::auth::{ClientIp, Session};
 use crate::errors::{ApiError, ApiResult};
 use crate::files::{self, LINK_SECONDS};
-use crate::{AppState, auth, json as out};
+use crate::{AppState, auth, json as out, notify};
 use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
@@ -19,6 +19,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
+use uwulock_notify::Kind;
 use uwulock_store::clock;
 use uwulock_store::sends::{FILE, Send, TEXT};
 
@@ -272,8 +273,9 @@ async fn create(State(state): State<AppState>, session: Session, Json(data): Jso
     if data.kind != TEXT {
         return Err(ApiError::bad("File Sends go through /sends/file/v2."));
     }
-    let send = apply(&state, data, new_send(&session.user.id, TEXT)).await?;
-    Ok(Json(render(&save(&state, send).await?)))
+    let send = save(&state, apply(&state, data, new_send(&session.user.id, TEXT)).await?).await?;
+    notify::send(&state, &session.user.id, Some(&session), Kind::SendCreate, &send.id, &send.revision);
+    Ok(Json(render(&send)))
 }
 
 async fn legacy_file() -> ApiError {
@@ -367,7 +369,8 @@ async fn upload(
     }
     files::keep(&path).await?;
     send.uploaded = true;
-    save(&state, send).await?;
+    let send = save(&state, send).await?;
+    notify::send(&state, &session.user.id, Some(&session), Kind::SendCreate, &send.id, &send.revision);
     Ok(StatusCode::OK)
 }
 
@@ -378,14 +381,16 @@ async fn update(
     Json(data): Json<SendData>,
 ) -> ApiResult<Json<Value>> {
     let current = own(&state, &session, &id).await?;
-    let send = apply(&state, data, current).await?;
-    Ok(Json(render(&save(&state, send).await?)))
+    let send = save(&state, apply(&state, data, current).await?).await?;
+    notify::send(&state, &session.user.id, Some(&session), Kind::SendUpdate, &send.id, &send.revision);
+    Ok(Json(render(&send)))
 }
 
 async fn delete(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<StatusCode> {
     if !state.store.delete_send(&session.user.id, &id).await? {
         return Err(ApiError::bad("Send not found"));
     }
+    notify::send(&state, &session.user.id, Some(&session), Kind::SendDelete, &id, &clock::now());
     Ok(StatusCode::OK)
 }
 
@@ -396,7 +401,9 @@ async fn remove_password(
 ) -> ApiResult<Json<Value>> {
     let mut send = own(&state, &session, &id).await?;
     send.password_hash = None;
-    Ok(Json(render(&save(&state, send).await?)))
+    let send = save(&state, send).await?;
+    notify::send(&state, &session.user.id, Some(&session), Kind::SendUpdate, &send.id, &send.revision);
+    Ok(Json(render(&send)))
 }
 
 // ── For whoever has the link ──────────────────────────────
@@ -458,6 +465,7 @@ async fn access_legacy(
     if send.kind == TEXT && !state.store.register_send_access(&send.id).await? {
         return Err(ApiError::not_found(GONE));
     }
+    opened(&state, &send);
     Ok(Json(render_access(&state, &send).await?))
 }
 
@@ -484,12 +492,18 @@ async fn file_download(state: &AppState, send: &Send, file: &str) -> ApiResult<J
     if !state.store.register_send_access(&send.id).await? {
         return Err(ApiError::not_found(GONE));
     }
+    opened(state, send);
     let token = state.tokens.file_token(&format!("{}/{file}", send.id), LINK_SECONDS);
     Ok(Json(json!({
         "id": file,
         "url": format!("{}/api/sends/{}/{file}?t={token}", state.config.public, send.id),
         "object": "send-fileDownload",
     })))
+}
+
+/// The owner's clients hear that their Send was opened: its count changed.
+fn opened(state: &AppState, send: &Send) {
+    notify::send(state, &send.user_id, None, Kind::SendUpdate, &send.id, &clock::now());
 }
 
 /// The Send a send access token in `Authorization` opens.
@@ -567,6 +581,7 @@ pub(crate) async fn grant(
     if !state.store.register_send_access(&send.id).await? {
         return Err(invalid("send_id_invalid"));
     }
+    opened(state, &send);
     let (token, expires_in) = state.tokens.send_token(&send.id);
     Ok(Json(json!({
         "access_token": token,

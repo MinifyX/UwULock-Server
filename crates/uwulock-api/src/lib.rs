@@ -10,6 +10,9 @@
 //! - **The web vault and the admin portal**, at `/` and `/admin`, from the files built into the
 //!   binary.
 
+// `json!` for an organisation in the profile has as many keys as Bitwarden's model.
+#![recursion_limit = "256"]
+
 mod accounts;
 mod admin;
 mod attachments;
@@ -28,17 +31,21 @@ mod json;
 mod limits;
 mod logs;
 mod meta;
+mod notifications;
+pub(crate) mod notify;
+mod organizations;
 mod passkeys;
 mod sends;
 mod settings;
 mod totp;
 mod two_factor;
 mod uwu;
+pub mod vaultwarden;
 mod web;
 mod webauthn;
 
 pub use admin::{Invited, invite};
-pub use auth::{HashCost, Tokens};
+pub use auth::{HashCost, LEGACY_HASH, Tokens};
 pub use errors::{ApiError, ApiResult};
 pub use limits::Limits;
 pub use logs::{LogBuffer, LogLine};
@@ -116,6 +123,10 @@ pub struct AppState {
     pub challenges: Arc<webauthn::Challenges>,
     /// What Have I Been Pwned answered lately.
     pub hibp: Arc<hibp::Cache>,
+    /// Who listens for live updates.
+    pub hub: Arc<uwulock_notify::Hub>,
+    /// Bitwarden's push relay, for the phone apps.
+    pub relay: uwulock_notify::relay::Relay,
 }
 
 impl AppState {
@@ -145,6 +156,8 @@ impl AppState {
             party,
             challenges: Arc::default(),
             hibp: Arc::default(),
+            hub: Arc::default(),
+            relay: uwulock_notify::relay::Relay::default(),
         })
     }
 
@@ -189,6 +202,8 @@ pub fn router(state: AppState) -> Router {
         .merge(auth_requests::routes())
         .merge(passkeys::routes())
         .merge(hibp::routes())
+        .merge(notifications::routes())
+        .merge(organizations::routes())
         .merge(folders::routes())
         .merge(two_factor::routes())
         .merge(meta::routes())
