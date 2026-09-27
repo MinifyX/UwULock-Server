@@ -6,8 +6,10 @@ für eigene Funktionen — ohne dass die offizielle Bitwarden-Browsererweiterung
 CLI aufhören zu funktionieren.
 
 Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
-Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind fertig und werden
-zusammen 0.4.
+Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind zusammen als
+0.4.0-beta.1 erschienen, nach einem Sicherheitsreview
+([docs/security-review-2026-09.md](security-review-2026-09.md)); passend dazu UwULock
+0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 5.
 
 ## Leitlinien
 

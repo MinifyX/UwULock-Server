@@ -124,6 +124,8 @@ pub struct AppState {
     pub challenges: Arc<webauthn::Challenges>,
     /// What Have I Been Pwned answered lately.
     pub hibp: Arc<hibp::Cache>,
+    /// "Log in with a device" requests for addresses without an account.
+    pub unanswerable: Arc<auth_requests::Unanswerable>,
     /// Who listens for live updates.
     pub hub: Arc<uwulock_notify::Hub>,
     /// Bitwarden's push relay, for the phone apps.
@@ -157,6 +159,7 @@ impl AppState {
             party,
             challenges: Arc::default(),
             hibp: Arc::default(),
+            unanswerable: Arc::default(),
             hub: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
         })

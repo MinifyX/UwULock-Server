@@ -200,23 +200,48 @@ export async function changeEmail(password: string, email: string, code: string)
   await endSession();
 }
 
-/** A new user key for everything in the vault. */
-export async function rotateKeys(password: string) {
+/** An emergency contact who gets the new user key too, with the phrase to check them by. */
+export type RotationContact = { id: string; who: string; publicKey: string; phrase: string };
+
+/**
+ * The emergency contacts who hold the user key, each with the public key the server has for
+ * them and its fingerprint phrase. The new key is wrapped for exactly these keys, so the person
+ * compares the phrases first: a key the server swapped would get the whole vault.
+ */
+export async function rotationContacts(): Promise<RotationContact[]> {
+  const trusted = await request<{
+    data: {
+      id: string;
+      granteeId: string | null;
+      name: string | null;
+      email: string | null;
+      status: number;
+    }[];
+  }>('/api/emergency-access/trusted');
+  const contacts = [];
+  for (const contact of trusted.data.filter((c) => c.status >= 2 && c.granteeId)) {
+    const key = await request<{ publicKey: string }>(
+      `/api/users/${encodeURIComponent(contact.granteeId!)}/public-key`,
+    );
+    const phrase = await call((core) => core.fingerprint(contact.granteeId!, key.publicKey));
+    contacts.push({
+      id: contact.id,
+      who: contact.name || contact.email || '?',
+      publicKey: key.publicKey,
+      phrase,
+    });
+  }
+  return contacts;
+}
+
+/** A new user key for everything in the vault, wrapped for `contacts` as they were checked. */
+export async function rotateKeys(password: string, contacts: RotationContact[]) {
   const profile = currentProfile();
   const keys = profile?.accountKeys as Record<string, Record<string, string>> | null | undefined;
   const publicKey = keys?.publicKeyEncryptionKeyPair?.publicKey;
   if (!publicKey) throw { kind: 'invalid', message: 'This account has no key pair.' };
   // Everybody else who holds the user key gets the new one too.
-  const trusted = await request<{
-    data: { id: string; granteeId: string | null; status: number }[];
-  }>('/api/emergency-access/trusted');
-  const emergency = [];
-  for (const contact of trusted.data.filter((c) => c.status >= 2 && c.granteeId)) {
-    const key = await request<{ publicKey: string }>(
-      `/api/users/${encodeURIComponent(contact.granteeId!)}/public-key`,
-    );
-    emergency.push({ id: contact.id, publicKey: key.publicKey });
-  }
+  const emergency = contacts.map((contact) => ({ id: contact.id, publicKey: contact.publicKey }));
   const passkeys = (
     await request<{ data: { id: string; prfStatus: number; encryptedPublicKey: string | null }[] }>(
       '/api/webauthn',

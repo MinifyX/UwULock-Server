@@ -2815,7 +2815,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-api"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "argon2",
  "axum",
@@ -3229,7 +3229,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-bench"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "clap",
  "reqwest 0.13.5",
@@ -3242,8 +3242,8 @@ dependencies = [
 
 [[package]]
 name = "uwulock-bitwarden"
-version = "0.2.0-beta.2"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=ffc40a352ef202b45f30517da1cd129713a16c8c#ffc40a352ef202b45f30517da1cd129713a16c8c"
+version = "0.2.0-beta.3"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=bd3d7945c27bfff04ff74b0d9584e6499e79edf8#bd3d7945c27bfff04ff74b0d9584e6499e79edf8"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",
@@ -3256,8 +3256,8 @@ dependencies = [
 
 [[package]]
 name = "uwulock-core"
-version = "0.2.0-beta.2"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=ffc40a352ef202b45f30517da1cd129713a16c8c#ffc40a352ef202b45f30517da1cd129713a16c8c"
+version = "0.2.0-beta.3"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=bd3d7945c27bfff04ff74b0d9584e6499e79edf8#bd3d7945c27bfff04ff74b0d9584e6499e79edf8"
 dependencies = [
  "aes",
  "argon2",
@@ -3282,7 +3282,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-e2e"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "reqwest 0.13.5",
  "rustls",
@@ -3298,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-mail"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "lettre",
  "parking_lot",
@@ -3310,7 +3310,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-notify"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "axum",
  "parking_lot",
@@ -3326,7 +3326,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-server"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "axum",
  "axum-server",
@@ -3361,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-store"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 dependencies = [
  "libc",
  "parking_lot",
@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-web"
-version = "0.1.0-beta.2"
+version = "0.4.0-beta.1"
 
 [[package]]
 name = "valuable"

@@ -436,4 +436,20 @@ mod tests {
         let again = server.send(multipart(&url, &nyu.token, &[], "f", b"abc")).await;
         assert_eq!(again.status(), StatusCode::BAD_REQUEST, "once");
     }
+
+    #[tokio::test]
+    async fn parts_next_to_the_file_stay_small_and_few() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let id = item(&server, &account.token).await;
+        let path = format!("/api/ciphers/{id}/attachment");
+        let huge = "k".repeat(64 * 1024);
+        let response = server.send(multipart(&path, &account.token, &[("key", &huge)], "2.n|n|n", b"abc")).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "a key part larger than any key");
+        let many: Vec<(&str, &str)> = (0..9).map(|_| ("x", "y")).collect();
+        let response = server.send(multipart(&path, &account.token, &many, "2.n|n|n", b"abc")).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "more parts than an upload has");
+        let vault = json(server.get_as(&account.token, "/api/sync").await).await;
+        assert_eq!(vault["ciphers"][0]["attachments"], json!(null), "nothing was kept");
+    }
 }

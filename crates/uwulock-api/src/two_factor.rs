@@ -150,7 +150,8 @@ pub(crate) async fn check_login(
     let provider = provider.unwrap_or(usable[0].kind);
     // Whoever gets here knows the password. What stops them guessing six digits from many
     // addresses is this limit per account.
-    if !state.limits.two_factor.allows(&user.id) {
+    // Taken now and given back for a right code, so codes sent at once all count.
+    if !state.limits.two_factor.take(user.id.clone()) {
         return Err(ApiError::too_many("Too many wrong codes. Wait a few minutes and try again."));
     }
     // Whether the code was right, and a device may be remembered for it.
@@ -237,13 +238,13 @@ pub(crate) async fn check_login(
         Ok(true)
     }
     .await;
+    if checked.is_ok() {
+        state.limits.two_factor.give_back(&user.id);
+    }
     match checked {
         Ok(true) => {}
         Ok(false) => return Ok(None),
-        Err(error) => {
-            state.limits.two_factor.take(user.id.clone());
-            return Err(error);
-        }
+        Err(error) => return Err(error),
     }
     let remember = form.get("twofactorremember") == Some("1") && state.settings().remember_two_factor;
     Ok(remember.then(|| auth::random_token(32)))

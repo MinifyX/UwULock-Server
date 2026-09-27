@@ -13,10 +13,12 @@ import {
   prelogin,
   requestEmailChange,
   rotateKeys,
+  rotationContacts,
   saveName,
   setLanguage,
   type AccountInfo,
   type Kdf,
+  type RotationContact,
 } from '../../lib/account';
 import { errorText } from '../../lib/errors';
 import { ago } from '../../lib/format';
@@ -253,29 +255,9 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
         />
       )}
       {dialog === 'rotate' && (
-        <PasswordPrompt
-          title={t('Tresor neu verschlüsseln?')}
-          tone="warning"
-          lead={
-            <>
-              <p>
-                {t(
-                  'Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel. Alle Geräte müssen sich danach neu anmelden.',
-                )}
-              </p>
-              <p>
-                {t(
-                  'Wichtig: Lass dabei kein anderes Gerät Einträge speichern. Was während der Umstellung woanders gespeichert wird, geht verloren.',
-                )}
-              </p>
-            </>
-          }
-          confirm={t('Neu verschlüsseln')}
+        <Rotate
           onCancel={() => setDialog(null)}
-          action={async (password) => {
-            await rotateKeys(password);
-            ended(t('Dein Tresor hat neue Schlüssel. Melde dich neu an.'));
-          }}
+          onDone={() => ended(t('Dein Tresor hat neue Schlüssel. Melde dich neu an.'))}
         />
       )}
       {dialog === 'everywhere' && (
@@ -306,6 +288,67 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
         />
       )}
     </>
+  );
+}
+
+/**
+ * New keys for the vault. Emergency contacts get the new user key too, wrapped for the public
+ * key the server has for them — so their fingerprint phrases are shown first, to compare.
+ */
+function Rotate({ onCancel, onDone }: { onCancel: () => void; onDone: () => void }) {
+  useLanguage();
+  const [contacts, setContacts] = useState<RotationContact[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    rotationContacts().then(setContacts, (e) => setError(errorText(e)));
+  }, []);
+  if (error || !contacts) {
+    return (
+      <Modal title={t('Tresor neu verschlüsseln?')} tone="warning" onCancel={onCancel}>
+        <p className="dialog-lead">{error ?? t('Einen Moment …')}</p>
+      </Modal>
+    );
+  }
+  return (
+    <PasswordPrompt
+      title={t('Tresor neu verschlüsseln?')}
+      tone="warning"
+      lead={
+        <>
+          <p>
+            {t(
+              'Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel. Alle Geräte müssen sich danach neu anmelden.',
+            )}
+          </p>
+          <p>
+            {t(
+              'Wichtig: Lass dabei kein anderes Gerät Einträge speichern. Was während der Umstellung woanders gespeichert wird, geht verloren.',
+            )}
+          </p>
+          {contacts.length > 0 && (
+            <>
+              <p>
+                {t(
+                  'Deine Vertrauenspersonen bekommen den neuen Schlüssel auch. Vergleiche ihre Sätze mit denen in ihren Einstellungen unter Konto → Fingerabdruck. Stimmt einer nicht, brich ab.',
+                )}
+              </p>
+              {contacts.map((contact) => (
+                <div key={contact.id} className="rotation-contact">
+                  <strong>{contact.who}</strong>
+                  <p className="fingerprint">{contact.phrase}</p>
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      }
+      confirm={t('Neu verschlüsseln')}
+      onCancel={onCancel}
+      action={async (password) => {
+        await rotateKeys(password, contacts);
+        onDone();
+      }}
+    />
   );
 }
 

@@ -83,6 +83,12 @@ fn enough_room(free: u64, total: u64, need: u64) -> bool {
     free >= need.saturating_add(margin)
 }
 
+/// Whether `need` more bytes fit under `path` and still leave the margin a backup leaves: what
+/// fills the disk takes the database down with it. True when the disk cannot be asked.
+pub fn has_room(path: &Path, need: u64) -> bool {
+    path.ancestors().find_map(disk_space).is_none_or(|(free, total)| enough_room(free, total, need))
+}
+
 /// Free and total bytes of the file system `path` is on, for whoever may write there.
 #[cfg(unix)]
 #[allow(clippy::unnecessary_cast)]

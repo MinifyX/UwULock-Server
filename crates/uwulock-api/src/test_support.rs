@@ -62,6 +62,13 @@ impl TestServer {
         Self { router: router(state.clone()), state, _dir: dir }
     }
 
+    /// With `limits` instead of ones nobody runs into, for tests of the limits themselves.
+    pub(crate) fn with_limits(mut self, limits: crate::Limits) -> Self {
+        self.state.limits = Arc::new(limits);
+        self.router = router(self.state.clone());
+        self
+    }
+
     pub(crate) async fn send(&self, request: Request<Body>) -> Response<Body> {
         self.router.clone().oneshot(request).await.unwrap()
     }

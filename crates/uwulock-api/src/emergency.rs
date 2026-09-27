@@ -465,7 +465,8 @@ struct NewPassword {
 }
 
 /// A new master password for the grantor, set by the contact. Two-step login goes, every
-/// session ends, and the grantor gets a mail.
+/// session ends, organisations the grantor does not own let go of them, and the grantor gets a
+/// mail.
 async fn password(
     State(state): State<AppState>,
     session: Session,
@@ -489,6 +490,12 @@ async fn password(
         })
         .await?;
     state.store.remove_two_factor(&grantor.id, None).await?;
+    // What others shared with the grantor through an organisation is not the contact's to have.
+    for user in state.store.leave_organizations(&grantor.id).await? {
+        if user != grantor.id {
+            crate::notify::user(&state, &user, None, uwulock_notify::Kind::Vault);
+        }
+    }
     crate::notify::user(&state, &grantor.id, None, uwulock_notify::Kind::LogOut);
     tell(&state, &grantor, Mail::EmergencyTakenOver { grantee: called(&session.user) });
     log(&state, &session, format!("took over {}", grantor.email)).await;

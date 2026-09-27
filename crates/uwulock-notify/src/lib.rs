@@ -167,8 +167,11 @@ pub fn is_handshake(text: &str) -> bool {
 
 /// How many connections one account may hold open: every browser, app and tab.
 const PER_USER: usize = 64;
-/// How many anonymous ones one address may: one per pending request, a few behind a NAT.
+/// How many anonymous ones one address may: one per pending request, a few behind a NAT. An
+/// IPv6 address counts by its /64, like everywhere else on this server.
 const PER_ADDRESS: u32 = 25;
+/// How many anonymous ones there may be at all: devices that wait for a yes, never many at once.
+const MOST_ANONYMOUS: u32 = 1000;
 /// Messages that wait for a slow connection before it is dropped.
 const QUEUE: usize = 64;
 
@@ -216,6 +219,18 @@ impl Drop for Listening {
     }
 }
 
+/// The address a count belongs to: an IPv4 address as it is, an IPv6 address by its /64.
+fn network(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => {
+            let mut octets = v6.octets();
+            octets[8..].fill(0);
+            IpAddr::from(octets)
+        }
+    }
+}
+
 impl Hub {
     fn join(self: &Arc<Self>, key: &str, anonymous: Option<IpAddr>) -> Option<Listening> {
         let map = if anonymous.is_some() { &self.anonymous } else { &self.users };
@@ -238,8 +253,12 @@ impl Hub {
     /// A device that waits for the answer to its request `request_id`. Nothing when its address
     /// holds too many such connections already.
     pub fn listen_anonymous(self: &Arc<Self>, request_id: &str, ip: IpAddr) -> Option<Listening> {
+        let ip = network(ip);
         {
             let mut addresses = self.addresses.lock();
+            if addresses.values().sum::<u32>() >= MOST_ANONYMOUS {
+                return None;
+            }
             let count = addresses.entry(ip).or_default();
             if *count >= PER_ADDRESS {
                 return None;
@@ -342,5 +361,24 @@ mod tests {
         let mut waiting = hub.listen_anonymous("r1", ip).unwrap();
         hub.publish_anonymous("r1", &update("u1"));
         assert!(waiting.messages.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn an_ipv6_network_counts_as_one_address_and_all_of_them_have_a_ceiling() {
+        let hub = Arc::new(Hub::default());
+        let held: Vec<_> = (0..PER_ADDRESS)
+            .map(|n| hub.listen_anonymous(&n.to_string(), format!("2001:db8:1:2::{n:x}").parse().unwrap()).unwrap())
+            .collect();
+        assert!(hub.listen_anonymous("x", "2001:db8:1:2:ffff::1".parse().unwrap()).is_none(), "the same /64");
+        drop(held);
+        let held: Vec<_> = (0..MOST_ANONYMOUS)
+            .map(|n| {
+                let ip = IpAddr::from([198, 51, (n / 250) as u8, (n % 250) as u8]);
+                hub.listen_anonymous(&n.to_string(), ip).unwrap()
+            })
+            .collect();
+        assert!(hub.listen_anonymous("x", "203.0.113.1".parse().unwrap()).is_none(), "full");
+        drop(held);
+        assert!(hub.listen_anonymous("x", "203.0.113.1".parse().unwrap()).is_some());
     }
 }

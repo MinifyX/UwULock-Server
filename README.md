@@ -28,26 +28,37 @@ teams and SSO.
   you pass on a changed version, or run one for others, its source stays open too.
 - **No support.** Issues and pull requests are okay, but I might answer late or not at all.
 
-> **Status: 0.1, a vault for one person — beta.** Accounts by invitation, the vault with
-> folders, trash, archive and import, two-step login, and the official Bitwarden apps, browser
-> extension and CLI on top; a web vault of its own and an admin portal. No organisations,
-> attachments or sends yet, and no real-time sync (the apps sync when opened). Keep your
-> Vaultwarden until 0.2, which brings it over, devices and all. The [plan](docs/plan.md) has
-> every step (in German).
+> **Status: 0.4, everything Vaultwarden does for one person — beta.** Accounts by invitation,
+> the vault with attachments, Sends, emergency access, security keys and passkeys, live updates
+> and push, and the official Bitwarden apps, browser extension and CLI on top; a web vault of its
+> own that works on a phone, and an admin portal. `uwulock-server import-vaultwarden` moves a
+> Vaultwarden over, devices and all. Organisations come along from Vaultwarden and work as they
+> are; creating and managing them is next. The [UwULock app](https://github.com/MinifyX/UwULock-Client)
+> fits from 0.2.0-beta.3 on. The [plan](docs/plan.md) has every step (in German).
 
-## What is in 0.1
+## What is in 0.4
 
 - **The official Bitwarden clients work**: browser extension, mobile apps, desktop app and
-  `bw` CLI log in (with two-step login), sync, and save — tested in CI with Bitwarden's own CLI.
-- **UwULock's own web vault** at `/`, in the look of the UwULock app: the vault in three panes,
-  several items at once, the generator, import and export (Bitwarden JSON and CSV), and every
-  account setting — master password, key derivation, address, new keys, devices, two-step
-  login with an authenticator app or codes by mail. The crypto runs in the browser, as
-  WebAssembly: the same code the UwULock app uses.
-- **An admin portal** at `/admin`: users, invitations, mail and other settings, the event log,
-  the server's log, backups and the update notice. Admins are ordinary accounts with the admin
-  right.
-- **Registration only by invitation**: by mail, or as a link to pass on by hand.
+  `bw` CLI log in (with two-step login, a security key, another device or the API key), sync,
+  and save, with live updates over Bitwarden's notification hub and push to the phone apps
+  through Bitwarden's relay — tested in CI with Bitwarden's own CLI.
+- **Everything for one person**: attachments (500 MB each by default), Sends with a page of
+  their own for whoever gets the link, emergency access with a waiting time, security keys and
+  passkeys (with PRF, a passkey unlocks the web vault too), logging in with another device, and
+  a password check that asks Have I Been Pwned through this server.
+- **Moving in from Vaultwarden**: `uwulock-server import-vaultwarden <its data directory>`
+  brings accounts, devices (which stay logged in), two-step login, items, attachments, Sends,
+  emergency access and organisations over in one go. Tested in CI against a real Vaultwarden.
+- **UwULock's own web vault** at `/`, in the look of the UwULock app: the vault in three panes
+  (one at a time on a phone), several items at once, the generator, import and export (Bitwarden
+  JSON and CSV), Sends, the password check, and every account setting. The crypto runs in the
+  browser, as WebAssembly: the same code the UwULock app uses.
+- **An admin portal** at `/admin`: users with their files, invitations and who may send them,
+  mail, push and other settings, numbers over time, the event log, the server's log, backups —
+  put back while the server runs — and the update notice. Admins are ordinary accounts with the
+  admin right.
+- **Registration only by invitation**: by mail, or as a link to pass on by hand; users may
+  invite a few people too, if the admin allows it.
 
 ## What it will and won't do
 
@@ -105,6 +116,7 @@ version.
 | `crates/uwulock-store`  | The database: SQLite now, behind methods PostgreSQL can implement later     |
 | `crates/uwulock-api`    | HTTP: Bitwarden's API, UwULock's own and the admin API under `/uwu/v1`      |
 | `crates/uwulock-mail`   | SMTP, and what the mails say, in German and English                        |
+| `crates/uwulock-notify` | Live updates: Bitwarden's notification hub, and push through its relay     |
 | `crates/uwulock-web`    | The web vault's files, embedded into the binary                             |
 | `crates/uwulock-server` | The program: settings, TLS and Let's Encrypt, commands, backups, updates   |
 | `crates/uwulock-bench`  | The same load against any Bitwarden-compatible server, for comparisons     |
@@ -112,7 +124,7 @@ version.
 | `web/`                  | The web vault and the admin portal (React), and `web/wasm`, their crypto    |
 | `scripts/e2e/`          | A browser and Bitwarden's CLI against a running server                     |
 | `docker/`, `compose.yaml`, `install.sh`, `update.sh` | The container and how it gets onto a machine  |
-| `docs/`                 | Plan, deployment, performance                                              |
+| `docs/`                 | Plan, deployment, performance, security reviews                            |
 
 ## Development
 
@@ -147,5 +159,7 @@ GitHub release with the scripts.
 - [Plan](docs/plan.md) — where this is going, stage by stage (German)
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
 - [Performance](docs/performance.md) — how it is measured, and the numbers
+- [Security review, September 2026](docs/security-review-2026-09.md) — what was fixed for 0.4,
+  and what is still open
 - [Changelog](CHANGELOG.md)
 - [Security](SECURITY.md) — how to report a vulnerability

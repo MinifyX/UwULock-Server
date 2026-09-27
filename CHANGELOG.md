@@ -3,6 +3,72 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.4.0-beta.1
+
+**Everything Vaultwarden does for one person, and the way over from it.** Attachments, Sends,
+emergency access, security keys and passkeys, logging in with another device, the API key and a
+password check; `uwulock-server import-vaultwarden` brings a whole Vaultwarden over as it is;
+live updates for the apps and the web vault; the web vault on a phone; and a grown-up admin
+portal. Update with `sudo bash update.sh`. The version jumps from 0.1 to 0.4 because stages 2,
+3 and 4 of [the plan](docs/plan.md) come at once; 1.0 comes after testing on real devices.
+
+Behind a reverse proxy, check two things: the proxy has to pass on WebSockets for
+`/notifications/hub` (the nginx example in [docs/deployment.md](docs/deployment.md) does), and
+it has to let files through up to the size set in the admin portal (500 MB by default:
+`client_max_body_size 525M;` in nginx). Attachments and the files of Sends are kept next to the
+database, in `/data/attachments` and `/data/sends` — copy them along with the backups.
+
+- **Attachments** on items, up to 500 MB each (changeable in the admin portal), in the web
+  vault, the official apps and the `bw` CLI; they come along when the keys are renewed.
+- **Sends**: a text or a file behind a link, with a password, an expiry, a deletion date and a
+  maximum number of openings; a page of their own in the web vault for whoever gets the link.
+- **Emergency access**: trusted contacts who may see or take over the vault after a waiting
+  time, with mails at every step and the fingerprint phrase to confirm them.
+- **Security keys and passkeys**: WebAuthn as a second step (with the connector pages the
+  browser extension and the apps use), logging in with a passkey in the web vault, and with PRF
+  unlocking it too — verified by the server itself, without OpenSSL.
+- **Log in with another device**, with the fingerprint phrase on both; **the API key** for
+  `bw login --apikey`; a **password check** in the web vault: weak, reused, without https, and in
+  breaches — asked through this server from Have I Been Pwned, only the first five characters of
+  a hash leave it (switchable in the admin portal).
+- **Moving in from Vaultwarden**: `uwulock-server import-vaultwarden <its data directory>`
+  (`--dry-run` first) brings accounts, devices — which stay logged in —, two-step login,
+  folders, items, attachments, Sends, emergency access and organisations over, in one go and
+  after a backup. The old passwords work and are hashed anew at the next login. Organisations
+  can be used as they are; managing them comes later. Tested in CI against a real
+  Vaultwarden 1.37.3, filled by Bitwarden's CLI. See [docs/deployment.md](docs/deployment.md).
+- **Live updates**: Bitwarden's notification hub (SignalR over a WebSocket), so a change on one
+  device shows on the others at once; the web vault listens too. **Push for the phone apps**
+  through Bitwarden's relay, with an installation id and key from bitwarden.com/host, set up and
+  tested in the admin portal.
+- **The web vault on a phone**: one layer at a time — list, item, menu — with a bar at the
+  bottom. The admin portal fits a phone too.
+- **The admin portal** gets the push relay, the largest file, the password check, invitation
+  rules (users may invite, up to a number each, never as admins; in the vault under Settings →
+  Invite), numbers over time as charts, files per account, and **restoring a backup while the
+  server runs** — with the master password, and a backup of how things were first, so it can be
+  undone the same way.
+- `UWULOCK_LOGIN_ATTEMPTS` for many people behind one address.
+
+- **The UwULock app** fits from [0.2.0-beta.3](https://github.com/MinifyX/UwULock-Client/releases/tag/v0.2.0-beta.3)
+  on: items with attachments, Sends and organisations come through its sync and stay intact.
+
+**A security review** of everything new came before the release; what it found high or medium
+is fixed, the rest is listed in [docs/security-review-2026-09.md](docs/security-review-2026-09.md):
+
+- Uploads cannot fill the memory with an oversized part, and are refused when they would leave
+  the disk too full for the database.
+- Rate limits for a Send's password, the master password and the second step of a login count
+  tries sent all at once too.
+- "Log in with a device" says nothing about which addresses have an account; the anonymous
+  live-update connections need a waiting request, take only small messages, count IPv6 by /64
+  and have a ceiling.
+- An emergency takeover takes the grantor out of organisations they do not own, so the contact
+  does not get what others shared with them.
+- `import-vaultwarden` run a second time stops before touching anything, and never writes over
+  or removes the files of the first run.
+- New keys in the web vault show each emergency contact's fingerprint phrase first.
+
 ## 0.1.0-beta.2
 
 **A security release.** A review of the whole server, the web vault and the scripts, and what

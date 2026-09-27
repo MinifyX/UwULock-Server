@@ -4,7 +4,9 @@
 //! its code instead of the master password — no second step, the approval is one.
 //!
 //! Whoever asks without being logged in learns nothing from the answer about which addresses
-//! have an account: an unknown one gets a request too, which nobody will ever answer.
+//! have an account: an unknown one gets a request too, kept in memory for as long as a real one
+//! waits, which nobody will ever answer. The limit on requests counts per address, with an
+//! account or without.
 
 use crate::auth::{self, ClientIp, Session, device_type_name};
 use crate::errors::{ApiError, ApiResult};
@@ -13,9 +15,43 @@ use axum::extract::{Path, Query, State};
 use axum::http::HeaderMap;
 use axum::routing::get;
 use axum::{Json, Router};
+use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use uwulock_store::{AuthRequest, Event, clock};
+
+/// Requests for addresses without an account, answered like real ones that wait.
+#[derive(Default)]
+pub struct Unanswerable {
+    requests: Mutex<HashMap<String, AuthRequest>>,
+}
+
+/// More than this many at once, and the oldest go first.
+const MOST_UNANSWERABLE: usize = 10_000;
+
+impl Unanswerable {
+    fn put(&self, request: AuthRequest) {
+        let mut requests = self.requests.lock();
+        if requests.len() >= MOST_UNANSWERABLE {
+            requests.retain(|_, request| request.fresh());
+        }
+        while requests.len() >= MOST_UNANSWERABLE {
+            let oldest = requests.values().min_by(|a, b| a.created.cmp(&b.created)).map(|request| request.id.clone());
+            let Some(oldest) = oldest else { break };
+            requests.remove(&oldest);
+        }
+        requests.insert(request.id.clone(), request);
+    }
+
+    pub(crate) fn contains(&self, id: &str) -> bool {
+        self.get(id).is_some()
+    }
+
+    fn get(&self, id: &str) -> Option<AuthRequest> {
+        self.requests.lock().get(id).filter(|request| request.fresh()).cloned()
+    }
+}
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -109,13 +145,16 @@ async fn create(
         used: None,
     };
     let rendered = render(&state, &request);
-    let Some(user) = state.store.user_by_email(&data.email).await?.filter(|user| !user.disabled) else {
-        return Ok(Json(rendered));
-    };
-    // Each request lands on every device of the account; nobody gets to pile them up.
-    if !state.limits.password.take(format!("auth-request:{}", user.id)) {
+    // Each request lands on every device of the account; nobody gets to pile them up. Counted
+    // per address before looking it up, so the limit says nothing about an account either.
+    let email = uwulock_store::normalize_email(&data.email);
+    if !state.limits.password.take(format!("auth-request:{email}")) {
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
     }
+    let Some(user) = state.store.user_by_email(&data.email).await?.filter(|user| !user.disabled) else {
+        state.unanswerable.put(request);
+        return Ok(Json(rendered));
+    };
     let request = AuthRequest { user_id: user.id.clone(), ..request };
     state.store.add_auth_request(request.clone()).await?;
     crate::notify::auth_request(&state, &user.id, &request.id);
@@ -209,15 +248,18 @@ async fn response(
     if !state.limits.anonymous.check(ip) {
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
     }
-    let request = state
-        .store
-        .auth_request(&id)
-        .await?
+    let request = match state.store.auth_request(&id).await? {
+        Some(request) => Some(request),
+        None => state.unanswerable.get(&id),
+    };
+    // One nobody answered in time looks the same whether there is an account behind it or not.
+    let request = request
+        .filter(|request| request.approved.is_some() || request.fresh())
         .filter(|request| auth::constant_time_eq(&request.access_code_hash, &auth::sha256(code.code.as_bytes())));
     Ok(Json(match request {
         Some(request) => render(&state, &request),
-        // A request for an address without an account, or a wrong code: it just never gets an
-        // answer, like a request nobody looks at.
+        // A wrong code, or a request too old: it just never gets an answer, like a request
+        // nobody looks at.
         None => json!({
             "id": id,
             "key": null,
@@ -312,5 +354,39 @@ mod tests {
         let response = server.get(&format!("/api/auth-requests/{id}/response?code={CODE}")).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(json(response).await["requestApproved"].is_null(), "waits for ever, like one nobody answers");
+    }
+
+    #[tokio::test]
+    async fn the_answer_does_not_tell_whether_there_is_an_account() {
+        let password = crate::limits::Limiter::new(10, std::time::Duration::from_secs(60));
+        let server = TestServer::new().await.with_limits(crate::Limits { password, ..crate::Limits::generous() });
+        server.account("nyu@example.com").await;
+        let mut answers = Vec::new();
+        for email in ["nyu@example.com", "nobody@example.com"] {
+            let id = ask(&server, email, "d").await["id"].as_str().unwrap().to_string();
+            let response = server.get(&format!("/api/auth-requests/{id}/response?code={CODE}")).await;
+            let mut answer: Value = json(response).await;
+            for field in ["id", "creationDate"] {
+                assert!(answer[field].is_string(), "{email}: {field}");
+                answer[field] = Value::Null;
+            }
+            answers.push(answer);
+        }
+        assert_eq!(answers[0], answers[1]);
+
+        for email in ["Nyu@example.com", "nobody@example.com"] {
+            let mut refused = 0;
+            for _ in 0..12 {
+                let body = json!({"email": email, "publicKey": "MIIBpub", "deviceIdentifier": "d", "accessCode": CODE});
+                let request = Request::post("/api/auth-requests")
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap();
+                if server.send(request).await.status() == StatusCode::TOO_MANY_REQUESTS {
+                    refused += 1;
+                }
+            }
+            assert_eq!(refused, 3, "{email}: the same limit with an account or without");
+        }
     }
 }

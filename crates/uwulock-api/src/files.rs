@@ -60,24 +60,43 @@ pub struct Uploaded {
     pub fields: Vec<(String, String)>,
 }
 
+/// The most parts an upload may have, and the most a part that is not the file may hold: the
+/// clients send a key and a name next to the file, nothing more.
+const MOST_PARTS: usize = 8;
+const MOST_FIELD: usize = 10_000;
+
 /// Write the part called `data` of a multipart upload to `path`, at most `limit` bytes. Other
 /// small parts are handed back as text.
 pub async fn receive(mut form: Multipart, path: &Path, limit: u64) -> ApiResult<Uploaded> {
     let folder = path.parent().ok_or_else(|| ApiError::internal("a file path without a folder"))?;
     tokio::fs::create_dir_all(folder).await.map_err(ApiError::internal)?;
+    // A file that would leave the disk too full for the database is not taken in the first place.
+    if !uwulock_store::backups::has_room(folder, limit) {
+        return Err(ApiError::bad("There is not enough room on the server for this file."));
+    }
     let partial = folder.join(format!(".{}.part", path.file_name().and_then(|name| name.to_str()).unwrap_or("upload")));
     let mut fields = Vec::new();
     let mut received: Option<(i64, Option<String>)> = None;
+    let mut parts = 0;
     let result: ApiResult<()> = async {
         while let Some(mut field) = form.next_field().await.map_err(|_| ApiError::bad("The upload is not complete."))? {
+            parts += 1;
+            if parts > MOST_PARTS {
+                return Err(ApiError::bad("The upload has too many parts."));
+            }
             let name = field.name().unwrap_or_default().to_string();
             if name != "data" {
-                if fields.len() < 8 {
-                    let text = field.text().await.map_err(|_| ApiError::bad("The upload is not complete."))?;
-                    if text.len() <= 10_000 {
-                        fields.push((name, text));
+                // Read a piece at a time and stop at the limit: the body has no limit of its own
+                // here, so reading a whole part first would take whatever somebody sends.
+                let mut text = Vec::new();
+                while let Some(chunk) = field.chunk().await.map_err(|_| ApiError::bad("The upload is not complete."))? {
+                    if text.len() + chunk.len() > MOST_FIELD {
+                        return Err(ApiError::bad("A part of the upload is too large."));
                     }
+                    text.extend_from_slice(&chunk);
                 }
+                let text = String::from_utf8(text).map_err(|_| ApiError::bad("The upload is not complete."))?;
+                fields.push((name, text));
                 continue;
             }
             if received.is_some() {

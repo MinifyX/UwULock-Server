@@ -314,6 +314,9 @@ try {
   await nyu.keyboard.press('Escape');
   await settings(nyu, 'Konto');
   await nyu.getByRole('button', { name: 'Neu verschlüsseln …' }).click();
+  // The contact who gets the new key is shown with their phrase first.
+  await nyu.locator('.rotation-contact .fingerprint').waitFor();
+  await snap(nyu, 'rotate-contacts');
   await nyu.locator('.modal input[type=password]').last().fill(password);
   await nyu.getByRole('button', { name: 'Neu verschlüsseln', exact: true }).click();
   await nyu.getByRole('heading', { name: 'Anmelden' }).waitFor({ timeout: 60000 });
