@@ -414,13 +414,15 @@ async fn check_password(state: &AppState, send: &Send, password: Option<&str>) -
     let Some(hash) = &send.password_hash else { return Ok(()) };
     let Some(password) = password.filter(|password| !password.is_empty()) else { return Err(PasswordRefusal::Missing) };
     let key = format!("send:{}", send.id);
-    if !state.limits.password.allows(&key) {
+    // Taken before the check and given back when it was right: guesses sent all at once do not
+    // get past the limit while the first ones are still being hashed.
+    if !state.limits.password.take(key.clone()) {
         return Err(PasswordRefusal::TooMany);
     }
     if auth::verify_password(state.config.hash_cost, Some(hash), password).await {
+        state.limits.password.give_back(&key);
         Ok(())
     } else {
-        state.limits.password.take(key);
         Err(PasswordRefusal::Wrong)
     }
 }

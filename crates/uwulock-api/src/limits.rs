@@ -57,6 +57,17 @@ impl<K: Hash + Eq> Limiter<K> {
         buckets.tidied = Some(now);
     }
 
+    /// Give back the try `take` took, when it turned out right. Taking first and giving back
+    /// afterwards is what keeps tries that run at the same time from all getting through.
+    pub fn give_back(&self, key: &K) {
+        let now = Instant::now();
+        let mut buckets = self.buckets.lock();
+        if let Some((tokens, at)) = buckets.map.get_mut(key) {
+            *tokens = (self.refilled(*tokens, *at, now) + 1.0).min(self.burst);
+            *at = now;
+        }
+    }
+
     /// Whether `key` has a try left, without taking it.
     pub fn allows(&self, key: &K) -> bool {
         let now = Instant::now();
@@ -201,6 +212,20 @@ mod tests {
         assert!(!limiter.allows(&u32::MAX));
         assert!(!limiter.take_at(MOST as u32 - 1, later), "the recent ones are remembered");
         assert!(limiter.buckets.lock().map.len() < MOST);
+    }
+
+    #[test]
+    fn a_try_that_was_right_comes_back() {
+        let limiter = Limiter::new(2, Duration::from_secs(3600));
+        assert!(limiter.take("a"));
+        assert!(limiter.take("a"));
+        assert!(!limiter.take("a"), "both tries are out at the same time");
+        limiter.give_back(&"a");
+        assert!(limiter.take("a"));
+        limiter.give_back(&"a");
+        limiter.give_back(&"a");
+        limiter.give_back(&"a");
+        assert!(limiter.take("a") && limiter.take("a") && !limiter.take("a"), "never more than the burst");
     }
 
     #[test]

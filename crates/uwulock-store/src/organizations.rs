@@ -544,6 +544,32 @@ impl Store {
         Ok(shared)
     }
 
+    /// Take `user_id` out of every organisation they do not own, the way Bitwarden does when an
+    /// emergency contact takes an account over: the contact gets the account, not what other
+    /// people shared with it. The ids of everybody whose organisations changed.
+    pub async fn leave_organizations(&self, user_id: &str) -> Result<Vec<String>> {
+        let user_id = user_id.to_string();
+        let changed = self
+            .sqlite_write(move |tx| {
+                let orgs: Vec<String> = tx
+                    .prepare("SELECT org_id FROM org_members WHERE user_id = ?1 AND type <> ?2")?
+                    .query_map(params![user_id, OWNER], |row| row.get(0))?
+                    .collect::<rusqlite::Result<_>>()?;
+                tx.execute("DELETE FROM org_members WHERE user_id = ?1 AND type <> ?2", params![user_id, OWNER])?;
+                bump_revision(tx, &user_id)?;
+                let mut changed = HashSet::from([user_id.clone()]);
+                for org in orgs {
+                    changed.extend(bump_org(tx, &org)?);
+                }
+                Ok(changed.into_iter().collect::<Vec<_>>())
+            })
+            .await?;
+        for user in &changed {
+            self.forget_session_of(user);
+        }
+        Ok(changed)
+    }
+
     /// The user ids of an organisation's confirmed members.
     pub async fn org_members_users(&self, org_id: &str) -> Result<Vec<String>> {
         let org_id = org_id.to_string();
@@ -628,6 +654,18 @@ pub(crate) mod tests {
                 .unwrap();
         }
         (owner.id, member.id, "org".into())
+    }
+
+    #[tokio::test]
+    async fn leaving_takes_every_organisation_but_owned_ones() {
+        let (store, _dir) = store();
+        let (owner, member, _) = setting(&store).await;
+        let changed = store.leave_organizations(&member).await.unwrap();
+        assert!(changed.contains(&owner) && changed.contains(&member));
+        let theirs = store.org_vault(&member).await.unwrap();
+        assert!(theirs.memberships.is_empty() && theirs.ciphers.is_empty());
+        store.leave_organizations(&owner).await.unwrap();
+        assert_eq!(store.org_vault(&owner).await.unwrap().memberships.len(), 1, "an owner stays");
     }
 
     #[tokio::test]

@@ -86,13 +86,14 @@ pub(crate) async fn check_password(state: &AppState, user: &User, hash: Option<&
         return Err(ApiError::bad("No validation provided"));
     };
     // A session that is not its owner's — a token that got away — does not get to guess.
-    if !state.limits.password.allows(&user.id) {
+    // Taken first and given back when it was right, so guesses sent at once all count.
+    if !state.limits.password.take(user.id.clone()) {
         return Err(ApiError::too_many("Too many wrong passwords. Wait a few minutes and try again."));
     }
     if auth::verify_password(state.config.hash_cost, Some(&user.password_hash), hash).await {
+        state.limits.password.give_back(&user.id);
         Ok(())
     } else {
-        state.limits.password.take(user.id.clone());
         Err(ApiError::bad("Invalid password"))
     }
 }

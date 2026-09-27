@@ -883,43 +883,61 @@ pub async fn import(
         tokio::task::spawn_blocking(move || read_vaultwarden(&source_owned, &admins_owned, &language_owned))
             .await
             .map_err(|error| error.to_string())??;
+    // Accounts that are here already stop the import before anything is touched, a dry run
+    // included.
+    for user in &migration.users {
+        if store.user_by_email(&user.email).await.map_err(|error| error.to_string())?.is_some() {
+            return Err(format!("{} has an account here already: nothing was imported", user.email));
+        }
+    }
     if dry_run {
         return Ok(summary);
     }
     // The files first: an import whose rows went in without them would show attachments that
-    // do not open.
+    // do not open. None is written over, and when the import stops, only the files it wrote go.
     let mut copied: Vec<PathBuf> = Vec::new();
-    let mut copy = |from: PathBuf, to: PathBuf| -> Result<(), String> {
+    let copy = |from: PathBuf, to: PathBuf, copied: &mut Vec<PathBuf>| -> Result<(), String> {
         if let Some(parent) = to.parent() {
             std::fs::create_dir_all(parent).map_err(|error| format!("{}: {error}", parent.display()))?;
         }
-        std::fs::copy(&from, &to).map_err(|error| format!("{}: {error}", from.display()))?;
-        copied.push(to);
+        let mut source = std::fs::File::open(&from).map_err(|error| format!("{}: {error}", from.display()))?;
+        let mut file = std::fs::File::options()
+            .write(true)
+            .create_new(true)
+            .open(&to)
+            .map_err(|error| format!("{}: {error}", to.display()))?;
+        copied.push(to.clone());
+        std::io::copy(&mut source, &mut file).map_err(|error| format!("{}: {error}", from.display()))?;
         Ok(())
     };
+    let mut files = Vec::new();
     for attachment in &migration.attachments {
-        let relative = Path::new("attachments").join(&attachment.cipher_id).join(&attachment.id);
-        copy(source.join(&relative), target.join(&relative))?;
+        files.push(Path::new("attachments").join(&attachment.cipher_id).join(&attachment.id));
     }
     for send in migration.sends.iter().filter(|send| send.kind == 1 && send.uploaded) {
         if let Some(file) = serde_json::from_str::<Value>(&send.data)
             .ok()
             .and_then(|data| data.get("id").and_then(Value::as_str).map(str::to_string))
         {
-            let relative = Path::new("sends").join(&send.id).join(file);
-            copy(source.join(&relative), target.join(&relative))?;
+            files.push(Path::new("sends").join(&send.id).join(file));
         }
     }
-    if let Err(error) = store.migrate(migration).await {
+    let copying: Result<(), String> =
+        files.iter().try_for_each(|relative| copy(source.join(relative), target.join(relative), &mut copied));
+    let result = match copying {
+        Ok(()) => store.migrate(migration).await.map_err(|error| match error {
+            uwulock_store::StoreError::Exists => {
+                "an account of this Vaultwarden has one here already: nothing was imported".to_string()
+            }
+            other => other.to_string(),
+        }),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = result {
         for file in copied {
             let _ = std::fs::remove_file(file);
         }
-        return Err(match error {
-            uwulock_store::StoreError::Exists => {
-                "an account of this Vaultwarden has one here already: nothing was imported".into()
-            }
-            other => other.to_string(),
-        });
+        return Err(error);
     }
     if let Some(key) = rsa {
         store
@@ -1182,10 +1200,36 @@ mod tests {
         assert!(!target.path().join("attachments").exists());
 
         import(&store, source.path(), target.path(), &[], "en", false).await.unwrap();
-        let error = import(&store, source.path(), target.path(), &[], "en", false).await.unwrap_err();
-        assert!(error.contains("nothing was imported"), "{error}");
-        // The files of the first import stay.
-        assert_eq!(std::fs::read_dir(target.path().join("sends")).unwrap().count(), 1);
+        let files = |dir: &str| -> usize {
+            std::fs::read_dir(target.path().join(dir))
+                .unwrap()
+                .map(|folder| std::fs::read_dir(folder.unwrap().path()).unwrap().count())
+                .sum()
+        };
+        assert_eq!((files("attachments"), files("sends")), (1, 1));
+        for dry_run in [true, false] {
+            let error = import(&store, source.path(), target.path(), &[], "en", dry_run).await.unwrap_err();
+            assert!(error.contains("nothing was imported"), "{error}");
+        }
+        assert_eq!((files("attachments"), files("sends")), (1, 1), "the files of the first import stay");
+
+        // A file that is in the way is not written over, and the import stops whole.
+        let other = tempfile::tempdir().unwrap();
+        let fresh = self::store(other.path());
+        let taken = std::fs::read_dir(target.path().join("sends")).unwrap().next().unwrap().unwrap().file_name();
+        std::fs::create_dir_all(other.path().join("sends").join(&taken)).unwrap();
+        let first = std::fs::read_dir(target.path().join("sends").join(&taken)).unwrap().next().unwrap().unwrap();
+        std::fs::write(other.path().join("sends").join(&taken).join(first.file_name()), b"mine").unwrap();
+        assert!(import(&fresh, source.path(), other.path(), &[], "en", false).await.is_err());
+        assert_eq!(std::fs::read(other.path().join("sends").join(&taken).join(first.file_name())).unwrap(), b"mine");
+        assert_eq!(
+            std::fs::read_dir(other.path().join("attachments")).map_or(0, |dir| {
+                dir.map(|folder| std::fs::read_dir(folder.unwrap().path()).unwrap().count()).sum::<usize>()
+            }),
+            0,
+            "what it wrote before is gone again"
+        );
+        assert!(fresh.user_by_email("nyu@example.com").await.unwrap().is_none());
     }
 
     #[test]

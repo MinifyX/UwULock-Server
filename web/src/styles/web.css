@@ -909,3 +909,9 @@ a {
   margin: 0;
   padding: 0 16px 6px;
 }
+
+/* Who gets the new key when the vault is encrypted anew, and their phrase. */
+.rotation-contact strong {
+  display: block;
+  margin-top: 8px;
+}

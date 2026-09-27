@@ -21,6 +21,16 @@ pub(crate) fn routes() -> Router<AppState> {
 
 /// How often the server pings: well inside any proxy's idle timeout, and the server's own.
 const PING: Duration = Duration::from_secs(15);
+/// How long a new connection has for its handshake.
+const HANDSHAKE: Duration = Duration::from_secs(10);
+/// The most a client message may be. Clients send a handshake, pings and completions — a few
+/// dozen bytes each.
+const MOST_MESSAGE: usize = 16 * 1024;
+
+/// A WebSocket that takes only small messages and keeps a small buffer for them.
+fn small(upgrade: WebSocketUpgrade) -> WebSocketUpgrade {
+    upgrade.read_buffer_size(4096).max_message_size(MOST_MESSAGE).max_frame_size(MOST_MESSAGE)
+}
 
 #[derive(Deserialize)]
 struct HubQuery {
@@ -51,7 +61,7 @@ async fn hub(
         .hub
         .listen(&claims.sub)
         .ok_or_else(|| ApiError::too_many("This account has too many connections open."))?;
-    Ok(upgrade.on_upgrade(move |socket| serve(socket, listening)))
+    Ok(small(upgrade).on_upgrade(move |socket| serve(socket, listening)))
 }
 
 #[derive(Deserialize)]
@@ -68,11 +78,20 @@ async fn anonymous_hub(
 ) -> ApiResult<Response> {
     let token =
         query.token.filter(|token| !token.is_empty() && token.len() <= 64).ok_or_else(ApiError::unauthorized)?;
+    // Only for a request that waits for its answer: one for an address without an account
+    // waits too, so this says nothing about accounts.
+    let waiting = match state.store.auth_request(&token).await? {
+        Some(request) => request.approved.is_none() && request.fresh(),
+        None => state.unanswerable.contains(&token),
+    };
+    if !waiting {
+        return Err(ApiError::unauthorized());
+    }
     let listening = state
         .hub
         .listen_anonymous(&token, ip)
         .ok_or_else(|| ApiError::too_many("Too many connections from this address."))?;
-    Ok(upgrade.on_upgrade(move |socket| serve(socket, listening)))
+    Ok(small(upgrade).on_upgrade(move |socket| serve(socket, listening)))
 }
 
 /// One connection: answer the handshake, ping, pass on what the hub has for it, until either
@@ -80,14 +99,20 @@ async fn anonymous_hub(
 async fn serve(mut socket: WebSocket, mut listening: Listening) {
     let mut ping = tokio::time::interval(PING);
     ping.tick().await;
+    // Whoever does not say hello in time is not waiting for anything.
+    let handshake = tokio::time::sleep(HANDSHAKE);
+    tokio::pin!(handshake);
+    let mut greeted = false;
     loop {
         tokio::select! {
+            () = &mut handshake, if !greeted => break,
             incoming = socket.recv() => match incoming {
                 Some(Ok(Message::Text(text))) => {
-                    if uwulock_notify::is_handshake(&text)
-                        && socket.send(Message::Binary(uwulock_notify::HANDSHAKE_ANSWER.to_vec().into())).await.is_err()
-                    {
-                        break;
+                    if uwulock_notify::is_handshake(&text) {
+                        greeted = true;
+                        if socket.send(Message::Binary(uwulock_notify::HANDSHAKE_ANSWER.to_vec().into())).await.is_err() {
+                            break;
+                        }
                     }
                 }
                 Some(Ok(Message::Ping(data))) => {
@@ -211,6 +236,26 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let message = next(&mut waiting).await;
         assert!(contains(&message, "AuthRequestResponseRecieved") && contains(&message, &id));
+    }
+
+    #[tokio::test]
+    async fn the_anonymous_hub_is_only_for_requests_that_wait_and_takes_small_messages() {
+        let server = TestServer::new().await;
+        let address = listen(&server).await;
+        let made_up =
+            tokio_tungstenite::connect_async(format!("ws://{address}/notifications/anonymous-hub?Token=x")).await;
+        assert!(made_up.is_err(), "no request with that id");
+
+        let body = json!({"email": "nobody@example.com", "publicKey": "cHVibGlj", "deviceIdentifier": "d",
+            "accessCode": "abcdefghijklmnopqrstu", "type": 0});
+        let id =
+            json(server.call("POST", "/api/auth-requests", None, body).await).await["id"].as_str().unwrap().to_string();
+        let mut waiting = connect(format!("ws://{address}/notifications/anonymous-hub?Token={id}")).await;
+        waiting.send(Message::text("x".repeat(64 * 1024))).await.unwrap();
+        // Pings may still come; then the server closes the connection.
+        while let Some(Ok(Message::Binary(_) | Message::Ping(_))) =
+            tokio::time::timeout(Duration::from_secs(5), waiting.next()).await.unwrap()
+        {}
     }
 
     #[tokio::test]
