@@ -96,6 +96,31 @@ impl Sqlite {
     }
 }
 
+impl Sqlite {
+    /// Put `backup` in place of what is in the database, while the server runs: SQLite's backup
+    /// copies it page by page into the write connection's database in one step, so readers see
+    /// either all of the old or all of the new. An older backup is brought up to this schema.
+    pub(crate) fn restore_from(&self, backup: &Path) -> Result<()> {
+        let source = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let mut writer = self.writer.lock();
+        {
+            use rusqlite::backup::{Backup, StepResult};
+            let copy = Backup::new(&source, &mut writer)?;
+            // -1: every page in one step, so nothing half-copied is ever there to read.
+            loop {
+                match copy.step(-1)? {
+                    StepResult::Done => break,
+                    StepResult::More => {}
+                    // A reader that is just starting; it is a moment.
+                    _ => std::thread::sleep(Duration::from_millis(10)),
+                }
+            }
+        }
+        migrations::run(&mut writer)?;
+        Ok(())
+    }
+}
+
 /// What every connection gets.
 fn tune(conn: &Connection) -> rusqlite::Result<()> {
     conn.busy_timeout(Duration::from_secs(5))?;

@@ -28,10 +28,10 @@ pub use accounts::{
     CODE_ATTEMPTS, CodeRefusal, Device, DeviceLogin, Invitation, Kdf, NewUser, SessionUser, TwoFactor, User,
     UserOverview, normalize_email,
 };
-pub use admin::{EVENT_DAYS, Event, Stats};
+pub use admin::{Day, EVENT_DAYS, Event, Stats};
 pub use attachments::{Attachment, AttachmentKey, Owner};
 pub use auth_requests::{AUTH_REQUEST_SECONDS, AuthRequest};
-pub use backup::restore;
+pub use backup::{restore, setting_in};
 pub use emergency::EmergencyAccess;
 pub use migrate::{Migration, MovedDevice, MovedTwoFactor, MovedUser};
 pub use migrations::SCHEMA_VERSION;
@@ -141,6 +141,23 @@ impl Store {
         })
         .await
         .map_err(|_| StoreError::Gone)?
+    }
+
+    /// Put the backup at `path` in place of everything in the database, while the server runs.
+    /// Checked first like [`restore`]; whatever was cached is forgotten afterwards.
+    pub async fn restore_online(&self, path: &Path) -> Result<(), String> {
+        backup::check(path)?;
+        let (path, backend) = (path.to_path_buf(), self.backend.clone());
+        tokio::task::spawn_blocking(move || match &*backend {
+            Backend::Sqlite(sqlite) => sqlite.restore_from(&path),
+        })
+        .await
+        .map_err(|_| "the restore stopped halfway".to_string())?
+        .map_err(|error| error.to_string())?;
+        let mut sessions = self.sessions.write();
+        sessions.by_user.clear();
+        sessions.forgotten += 1;
+        Ok(())
     }
 
     /// The file behind this store, for the size of a backup.

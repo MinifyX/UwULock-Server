@@ -47,7 +47,7 @@ ciborium = "0.2"
 # Bundled SQLite, so the server never depends on whichever libsqlite3 is around.
 # Signing tokens, hashing, random numbers and TOTP: the crypto rustls brings along anyway.
 ring = "0.17"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 # `ring` rather than aws-lc: it needs no C toolchain beyond a compiler, which keeps the arm64
 # cross build simple.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }

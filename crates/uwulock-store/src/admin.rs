@@ -33,7 +33,104 @@ pub struct Stats {
     pub failed_logins_day: i64,
 }
 
+/// One day of the numbers over time.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Day {
+    /// YYYY-MM-DD, UTC.
+    pub day: String,
+    pub users: i64,
+    pub devices: i64,
+    pub ciphers: i64,
+    pub sends: i64,
+    pub file_bytes: i64,
+    pub logins: i64,
+    pub failed_logins: i64,
+}
+
+/// What a file Send's file weighs, from its data (Bitwarden writes the size as text).
+const SEND_FILE_BYTES: &str = "CAST(coalesce(json_extract(data, '$.size'), 0) AS INTEGER)";
+
 impl Store {
+    /// Write down today's numbers, and yesterday's logins once more: the day's last hours
+    /// happened after its last count. Called by the maintenance job every hour.
+    pub async fn record_day(&self) -> Result<()> {
+        self.sqlite_write(|tx| {
+            let today = clock::now()[..10].to_string();
+            let yesterday = clock::in_seconds(-86_400)[..10].to_string();
+            let logins = |kinds: &str| {
+                format!("(SELECT count(*) FROM events WHERE kind IN ({kinds}) AND substr(time, 1, 10) = ?1)")
+            };
+            tx.execute(
+                &format!(
+                    "INSERT INTO daily_stats (day, users, devices, ciphers, sends, file_bytes, logins, failed_logins) \
+                     VALUES (?1, (SELECT count(*) FROM users), \
+                     (SELECT count(*) FROM devices WHERE refresh_hash IS NOT NULL), \
+                     (SELECT count(*) FROM ciphers WHERE deleted IS NULL), (SELECT count(*) FROM sends), \
+                     (SELECT coalesce(sum(size), 0) FROM attachments WHERE uploaded) + \
+                     (SELECT coalesce(sum({SEND_FILE_BYTES}), 0) FROM sends WHERE type = 1 AND uploaded), \
+                     {}, {}) \
+                     ON CONFLICT (day) DO UPDATE SET users = excluded.users, devices = excluded.devices, \
+                     ciphers = excluded.ciphers, sends = excluded.sends, file_bytes = excluded.file_bytes, \
+                     logins = excluded.logins, failed_logins = excluded.failed_logins",
+                    logins("'login'"),
+                    logins("'login-failed', 'two-factor-failed'")
+                ),
+                [&today],
+            )?;
+            tx.execute(
+                &format!(
+                    "UPDATE daily_stats SET logins = {}, failed_logins = {} WHERE day = ?1",
+                    logins("'login'"),
+                    logins("'login-failed', 'two-factor-failed'")
+                ),
+                [&yesterday],
+            )?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// The last `days` days of numbers there are, the oldest first.
+    pub async fn daily_stats(&self, days: i64) -> Result<Vec<Day>> {
+        self.sqlite_read(move |conn| {
+            let since = clock::in_seconds(-days * 86_400)[..10].to_string();
+            conn.prepare_cached(
+                "SELECT day, users, devices, ciphers, sends, file_bytes, logins, failed_logins FROM daily_stats \
+                 WHERE day > ?1 ORDER BY day",
+            )?
+            .query_map([since], |row| {
+                Ok(Day {
+                    day: row.get(0)?,
+                    users: row.get(1)?,
+                    devices: row.get(2)?,
+                    ciphers: row.get(3)?,
+                    sends: row.get(4)?,
+                    file_bytes: row.get(5)?,
+                    logins: row.get(6)?,
+                    failed_logins: row.get(7)?,
+                })
+            })?
+            .collect()
+        })
+        .await
+    }
+
+    /// What each account keeps in files: its attachments and the files of its Sends, in bytes.
+    /// An organisation's attachments count for nobody.
+    pub async fn storage_by_user(&self) -> Result<std::collections::HashMap<String, i64>> {
+        self.sqlite_read(|conn| {
+            conn.prepare(&format!(
+                "SELECT user_id, sum(bytes) FROM ( \
+                 SELECT c.user_id AS user_id, a.size AS bytes FROM attachments a JOIN ciphers c ON c.id = a.cipher_id \
+                 WHERE a.uploaded AND c.user_id IS NOT NULL \
+                 UNION ALL SELECT user_id, {SEND_FILE_BYTES} FROM sends WHERE type = 1 AND uploaded) GROUP BY user_id"
+            ))?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect()
+        })
+        .await
+    }
+
     /// A setting the server keeps for itself, like the mail server or a signing key.
     pub async fn setting(&self, key: &str) -> Result<Option<String>> {
         let key = key.to_string();
@@ -141,11 +238,23 @@ impl Store {
             tx.execute("DELETE FROM attachments WHERE NOT uploaded AND created < ?1", [clock::in_seconds(-86_400)])?;
             // Items in the trash for more than 30 days are gone, like at Bitwarden.
             let old = clock::in_seconds(-30 * 86_400);
-            let owners: Vec<String> = tx
-                .prepare("SELECT DISTINCT user_id FROM ciphers WHERE deleted < ?1")?
+            // An organisation's item has no owner of its own: its members hear of it.
+            let mut owners: Vec<String> = tx
+                .prepare("SELECT DISTINCT user_id FROM ciphers WHERE deleted < ?1 AND user_id IS NOT NULL")?
                 .query_map([&old], |row| row.get(0))?
                 .collect::<rusqlite::Result<_>>()?;
+            let orgs: Vec<String> = tx
+                .prepare(
+                    "SELECT DISTINCT organization_id FROM ciphers WHERE deleted < ?1 AND organization_id IS NOT NULL",
+                )?
+                .query_map([&old], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            for org in orgs {
+                owners.extend(crate::organizations::member_users(tx, &org)?);
+            }
             tx.execute("DELETE FROM ciphers WHERE deleted < ?1", [&old])?;
+            owners.sort();
+            owners.dedup();
             for owner in owners {
                 crate::accounts::bump_revision(tx, &owner)?;
             }
@@ -227,5 +336,28 @@ mod tests {
         assert_eq!(store.stats().await.unwrap().failed_logins_day, 5);
         store.sweep().await.unwrap();
         assert_eq!(store.events(None, None, 100).await.unwrap().len(), 5, "the old login is gone");
+    }
+
+    #[tokio::test]
+    async fn the_numbers_of_each_day_are_kept() {
+        let (store, _dir) = store();
+        let nyu = store.create_user(crate::accounts::tests::new_user("nyu@example.com")).await.unwrap();
+        store.save_cipher(crate::vault::tests::cipher(&nyu.id, "c1", None)).await.unwrap();
+        let mut send = crate::sends::tests::text_send(&nyu.id, "s1");
+        send.kind = crate::sends::FILE;
+        send.uploaded = true;
+        send.data = r#"{"id":"f","fileName":"2.f|f|f","size":"1500","sizeName":"1.46 KB"}"#.into();
+        store.save_send(send).await.unwrap().unwrap();
+        for kind in ["login", "login", "login-failed"] {
+            store.log_event(Event { kind: kind.into(), ..Event::default() }).await.unwrap();
+        }
+        store.record_day().await.unwrap();
+        store.record_day().await.unwrap();
+        let days = store.daily_stats(30).await.unwrap();
+        assert_eq!(days.len(), 1, "one row a day, however often it is written");
+        let today = &days[0];
+        assert_eq!((today.users, today.ciphers, today.sends, today.file_bytes), (1, 1, 1, 1500));
+        assert_eq!((today.logins, today.failed_logins), (2, 1));
+        assert_eq!(store.storage_by_user().await.unwrap().get(&nyu.id), Some(&1500));
     }
 }

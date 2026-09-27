@@ -678,4 +678,21 @@ pub(crate) mod tests {
         assert!(store.cipher(&owner, "mine").await.unwrap().is_none(), "not personal any more");
         assert!(store.org_cipher(&member, "mine").await.unwrap().is_some(), "in the member's collection");
     }
+
+    #[tokio::test]
+    async fn the_sweep_takes_an_organisation_s_old_trash_too() {
+        let (store, _dir) = store();
+        let (owner, member, org) = setting(&store).await;
+        store.org_bulk(&org, "in-a", crate::Bulk::Trash).await.unwrap();
+        store
+            .sqlite_write(|tx| {
+                tx.execute("UPDATE ciphers SET deleted = '2020-01-01T00:00:00.000000Z' WHERE id = 'in-a'", [])
+            })
+            .await
+            .unwrap();
+        let before = store.user(&member).await.unwrap().unwrap().revision;
+        store.sweep().await.unwrap();
+        assert!(store.org_cipher(&owner, "in-a").await.unwrap().is_none());
+        assert_ne!(store.user(&member).await.unwrap().unwrap().revision, before, "the members hear of it");
+    }
 }

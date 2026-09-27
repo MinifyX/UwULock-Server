@@ -294,6 +294,10 @@ impl Store {
                         now,
                     ],
                 )?;
+                tx.execute(
+                    "UPDATE users SET invited_by = (SELECT invited_by FROM invitations WHERE email = ?1) WHERE id = ?2",
+                    [&new.email, &id],
+                )?;
                 tx.execute("DELETE FROM invitations WHERE email = ?1", [&new.email])?;
                 load_user(tx, &id)
             })
@@ -705,6 +709,35 @@ impl Store {
             )?
             .query_map([], invitation_from)?
             .collect()
+        })
+        .await
+    }
+
+    /// The invitations `user_id` made that nobody used yet, run out or not, the newest first.
+    pub async fn invitations_by(&self, user_id: &str) -> Result<Vec<Invitation>> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached(
+                "SELECT email, admin, invited_by, language, created, expires FROM invitations \
+                 WHERE invited_by = ?1 ORDER BY created DESC",
+            )?
+            .query_map([user_id], invitation_from)?
+            .collect()
+        })
+        .await
+    }
+
+    /// How much of their quota `user_id` has used: accounts they brought in, and invitations of
+    /// theirs that still work.
+    pub async fn invitations_used(&self, user_id: &str) -> Result<i64> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.query_row(
+                "SELECT (SELECT count(*) FROM users WHERE invited_by = ?1) + \
+                 (SELECT count(*) FROM invitations WHERE invited_by = ?1 AND expires > ?2)",
+                params![user_id, clock::now()],
+                |row| row.get(0),
+            )
         })
         .await
     }

@@ -2,9 +2,46 @@
 
 use crate::migrations::SCHEMA_VERSION;
 use crate::with_suffix;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use std::path::Path;
 use std::time::Duration;
+
+/// Whether `backup` is one this build can put back: an intact SQLite file, with this server's
+/// tables, at a schema it can read.
+pub(crate) fn check(backup: &Path) -> Result<(), String> {
+    let found = |error: rusqlite::Error| format!("{}: {error}", backup.display());
+    let conn = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(found)?;
+    let check: String = conn
+        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+        .map_err(|_| format!("{} is not a database", backup.display()))?;
+    if check != "ok" {
+        return Err(format!("{} is damaged: {check}", backup.display()));
+    }
+    let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0)).map_err(found)?;
+    let ours: i64 = conn
+        .query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'server'", [], |row| row.get(0))
+        .map_err(found)?;
+    if version < 1 || ours != 1 {
+        return Err(format!("{} is not a UwULock Server database", backup.display()));
+    }
+    if version > SCHEMA_VERSION {
+        return Err(format!(
+            "{} comes from a newer UwULock Server (schema {version}); restore it with that one",
+            backup.display()
+        ));
+    }
+    Ok(())
+}
+
+/// A value of the `server` table in `backup`, such as the key that signs access tokens: to tell
+/// whether a backup is of this server.
+pub fn setting_in(backup: &Path, key: &str) -> Result<Option<String>, String> {
+    let conn = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("{}: {error}", backup.display()))?;
+    conn.query_row("SELECT value FROM server WHERE key = ?1", [key], |row| row.get(0))
+        .optional()
+        .map_err(|error| format!("{}: {error}", backup.display()))
+}
 
 /// Put `backup` in place of the database at `database`, keeping what was there at `aside`.
 ///
@@ -14,31 +51,7 @@ use std::time::Duration;
 /// Leaving WAL mode needs the only connection there is, which makes it the test, and it folds the
 /// log into the file on the way, so nothing of it is left lying next to the backup either.
 pub fn restore(backup: &Path, database: &Path, aside: &Path) -> Result<(), String> {
-    let found = |error: rusqlite::Error| format!("{}: {error}", backup.display());
-    {
-        let conn = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY).map_err(found)?;
-        let check: String = conn
-            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
-            .map_err(|_| format!("{} is not a database", backup.display()))?;
-        if check != "ok" {
-            return Err(format!("{} is damaged: {check}", backup.display()));
-        }
-        let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0)).map_err(found)?;
-        let ours: i64 = conn
-            .query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'server'", [], |row| {
-                row.get(0)
-            })
-            .map_err(found)?;
-        if version < 1 || ours != 1 {
-            return Err(format!("{} is not a UwULock Server database", backup.display()));
-        }
-        if version > SCHEMA_VERSION {
-            return Err(format!(
-                "{} comes from a newer UwULock Server (schema {version}); restore it with that one",
-                backup.display()
-            ));
-        }
-    }
+    check(backup)?;
 
     if let (Ok(backup), Ok(database)) = (backup.canonicalize(), database.canonicalize())
         && backup == database
@@ -153,5 +166,29 @@ mod tests {
         let text = dir.path().join("notes.txt");
         std::fs::write(&text, "hello").unwrap();
         assert!(restore(&text, &dir.path().join("uwulock.db"), &dir.path().join("aside.db")).is_err());
+    }
+
+    #[tokio::test]
+    async fn a_backup_goes_back_under_a_running_server() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_with(dir.path(), "before").await;
+        let backup = dir.path().join("backups/uwulock-1.db");
+        store.backup_to(&backup).await.unwrap();
+        store
+            .sqlite_write(|tx| tx.execute("UPDATE server SET value = 'after' WHERE key = 'marker'", []))
+            .await
+            .unwrap();
+        assert_eq!(marker(&store).await, "after");
+        store.restore_online(&backup).await.unwrap();
+        assert_eq!(marker(&store).await, "before", "the readers see it at once");
+        store
+            .sqlite_write(|tx| tx.execute("UPDATE server SET value = 'later' WHERE key = 'marker'", []))
+            .await
+            .unwrap();
+        assert_eq!(marker(&store).await, "later", "and it goes on writing");
+
+        std::fs::write(dir.path().join("not-a-backup.db"), b"nonsense").unwrap();
+        assert!(store.restore_online(&dir.path().join("not-a-backup.db")).await.is_err());
+        assert_eq!(marker(&store).await, "later");
     }
 }
