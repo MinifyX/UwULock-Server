@@ -29,8 +29,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/config", get(config))
         .route("/api/version", get(version))
         .route("/api/settings/domains", get(get_domains).post(set_domains).put(set_domains))
-        .route("/api/collections", get(empty_list))
-        .route("/api/organizations", get(empty_list))
         .route("/api/policies", get(empty_list))
         .route("/api/tasks", get(tasks))
         .route("/events/collect", post(nothing))
@@ -113,6 +111,7 @@ async fn set_domains(
             user.revision = uwulock_store::clock::now();
         })
         .await?;
+    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::Settings);
     Ok(Json(json!({})))
 }
 

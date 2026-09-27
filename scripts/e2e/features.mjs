@@ -244,12 +244,19 @@ try {
   const asked = await tablet.locator('.fingerprint').innerText();
   await snap(tablet, 'device-login');
   await nyu.bringToFront();
-  await nyu.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await nyu.getByRole('heading', { name: 'Ein Gerät möchte sich anmelden' }).waitFor({ timeout: 30000 });
+  // The hub tells the open vault at once, long before it would look by itself.
+  await nyu.getByRole('heading', { name: 'Ein Gerät möchte sich anmelden' }).waitFor({ timeout: 5000 });
   const shown = await nyu.locator('.modal .fingerprint').innerText();
   if (shown !== asked) throw new Error(`the phrases differ: ${asked} / ${shown}`);
   await nyu.getByRole('button', { name: 'Anmelden lassen' }).click();
   await vault(tablet);
+
+  step('what the tablet saves shows up here at once');
+  await tablet.getByRole('button', { name: 'Neu', exact: true }).click();
+  await tablet.getByRole('menuitem', { name: 'Login' }).click();
+  await tablet.locator('.modal').getByLabel('Name', { exact: true }).fill('Vom Tablet');
+  await tablet.getByRole('button', { name: 'Speichern' }).click();
+  await nyu.locator('.item-list').getByText('Vom Tablet').waitFor({ timeout: 5000 });
   await tablet.context().close();
 
   step('a second account, for emergency access');

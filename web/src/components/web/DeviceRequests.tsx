@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { listen } from '../../lib/events';
 import { errorText } from '../../lib/errors';
 import {
   answerRequest,
@@ -39,9 +40,12 @@ export function DeviceRequests({ email }: { email: string }) {
     const timer = window.setInterval(() => void look(), EVERY);
     const onFocus = () => void look();
     window.addEventListener('focus', onFocus);
+    // The hub says at once when a device asks; the timer is for when it is not connected.
+    const stop = listen('auth-request', () => void look());
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', onFocus);
+      void stop.then((unlisten) => unlisten());
     };
   }, [look]);
 

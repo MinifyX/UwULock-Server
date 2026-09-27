@@ -27,6 +27,9 @@ pub struct Settings {
     /// Whether the web vault's password check may ask Have I Been Pwned, through this server,
     /// whether a password was in a breach.
     pub hibp: bool,
+    /// Bitwarden's push relay, for waking the phone apps: installation id and key from
+    /// bitwarden.com/host. None: the apps sync when they are opened.
+    pub push: Option<uwulock_notify::relay::RelaySettings>,
 }
 
 impl Default for Settings {
@@ -40,6 +43,7 @@ impl Default for Settings {
             remember_two_factor: true,
             max_file_mb: 500,
             hibp: true,
+            push: None,
         }
     }
 }
@@ -64,6 +68,11 @@ impl Settings {
         }
         if !(1..=4096).contains(&self.max_file_mb) {
             return Err("Files can be from 1 MB to 4096 MB.".into());
+        }
+        if let Some(push) = &self.push
+            && (push.installation_id.trim().is_empty() || !matches!(push.region.as_str(), "us" | "eu"))
+        {
+            return Err("The push relay needs the installation id and the region it was made for (us or eu).".into());
         }
         if let Some(smtp) = &self.smtp
             && (smtp.host.trim().is_empty() || smtp.port == 0 || smtp.from.trim().is_empty())

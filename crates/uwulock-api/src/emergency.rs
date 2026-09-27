@@ -489,6 +489,7 @@ async fn password(
         })
         .await?;
     state.store.remove_two_factor(&grantor.id, None).await?;
+    crate::notify::user(&state, &grantor.id, None, uwulock_notify::Kind::LogOut);
     tell(&state, &grantor, Mail::EmergencyTakenOver { grantee: called(&session.user) });
     log(&state, &session, format!("took over {}", grantor.email)).await;
     tracing::info!(grantor = %grantor.id, grantee = %session.user.id, "account taken over by emergency access");

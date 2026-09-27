@@ -138,7 +138,7 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # Live updates for the clients (WebSocket), once they are there.
+        # Live updates for the clients: /notifications/hub is a WebSocket.
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
@@ -223,6 +223,43 @@ every release, `edge` for every commit on `main` that passed CI, or one exact ve
 Once a day the server asks GitHub whether there is something newer on that channel and says so
 in its log. `UWULOCK_UPDATE_CHECK=off` stops it. Nothing installs itself: a password server that
 could replace itself from the network would be one more way in.
+
+## Moving in from Vaultwarden
+
+`uwulock-server import-vaultwarden` takes over a Vaultwarden (on SQLite; tested with 1.37) as it
+is: accounts with their passwords, the devices that are logged in — they stay logged in —,
+two-step login (authenticator apps, codes by mail, security keys), folders, items, favourites,
+attachments, Sends, emergency access, and organisations with their collections, groups and
+policies. Nothing is decrypted on the way. Organisations can be used as they are, but not yet
+managed here: inviting people and making collections comes with Stufe 5.
+
+Keep the address: clients, security keys and the links of Sends are bound to it. Then:
+
+```bash
+# 1. Vaultwarden stops, so nothing changes during the move.
+sudo docker stop vaultwarden
+
+# 2. What would come over — nothing is written yet. /srv/vaultwarden is Vaultwarden's data
+#    directory, the one with db.sqlite3 and rsa_key.pem.
+cd /opt/uwulock
+sudo docker compose run --rm -v /srv/vaultwarden:/vaultwarden:ro uwulock \
+  import-vaultwarden /vaultwarden --dry-run
+
+# 3. The move. --admin makes that account an admin here; repeat it for more.
+sudo docker compose run --rm -v /srv/vaultwarden:/vaultwarden:ro uwulock \
+  import-vaultwarden /vaultwarden --admin you@example.com
+```
+
+A backup of UwULock's database is written first. The import is one transaction: if an address
+of the Vaultwarden has an account here already, nothing is imported. Afterwards, point the
+proxy (or the DNS name) at UwULock instead of Vaultwarden. The old password still works; it is
+hashed anew at each account's next login.
+
+What does not come over, and is named in the summary: accounts that were invited but never
+registered, Duo and YubiKey OTP (their owners set up another way), the event log, and "log in
+with a device" requests that were still waiting. A Vaultwarden on MySQL or PostgreSQL has to
+move to SQLite first. If the container cannot read the directory (`Permission denied`), copy it
+and `chmod -R a+rX` the copy.
 
 ## Backups
 

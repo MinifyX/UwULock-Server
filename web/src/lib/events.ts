@@ -5,6 +5,9 @@
  * - `vault-status` — the vault's state changed; the payload is the new `Status`.
  * - `vault-changed` — items or folders changed; read them again.
  * - `session-ended` — the server ended this browser's session; the vault closes.
+ * - `hub-sync` — the server said something changed on another device; sync.
+ * - `hub-logout` — the server said this account's sessions ended; ask whether ours did.
+ * - `auth-request` — another device asks to be let in.
  */
 
 type Listener = (event: { payload: unknown }) => void;

@@ -16,7 +16,9 @@ mod backup;
 pub mod backups;
 pub mod clock;
 pub mod emergency;
+mod migrate;
 mod migrations;
+pub mod organizations;
 mod passkeys;
 pub mod sends;
 mod sqlite;
@@ -27,11 +29,13 @@ pub use accounts::{
     UserOverview, normalize_email,
 };
 pub use admin::{EVENT_DAYS, Event, Stats};
-pub use attachments::{Attachment, AttachmentKey};
+pub use attachments::{Attachment, AttachmentKey, Owner};
 pub use auth_requests::{AUTH_REQUEST_SECONDS, AuthRequest};
 pub use backup::restore;
 pub use emergency::EmergencyAccess;
+pub use migrate::{Migration, MovedDevice, MovedTwoFactor, MovedUser};
 pub use migrations::SCHEMA_VERSION;
+pub use organizations::{Access, OrgCipher, OrgVault};
 pub use passkeys::{MAX_PASSKEYS, Passkey};
 pub use vault::{Bulk, Cipher, Folder, Rotation, VaultContents};
 

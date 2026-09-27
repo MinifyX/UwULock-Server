@@ -114,3 +114,36 @@ pub(crate) fn auth_response(state: &AppState, session: &Session, id: &str) {
     state.hub.publish_anonymous(id, &update);
     publish(state, update);
 }
+
+/// Register a phone's push token with the relay, when an admin set it up; the relay's id for the
+/// device is kept. Failures go to the log: the phone syncs when it is opened anyway.
+pub(crate) async fn register_phone(state: &AppState, session: &Session, token: &str) {
+    let Some(settings) = state.settings().push else { return };
+    let device = match state.store.device(&session.user.id, &session.device).await {
+        Ok(Some(device)) => device,
+        _ => return,
+    };
+    let push_id = match state.store.push_id(&session.user.id, &session.device).await {
+        Ok(Some(id)) => id,
+        _ => uuid::Uuid::new_v4().to_string(),
+    };
+    match state.relay.register(&settings, &push_id, token, &session.user.id, device.kind, &device.id).await {
+        Ok(()) => {
+            if let Err(error) = state.store.set_push_id(&session.user.id, &session.device, Some(push_id)).await {
+                tracing::warn!(%error, "could not keep the push relay's id of a device");
+            }
+        }
+        Err(error) => tracing::warn!(%error, "the push relay did not register a phone"),
+    }
+}
+
+/// Take a device off the relay, before it is forgotten or logged out for good.
+pub(crate) async fn forget_phone(state: &AppState, user_id: &str, device_id: &str) {
+    let Ok(Some(push_id)) = state.store.push_id(user_id, device_id).await else { return };
+    if let Some(settings) = state.settings().push
+        && let Err(error) = state.relay.unregister(&settings, &push_id).await
+    {
+        tracing::warn!(%error, "the push relay did not take a phone off");
+    }
+    let _ = state.store.set_push_id(user_id, device_id, None).await;
+}

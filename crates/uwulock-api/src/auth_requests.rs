@@ -118,6 +118,7 @@ async fn create(
     }
     let request = AuthRequest { user_id: user.id.clone(), ..request };
     state.store.add_auth_request(request.clone()).await?;
+    crate::notify::auth_request(&state, &user.id, &request.id);
     let event = Event {
         kind: "auth-request".into(),
         user_id: Some(user.id.clone()),
@@ -188,6 +189,7 @@ async fn answer(
         )
         .await?
         .ok_or_else(|| ApiError::bad("This request was answered already, or it is too old."))?;
+    crate::notify::auth_response(&state, &session, &request.id);
     Ok(Json(render(&state, &request)))
 }
 

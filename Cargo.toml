@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/uwulock-store",
     "crates/uwulock-mail",
+    "crates/uwulock-notify",
     "crates/uwulock-web",
     "crates/uwulock-api",
     "crates/uwulock-server",
@@ -20,13 +21,14 @@ rust-version = "1.89"
 [workspace.dependencies]
 uwulock-api = { path = "crates/uwulock-api" }
 uwulock-mail = { path = "crates/uwulock-mail" }
+uwulock-notify = { path = "crates/uwulock-notify" }
 uwulock-server = { path = "crates/uwulock-server" }
 uwulock-store = { path = "crates/uwulock-store" }
 uwulock-web = { path = "crates/uwulock-web" }
 
 # The server's own hash of what the clients send instead of the master password.
 argon2 = { version = "0.5", default-features = false, features = ["alloc", "password-hash", "std"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query", "form", "multipart"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "http2", "json", "tokio", "query", "form", "multipart", "ws"] }
 # TLS with the server's own certificate files or one from Let's Encrypt; the provider is chosen below.
 axum-server = { version = "0.8", default-features = false, features = ["tls-rustls-no-provider"] }
 base64 = "0.22"

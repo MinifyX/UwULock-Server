@@ -7,7 +7,7 @@
 
 use crate::errors::{ApiError, ApiResult};
 use serde_json::{Map, Value, json};
-use uwulock_store::{Cipher, Device, Folder, User, clock};
+use uwulock_store::{Access, Cipher, Device, Folder, User, clock};
 
 /// The key of an item's type object in Bitwarden's JSON, by type number.
 pub const TYPE_KEYS: [(i64, &str); 8] = [
@@ -40,8 +40,24 @@ fn push_opt(out: &mut String, value: Option<&str>) {
     }
 }
 
-/// An item, as `cipherDetails`, with its attachments as JSON (an array, or none).
-pub fn write_cipher(out: &mut String, cipher: &Cipher, attachments: Option<&str>) {
+/// How one user sees an item: its attachments (a JSON array, or none), the collections it is in,
+/// and what they may do with it.
+#[derive(Debug, Clone, Copy)]
+pub struct View<'a> {
+    pub attachments: Option<&'a str>,
+    pub collection_ids: &'a [String],
+    pub access: Access,
+}
+
+impl<'a> View<'a> {
+    /// A user's own item: everything allowed.
+    pub fn own(attachments: Option<&'a str>) -> Self {
+        View { attachments, collection_ids: &[], access: Access::FULL }
+    }
+}
+
+/// An item, as `cipherDetails`.
+pub fn write_cipher(out: &mut String, cipher: &Cipher, view: &View<'_>) {
     out.push_str("{\"object\":\"cipherDetails\",\"id\":");
     push_str(out, &cipher.id);
     out.push_str(",\"type\":");
@@ -56,11 +72,15 @@ pub fn write_cipher(out: &mut String, cipher: &Cipher, attachments: Option<&str>
     push_opt(out, cipher.archived.as_deref());
     out.push_str(",\"reprompt\":");
     out.push_str(if cipher.reprompt == 1 { "1" } else { "0" });
-    out.push_str(",\"organizationId\":null,\"key\":");
+    out.push_str(",\"organizationId\":");
+    push_opt(out, cipher.organization_id.as_deref());
+    out.push_str(",\"key\":");
     push_opt(out, cipher.key.as_deref());
     out.push_str(",\"attachments\":");
-    out.push_str(attachments.unwrap_or("null"));
-    out.push_str(",\"organizationUseTotp\":true,\"collectionIds\":[],\"name\":");
+    out.push_str(view.attachments.unwrap_or("null"));
+    out.push_str(",\"organizationUseTotp\":true,\"collectionIds\":");
+    out.push_str(&serde_json::to_string(view.collection_ids).expect("ids serialize"));
+    out.push_str(",\"name\":");
     push_str(out, &cipher.name);
     out.push_str(",\"notes\":");
     push_opt(out, cipher.notes.as_deref());
@@ -78,12 +98,20 @@ pub fn write_cipher(out: &mut String, cipher: &Cipher, attachments: Option<&str>
     push_opt(out, cipher.folder_id.as_deref());
     out.push_str(",\"favorite\":");
     out.push_str(if cipher.favorite { "true" } else { "false" });
-    out.push_str(",\"edit\":true,\"viewPassword\":true,\"permissions\":{\"delete\":true,\"restore\":true}}");
+    let edit = !view.access.read_only;
+    let delete = edit;
+    out.push_str(if edit { ",\"edit\":true" } else { ",\"edit\":false" });
+    out.push_str(if view.access.hide_passwords { ",\"viewPassword\":false" } else { ",\"viewPassword\":true" });
+    out.push_str(if delete {
+        ",\"permissions\":{\"delete\":true,\"restore\":true}}"
+    } else {
+        ",\"permissions\":{\"delete\":false,\"restore\":false}}"
+    });
 }
 
-pub fn cipher(cipher: &Cipher, attachments: Option<&str>) -> String {
+pub fn cipher(cipher: &Cipher, view: &View<'_>) -> String {
     let mut out = String::with_capacity(1024);
-    write_cipher(&mut out, cipher, attachments);
+    write_cipher(&mut out, cipher, view);
     out
 }
 
@@ -98,7 +126,7 @@ pub fn cipher_list<'a>(
         if index > 0 {
             out.push(',');
         }
-        write_cipher(&mut out, item, attachments.get(&item.id).map(String::as_str));
+        write_cipher(&mut out, item, &View::own(attachments.get(&item.id).map(String::as_str)));
     }
     out.push_str("]}");
     out
@@ -112,8 +140,9 @@ pub fn list(data: Vec<Value>) -> Value {
     json!({ "data": data, "object": "list", "continuationToken": null })
 }
 
-/// The account, as `profile`.
-pub fn profile(user: &User, two_factor: bool) -> Value {
+/// The account, as `profile`, with the organisations it is in (see
+/// `organizations::profile_organizations`).
+pub fn profile(user: &User, two_factor: bool, organizations: Vec<Value>) -> Value {
     json!({
         "_status": 0,
         "id": user.id,
@@ -128,7 +157,7 @@ pub fn profile(user: &User, two_factor: bool) -> Value {
         "privateKey": user.private_key,
         "accountKeys": account_keys(user),
         "securityStamp": user.security_stamp,
-        "organizations": [],
+        "organizations": organizations,
         "organizationsNew": [],
         "providers": [],
         "providerOrganizations": [],
@@ -303,6 +332,7 @@ mod tests {
         Cipher {
             id: "c1".into(),
             user_id: "u1".into(),
+            organization_id: None,
             folder_id: None,
             kind,
             name: "2.n|n|n".into(),
@@ -327,7 +357,7 @@ mod tests {
             Some(json!({"Uris": [{"Uri": "2.u|u|u", "Match": "3", "response": null}], "Username": "2.a|a|a"})),
         )
         .unwrap();
-        let value: Value = serde_json::from_str(&cipher(&stored(1, &data), None)).unwrap();
+        let value: Value = serde_json::from_str(&cipher(&stored(1, &data), &View::own(None))).unwrap();
         assert_eq!(value["object"], "cipherDetails");
         assert_eq!(value["login"]["uri"], "2.u|u|u", "the first address, mirrored");
         assert_eq!(value["login"]["uris"][0]["match"], 3);

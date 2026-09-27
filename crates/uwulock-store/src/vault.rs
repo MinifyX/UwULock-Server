@@ -27,7 +27,10 @@ fn folder_from(row: &Row<'_>) -> rusqlite::Result<Folder> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cipher {
     pub id: String,
+    /// Who it belongs to; empty for an organisation's item.
     pub user_id: String,
+    /// The organisation it belongs to instead of a user.
+    pub organization_id: Option<String>,
     pub folder_id: Option<String>,
     /// 1 login, 2 note, 3 card, 4 identity, 5 SSH key.
     pub kind: i64,
@@ -51,12 +54,12 @@ pub struct Cipher {
 }
 
 pub(crate) const CIPHER_COLUMNS: &str = "id, user_id, folder_id, type, name, notes, key, data, fields, password_history, favorite, \
-     reprompt, created, revision, deleted, archived";
+     reprompt, created, revision, deleted, archived, organization_id";
 
 pub(crate) fn cipher_from(row: &Row<'_>) -> rusqlite::Result<Cipher> {
     Ok(Cipher {
         id: row.get(0)?,
-        user_id: row.get(1)?,
+        user_id: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
         folder_id: row.get(2)?,
         kind: row.get(3)?,
         name: row.get(4)?,
@@ -71,21 +74,23 @@ pub(crate) fn cipher_from(row: &Row<'_>) -> rusqlite::Result<Cipher> {
         revision: row.get(13)?,
         deleted: row.get(14)?,
         archived: row.get(15)?,
+        organization_id: row.get(16)?,
     })
 }
 
-fn write_cipher(tx: &Transaction<'_>, cipher: &Cipher) -> rusqlite::Result<()> {
+pub(crate) fn write_cipher(tx: &Transaction<'_>, cipher: &Cipher) -> rusqlite::Result<()> {
     tx.prepare_cached(&format!(
-        "INSERT INTO ciphers ({CIPHER_COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16) \
+        "INSERT INTO ciphers ({CIPHER_COLUMNS}) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) \
          ON CONFLICT (id) DO UPDATE SET folder_id = excluded.folder_id, type = excluded.type, name = excluded.name, \
          notes = excluded.notes, key = excluded.key, data = excluded.data, fields = excluded.fields, \
          password_history = excluded.password_history, favorite = excluded.favorite, reprompt = excluded.reprompt, \
          revision = excluded.revision, deleted = excluded.deleted, archived = excluded.archived \
-         WHERE ciphers.user_id = excluded.user_id"
+         WHERE ciphers.user_id IS excluded.user_id AND ciphers.organization_id IS excluded.organization_id"
     ))?
     .execute(params![
         cipher.id,
-        cipher.user_id,
+        cipher.organization_id.is_none().then_some(&cipher.user_id),
         cipher.folder_id,
         cipher.kind,
         cipher.name,
@@ -100,6 +105,7 @@ fn write_cipher(tx: &Transaction<'_>, cipher: &Cipher) -> rusqlite::Result<()> {
         cipher.revision,
         cipher.deleted,
         cipher.archived,
+        cipher.organization_id,
     ])?;
     Ok(())
 }
@@ -522,6 +528,7 @@ pub(crate) mod tests {
         Cipher {
             id: id.into(),
             user_id: user_id.into(),
+            organization_id: None,
             folder_id: folder.map(Into::into),
             kind: 1,
             name: "2.name|name|name".into(),

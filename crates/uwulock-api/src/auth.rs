@@ -300,6 +300,30 @@ pub async fn hash_password(cost: HashCost, secret: &str) -> ApiResult<String> {
     .map_err(ApiError::internal)?
 }
 
+/// How a hash that came over from Vaultwarden starts: PBKDF2-SHA256 as it made them, with its
+/// rounds, salt and hash after it (`vw-pbkdf2$<rounds>$<salt>$<hash>`, base64). They are
+/// checked as they are and replaced by Argon2id at the next login.
+pub const LEGACY_HASH: &str = "vw-pbkdf2$";
+
+pub fn is_legacy(hash: &str) -> bool {
+    hash.starts_with(LEGACY_HASH)
+}
+
+fn verify_legacy(hash: &str, secret: &str) -> bool {
+    let mut parts = hash[LEGACY_HASH.len()..].split('$');
+    let (Some(rounds), Some(salt), Some(expected), None) = (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    let (Ok(rounds), Ok(salt), Ok(expected)) =
+        (rounds.parse::<u32>(), STANDARD.decode(salt), STANDARD.decode(expected))
+    else {
+        return false;
+    };
+    let Some(rounds) = std::num::NonZeroU32::new(rounds) else { return false };
+    ring::pbkdf2::verify(ring::pbkdf2::PBKDF2_HMAC_SHA256, rounds, &salt, secret.as_bytes(), &expected).is_ok()
+}
+
 /// Whether `secret` is what `hash` was made from. For an account that does not exist, pass
 /// `None`: the same work is done anyway, so the time taken does not tell which addresses have
 /// one.
@@ -311,6 +335,7 @@ pub async fn verify_password(cost: HashCost, hash: Option<&str>, secret: &str) -
     tokio::task::spawn_blocking(move || {
         let _turn = turn;
         match hash {
+            Some(hash) if is_legacy(&hash) => verify_legacy(&hash, &secret),
             Some(hash) => PasswordHash::new(&hash)
                 .is_ok_and(|parsed| argon2::Argon2::default().verify_password(secret.as_bytes(), &parsed).is_ok()),
             None => {
@@ -525,6 +550,19 @@ mod tests {
         assert!(!verify_password(HashCost::cheap(), Some(&hash), "other").await);
         assert!(!verify_password(HashCost::cheap(), None, "client-hash").await);
         assert!(!verify_password(HashCost::cheap(), Some("garbage"), "client-hash").await);
+    }
+
+    #[tokio::test]
+    async fn a_hash_from_vaultwarden_still_verifies() {
+        let salt = [7u8; 64];
+        let mut expected = [0u8; 32];
+        let rounds = std::num::NonZeroU32::new(1000).unwrap();
+        ring::pbkdf2::derive(ring::pbkdf2::PBKDF2_HMAC_SHA256, rounds, &salt, b"client-hash", &mut expected);
+        let hash = format!("{LEGACY_HASH}1000${}${}", STANDARD.encode(salt), STANDARD.encode(expected));
+        assert!(is_legacy(&hash));
+        assert!(verify_password(HashCost::cheap(), Some(&hash), "client-hash").await);
+        assert!(!verify_password(HashCost::cheap(), Some(&hash), "other").await);
+        assert!(!verify_password(HashCost::cheap(), Some("vw-pbkdf2$x$y"), "client-hash").await);
     }
 
     #[test]

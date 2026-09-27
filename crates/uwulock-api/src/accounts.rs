@@ -105,7 +105,8 @@ async fn two_factor_on(state: &AppState, user: &User) -> ApiResult<bool> {
 
 async fn profile(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let two_factor = two_factor_on(&state, &session.user).await?;
-    Ok(Json(out::profile(&session.user, two_factor)))
+    let organizations = crate::organizations::profile_organizations(&state, &session.user.id).await?;
+    Ok(Json(out::profile(&session.user, two_factor, organizations)))
 }
 
 #[derive(Deserialize)]
@@ -129,7 +130,8 @@ async fn update_profile(
         .await?
         .ok_or_else(ApiError::unauthorized)?;
     let two_factor = two_factor_on(&state, &user).await?;
-    Ok(Json(out::profile(&user, two_factor)))
+    let organizations = crate::organizations::profile_organizations(&state, &user.id).await?;
+    Ok(Json(out::profile(&user, two_factor, organizations)))
 }
 
 #[derive(Deserialize)]
@@ -155,7 +157,8 @@ async fn avatar(
         .await?
         .ok_or_else(ApiError::unauthorized)?;
     let two_factor = two_factor_on(&state, &user).await?;
-    Ok(Json(out::profile(&user, two_factor)))
+    let organizations = crate::organizations::profile_organizations(&state, &user.id).await?;
+    Ok(Json(out::profile(&user, two_factor, organizations)))
 }
 
 #[derive(Deserialize)]
@@ -291,6 +294,7 @@ async fn change_password(
             user.revision = clock::now();
         })
         .await?;
+    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "master password changed");
     Ok(StatusCode::OK)
 }
@@ -348,6 +352,7 @@ async fn change_kdf(
             user.revision = clock::now();
         })
         .await?;
+    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "key derivation changed");
     Ok(StatusCode::OK)
 }
@@ -461,7 +466,7 @@ async fn rotate_keys(
         if !keys.is_empty() {
             attachments.push((id, keys));
         }
-        ciphers.push(apply(item, current)?);
+        ciphers.push(apply(item, current, None)?);
     }
     let existing: HashMap<String, uwulock_store::sends::Send> =
         state.store.sends(&user.id).await?.into_iter().map(|send| (send.id.clone(), send)).collect();
@@ -507,6 +512,7 @@ async fn rotate_keys(
             "All existing ciphers, folders, sends, emergency contacts and passkeys must be included in the rotation",
         ));
     }
+    crate::notify::user(&state, &user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %user.id, "user key rotated");
     Ok(StatusCode::OK)
 }
@@ -527,8 +533,10 @@ async fn new_security_stamp(
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
     state.store.update_user(&session.user.id, |user| user.security_stamp = uuid::Uuid::new_v4().to_string()).await?;
     for device in state.store.devices(&session.user.id).await? {
+        crate::notify::forget_phone(&state, &session.user.id, &device.id).await;
         state.store.delete_device(&session.user.id, &device.id).await?;
     }
+    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     Ok(StatusCode::OK)
 }
 
@@ -625,6 +633,7 @@ async fn change_email(
             user.revision = clock::now();
         })
         .await?;
+    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "address changed");
     Ok(StatusCode::OK)
 }
@@ -674,6 +683,7 @@ async fn delete_account(
         return Err(ApiError::bad("You are the last admin. Make somebody else an admin first."));
     }
     state.store.delete_user(&session.user.id).await?;
+    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "account deleted");
     Ok(StatusCode::OK)
 }
@@ -763,19 +773,26 @@ struct PushToken {
     push_token: String,
 }
 
-/// The phone apps register for push notifications. Kept for when the push relay comes; the
-/// token goes to the device the request comes from.
+/// The phone apps register for push notifications: the token goes to the device the request
+/// comes from, and to the push relay when an admin set that up.
 async fn push_token(
     State(state): State<AppState>,
     session: Session,
     Json(data): Json<PushToken>,
 ) -> ApiResult<StatusCode> {
-    state.store.set_push_token(&session.user.id, &session.device, Some(data.push_token)).await?;
+    if data.push_token.len() > 4096 {
+        return Err(ApiError::bad("That is not a push token."));
+    }
+    state.store.set_push_token(&session.user.id, &session.device, Some(data.push_token.clone())).await?;
+    crate::notify::register_phone(&state, &session, &data.push_token).await;
     Ok(StatusCode::OK)
 }
 
-async fn clear_push_token() -> StatusCode {
-    StatusCode::OK
+/// A phone that does not want pushes any more.
+async fn clear_push_token(State(state): State<AppState>, session: Session) -> ApiResult<StatusCode> {
+    crate::notify::forget_phone(&state, &session.user.id, &session.device).await;
+    state.store.set_push_token(&session.user.id, &session.device, None).await?;
+    Ok(StatusCode::OK)
 }
 
 #[cfg(test)]

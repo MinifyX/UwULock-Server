@@ -8,6 +8,7 @@ pub mod config;
 pub mod health;
 pub mod tls;
 pub mod updates;
+pub mod vaultwarden;
 
 pub use config::Config;
 

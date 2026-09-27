@@ -6,8 +6,8 @@ für eigene Funktionen — ohne dass die offizielle Bitwarden-Browsererweiterung
 CLI aufhören zu funktionieren.
 
 Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
-Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufe 4 ist vorgezogen und fertig; mit
-Stufe 2 und 3 wird daraus 0.4.
+Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufe 4 ist vorgezogen und fertig, Stufe 2
+auch; mit Stufe 3 wird daraus 0.4.
 
 ## Leitlinien
 
@@ -93,12 +93,22 @@ Jede Stufe ist ein Release und für sich nutzbar.
       Admin-Portal im Browser
 - [ ] Vor 0.1.0: Browsererweiterung und Handy-Apps von Hand gegen die Beta (Checkliste unten)
 
-### Stufe 2 — Umstieg von Vaultwarden (0.2)
+### Stufe 2 — Umstieg von Vaultwarden (0.4, Beta)
 
-- `uwulock-server import-vaultwarden /pfad/zu/data`: Konten, Geräte samt Refresh-Tokens und
-  Vaultwardens `rsa_key` (Geräte bleiben angemeldet), 2FA, Ordner, Einträge, Anhänge, Sends,
-  Notfallzugriffe. Vorhandene Organisationen werden übernommen und im Sync mitgeliefert.
-- Echtzeit: SignalR-Hub, Push-Relay für die Handy-Apps
+- [x] `uwulock-server import-vaultwarden /pfad/zu/data [--dry-run] [--admin …]`: Konten (alter
+      PBKDF2-Hash, bei der nächsten Anmeldung Argon2id), Geräte samt Refresh-Tokens (von
+      Vaultwarden signierte werden mit dem öffentlichen Teil seines `rsa_key` einmal angenommen
+      und ersetzt — Geräte bleiben angemeldet), „Gerät merken", 2FA (App, Mail, Security-Keys aus
+      webauthn-rs), Ordner, Einträge, Favoriten, Archiv, Anhänge, Sends, Notfallzugriffe. Eine
+      Transaktion, vorher ein Backup. Getestet gegen einen echten Vaultwarden 1.37.3 (CI-Job,
+      per Bitwardens CLI gefüllt) und eine daraus gewonnene Fixture.
+- [x] Organisationen mit Sammlungen, Gruppen, Richtlinien werden übernommen und im Sync
+      mitgeliefert; Mitglieder mit Schreibrecht legen Einträge an, ändern, teilen, hängen Dateien
+      an. Verwalten (einladen, Sammlungen anlegen) kommt mit Stufe 5.
+- [x] Echtzeit: SignalR-Hub (`/notifications/hub`, MessagePack über WebSocket) und der anonyme
+      Hub für „Mit Gerät anmelden"; der Web-Tresor hört ebenfalls zu.
+- [x] Push-Relay für die Handy-Apps (Bitwarden-Installation, US/EU), getestet gegen einen
+      lokalen Fake-Relay. Einrichten im Admin-Portal: Stufe 3.
 - Ab hier kann der eigene Tresor umziehen.
 
 ### Stufe 3 — Web-Tresor und Admin-Portal ausbauen (0.3)

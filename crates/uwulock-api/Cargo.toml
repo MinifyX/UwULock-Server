@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 uwulock-mail.workspace = true
+uwulock-notify.workspace = true
 uwulock-store.workspace = true
 uwulock-web.workspace = true
 
@@ -35,3 +36,6 @@ webpki-roots.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 tokio.workspace = true
+# A real WebSocket client for the hub's test; the same version axum speaks with.
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }

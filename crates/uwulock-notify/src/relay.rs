@@ -209,13 +209,11 @@ impl Relay {
         update: &Update,
         acting_push_id: Option<&str>,
     ) -> Result<(), String> {
-        let organization = match &update.subject {
-            Subject::Cipher { organization_id, .. } => organization_id.clone(),
-            _ => None,
-        };
+        // Always to the one account: the phones are registered with the relay by account, not by
+        // organisation, and an organisation's change is published to each member on its own.
         let body = json!({
-            "userId": if organization.is_some() { Value::Null } else { update.user_id.clone().into() },
-            "organizationId": organization,
+            "userId": update.user_id,
+            "organizationId": null,
             "deviceId": acting_push_id,
             "identifier": update.acting_device,
             "type": update.kind as i64,

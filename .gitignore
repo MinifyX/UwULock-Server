@@ -14,6 +14,8 @@ node_modules/
 # Keys, certificates and passwords never belong in this public repository
 *.key
 *.pem
+# A test key of the Vaultwarden fixture, made for it and nothing else.
+!crates/uwulock-server/fixtures/vaultwarden/rsa_key.pem
 *.p12
 *.pfx
 *.password
