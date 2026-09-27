@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UwULock WebAuthn</title>
+    <script type="module" src="/src/connectors/fallback.ts"></script>
+  </head>
+  <body class="connector">
+    <main>
+      <p class="brand"><span>UwU</span>Lock</p>
+      <h1 id="title"></h1>
+      <p id="lead"></p>
+      <label class="remember">
+        <input type="checkbox" id="remember" />
+        <span id="remember-label"></span>
+      </label>
+      <button type="button" id="webauthn-button"></button>
+      <p id="msg" role="status" hidden></p>
+    </main>
+  </body>
+</html>

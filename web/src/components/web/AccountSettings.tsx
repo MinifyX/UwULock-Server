@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { logout, syncNow, type Status } from '../../lib/api';
+import { currentProfile, logout, syncNow, type Status } from '../../lib/api';
+import { apiKey } from '../../lib/features';
+import { call } from '../../lib/web/core';
 import {
   changeEmail,
   changeKdf,
@@ -31,7 +33,7 @@ type Props = {
   onClose: () => void;
 };
 
-type Dialog = 'password' | 'kdf' | 'email' | 'rotate' | 'everywhere' | 'delete' | null;
+type Dialog = 'password' | 'kdf' | 'email' | 'rotate' | 'everywhere' | 'delete' | 'api-key' | null;
 
 function kdfLabel(kdf: Kdf): string {
   return kdf.kind === 'pbkdf2'
@@ -58,6 +60,16 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
   useEffect(() => {
     if (status.email) void prelogin(status.email).then((text) => setKdf(kdfOf(text)));
   }, [status.email]);
+
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  const showFingerprint = async () => {
+    try {
+      const userId = String(currentProfile()?.id ?? '');
+      setFingerprint(await call((core) => core.ownFingerprint(userId)));
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+  };
 
   const ended = (message: string) => {
     onClose();
@@ -171,6 +183,24 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
         <button onClick={() => setDialog('rotate')}>{t('Neu verschlüsseln …')}</button>
       </Row>
 
+      <Row
+        label={t('Fingerabdruck')}
+        description={
+          fingerprint ??
+          t('Den Satz vergleicht jemand mit dir, bevor er dich als Notfallkontakt bestätigt.')
+        }
+      >
+        {!fingerprint && <button onClick={() => void showFingerprint()}>{t('Anzeigen')}</button>}
+      </Row>
+      <Row
+        label={t('API-Key')}
+        description={t(
+          'Für die Bitwarden-CLI: „bw login --apikey“. Er meldet ohne zweiten Schritt an – behandle ihn wie dein Passwort.',
+        )}
+      >
+        <button onClick={() => setDialog('api-key')}>{t('Anzeigen …')}</button>
+      </Row>
+
       <h3 className="settings-heading">{t('Sitzungen')}</h3>
       <Row
         label={t('Überall abmelden')}
@@ -201,6 +231,7 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
         </button>
       </Row>
 
+      {dialog === 'api-key' && <ApiKey onClose={() => setDialog(null)} />}
       {dialog === 'password' && (
         <NewPassword
           hasHint={info?.hasHint ?? false}
@@ -563,6 +594,90 @@ function NewEmail({ onCancel, onDone }: { onCancel: () => void; onDone: () => vo
             {error}
           </p>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+/** The API key for the CLI, after the master password; a new one on request. */
+function ApiKey({ onClose }: { onClose: () => void }) {
+  useLanguage();
+  const [password, setPassword] = useState<string | null>(null);
+  const [key, setKey] = useState<{ clientId: string; clientSecret: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!key || password === null) {
+    return (
+      <PasswordPrompt
+        title={t('API-Key')}
+        lead={t('Zuerst dein Master-Passwort.')}
+        confirm={t('Anzeigen')}
+        onCancel={onClose}
+        action={async (given) => {
+          setKey(await apiKey(given));
+          setPassword(given);
+        }}
+      />
+    );
+  }
+  const copy = (text: string) =>
+    void navigator.clipboard.writeText(text).then(() => toast(t('Kopiert ✧')));
+  return (
+    <Modal
+      title={t('API-Key')}
+      onCancel={onClose}
+      footer={
+        <>
+          <button
+            className="danger"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void apiKey(password, true)
+                .then((fresh) => {
+                  setKey(fresh);
+                  toast(t('Neuer API-Key: der alte meldet nicht mehr an.'));
+                })
+                .catch((e) => toast(errorText(e), 'error'))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {t('Neuen Key erzeugen')}
+          </button>
+          <span className="spacer" />
+          <button className="primary" onClick={onClose}>
+            {t('Fertig')}
+          </button>
+        </>
+      }
+    >
+      <div className="form">
+        <label className="field">
+          <span>client_id</span>
+          <div className="copy-field">
+            <code className="mono">{key.clientId}</code>
+            <button
+              className="icon-button"
+              aria-label={t('Kopieren')}
+              onClick={() => copy(key.clientId)}
+            >
+              ⧉
+            </button>
+          </div>
+        </label>
+        <label className="field">
+          <span>client_secret</span>
+          <div className="copy-field">
+            <code className="mono">{key.clientSecret}</code>
+            <button
+              className="icon-button"
+              aria-label={t('Kopieren')}
+              onClick={() => copy(key.clientSecret)}
+            >
+              ⧉
+            </button>
+          </div>
+        </label>
       </div>
     </Modal>
   );

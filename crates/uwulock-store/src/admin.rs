@@ -127,6 +127,18 @@ impl Store {
             )?;
             // Invitations stay a while after they ran out, so the portal can still show them.
             tx.execute("DELETE FROM invitations WHERE expires < ?1", [clock::in_seconds(-30 * 86_400)])?;
+            // A Send is gone on its deletion date; its owner's clients hear of it.
+            let senders: Vec<String> = tx
+                .prepare("SELECT DISTINCT user_id FROM sends WHERE deletion < ?1")?
+                .query_map([&now], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            tx.execute("DELETE FROM sends WHERE deletion < ?1", [&now])?;
+            for owner in senders {
+                crate::accounts::bump_revision(tx, &owner)?;
+            }
+            tx.execute("DELETE FROM auth_requests WHERE created < ?1", [clock::in_seconds(-86_400)])?;
+            // Announced attachments whose file never came.
+            tx.execute("DELETE FROM attachments WHERE NOT uploaded AND created < ?1", [clock::in_seconds(-86_400)])?;
             // Items in the trash for more than 30 days are gone, like at Bitwarden.
             let old = clock::in_seconds(-30 * 86_400);
             let owners: Vec<String> = tx

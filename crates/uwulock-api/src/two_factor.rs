@@ -9,7 +9,7 @@ use crate::accounts::check_password;
 use crate::auth::{self, ClientIp, Session, client_version};
 use crate::errors::{ApiError, ApiResult};
 use crate::identity::{TokenForm, mail_allowed, mail_failed, send_later};
-use crate::{AppState, totp};
+use crate::{AppState, totp, webauthn};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
@@ -22,6 +22,9 @@ use uwulock_store::{CodeRefusal, Device, Event, User, clock};
 pub const AUTHENTICATOR: i64 = 0;
 pub const EMAIL: i64 = 1;
 const REMEMBER: i64 = 5;
+pub const WEBAUTHN: i64 = 7;
+/// How many security keys one account may have for the second step, like at Bitwarden.
+const MAX_KEYS: usize = 5;
 const RECOVERY: i64 = 8;
 
 /// How long a code by mail works.
@@ -44,6 +47,9 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/two-factor/email", axum::routing::put(activate_email))
         .route("/api/two-factor/send-email-login", post(send_login_code))
         .route("/api/two-factor/get-device-verification-settings", get(device_verification))
+        .route("/api/two-factor/get-webauthn", post(get_webauthn))
+        .route("/api/two-factor/get-webauthn-challenge", post(webauthn_challenge))
+        .route("/api/two-factor/webauthn", post(activate_webauthn).put(activate_webauthn).delete(delete_webauthn))
 }
 
 /// Numbers some clients send as strings, and the other way round.
@@ -92,7 +98,9 @@ pub(crate) async fn check_login(
     }
     let usable: Vec<_> = factors
         .iter()
-        .filter(|factor| factor.kind == AUTHENTICATOR || (factor.kind == EMAIL && state.mailer.enabled()))
+        .filter(|factor| {
+            factor.kind == AUTHENTICATOR || factor.kind == WEBAUTHN || (factor.kind == EMAIL && state.mailer.enabled())
+        })
         .collect();
     if usable.is_empty() {
         return Err(ApiError::bad(
@@ -104,6 +112,16 @@ pub(crate) async fn check_login(
         for factor in &usable {
             let details = match factor.kind {
                 EMAIL => json!({ "Email": obscure_email(&code_address(&factor.data).unwrap_or_default()) }),
+                WEBAUTHN => {
+                    let challenge = webauthn::challenge();
+                    let allow: Vec<Vec<u8>> = security_keys(&factor.data)
+                        .iter()
+                        .filter_map(|key| webauthn::unb64(&key.credential_id))
+                        .collect();
+                    let options = webauthn::request_options(&state.party, &challenge, &allow);
+                    state.challenges.put(format!("2fa:{}", user.id), challenge);
+                    options
+                }
                 _ => Value::Null,
             };
             providers2.insert(factor.kind.to_string(), details);
@@ -182,6 +200,25 @@ pub(crate) async fn check_login(
                 if !state.store.use_totp_step(&user.id, step).await? {
                     return Err(ApiError::bad("This code was used already. Wait for the next one."));
                 }
+            }
+            WEBAUTHN if usable.iter().any(|factor| factor.kind == WEBAUTHN) => {
+                let factor = factors.iter().find(|factor| factor.kind == WEBAUTHN).expect("listed as usable");
+                let wrong = || ApiError::bad("The security key did not answer as expected. Try again.");
+                let assertion: webauthn::Assertion = serde_json::from_str(code).map_err(|_| wrong())?;
+                let challenge = state.challenges.take(&format!("2fa:{}", user.id)).ok_or_else(wrong)?;
+                let mut keys = security_keys(&factor.data);
+                let used = assertion.credential_id().map(|id| webauthn::b64(&id)).unwrap_or_default();
+                let key = keys.iter_mut().find(|key| key.credential_id == used).ok_or_else(wrong)?;
+                let public_key = webauthn::unb64(&key.public_key).unwrap_or_default();
+                key.counter = webauthn::assert(&assertion, &challenge, &state.party, &public_key, key.counter, false)
+                    .map_err(|reason| {
+                    tracing::info!(user = %user.id, %reason, "a security key was refused");
+                    wrong()
+                })?;
+                state
+                    .store
+                    .set_two_factor_data(&user.id, WEBAUTHN, serde_json::to_string(&keys).expect("keys serialize"))
+                    .await?;
             }
             EMAIL if usable.iter().any(|factor| factor.kind == EMAIL) => {
                 match state.store.take_code(&user.id, LOGIN_CODE, auth::sha256(code.as_bytes())).await? {
@@ -281,7 +318,10 @@ async fn list(State(state): State<AppState>, session: Session) -> ApiResult<Json
     let data = factors
         .iter()
         .filter(|factor| {
-            factor.enabled && (factor.kind == AUTHENTICATOR || (factor.kind == EMAIL && state.mailer.enabled()))
+            factor.enabled
+                && (factor.kind == AUTHENTICATOR
+                    || factor.kind == WEBAUTHN
+                    || (factor.kind == EMAIL && state.mailer.enabled()))
         })
         .map(|factor| json!({ "enabled": true, "type": factor.kind, "object": "twoFactorProvider" }))
         .collect();
@@ -486,6 +526,153 @@ async fn activate_email(
         .set_two_factor(&session.user.id, EMAIL, json!({ "email": address }).to_string(), recovery_code())
         .await?;
     Ok(Json(json!({ "email": address, "enabled": true, "object": "twoFactorEmail" })))
+}
+
+// ── Security keys ─────────────────────────────────────────
+
+/// A security key for the second step, as it is kept in the two-step login's data.
+#[derive(Debug, Clone, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SecurityKey {
+    /// 1 to 5: the slot the clients show it in.
+    pub id: i64,
+    pub name: String,
+    /// base64url.
+    pub credential_id: String,
+    /// The COSE key, base64url.
+    pub public_key: String,
+    pub counter: u32,
+    #[serde(default)]
+    pub migrated: bool,
+}
+
+pub(crate) fn security_keys(data: &str) -> Vec<SecurityKey> {
+    serde_json::from_str(data).unwrap_or_default()
+}
+
+async fn keys_of(state: &AppState, user: &User) -> ApiResult<Vec<SecurityKey>> {
+    Ok(state
+        .store
+        .two_factors(&user.id)
+        .await?
+        .into_iter()
+        .find(|factor| factor.kind == WEBAUTHN)
+        .map(|factor| security_keys(&factor.data))
+        .unwrap_or_default())
+}
+
+fn keys_answer(keys: &[SecurityKey]) -> Value {
+    json!({
+        "enabled": !keys.is_empty(),
+        "keys": keys.iter().map(|key| json!({ "id": key.id, "name": key.name, "migrated": key.migrated })).collect::<Vec<_>>(),
+        "object": "twoFactorWebAuthn",
+    })
+}
+
+async fn get_webauthn(
+    State(state): State<AppState>,
+    session: Session,
+    Json(secret): Json<Secret>,
+) -> ApiResult<Json<Value>> {
+    check_password(&state, &session.user, secret.master_password_hash.as_deref()).await?;
+    Ok(Json(keys_answer(&keys_of(&state, &session.user).await?)))
+}
+
+async fn webauthn_challenge(
+    State(state): State<AppState>,
+    session: Session,
+    Json(secret): Json<Secret>,
+) -> ApiResult<Json<Value>> {
+    check_password(&state, &session.user, secret.master_password_hash.as_deref()).await?;
+    let known: Vec<Vec<u8>> =
+        keys_of(&state, &session.user).await?.iter().filter_map(|key| webauthn::unb64(&key.credential_id)).collect();
+    let challenge = webauthn::challenge();
+    let user = &session.user;
+    let options = webauthn::creation_options(
+        &state.party,
+        &user.id,
+        &user.email,
+        user.name.as_deref(),
+        &challenge,
+        &known,
+        false,
+    );
+    state.challenges.put(format!("2fa-register:{}", user.id), challenge);
+    Ok(Json(options))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivateWebauthn {
+    #[serde(deserialize_with = "number_or_string")]
+    id: String,
+    name: String,
+    device_response: webauthn::Attestation,
+    #[serde(default)]
+    master_password_hash: Option<String>,
+}
+
+async fn activate_webauthn(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<ActivateWebauthn>,
+) -> ApiResult<Json<Value>> {
+    check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
+    let slot: i64 = request.id.parse().map_err(|_| ApiError::bad("Invalid key slot"))?;
+    if !(1..=MAX_KEYS as i64).contains(&slot) {
+        return Err(ApiError::bad("Invalid key slot"));
+    }
+    let challenge = state
+        .challenges
+        .take(&format!("2fa-register:{}", session.user.id))
+        .ok_or_else(|| ApiError::bad("The security key took too long. Try again."))?;
+    let registered = webauthn::register(&request.device_response, &challenge, &state.party, false)
+        .map_err(|reason| ApiError::bad(format!("The security key was not accepted: {reason}.")))?;
+    let mut keys = keys_of(&state, &session.user).await?;
+    keys.retain(|key| key.id != slot);
+    if keys.iter().any(|key| key.credential_id == webauthn::b64(&registered.credential_id)) {
+        return Err(ApiError::bad("This security key is set up already."));
+    }
+    keys.push(SecurityKey {
+        id: slot,
+        name: request.name.trim().chars().take(50).collect(),
+        credential_id: webauthn::b64(&registered.credential_id),
+        public_key: webauthn::b64(&registered.public_key),
+        counter: registered.counter,
+        migrated: false,
+    });
+    keys.sort_by_key(|key| key.id);
+    let data = serde_json::to_string(&keys).expect("keys serialize");
+    state.store.set_two_factor(&session.user.id, WEBAUTHN, data, recovery_code()).await?;
+    Ok(Json(keys_answer(&keys)))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeleteWebauthn {
+    #[serde(deserialize_with = "number_or_string")]
+    id: String,
+    #[serde(default)]
+    master_password_hash: Option<String>,
+}
+
+async fn delete_webauthn(
+    State(state): State<AppState>,
+    session: Session,
+    Json(request): Json<DeleteWebauthn>,
+) -> ApiResult<Json<Value>> {
+    check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
+    let slot: i64 = request.id.parse().map_err(|_| ApiError::bad("Invalid key slot"))?;
+    let mut keys = keys_of(&state, &session.user).await?;
+    keys.retain(|key| key.id != slot);
+    if keys.is_empty() {
+        state.store.remove_two_factor(&session.user.id, Some(WEBAUTHN)).await?;
+        state.store.forget_remembered_devices(&session.user.id).await?;
+    } else {
+        let data = serde_json::to_string(&keys).expect("keys serialize");
+        state.store.set_two_factor_data(&session.user.id, WEBAUTHN, data).await?;
+    }
+    Ok(Json(keys_answer(&keys)))
 }
 
 async fn device_verification(_session: Session) -> Json<Value> {

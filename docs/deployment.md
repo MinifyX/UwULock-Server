@@ -131,7 +131,7 @@ server {
     server_name vault.example.com;
     # ssl_certificate ... ssl_certificate_key ...
 
-    client_max_body_size 525M;  # attachments and sends, once they are there
+    client_max_body_size 525M;  # attachments and Sends: 500 MB by default, see the admin portal
 
     location / {
         proxy_pass http://127.0.0.1:8443;
@@ -252,6 +252,11 @@ sudo docker compose up -d
 
 The database that was there is kept next to it as `uwulock.db.before-restore-<time>`.
 
+Attachments and the files of Sends are not in the database: they are files next to it, in
+`/data/attachments` and `/data/sends`, encrypted by the clients. Copy those along with the
+backups. A file whose attachment or Send is deleted stays another week before the nightly sweep
+takes it, so a backup from that week that is put back still finds its files.
+
 ## Settings
 
 All in `.env`, read when the container starts (`docker compose up -d` after a change). Mail,
@@ -269,6 +274,7 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_TLS_CERT`, `UWULOCK_TLS_KEY` | `/data/tls/cert.pem`, `/data/tls/key.pem` | The PEM files for `files`. |
 | `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For`. Only behind a proxy that sets it. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
+| `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. |
 | `UWULOCK_LANGUAGE` | `de` | Invitations, and new accounts until their owner picks: `de` or `en`. Start value; the admin portal changes it. |
 | `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |
 | `RUST_LOG` | `info` for the server | How much it logs, e.g. `uwulock_server=debug`. |

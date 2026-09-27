@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
+  checkDeviceLogin,
   login,
   loginCancel,
+  loginPasskey,
+  loginSecurityKey,
   loginSendEmail,
   loginTwoFactor,
+  startDeviceLogin,
+  type DeviceLogin,
   type LoginStep,
   type Status,
   type TwoFactorMethod,
 } from '../lib/api';
+import { available as webauthnAvailable } from '../lib/web/webauthn';
 import { passwordHintByMail } from '../lib/account';
 import { errorText } from '../lib/errors';
 import { N_, t, useLanguage } from '../lib/i18n';
@@ -44,6 +50,7 @@ export function LoginScreen({ onDone }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hintSent, setHintSent] = useState(false);
+  const [device, setDevice] = useState<DeviceLogin | null>(null);
 
   const finish = (next: LoginStep) => {
     setPassword('');
@@ -78,6 +85,27 @@ export function LoginScreen({ onDone }: Props) {
     }
   };
 
+  const passkey = async () => {
+    setError(null);
+    setBusy(t('Wartet auf den Passkey …'));
+    try {
+      finish(await loginPasskey());
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const askDevice = async () => {
+    setError(null);
+    try {
+      setDevice(await startDeviceLogin(email));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const back = () => {
     void loginCancel();
     setStep(null);
@@ -98,7 +126,10 @@ export function LoginScreen({ onDone }: Props) {
       </section>
 
       <section className="welcome-card">
-        {!step && (
+        {!step && device && (
+          <DeviceWait started={device} onDone={finish} onBack={() => setDevice(null)} />
+        )}
+        {!step && !device && (
           <form className="form" onSubmit={submit} aria-busy={Boolean(busy)}>
             <h1 className="card-title">{t('Anmelden')}</h1>
             <label className="field">
@@ -149,6 +180,22 @@ export function LoginScreen({ onDone }: Props) {
                 {busy ?? t('Anmelden')}
               </button>
             </div>
+            <div className="login-other">
+              {webauthnAvailable() && (
+                <button type="button" onClick={() => void passkey()} disabled={Boolean(busy)}>
+                  <Icon name="key" size={15} />
+                  {t('Mit Passkey anmelden')}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void askDevice()}
+                disabled={Boolean(busy) || !email.includes('@')}
+              >
+                <Icon name="devices" size={15} />
+                {t('Mit anderem Gerät anmelden')}
+              </button>
+            </div>
             <p className="welcome-beta">
               <Icon name="sparkles" size={14} />
               {t(
@@ -191,9 +238,28 @@ function TwoFactor({
   useEffect(() => setError(message), [message]);
   useEffect(() => input.current?.focus(), [provider]);
 
+  const withKey = async () => {
+    if (!method) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await loginSecurityKey(method, remember);
+      if (next.step === 'two-factor') setError(t('Der Schlüssel wurde nicht angenommen.'));
+      else onDone(next);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (provider === null) return;
+    if (method?.kind === 'webauthn') {
+      await withKey();
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -274,6 +340,8 @@ function TwoFactor({
                 email: method.hint ?? t('deine E-Mail-Adresse'),
               }))}
         {method.kind === 'yubikey' && t('Stecke deinen YubiKey ein und tippe ihn an.')}
+        {method.kind === 'webauthn' &&
+          t('Nimm deinen Sicherheitsschlüssel oder Passkey; der Browser fragt gleich danach.')}
       </p>
       {methods.some((m) => !m.supported) && (
         <p className="field-hint">
@@ -285,20 +353,22 @@ function TwoFactor({
           })}
         </p>
       )}
-      <label className="field">
-        <span>{t('Code')}</span>
-        <input
-          ref={input}
-          className="code-input"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          inputMode={method.kind === 'yubikey' ? 'text' : 'numeric'}
-          autoComplete="one-time-code"
-          spellCheck={false}
-          required
-          disabled={busy}
-        />
-      </label>
+      {method.kind !== 'webauthn' && (
+        <label className="field">
+          <span>{t('Code')}</span>
+          <input
+            ref={input}
+            className="code-input"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            inputMode={method.kind === 'yubikey' ? 'text' : 'numeric'}
+            autoComplete="one-time-code"
+            spellCheck={false}
+            required
+            disabled={busy}
+          />
+        </label>
+      )}
       <label className="check">
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
         <span>{t('Auf diesem Gerät merken')}</span>
@@ -318,10 +388,82 @@ function TwoFactor({
             {sent ? t('Nochmal senden') : t('Code senden')}
           </button>
         )}
-        <button className="primary" type="submit" disabled={busy || !code.trim()}>
-          {busy ? t('Prüft …') : t('Weiter')}
+        <button
+          className="primary"
+          type="submit"
+          disabled={busy || (method.kind !== 'webauthn' && !code.trim())}
+        >
+          {busy
+            ? t('Prüft …')
+            : method.kind === 'webauthn'
+              ? t('Schlüssel verwenden')
+              : t('Weiter')}
         </button>
       </div>
     </form>
+  );
+}
+
+/** Waiting for another device to let this one in, with the phrase both show. */
+function DeviceWait({
+  started,
+  onDone,
+  onBack,
+}: {
+  started: DeviceLogin;
+  onDone: (step: LoginStep) => void;
+  onBack: () => void;
+}) {
+  useLanguage();
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let stopped = false;
+    const look = async () => {
+      if (stopped) return;
+      try {
+        const answer = await checkDeviceLogin(started);
+        if (answer === 'denied') {
+          setError(t('Das andere Gerät hat abgelehnt.'));
+          return;
+        }
+        if (answer) {
+          onDone(answer);
+          return;
+        }
+      } catch (e) {
+        setError(errorText(e));
+      }
+      if (!stopped) window.setTimeout(() => void look(), 4000);
+    };
+    const first = window.setTimeout(() => void look(), 4000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(first);
+    };
+  }, [started, onDone]);
+  return (
+    <div className="form">
+      <h1 className="card-title">{t('Mit anderem Gerät anmelden')}</h1>
+      <p className="dialog-lead">
+        {t(
+          'Öffne UwULock oder die Bitwarden-App auf einem Gerät, auf dem du angemeldet bist, und bestätige dort die Anfrage. Prüf vorher, dass dort derselbe Satz steht:',
+        )}
+      </p>
+      <p className="fingerprint">{started.fingerprint}</p>
+      {error ? (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      ) : (
+        <p className="field-hint" role="status">
+          {t('Wartet auf die Antwort …')}
+        </p>
+      )}
+      <div className="form-actions">
+        <button type="button" className="quiet" onClick={onBack}>
+          {t('Zurück')}
+        </button>
+      </div>
+    </div>
   );
 }

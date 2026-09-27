@@ -9,17 +9,29 @@ import { Nyu } from './nyu/Nyu';
 import { AccountSettings } from './web/AccountSettings';
 import { Row, Segmented, Toggle } from './web/controls';
 import { DeviceSettings } from './web/DeviceSettings';
+import { EmergencySettings } from './web/EmergencySettings';
+import { PasskeySettings } from './web/PasskeySettings';
 import { TransferSettings } from './web/TransferSettings';
 import { TwoFactorSettings } from './web/TwoFactorSettings';
 
 export type SettingsSection =
-  'appearance' | 'security' | 'account' | 'two-factor' | 'devices' | 'transfer' | 'about';
+  | 'appearance'
+  | 'security'
+  | 'account'
+  | 'two-factor'
+  | 'passkeys'
+  | 'emergency'
+  | 'devices'
+  | 'transfer'
+  | 'about';
 
 const SECTIONS: { id: SettingsSection; label: string; needsLogin: boolean }[] = [
   { id: 'appearance', label: N_('Darstellung'), needsLogin: false },
   { id: 'security', label: N_('Sicherheit'), needsLogin: true },
   { id: 'account', label: N_('Konto'), needsLogin: true },
   { id: 'two-factor', label: N_('Zwei-Schritt-Anmeldung'), needsLogin: true },
+  { id: 'passkeys', label: N_('Passkeys'), needsLogin: true },
+  { id: 'emergency', label: N_('Notfallzugriff'), needsLogin: true },
   { id: 'devices', label: N_('Geräte'), needsLogin: true },
   { id: 'transfer', label: N_('Import & Export'), needsLogin: true },
   { id: 'about', label: N_('Über UwULock'), needsLogin: false },
@@ -210,6 +222,8 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
           {section === 'two-factor' && loggedIn && (
             <TwoFactorSettings status={status} info={info} onInfo={onInfo} />
           )}
+          {section === 'passkeys' && loggedIn && <PasskeySettings />}
+          {section === 'emergency' && loggedIn && <EmergencySettings mail={info?.mail ?? false} />}
           {section === 'devices' && loggedIn && <DeviceSettings onClose={onClose} />}
           {section === 'transfer' && loggedIn && <TransferSettings />}
           {section === 'about' && <About />}

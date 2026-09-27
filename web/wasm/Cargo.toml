@@ -17,10 +17,14 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # UwULock's crypto and vault, the same the desktop app uses, at the commit uwulock-e2e tests.
-uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "3f120ff1d5a1421ba17531a7d911f7ed7ea59c7b" }
+uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "ffc40a352ef202b45f30517da1cd129713a16c8c" }
 base64 = "0.22"
+# Randomness in the browser, for access codes: the same getrandom uwulock-core takes it from.
+getrandom = { version = "0.2", features = ["js"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The password check asks Have I Been Pwned by the first characters of a SHA-1.
+sha1 = "0.10"
 url = "2"
 wasm-bindgen = "=0.2.129"
 zeroize = "1"

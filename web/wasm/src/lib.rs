@@ -14,12 +14,15 @@
 
 mod account;
 mod draft;
+mod files;
+mod health;
+mod keys;
 mod transfer;
 mod view;
 
 use serde::Serialize;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use uwulock_core::crypto::{self, EncString, Kdf, SymmetricKey};
 use uwulock_core::vault::Vault;
 use uwulock_core::wire;
@@ -77,12 +80,19 @@ pub struct Unlocked {
     pub vault: Vault,
     /// Items with a master password re-prompt whose prompt was answered.
     pub reprompt_ok: HashSet<String>,
+    /// Attachments by item id, as the sync brought them.
+    pub attachments: HashMap<String, Vec<wire::Attachment>>,
+    pub sends: Vec<wire::Send>,
+    /// What the last password check keeps for the answers from Have I Been Pwned.
+    pub report: Vec<health::Checked>,
 }
 
 thread_local! {
     /// The master key between the login's first step and the unlock.
     static PENDING: RefCell<Option<Zeroizing<[u8; 32]>>> = const { RefCell::new(None) };
     static UNLOCKED: RefCell<Option<Unlocked>> = const { RefCell::new(None) };
+    /// The key pair of a request to log in with another device, until the answer comes.
+    static REQUEST: RefCell<Option<crypto::PrivateKey>> = const { RefCell::new(None) };
 }
 
 pub fn with_unlocked<T>(work: impl FnOnce(&mut Unlocked) -> Result<T>) -> Result<T> {
@@ -139,18 +149,26 @@ pub fn unlock(email: &str, kdf: &str, protected_key: &str) -> Result<(), JsValue
     let protected: EncString = protected_key.parse().map_err(Failure::from)?;
     let user_key = crypto::decrypt_user_key(&master, &protected)
         .map_err(|_| Failure::new("wrong-password", "The master password is wrong."))?;
+    unlock_with(email, kdf, protected_key.to_string(), user_key);
+    Ok(())
+}
+
+/// The vault is open with `user_key`, however it was got.
+fn unlock_with(email: &str, kdf: Kdf, protected_key: String, user_key: SymmetricKey) {
     UNLOCKED.with(|cell| {
         *cell.borrow_mut() = Some(Unlocked {
             email: crypto::normalize_email(email),
             kdf,
-            protected_key: protected_key.to_string(),
+            protected_key,
             user_key,
             private_key: None,
             vault: Vault::default(),
             reprompt_ok: HashSet::new(),
+            attachments: HashMap::new(),
+            sends: Vec::new(),
+            report: Vec::new(),
         })
     });
-    Ok(())
 }
 
 /// Wipe every key.
@@ -158,6 +176,7 @@ pub fn unlock(email: &str, kdf: &str, protected_key: &str) -> Result<(), JsValue
 pub fn lock() {
     PENDING.with(|cell| *cell.borrow_mut() = None);
     UNLOCKED.with(|cell| *cell.borrow_mut() = None);
+    REQUEST.with(|cell| *cell.borrow_mut() = None);
 }
 
 #[wasm_bindgen(js_name = isUnlocked)]
@@ -180,10 +199,21 @@ struct Overview {
 #[wasm_bindgen]
 pub fn open(sync: &str) -> Result<(), JsValue> {
     let value: serde_json::Value = serde_json::from_str(sync).map_err(Failure::from)?;
-    let sync: wire::Sync = serde_json::from_value(wire::lowercase_keys(value)).map_err(Failure::from)?;
+    let mut sync: wire::Sync = serde_json::from_value(wire::lowercase_keys(value)).map_err(Failure::from)?;
     with_unlocked(|unlocked| {
         unlocked.vault = Vault::open(&sync, &unlocked.user_key)?;
         unlocked.private_key = sync.profile.private_key.clone();
+        // An unlock by passkey or by another device had no wrapped user key to keep until now.
+        if let Some(key) = sync.profile.key.clone() {
+            unlocked.protected_key = key;
+        }
+        unlocked.attachments = sync
+            .ciphers
+            .iter_mut()
+            .filter(|cipher| !cipher.attachments.is_empty())
+            .map(|cipher| (cipher.id.clone(), std::mem::take(&mut cipher.attachments)))
+            .collect();
+        unlocked.sends = std::mem::take(&mut sync.sends);
         Ok(())
     })?;
     Ok(())
@@ -311,11 +341,13 @@ pub fn password_hash(password: String) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| account::check_password(unlocked, &password))?)
 }
 
-/// Everything for a new user key: the body of `rotate-user-account-keys`.
+/// Everything for a new user key: the body of `rotate-user-account-keys`. `holders` are the
+/// emergency contacts and passkeys that hold the user key too (see `account::Holders`).
 #[wasm_bindgen]
-pub fn rotate(password: String, public_key: &str) -> Result<String, JsValue> {
+pub fn rotate(password: String, public_key: &str, holders: &str) -> Result<String, JsValue> {
     let password = Zeroizing::new(password);
-    Ok(with_unlocked(|unlocked| json(&account::rotate(unlocked, &password, public_key)?))?)
+    let holders: account::Holders = serde_json::from_str(holders).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&account::rotate(unlocked, &password, public_key, holders)?))?)
 }
 
 // ── Import and export ─────────────────────────────────────
@@ -331,4 +363,146 @@ pub fn export_vault(format: &str) -> Result<String, JsValue> {
 #[wasm_bindgen(js_name = importVault)]
 pub fn import_vault(format: &str, text: &str, now: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&transfer::import(unlocked, format, text, now)?))?)
+}
+
+// ── Attachments ───────────────────────────────────────────
+
+#[wasm_bindgen]
+pub fn attachments(item_id: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&files::list(unlocked, item_id)?))?)
+}
+
+/// A file for an item, encrypted: `meta` is what `attachment/v2` takes, the data what is
+/// uploaded after.
+#[wasm_bindgen(js_name = sealAttachment)]
+pub fn seal_attachment(item_id: &str, file_name: &str, data: &[u8]) -> Result<files::Sealed, JsValue> {
+    Ok(with_unlocked(|unlocked| files::seal(unlocked, item_id, file_name, data))?)
+}
+
+#[wasm_bindgen(js_name = openAttachment)]
+pub fn open_attachment(item_id: &str, id: &str, data: &[u8]) -> Result<Vec<u8>, JsValue> {
+    Ok(with_unlocked(|unlocked| files::open(unlocked, item_id, id, data))?)
+}
+
+// ── Sends ─────────────────────────────────────────────────
+
+#[wasm_bindgen]
+pub fn sends() -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&files::sends(unlocked)))?)
+}
+
+/// A Send as the server takes it, new (`id` empty) or changed; for a new file Send, `data` is the
+/// file, encrypted in `Sealed`'s data.
+#[wasm_bindgen(js_name = sealSend)]
+pub fn seal_send(id: &str, draft: &str, data: Option<Vec<u8>>) -> Result<files::Sealed, JsValue> {
+    let draft: files::SendDraft = serde_json::from_str(draft).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| files::seal_send(unlocked, id, draft, data.as_deref()))?)
+}
+
+/// For somebody with a Send's link: the password's hash, to open it. No login needed.
+#[wasm_bindgen(js_name = sendAccessPassword)]
+pub fn send_access_password(password: String, url_key: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    Ok(files::access_password(&password, url_key)?)
+}
+
+#[wasm_bindgen(js_name = openSendAccess)]
+pub fn open_send_access(access: &str, url_key: &str) -> Result<String, JsValue> {
+    Ok(json(&files::open_access(access, url_key)?)?)
+}
+
+#[wasm_bindgen(js_name = openSendFile)]
+pub fn open_send_file(url_key: &str, data: &[u8]) -> Result<Vec<u8>, JsValue> {
+    Ok(files::open_file(url_key, data)?)
+}
+
+// ── Keys for others ───────────────────────────────────────
+
+/// The fingerprint phrase of a public key (base64 SPKI) for `material`: an address, or a user id.
+#[wasm_bindgen]
+pub fn fingerprint(material: &str, public_key: &str) -> Result<String, JsValue> {
+    Ok(keys::fingerprint(material, public_key)?)
+}
+
+/// The account's own fingerprint phrase: its user id and its public key.
+#[wasm_bindgen(js_name = ownFingerprint)]
+pub fn own_fingerprint(user_id: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| {
+        let private = keys::private_key(unlocked)?;
+        Ok(crypto::fingerprint(user_id, &private.public().to_der()?))
+    })?)
+}
+
+/// The user key, wrapped for a public key (base64 SPKI): for an emergency contact, or a device
+/// that asks to be let in.
+#[wasm_bindgen(js_name = wrapUserKey)]
+pub fn wrap_user_key(public_key: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| keys::wrap_user_key(unlocked, public_key))?)
+}
+
+/// The grantor's vault, readable, from what `emergency-access/<id>/view` answered.
+#[wasm_bindgen(js_name = emergencyView)]
+pub fn emergency_view(key_encrypted: &str, ciphers: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| keys::emergency_view(unlocked, key_encrypted, ciphers))?)
+}
+
+/// A new master password for the grantor, from `emergency-access/<id>/takeover`'s answer.
+#[wasm_bindgen(js_name = emergencyTakeover)]
+pub fn emergency_takeover(key_encrypted: &str, email: &str, kdf: &str, password: String) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    let kdf = kdf_from(kdf)?;
+    Ok(with_unlocked(|unlocked| json(&keys::takeover(unlocked, key_encrypted, email, kdf, &password)?))?)
+}
+
+/// Ask to log in with another device: a key pair kept here, and what the request carries.
+#[wasm_bindgen(js_name = startDeviceLogin)]
+pub fn start_device_login(email: &str) -> Result<String, JsValue> {
+    let (private, answer) = keys::start_request(email)?;
+    REQUEST.with(|cell| *cell.borrow_mut() = Some(private));
+    Ok(json(&answer)?)
+}
+
+/// The other device said yes: open the vault with the key it sent.
+#[wasm_bindgen(js_name = finishDeviceLogin)]
+pub fn finish_device_login(email: &str, kdf: &str, key: &str) -> Result<(), JsValue> {
+    let kdf = kdf_from(kdf)?;
+    let private = REQUEST
+        .with(|cell| cell.borrow_mut().take())
+        .ok_or_else(|| Failure::new("locked", "Ask again."))?;
+    let user_key = keys::finish_request(&private, key)?;
+    unlock_with(email, kdf, String::new(), user_key);
+    Ok(())
+}
+
+#[wasm_bindgen(js_name = prfSalt)]
+pub fn prf_salt() -> String {
+    keys::prf_salt()
+}
+
+/// The keys to keep with a passkey that unlocks, from its PRF output (base64).
+#[wasm_bindgen(js_name = prfKeySet)]
+pub fn prf_key_set(prf: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&keys::prf_key_set(unlocked, prf)?))?)
+}
+
+/// Open the vault with a passkey: its PRF output, and the keys the login answered with.
+#[wasm_bindgen(js_name = unlockWithPasskey)]
+pub fn unlock_with_passkey(email: &str, kdf: &str, prf: &str, private_key: &str, user_key: &str) -> Result<(), JsValue> {
+    let kdf = kdf_from(kdf)?;
+    let key = keys::open_prf(prf, private_key, user_key)?;
+    unlock_with(email, kdf, String::new(), key);
+    Ok(())
+}
+
+// ── The password check ────────────────────────────────────
+
+#[wasm_bindgen(js_name = passwordReport)]
+pub fn password_report() -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&health::report(unlocked)))?)
+}
+
+/// Which items' passwords were in a breach, from HIBP's answer for one prefix.
+#[wasm_bindgen]
+pub fn breaches(prefix: &str, range: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&health::breaches(unlocked, prefix, range)))?)
 }

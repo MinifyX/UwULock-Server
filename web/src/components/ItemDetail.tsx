@@ -22,6 +22,7 @@ import { t, useLanguage } from '../lib/i18n';
 import { IDENTITY_LABEL, KIND_LABEL } from '../lib/items';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
+import { Attachments } from './web/Attachments';
 import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
@@ -745,19 +746,17 @@ export function ItemDetail({
             </Section>
           )}
 
+          <Attachments
+            itemId={id}
+            revision={summary.revisionDate}
+            editable={!summary.deleted && !summary.organizationId}
+          />
+
           <footer className="detail-foot">
             {d.login && d.login.passkeys > 0 && (
               <p>
                 <Icon name="key" size={13} />
                 {t('Mit Passkey – den kann UwULock noch nicht benutzen.')}
-              </p>
-            )}
-            {(d.attachments ?? 0) > 0 && (
-              <p>
-                <Icon name="file" size={13} />
-                {t('{n} Anhänge – die öffnest du vorerst im Web-Tresor.', {
-                  n: d.attachments ?? 0,
-                })}
               </p>
             )}
             <p className="muted">

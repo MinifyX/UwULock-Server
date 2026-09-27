@@ -21,7 +21,12 @@ const email = new URL(link.replace('/#/', '/')).searchParams.get('email');
 const password = 'correct horse battery staple';
 if (shots) mkdirSync(shots, { recursive: true });
 
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
+// CHROMIUM_ARGS can make the browser trust a test certificate for real (for WebAuthn, which
+// refuses a site whose certificate is only waved through): --ignore-certificate-errors-spki-list.
+const browser = await chromium.launch({
+  executablePath: process.env.CHROMIUM || undefined,
+  args: process.env.CHROMIUM_ARGS ? process.env.CHROMIUM_ARGS.split(' ') : [],
+});
 const context = await browser.newContext({
   ignoreHTTPSErrors: true,
   viewport: { width: 1280, height: 800 },

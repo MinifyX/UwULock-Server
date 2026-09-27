@@ -34,6 +34,22 @@ pub enum Mail {
     NewDevice { device: String, ip: String, time: String },
     /// Two-step login was turned off with the recovery code.
     RecoveryUsed,
+    /// Somebody names the reader as an emergency contact, with the link that accepts.
+    EmergencyInvited { grantor: String, link: String },
+    /// To the grantor: the contact accepted, and waits to be confirmed.
+    EmergencyAccepted { grantee: String },
+    /// To the contact: the grantor confirmed, access can be asked for from now on.
+    EmergencyConfirmed { grantor: String },
+    /// To the grantor: the contact asks for access, which comes by itself after the wait.
+    EmergencyAsked { grantee: String, takeover: bool, days: i64, reminder: bool },
+    /// To the contact: the grantor said yes.
+    EmergencyApproved { grantor: String },
+    /// To the contact: the grantor said no.
+    EmergencyRejected { grantor: String },
+    /// To the grantor: nobody said no within the wait, so the contact has access now.
+    EmergencyWaited { grantee: String },
+    /// To the grantor: the contact set a new master password for the account.
+    EmergencyTakenOver { grantee: String },
 }
 
 struct Text {
@@ -249,6 +265,126 @@ impl Mail {
                 button: None,
                 footer,
             },
+            Mail::EmergencyInvited { grantor, link } => Text {
+                subject: if de { format!("{grantor} möchte dich als Notfallkontakt") } else { format!("{grantor} wants you as an emergency contact") },
+                lines: vec![
+                    if de {
+                        format!("{grantor} möchte, dass du im Notfall auf den UwULock-Tresor zugreifen kannst. Nimm die Einladung hier an:")
+                    } else {
+                        format!("{grantor} wants you to be able to reach their UwULock vault in an emergency. Accept the invitation here:")
+                    },
+                    if de {
+                        "Zugriff bekommst du erst, wenn du ihn anfragst und die Wartezeit ohne Einspruch vorbei ist."
+                    } else {
+                        "You only get access when you ask for it and the waiting time passes without a no."
+                    }
+                    .into(),
+                ],
+                highlight: None,
+                button: Some((if de { "Einladung annehmen" } else { "Accept invitation" }.into(), link.clone())),
+                footer,
+            },
+            Mail::EmergencyAccepted { grantee } => Text {
+                subject: if de { format!("{grantee} ist jetzt dein Notfallkontakt") } else { format!("{grantee} is your emergency contact now") },
+                lines: vec![
+                    if de {
+                        format!("{grantee} hat deine Einladung als Notfallkontakt angenommen.")
+                    } else {
+                        format!("{grantee} accepted your invitation as an emergency contact.")
+                    },
+                    if de {
+                        "Bestätige den Kontakt im Web-Tresor unter Einstellungen → Notfallzugriff. Vergleiche dabei den Fingerabdruck-Satz mit ihm oder ihr."
+                    } else {
+                        "Confirm the contact in the web vault under Settings → Emergency access, and compare the fingerprint phrase with them."
+                    }
+                    .into(),
+                ],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::EmergencyConfirmed { grantor } => Text {
+                subject: if de { format!("{grantor} hat dich als Notfallkontakt bestätigt") } else { format!("{grantor} confirmed you as an emergency contact") },
+                lines: vec![if de {
+                    format!("{grantor} hat dich bestätigt. Im Notfall kannst du im Web-Tresor unter Einstellungen → Notfallzugriff Zugriff anfragen.")
+                } else {
+                    format!("{grantor} confirmed you. In an emergency, ask for access in the web vault under Settings → Emergency access.")
+                }],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::EmergencyAsked { grantee, takeover, days, reminder } => Text {
+                subject: match (de, reminder) {
+                    (true, false) => format!("{grantee} fragt Notfallzugriff an"),
+                    (true, true) => format!("Erinnerung: {grantee} fragt Notfallzugriff an"),
+                    (false, false) => format!("{grantee} asks for emergency access"),
+                    (false, true) => format!("Reminder: {grantee} asks for emergency access"),
+                },
+                lines: vec![
+                    match (de, takeover) {
+                        (true, false) => format!("{grantee} möchte deinen Tresor ansehen."),
+                        (true, true) => format!("{grantee} möchte dein Konto übernehmen und ein neues Master-Passwort setzen."),
+                        (false, false) => format!("{grantee} wants to see your vault."),
+                        (false, true) => format!("{grantee} wants to take over your account and set a new master password."),
+                    },
+                    if de {
+                        format!("Wenn du nicht ablehnst, bekommt {grantee} den Zugriff nach {days} Tag(en) von selbst. Ablehnen kannst du im Web-Tresor unter Einstellungen → Notfallzugriff.")
+                    } else {
+                        format!("Unless you say no, {grantee} gets access by itself after {days} day(s). You can say no in the web vault under Settings → Emergency access.")
+                    },
+                ],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::EmergencyApproved { grantor } => Text {
+                subject: if de { format!("{grantor} hat deinen Notfallzugriff freigegeben") } else { format!("{grantor} approved your emergency access") },
+                lines: vec![if de {
+                    format!("Du kannst jetzt im Web-Tresor unter Einstellungen → Notfallzugriff auf den Tresor von {grantor} zugreifen.")
+                } else {
+                    format!("You can now reach {grantor}'s vault in the web vault under Settings → Emergency access.")
+                }],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::EmergencyRejected { grantor } => Text {
+                subject: if de { format!("{grantor} hat den Notfallzugriff abgelehnt") } else { format!("{grantor} said no to emergency access") },
+                lines: vec![if de {
+                    format!("{grantor} hat deine Anfrage auf Notfallzugriff abgelehnt.")
+                } else {
+                    format!("{grantor} said no to your request for emergency access.")
+                }],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::EmergencyWaited { grantee } => Text {
+                subject: if de { format!("{grantee} hat jetzt Notfallzugriff") } else { format!("{grantee} has emergency access now") },
+                lines: vec![
+                    if de {
+                        format!("Die Wartezeit ist vorbei, ohne dass du abgelehnt hast: {grantee} kann jetzt auf deinen Tresor zugreifen.")
+                    } else {
+                        format!("The waiting time passed without a no from you: {grantee} can now reach your vault.")
+                    },
+                    not_you(de),
+                ],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::EmergencyTakenOver { grantee } => Text {
+                subject: if de { "Dein Konto wurde übernommen" } else { "Your account was taken over" }.into(),
+                lines: vec![if de {
+                    format!("{grantee} hat mit dem Notfallzugriff ein neues Master-Passwort für dein Konto gesetzt. Die Zwei-Schritt-Anmeldung ist ausgeschaltet, alle Geräte sind abgemeldet.")
+                } else {
+                    format!("{grantee} used emergency access to set a new master password for your account. Two-step login is off, and every device is logged out.")
+                }],
+                highlight: None,
+                button: None,
+                footer,
+            },
         }
     }
 }
@@ -315,6 +451,14 @@ mod tests {
             Mail::PasswordHint { hint: None },
             Mail::NewDevice { device: "Firefox".into(), ip: "192.0.2.1".into(), time: "now".into() },
             Mail::RecoveryUsed,
+            Mail::EmergencyInvited { grantor: "Nyu".into(), link: "https://vault.example.com/".into() },
+            Mail::EmergencyAccepted { grantee: "Mika".into() },
+            Mail::EmergencyConfirmed { grantor: "Nyu".into() },
+            Mail::EmergencyAsked { grantee: "Mika".into(), takeover: true, days: 7, reminder: true },
+            Mail::EmergencyApproved { grantor: "Nyu".into() },
+            Mail::EmergencyRejected { grantor: "Nyu".into() },
+            Mail::EmergencyWaited { grantee: "Mika".into() },
+            Mail::EmergencyTakenOver { grantee: "Mika".into() },
         ];
         for mail in mails {
             let (de, _, _) = mail.render(Language::De);

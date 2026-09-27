@@ -12,22 +12,30 @@
 
 mod accounts;
 mod admin;
+mod attachments;
 mod auth;
+mod auth_requests;
 mod ciphers;
 mod cors;
+pub mod emergency;
 mod errors;
+pub mod files;
 mod folders;
 mod health;
+mod hibp;
 mod identity;
 mod json;
 mod limits;
 mod logs;
 mod meta;
+mod passkeys;
+mod sends;
 mod settings;
 mod totp;
 mod two_factor;
 mod uwu;
 mod web;
+mod webauthn;
 
 pub use admin::{Invited, invite};
 pub use auth::{HashCost, Tokens};
@@ -43,7 +51,8 @@ use parking_lot::RwLock;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{NotForContentType, Predicate};
+use tower_http::compression::{CompressionLayer, DefaultPredicate};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::timeout::TimeoutLayer;
 use uwulock_mail::Mailer;
@@ -61,6 +70,12 @@ pub struct ApiConfig {
     pub hash_cost: HashCost,
     /// Where backups are kept, for the admin portal.
     pub backups: PathBuf,
+    /// The data directory: attachments and the files of Sends go below it.
+    pub data: PathBuf,
+    /// Have I Been Pwned's range API, which the password check asks through this server.
+    pub hibp_url: String,
+    /// How many logins one address may try at once.
+    pub login_attempts: u32,
     /// The settings a new server starts with, until an admin saves others.
     pub start_settings: Settings,
 }
@@ -95,6 +110,12 @@ pub struct AppState {
     pub logs: Arc<LogBuffer>,
     pub update: Arc<RwLock<UpdateInfo>>,
     pub started: std::time::Instant,
+    /// Who WebAuthn is for: this server's host and origin.
+    pub party: webauthn::Party,
+    /// WebAuthn challenges that wait for their answer.
+    pub challenges: Arc<webauthn::Challenges>,
+    /// What Have I Been Pwned answered lately.
+    pub hibp: Arc<hibp::Cache>,
 }
 
 impl AppState {
@@ -108,6 +129,8 @@ impl AppState {
         let settings = Settings::load(&store, &config.start_settings).await?;
         let mailer = Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
         let tokens = Tokens::load(&store, &config.public).await?;
+        let party = webauthn::Party::from_public(&config.public);
+        let limits = Arc::new(Limits::with_login_attempts(config.login_attempts));
         Ok(AppState {
             store,
             version,
@@ -115,10 +138,13 @@ impl AppState {
             tokens: Arc::new(tokens),
             mailer,
             settings: Arc::new(RwLock::new(settings)),
-            limits: Arc::new(Limits::default()),
+            limits,
             logs,
             update: Arc::default(),
             started: std::time::Instant::now(),
+            party,
+            challenges: Arc::default(),
+            hibp: Arc::default(),
         })
     }
 
@@ -151,11 +177,18 @@ pub fn router(state: AppState) -> Router {
         .merge(ciphers::vault_routes())
         .merge(accounts::vault_routes())
         .layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT));
-    let router = Router::new()
+    // Almost everything: small bodies, and an answer within a minute.
+    let quick = Router::new()
         .merge(health::routes())
         .merge(identity::routes())
         .merge(accounts::routes())
         .merge(ciphers::routes())
+        .merge(attachments::routes())
+        .merge(sends::routes())
+        .merge(emergency::routes())
+        .merge(auth_requests::routes())
+        .merge(passkeys::routes())
+        .merge(hibp::routes())
         .merge(folders::routes())
         .merge(two_factor::routes())
         .merge(meta::routes())
@@ -163,14 +196,26 @@ pub fn router(state: AppState) -> Router {
         .merge(admin::routes())
         .merge(whole_vault)
         .merge(web::routes())
-        .fallback(web::fallback)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(TimeoutLayer::with_status_code(axum::http::StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT));
+    // Uploads of files: as large as the settings allow, which the handlers check as the bytes
+    // come, and as long as they take — the connection's own deadline still ends one that stalls.
+    let uploads = Router::new()
+        .merge(attachments::upload_routes())
+        .merge(sends::upload_routes())
+        .layer(DefaultBodyLimit::disable());
+    let router = Router::new()
+        .merge(quick)
+        .merge(uploads)
+        .fallback(web::fallback)
         .layer(axum::middleware::from_fn_with_state(state.clone(), cors::cors))
         .with_state(state)
-        .layer(TimeoutLayer::with_status_code(axum::http::StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT))
         // A vault is JSON, and JSON shrinks to a fraction of itself. Clients ask for gzip; brotli
         // for whoever says they take it. The web vault's files come compressed already.
-        .layer(CompressionLayer::new().gzip(true).br(true))
+        .layer(CompressionLayer::new().gzip(true).br(true).compress_when(
+            // Files are encrypted: nothing to shrink there.
+            DefaultPredicate::new().and(NotForContentType::const_new("application/octet-stream")),
+        ))
         .layer(header("x-content-type-options", "nosniff"))
         .layer(header("referrer-policy", "same-origin"))
         .layer(header("x-robots-tag", "noindex, nofollow"))

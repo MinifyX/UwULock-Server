@@ -7,6 +7,10 @@ import { SettingsDialog, type SettingsSection } from './components/SettingsDialo
 import { TitleBar } from './components/TitleBar';
 import { VaultScreen } from './components/VaultScreen';
 import { RegisterScreen } from './components/web/RegisterScreen';
+import { SendPage } from './components/web/SendPage';
+import { errorText } from './lib/errors';
+import { acceptContact } from './lib/features';
+import { toast } from './lib/toast';
 import { lock, setSecurity, touch, vaultStatus, type Status } from './lib/api';
 import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
@@ -98,6 +102,22 @@ export function App() {
   }, [modalOpen, unlocked]);
 
   const registering = route.path === '/finish-signup' || route.path === '/register';
+  const sendLink = route.path.match(/^\/send\/([^/]+)\/([^/]+)$/);
+
+  // The link from an emergency access invitation: accepted once the vault is open.
+  useEffect(() => {
+    if (route.path !== '/accept-emergency' || !unlocked) return;
+    const id = route.query.get('id') ?? '';
+    const token = route.query.get('token') ?? '';
+    location.hash = '';
+    void acceptContact(id, token).then(
+      () =>
+        toast(
+          t('Du bist jetzt Notfallkontakt ✧ Sobald du bestätigt bist, kannst du Zugriff anfragen.'),
+        ),
+      (e) => toast(errorText(e), 'error'),
+    );
+  }, [route, unlocked]);
 
   return (
     <div className="shell">
@@ -130,7 +150,9 @@ export function App() {
         </TitleBar>
 
         <main className="stage">
-          {registering ? (
+          {sendLink ? (
+            <SendPage accessId={sendLink[1]!} urlKey={sendLink[2]!} />
+          ) : registering ? (
             <RegisterScreen
               token={route.query.get('token') ?? ''}
               email={route.query.get('email') ?? ''}

@@ -123,6 +123,9 @@ pub struct Limits {
     pub password: Limiter<String>,
     /// Mails anybody can make the server send, per address they go to.
     pub mail: Limiter<String>,
+    /// Questions to Have I Been Pwned, per account: a whole vault checked at once, but not a
+    /// flood.
+    pub hibp: Limiter<String>,
 }
 
 impl Default for Limits {
@@ -133,11 +136,17 @@ impl Default for Limits {
             two_factor: Limiter::new(10, Duration::from_secs(60)),
             password: Limiter::new(10, Duration::from_secs(60)),
             mail: Limiter::new(5, Duration::from_secs(5 * 60)),
+            hibp: Limiter::new(2000, Duration::from_millis(200)),
         }
     }
 }
 
 impl Limits {
+    /// The defaults, with `attempts` logins at once per address.
+    pub fn with_login_attempts(attempts: u32) -> Self {
+        Limits { login: Limiter::new(attempts, Duration::from_secs(60)), ..Limits::default() }
+    }
+
     /// Limits no test runs into.
     pub fn generous() -> Self {
         fn generous<K: Hash + Eq>() -> Limiter<K> {
@@ -149,6 +158,7 @@ impl Limits {
             two_factor: generous(),
             password: generous(),
             mail: generous(),
+            hibp: generous(),
         }
     }
 }

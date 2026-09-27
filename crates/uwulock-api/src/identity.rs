@@ -62,7 +62,9 @@ async fn token(
     match form.get("granttype") {
         Some("password") => password_login(&state, ip, &headers, &form).await,
         Some("refresh_token") => refresh(&state, ip, &form).await,
-        Some("client_credentials") => Err(ApiError::bad("Logging in with an API key is not available yet.")),
+        Some("client_credentials") => api_key_login(&state, ip, &form).await,
+        Some("webauthn") => crate::passkeys::grant(&state, ip, &form).await,
+        Some("send_access") => crate::sends::grant(&state, ip, form.get("sendid"), form.get("passwordhashb64")).await,
         _ => Err(ApiError::bad("Invalid type")),
     }
 }
@@ -92,8 +94,21 @@ async fn password_login(
     }
 
     let user = state.store.user_by_email(username).await?;
-    let known = user.as_ref().map(|user| user.password_hash.as_str());
-    if !auth::verify_password(state.config.hash_cost, known, password).await {
+    // With the code of an approved "log in with a device" request instead of the password.
+    let by_request = form.get("authrequest");
+    let passed = match (by_request, &user) {
+        (Some(request), Some(found)) => state
+            .store
+            .use_auth_request(request, device_id, auth::sha256(password.as_bytes()))
+            .await?
+            .is_some_and(|request| request.user_id == found.id),
+        (Some(_), None) => false,
+        (None, _) => {
+            let known = user.as_ref().map(|user| user.password_hash.as_str());
+            auth::verify_password(state.config.hash_cost, known, password).await
+        }
+    };
+    if !passed {
         log(state, "login-failed", user.as_ref(), username, ip, device_type, "wrong email or password").await;
         return Err(ApiError::bad("Username or password is incorrect. Try again"));
     }
@@ -104,18 +119,48 @@ async fn password_login(
     }
 
     let known_device = state.store.device(&user.id, device_id).await?;
-    let remember = match two_factor::check_login(state, &user, form, known_device.as_ref(), ip, headers).await {
-        Ok(remember) => remember,
-        Err(error) => {
-            if error.status == StatusCode::BAD_REQUEST && form.get("twofactortoken").is_some() {
-                log(state, "two-factor-failed", Some(&user), username, ip, device_type, "wrong code").await;
+    // A device that another one let in has passed its second step with that.
+    let remember = if by_request.is_some() {
+        None
+    } else {
+        match two_factor::check_login(state, &user, form, known_device.as_ref(), ip, headers).await {
+            Ok(remember) => remember,
+            Err(error) => {
+                if error.status == StatusCode::BAD_REQUEST && form.get("twofactortoken").is_some() {
+                    log(state, "two-factor-failed", Some(&user), username, ip, device_type, "wrong code").await;
+                }
+                return Err(error);
             }
-            return Err(error);
         }
     };
+    let login = Login { device_id, device_name, device_type, known: known_device.is_some(), remember };
+    let body = finish_login(state, &user, ip, form, login).await?;
+    Ok(Json(body).into_response())
+}
 
+/// The device a login is for, and what the second step said.
+pub(crate) struct Login<'a> {
+    pub device_id: &'a str,
+    pub device_name: &'a str,
+    pub device_type: i64,
+    /// The device was logged in to this account before.
+    pub known: bool,
+    /// A new token that skips the second step on this device.
+    pub remember: Option<String>,
+}
+
+/// Everything after the credentials were checked: the device logged in, the event written, a
+/// mail for a new device, and the answer with the tokens and keys.
+pub(crate) async fn finish_login(
+    state: &AppState,
+    user: &User,
+    ip: std::net::IpAddr,
+    form: &TokenForm,
+    login: Login<'_>,
+) -> ApiResult<Value> {
+    let Login { device_id, device_name, device_type, known, remember } = login;
     let refresh_token = auth::random_token(64);
-    let first_device = known_device.is_none() && state.store.devices(&user.id).await?.is_empty();
+    let first_device = !known && state.store.devices(&user.id).await?.is_empty();
     let new = state
         .store
         .log_in_device(DeviceLogin {
@@ -131,7 +176,7 @@ async fn password_login(
                 .map(|token| (auth::sha256(token.as_bytes()), clock::in_seconds(auth::REMEMBER_DAYS * 86_400))),
         })
         .await?;
-    log(state, "login", Some(&user), username, ip, device_type, device_name).await;
+    log(state, "login", Some(user), &user.email, ip, device_type, device_name).await;
     if new && !first_device && state.settings().new_device_mail && state.mailer.enabled() {
         let mail = Mail::NewDevice {
             device: format!("{device_name} ({})", auth::device_type_name(device_type)),
@@ -142,11 +187,56 @@ async fn password_login(
     }
 
     let client_id = form.get("clientid").unwrap_or("undefined");
-    let (access_token, expires_in) = state.tokens.access_token(&user, device_id, device_type, client_id);
-    let mut body = login_response(&user, access_token, expires_in);
+    let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id);
+    let mut body = login_response(user, access_token, expires_in);
     body["refresh_token"] = refresh_token.into();
     if let Some(remember) = remember {
         body["TwoFactorToken"] = remember.into();
+    }
+    Ok(body)
+}
+
+/// The CLI's login with the API key: `client_id` is `user.<id>`, `client_secret` the key. Like
+/// Bitwarden, it needs no second step: the key is a secret of its own.
+async fn api_key_login(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> ApiResult<Response> {
+    let client_id = form.require("clientid", "client_id")?;
+    let secret = form.require("clientsecret", "client_secret")?;
+    let scope = form.require("scope", "scope")?;
+    let device_id = form.require("deviceidentifier", "device_identifier")?;
+    let device_name = form.require("devicename", "device_name")?;
+    let device_type: i64 = form.require("devicetype", "device_type")?.trim().parse().unwrap_or(14);
+    if scope != "api" {
+        return Err(ApiError::bad("Scope not supported"));
+    }
+    if device_name.len() > 256 || device_id.len() > 256 {
+        return Err(ApiError::bad("Client credentials invalid"));
+    }
+    if !state.limits.login.check(ip) {
+        return Err(ApiError::too_many("Too many login requests. Wait a minute and try again."));
+    }
+    let wrong = || ApiError::json(json!({ "error": "invalid_client" }));
+    let user_id = client_id.strip_prefix("user.").ok_or_else(wrong)?;
+    let user = state.store.user(user_id).await?;
+    let stored = match &user {
+        Some(user) => state.store.api_key_of(&user.id).await?,
+        None => None,
+    };
+    let right = stored.as_deref().is_some_and(|stored| auth::constant_time_eq(stored.as_bytes(), secret.as_bytes()));
+    let Some(user) = user.filter(|_| right) else {
+        log(state, "login-failed", None, client_id, ip, device_type, "wrong API key").await;
+        return Err(wrong());
+    };
+    if user.disabled {
+        log(state, "login-failed", Some(&user), &user.email, ip, device_type, "account disabled").await;
+        return Err(ApiError::bad("This account has been disabled."));
+    }
+    let known = state.store.device(&user.id, device_id).await?.is_some();
+    let login = Login { device_id, device_name, device_type, known, remember: None };
+    let mut body = finish_login(state, &user, ip, form, login).await?;
+    // Like Bitwarden: the CLI logs in with its key again rather than refreshing.
+    if let Some(body) = body.as_object_mut() {
+        body.remove("refresh_token");
+        body.insert("scope".into(), "api".into());
     }
     Ok(Json(body).into_response())
 }

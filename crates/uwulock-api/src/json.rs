@@ -40,8 +40,8 @@ fn push_opt(out: &mut String, value: Option<&str>) {
     }
 }
 
-/// An item, as `cipherDetails`.
-pub fn write_cipher(out: &mut String, cipher: &Cipher) {
+/// An item, as `cipherDetails`, with its attachments as JSON (an array, or none).
+pub fn write_cipher(out: &mut String, cipher: &Cipher, attachments: Option<&str>) {
     out.push_str("{\"object\":\"cipherDetails\",\"id\":");
     push_str(out, &cipher.id);
     out.push_str(",\"type\":");
@@ -58,7 +58,9 @@ pub fn write_cipher(out: &mut String, cipher: &Cipher) {
     out.push_str(if cipher.reprompt == 1 { "1" } else { "0" });
     out.push_str(",\"organizationId\":null,\"key\":");
     push_opt(out, cipher.key.as_deref());
-    out.push_str(",\"attachments\":null,\"organizationUseTotp\":true,\"collectionIds\":[],\"name\":");
+    out.push_str(",\"attachments\":");
+    out.push_str(attachments.unwrap_or("null"));
+    out.push_str(",\"organizationUseTotp\":true,\"collectionIds\":[],\"name\":");
     push_str(out, &cipher.name);
     out.push_str(",\"notes\":");
     push_opt(out, cipher.notes.as_deref());
@@ -79,20 +81,24 @@ pub fn write_cipher(out: &mut String, cipher: &Cipher) {
     out.push_str(",\"edit\":true,\"viewPassword\":true,\"permissions\":{\"delete\":true,\"restore\":true}}");
 }
 
-pub fn cipher(cipher: &Cipher) -> String {
+pub fn cipher(cipher: &Cipher, attachments: Option<&str>) -> String {
     let mut out = String::with_capacity(1024);
-    write_cipher(&mut out, cipher);
+    write_cipher(&mut out, cipher, attachments);
     out
 }
 
-/// `{"data": [...], "object": "list", "continuationToken": null}` around items.
-pub fn cipher_list<'a>(ciphers: impl IntoIterator<Item = &'a Cipher>) -> String {
+/// `{"data": [...], "object": "list", "continuationToken": null}` around items, with their
+/// attachments by item id.
+pub fn cipher_list<'a>(
+    ciphers: impl IntoIterator<Item = &'a Cipher>,
+    attachments: &std::collections::HashMap<String, String>,
+) -> String {
     let mut out = String::from("{\"object\":\"list\",\"continuationToken\":null,\"data\":[");
     for (index, item) in ciphers.into_iter().enumerate() {
         if index > 0 {
             out.push(',');
         }
-        write_cipher(&mut out, item);
+        write_cipher(&mut out, item, attachments.get(&item.id).map(String::as_str));
     }
     out.push_str("]}");
     out
@@ -321,7 +327,7 @@ mod tests {
             Some(json!({"Uris": [{"Uri": "2.u|u|u", "Match": "3", "response": null}], "Username": "2.a|a|a"})),
         )
         .unwrap();
-        let value: Value = serde_json::from_str(&cipher(&stored(1, &data))).unwrap();
+        let value: Value = serde_json::from_str(&cipher(&stored(1, &data), None)).unwrap();
         assert_eq!(value["object"], "cipherDetails");
         assert_eq!(value["login"]["uri"], "2.u|u|u", "the first address, mirrored");
         assert_eq!(value["login"]["uris"][0]["match"], 3);
@@ -380,7 +386,7 @@ mod tests {
     fn a_list_of_items_is_valid_json() {
         let a = stored(1, &type_data(1, Some(json!({"uris": []}))).unwrap());
         let b = stored(2, r#"{"type":0}"#);
-        let value: Value = serde_json::from_str(&cipher_list([&a, &b])).unwrap();
+        let value: Value = serde_json::from_str(&cipher_list([&a, &b], &Default::default())).unwrap();
         assert_eq!(value["data"].as_array().unwrap().len(), 2);
         assert_eq!(value["data"][1]["secureNote"]["type"], 0);
     }

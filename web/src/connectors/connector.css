@@ -1,0 +1,81 @@
+@import '../styles/tokens.css';
+
+/* The WebAuthn connectors: a button, and on their own page a little around it. */
+.connector {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  font-family: var(--uwu-font);
+  color: var(--uwu-ink);
+  background: var(--uwu-canvas);
+}
+
+.connector.framed {
+  min-height: 0;
+  background: transparent;
+}
+
+.connector main {
+  display: grid;
+  gap: 14px;
+  justify-items: center;
+  max-width: 420px;
+  padding: 28px 20px;
+  text-align: center;
+}
+
+.connector .brand {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.connector .brand span {
+  color: var(--uwu-pink);
+}
+
+.connector h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.connector p {
+  margin: 0;
+  color: var(--uwu-muted);
+}
+
+.connector button {
+  width: 100%;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 700;
+  border: 0;
+  border-radius: var(--uwu-radius-pill);
+  color: var(--uwu-on-pink);
+  background: var(--uwu-pink-solid);
+  cursor: pointer;
+}
+
+.connector button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.connector .remember {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.connector #msg[data-tone='error'] {
+  color: var(--uwu-alarm);
+}
+
+@media (prefers-color-scheme: dark) {
+  .connector:not(.framed) {
+    color: #f8f2f6;
+    background: #141016;
+  }
+}

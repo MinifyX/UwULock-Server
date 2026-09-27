@@ -67,6 +67,9 @@ pub struct Config {
     /// The image tag this machine follows (`latest`, `beta`, `edge` or a version), which decides
     /// what counts as an update.
     pub channel: Option<String>,
+    /// How many logins one address may try at once before it has to wait (one more a minute).
+    /// More for many people behind one address.
+    pub login_attempts: u32,
     /// Mail server and default language a new server starts with, until an admin saves others
     /// in the portal.
     pub start_settings: Settings,
@@ -81,6 +84,7 @@ impl Default for Config {
             tls: TlsMode::Off,
             trust_forwarded: false,
             update_check: true,
+            login_attempts: 10,
             channel: None,
             start_settings: Settings::default(),
         }
@@ -111,6 +115,14 @@ impl Config {
         if let Some(trust) = var("UWULOCK_TRUST_FORWARDED") {
             config.trust_forwarded =
                 switch(&trust).ok_or_else(|| format!("UWULOCK_TRUST_FORWARDED must be on or off: {trust}"))?;
+        }
+        if let Some(attempts) = var("UWULOCK_LOGIN_ATTEMPTS") {
+            config.login_attempts = attempts
+                .trim()
+                .parse()
+                .ok()
+                .filter(|attempts| (1..=10_000).contains(attempts))
+                .ok_or_else(|| format!("UWULOCK_LOGIN_ATTEMPTS must be a number from 1 to 10000: {attempts}"))?;
         }
         if let Some(check) = var("UWULOCK_UPDATE_CHECK") {
             config.update_check =
@@ -392,6 +404,8 @@ mod tests {
         assert!(config(&[("UWULOCK_TLS", "maybe")]).is_err());
         assert!(config(&[("UWULOCK_LISTEN", "everywhere")]).is_err());
         assert!(config(&[("UWULOCK_UPDATE_CHECK", "later")]).is_err());
+        assert!(config(&[("UWULOCK_LOGIN_ATTEMPTS", "0")]).is_err());
+        assert_eq!(config(&[("UWULOCK_LOGIN_ATTEMPTS", "50")]).unwrap().login_attempts, 50);
         assert!(config(&[("UWULOCK_TRUST_FORWARDED", "sometimes")]).is_err());
     }
 }
