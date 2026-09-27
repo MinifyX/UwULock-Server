@@ -11,6 +11,7 @@ import { emit, listen } from './events';
 import { getSettings } from './settings';
 import { call, callJson } from './web/core';
 import { ApiError, currentSession, deviceId, deviceType, request, setSession } from './web/http';
+import { startLive, stopLive } from './web/live';
 import * as webauthn from './web/webauthn';
 
 export type Failure = { kind: string; message: string };
@@ -520,6 +521,7 @@ export const lock = async () => {
   // Whatever was copied from the vault goes with it, as soon as the page may touch the clipboard.
   clearDue = toClear !== null;
   void clearClipboard();
+  stopLive();
   await call((core) => core.lock());
   unlocked = false;
   await announce();
@@ -532,6 +534,7 @@ export const logout = async (_id?: string): Promise<Status> => {
       method: 'DELETE',
     }).catch(() => undefined);
   }
+  stopLive();
   setSession(null);
   clearDue = toClear !== null;
   void clearClipboard();
@@ -569,12 +572,24 @@ setInterval(() => {
 // an admin — closes an open vault here too, keys and all, instead of leaving it readable in a
 // tab somebody else may be sitting at.
 void listen('session-ended', () => {
+  stopLive();
   void call((core) => core.lock()).finally(() => {
     unlocked = false;
     name = null;
     profile = null;
     void announce();
   });
+});
+
+// Another device changed something: the hub says so, and the vault here follows.
+void listen('hub-sync', () => {
+  if (unlocked && !syncing) void sync().then(announce, () => undefined);
+});
+
+// The account's sessions were ended somewhere: asking the server tells whether ours was too —
+// and if so, the vault closes as above.
+void listen('hub-logout', () => {
+  if (currentSession()) void request('/api/accounts/revision-date').catch(() => undefined);
 });
 
 // Asked now and then, so a vault nobody syncs notices that too.
@@ -592,6 +607,8 @@ async function open(sync: Record<string, unknown>) {
   lastSync = Math.floor(Date.now() / 1000);
   syncError = null;
   emit('vault-changed');
+  // However the vault was opened — password, passkey, another device — from now on it listens.
+  startLive();
 }
 
 /** Fetch the vault again and open it. */

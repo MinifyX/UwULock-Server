@@ -155,6 +155,12 @@ async function refresh(): Promise<void> {
   return refreshing;
 }
 
+/** A current access token, renewed first when it is about to run out: for the live connection. */
+export async function freshToken(): Promise<string | null> {
+  if (session && session.expiresAt - Date.now() < 60_000) await refresh();
+  return session?.accessToken ?? null;
+}
+
 type Options = {
   method?: string;
   body?: unknown;
