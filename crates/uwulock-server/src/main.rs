@@ -55,6 +55,19 @@ enum Command {
     },
     /// Turn off two-step login for an account whose owner lost their phone and recovery code.
     ResetTwoFactor { email: String },
+    /// Move in from Vaultwarden: accounts, vaults, devices, two-step login, attachments, Sends,
+    /// emergency access and organisations, from its data directory (`db.sqlite3` and the files
+    /// next to it). Stop Vaultwarden first. A backup of this server's database is written before.
+    ImportVaultwarden {
+        /// Vaultwarden's data directory, the one with `db.sqlite3`.
+        path: PathBuf,
+        /// Only read, and tell what would come over.
+        #[arg(long)]
+        dry_run: bool,
+        /// Make this account an admin here. Repeat for more.
+        #[arg(long = "admin", value_name = "EMAIL")]
+        admins: Vec<String>,
+    },
 }
 
 fn main() -> Result<(), String> {
@@ -115,6 +128,9 @@ fn main() -> Result<(), String> {
             println!("Two-step login is off for {}. It can be set up again in the web vault.", user.email);
             Ok(())
         }),
+        Command::ImportVaultwarden { path, dry_run, admins } => {
+            runtime()?.block_on(import_vaultwarden(config, path, dry_run, admins))
+        }
         Command::Serve => runtime()?.block_on(serve(config, logs)),
     }
 }
@@ -139,6 +155,32 @@ async fn invite(
         println!("Pass this link on — it is the only way to register with this invitation:");
     }
     println!("{}", invited.link);
+    Ok(())
+}
+
+/// `uwulock-server import-vaultwarden <path> [--dry-run] [--admin <email>]…`.
+async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins: Vec<String>) -> Result<(), String> {
+    let store = uwulock_server::open_store(&config)?;
+    let settings = uwulock_api::Settings::load(&store, &config.start_settings).await?;
+    if !dry_run {
+        let backup = backups::write(&store, &config.backups(), None).await?;
+        println!("Backup of this server first: {}", backup.display());
+    }
+    let summary = uwulock_server::vaultwarden::import(
+        &store,
+        &path,
+        &config.data_dir,
+        &admins,
+        settings.default_language.code(),
+        dry_run,
+    )
+    .await?;
+    print!("{summary}");
+    if dry_run {
+        println!("Nothing was imported (--dry-run).");
+    } else {
+        println!("Imported. Point the clients at this server; they stay logged in.");
+    }
     Ok(())
 }
 

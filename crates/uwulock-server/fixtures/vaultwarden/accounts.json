@@ -1,0 +1,19 @@
+{
+  "nyu": {
+    "email": "nyu@example.com",
+    "password": "correct horse battery staple",
+    "hash": "hSh9xM6yxVVcjB6mNxFjWKWFmynwWpEF3kNX7bZ0Sow=",
+    "device": "292b14c5-1b00-4c64-b6c6-4100bd404405"
+  },
+  "mio": {
+    "email": "mio@example.com",
+    "password": "purple monkey dishwasher",
+    "hash": "Q+myEGPOG72vno1KPH9Z3/va2VMZItG1+ydZ7lQEFYg=",
+    "totp": "GEAP5UN3G2KZB5NJKOIOCRRETA6EDRJY"
+  },
+  "org": "97bb884f-372d-46da-9033-dad5b4b95d43",
+  "folder": "72336182-4b11-4737-a316-2bd53f6c7415",
+  "router": "f5b8199f-7dd6-4368-8af6-3940d5838def",
+  "shared": "9c17a515-58c7-4cf5-a95a-f56b8e967f83",
+  "count": 3
+}
