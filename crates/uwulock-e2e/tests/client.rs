@@ -232,3 +232,98 @@ async fn two_step_login_and_a_remembered_device() {
     assert!(matches!(outcome, LoginOutcome::TwoFactor { .. }), "but only that device");
     tokio::time::sleep(Duration::from_millis(1)).await;
 }
+
+/// What 0.4 adds to a sync — attachments on items, Sends — does not trip the client up: it opens
+/// the vault, and with its own crypto the file and the Send that the server kept.
+#[tokio::test]
+async fn attachments_and_sends_open_with_the_client_s_crypto() {
+    let (server, token) = start().await;
+    register(&server.url, &token).await;
+    let client = client(&server.url, "5a0e9c1e-7d3b-4d0c-9a8e-000000000003");
+    let (master, hash) = hash(&client).await;
+    let LoginOutcome::LoggedIn(session) = client.login(login(&hash)).await.unwrap() else { panic!("a login") };
+    let protected: EncString = session.protected_user_key.clone().unwrap().parse().unwrap();
+    let user_key = decrypt_user_key(&master, &protected).unwrap();
+    let bearer = format!("Bearer {}", session.access_token.as_str());
+    let http = reqwest::Client::new();
+
+    let mut item = Item::new(ItemKind::Login);
+    item.name = Zeroizing::new("Drucker".into());
+    let saved = client.create_cipher(&session.access_token, item.seal(&user_key).unwrap(), &[]).await.unwrap();
+    let id = saved["id"].as_str().unwrap().to_string();
+
+    // An attachment the way Bitwarden's clients make one: its own key, the name and the key under
+    // the item's, the file under its own key.
+    let file_key = SymmetricKey::generate();
+    let encrypted = crypto::encrypt_file(b"Papier nachfuellen", &file_key);
+    let announce = serde_json::json!({
+        "key": EncString::encrypt(&file_key.to_bytes(), &user_key).to_string(),
+        "fileName": EncString::encrypt(b"handbuch.txt", &user_key).to_string(),
+        "fileSize": encrypted.len(),
+    });
+    let answer: serde_json::Value = http
+        .post(format!("{}/api/ciphers/{id}/attachment/v2", server.url))
+        .header("authorization", &bearer)
+        .json(&announce)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let mut body = b"--b\r\nContent-Disposition: form-data; name=\"data\"; filename=\"f\"\r\n\r\n".to_vec();
+    body.extend_from_slice(&encrypted);
+    body.extend_from_slice(b"\r\n--b--\r\n");
+    let uploaded = http
+        .post(format!("{}/api{}", server.url, answer["url"].as_str().unwrap()))
+        .header("authorization", &bearer)
+        .header("content-type", "multipart/form-data; boundary=b")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert!(uploaded.status().is_success(), "{}", uploaded.text().await.unwrap());
+
+    // A text Send, the same way.
+    let seed = crypto::generate_send_seed();
+    let send_key = crypto::send_key(seed.as_ref()).unwrap();
+    let send = serde_json::json!({
+        "type": 0,
+        "key": EncString::encrypt(seed.as_ref(), &user_key).to_string(),
+        "name": EncString::encrypt(b"WLAN", &send_key).to_string(),
+        "text": { "text": EncString::encrypt(b"nyu-net", &send_key).to_string(), "hidden": false },
+        "deletionDate": "2099-01-01T00:00:00Z",
+        "disabled": false,
+    });
+    let too_far =
+        http.post(format!("{}/api/sends", server.url)).header("authorization", &bearer).json(&send).send().await;
+    assert!(!too_far.unwrap().status().is_success(), "a deletion date past 31 days is refused");
+    let mut send = send;
+    send["deletionDate"] = serde_json::json!(uwulock_store::clock::in_seconds(7 * 86_400));
+    let created =
+        http.post(format!("{}/api/sends", server.url)).header("authorization", &bearer).json(&send).send().await;
+    assert!(created.unwrap().status().is_success());
+
+    let raw = client.sync(&session.access_token).await.unwrap();
+    let sync = parse_sync(&raw).unwrap();
+    let vault = Vault::open(&sync, &user_key).unwrap();
+    let drucker = vault.item(&id).unwrap();
+    assert!(!drucker.broken);
+    assert_eq!(drucker.attachments, 1);
+    let attachment = &sync.ciphers.iter().find(|cipher| cipher.id == id).unwrap().attachments[0];
+    let name: EncString = attachment.file_name.clone().unwrap().parse().unwrap();
+    assert_eq!(name.decrypt(&user_key).unwrap().as_slice(), b"handbuch.txt");
+    let key: EncString = attachment.key.clone().unwrap().parse().unwrap();
+    // The server here was started before its address was known: the link's path is what counts.
+    let link = attachment.url.clone().unwrap();
+    let path = &link[link.find("/attachments/").unwrap()..];
+    let downloaded = http.get(format!("{}{path}", server.url)).send().await.unwrap().bytes().await.unwrap();
+    let opened = crypto::decrypt_file(&downloaded, &key.decrypt_key(&user_key).unwrap()).unwrap();
+    assert_eq!(opened.as_slice(), b"Papier nachfuellen");
+
+    assert_eq!(sync.sends.len(), 1);
+    let kept: EncString = sync.sends[0].key.clone().unwrap().parse().unwrap();
+    let seed_back = kept.decrypt(&user_key).unwrap();
+    let text: EncString = sync.sends[0].text.as_ref().unwrap().text.clone().unwrap().parse().unwrap();
+    assert_eq!(text.decrypt(&crypto::send_key(&seed_back).unwrap()).unwrap().as_slice(), b"nyu-net");
+}
