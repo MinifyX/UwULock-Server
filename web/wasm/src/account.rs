@@ -86,10 +86,33 @@ pub fn rewrap(unlocked: &Unlocked, current: &str, new_password: &str, kdf: Optio
     })
 }
 
-/// A new user key: every item and folder name encrypted again under it, the private key
-/// wrapped again, and the new user key under the master key. The body of
-/// `rotate-user-account-keys`.
-pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str) -> Result<Value> {
+/// Who else holds the user key, for a rotation: emergency contacts with their public keys, and
+/// passkeys that unlock with theirs (under the user key).
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct Holders {
+    emergency: Vec<Holder>,
+    passkeys: Vec<PasskeyHolder>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Holder {
+    id: String,
+    public_key: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PasskeyHolder {
+    id: String,
+    encrypted_public_key: String,
+}
+
+/// A new user key: every item and folder name encrypted again under it, attachments and Sends
+/// whose keys hang on it, the private key wrapped again, the new user key under the master key
+/// and for everybody in `holders`. The body of `rotate-user-account-keys`.
+pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Holders) -> Result<Value> {
     let current_hash = check_password(unlocked, password)?;
     let private = unlocked
         .private_key
@@ -121,7 +144,68 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str) -> Result<V
         }
         let mut sealed = serde_json::to_value(item.seal(&new_key)?)?;
         sealed["id"] = Value::String(item.id.clone());
+        // Attachments of an item without a key of its own hang on the user key: name and key.
+        if item.key.is_none()
+            && let Some(attachments) = unlocked.attachments.get(&item.id)
+        {
+            let mut rewrapped = serde_json::Map::new();
+            for attachment in attachments {
+                let name = match &attachment.file_name {
+                    Some(name) => name.parse::<EncString>()?.decrypt(&unlocked.user_key)?,
+                    None => continue,
+                };
+                let Some(key) = &attachment.key else { continue };
+                let key = key.parse::<EncString>()?.decrypt(&unlocked.user_key)?;
+                rewrapped.insert(
+                    attachment.id.clone(),
+                    json!({
+                        "fileName": EncString::encrypt(&name, &new_key).to_string(),
+                        "key": EncString::encrypt(&key, &new_key).to_string(),
+                    }),
+                );
+            }
+            sealed["attachments2"] = Value::Object(rewrapped);
+        }
         ciphers.push(sealed);
+    }
+    // A Send's seed is under the user key; everything else of it under the Send's own key.
+    let mut sends = Vec::with_capacity(unlocked.sends.len());
+    for send in &unlocked.sends {
+        let seed = send
+            .key
+            .as_deref()
+            .ok_or_else(|| Failure::new("crypto", "A Send has no key."))?
+            .parse::<EncString>()?
+            .decrypt(&unlocked.user_key)?;
+        sends.push(json!({
+            "id": send.id,
+            "type": send.kind,
+            "key": EncString::encrypt(&seed, &new_key).to_string(),
+            "name": send.name,
+            "notes": send.notes,
+            "text": send.text.as_ref().map(|text| json!({ "text": text.text, "hidden": text.hidden })),
+            "file": send.file.as_ref().map(|file| json!({ "fileName": file.file_name })),
+            "maxAccessCount": send.max_access_count,
+            "expirationDate": send.expiration_date,
+            "deletionDate": send.deletion_date,
+            "disabled": send.disabled.unwrap_or(false),
+            "hideEmail": send.hide_email.unwrap_or(false),
+        }));
+    }
+    let mut emergency = Vec::with_capacity(holders.emergency.len());
+    for holder in &holders.emergency {
+        let (_, key) = crate::keys::public_key(&holder.public_key)?;
+        emergency.push(json!({ "id": holder.id, "keyEncrypted": crypto::wrap_for(&key, &new_key)?.to_string() }));
+    }
+    let mut passkeys = Vec::with_capacity(holders.passkeys.len());
+    for holder in &holders.passkeys {
+        let der = holder.encrypted_public_key.parse::<EncString>()?.decrypt(&unlocked.user_key)?;
+        let key = crypto::PublicKey::from_der(&der)?;
+        passkeys.push(json!({
+            "id": holder.id,
+            "encryptedUserKey": crypto::wrap_for(&key, &new_key)?.to_string(),
+            "encryptedPublicKey": EncString::encrypt(&der, &new_key).to_string(),
+        }));
     }
     let folders: Vec<Value> = unlocked
         .vault
@@ -142,13 +226,14 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str) -> Result<V
                 "masterKeyAuthenticationHash": current_hash,
                 "masterKeyEncryptedUserKey": EncString::encrypt(&new_key.to_bytes(), &SymmetricKey::stretch(&master)).to_string(),
             },
-            "emergencyAccessUnlockData": [],
+            "emergencyAccessUnlockData": emergency,
             "organizationAccountRecoveryUnlockData": [],
+            "passkeyUnlockData": passkeys,
         },
         "accountKeys": {
             "userKeyEncryptedAccountPrivateKey": EncString::encrypt(&private, &new_key).to_string(),
             "accountPublicKey": public_key,
         },
-        "accountData": { "ciphers": ciphers, "folders": folders, "sends": [] },
+        "accountData": { "ciphers": ciphers, "folders": folders, "sends": sends },
     }))
 }

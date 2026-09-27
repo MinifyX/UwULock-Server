@@ -17,6 +17,13 @@ import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
 import { PasswordPrompt, Row } from './controls';
+import {
+  addSecurityKey,
+  removeSecurityKey,
+  securityKeys,
+  type SecurityKey,
+} from '../../lib/features';
+import { available } from '../../lib/web/webauthn';
 
 type Props = {
   status: Status;
@@ -26,8 +33,9 @@ type Props = {
 
 const AUTHENTICATOR = 0;
 const EMAIL = 1;
+const WEBAUTHN = 7;
 
-type Dialog = 'authenticator' | 'email' | 'recovery' | { disable: number } | null;
+type Dialog = 'authenticator' | 'email' | 'recovery' | 'keys' | { disable: number } | null;
 
 /**
  * Two-step login: an authenticator app, codes by mail, and the recovery code for the day the
@@ -90,6 +98,20 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
         )}
       </Row>
       <Row
+        label={t('Sicherheitsschlüssel')}
+        description={
+          on(WEBAUTHN)
+            ? t('An.')
+            : available()
+              ? t('Ein FIDO2-Schlüssel wie ein YubiKey, oder ein Passkey auf deinem Gerät.')
+              : t('Dieser Browser kann keine Sicherheitsschlüssel.')
+        }
+      >
+        <button onClick={() => setDialog('keys')} disabled={!available()}>
+          {on(WEBAUTHN) ? t('Verwalten …') : t('Einrichten …')}
+        </button>
+      </Row>
+      <Row
         label={t('Wiederherstellungscode')}
         description={t(
           'Schaltet die Zwei-Schritt-Anmeldung aus, wenn du keinen Code mehr bekommst. Schreib ihn auf und heb ihn getrennt vom Rechner auf.',
@@ -115,6 +137,14 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
         />
       )}
       {dialog === 'recovery' && <Recovery onClose={() => setDialog(null)} />}
+      {dialog === 'keys' && (
+        <SecurityKeys
+          onClose={() => {
+            setDialog(null);
+            void refresh();
+          }}
+        />
+      )}
       {dialog && typeof dialog === 'object' && (
         <PasswordPrompt
           title={t('Ausschalten?')}
@@ -385,6 +415,106 @@ function Recovery({ onClose }: { onClose: () => void }) {
         {t('Schreib ihn ab. Einmal benutzt, schaltet er jeden zweiten Schritt aus.')}
       </p>
       <code className="secret-key big">{code.match(/.{1,4}/g)?.join(' ')}</code>
+    </Modal>
+  );
+}
+
+/**
+ * Security keys for the second step: up to five, each in a slot of its own. The master password
+ * is asked once and kept while the dialog is open.
+ */
+function SecurityKeys({ onClose }: { onClose: () => void }) {
+  useLanguage();
+  const [password, setPassword] = useState<string | null>(null);
+  const [keys, setKeys] = useState<SecurityKey[]>([]);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (password === null) {
+    return (
+      <PasswordPrompt
+        title={t('Sicherheitsschlüssel')}
+        lead={t('Zuerst dein Master-Passwort.')}
+        confirm={t('Weiter')}
+        onCancel={onClose}
+        action={async (given) => {
+          setKeys(await securityKeys(given));
+          setPassword(given);
+        }}
+      />
+    );
+  }
+
+  const free = [1, 2, 3, 4, 5].find((slot) => !keys.some((key) => key.id === slot));
+  const run = async (work: () => Promise<void>, done: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await work();
+      setKeys(await securityKeys(password));
+      toast(done);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={t('Sicherheitsschlüssel')}
+      onCancel={onClose}
+      footer={
+        <>
+          <span className="spacer" />
+          <button className="primary" onClick={onClose}>
+            {t('Fertig')}
+          </button>
+        </>
+      }
+    >
+      <div className="form">
+        {keys.map((key) => (
+          <Row key={key.id} label={key.name || t('Schlüssel {n}', { n: key.id })}>
+            <button
+              className="quiet danger-text"
+              disabled={busy}
+              onClick={() => void run(() => removeSecurityKey(key.id, password), t('Entfernt.'))}
+            >
+              {t('Entfernen')}
+            </button>
+          </Row>
+        ))}
+        {free !== undefined && (
+          <>
+            <label className="field">
+              <span>{t('Name des neuen Schlüssels')}</span>
+              <input value={name} maxLength={50} onChange={(e) => setName(e.target.value)} />
+            </label>
+            <div className="form-actions">
+              <span className="spacer" />
+              <button
+                className="primary"
+                disabled={busy || !name.trim()}
+                onClick={() =>
+                  void run(async () => {
+                    await addSecurityKey(name.trim(), password, free);
+                    setName('');
+                  }, t('Sicherheitsschlüssel eingerichtet ✧'))
+                }
+              >
+                {busy ? t('Berühre den Schlüssel …') : t('Schlüssel hinzufügen')}
+              </button>
+            </div>
+          </>
+        )}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
     </Modal>
   );
 }

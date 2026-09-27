@@ -14,6 +14,8 @@ export type AccountInfo = {
   mail: boolean;
   passwordHints: boolean;
   rememberTwoFactor: boolean;
+  hibp: boolean;
+  maxFileMb: number;
   hasHint: boolean;
   twoFactor: number[];
   created: string;
@@ -202,7 +204,26 @@ export async function rotateKeys(password: string) {
   const keys = profile?.accountKeys as Record<string, Record<string, string>> | null | undefined;
   const publicKey = keys?.publicKeyEncryptionKeyPair?.publicKey;
   if (!publicKey) throw { kind: 'invalid', message: 'This account has no key pair.' };
-  const body = await callJson<unknown>((core) => core.rotate(password, publicKey));
+  // Everybody else who holds the user key gets the new one too.
+  const trusted = await request<{
+    data: { id: string; granteeId: string | null; status: number }[];
+  }>('/api/emergency-access/trusted');
+  const emergency = [];
+  for (const contact of trusted.data.filter((c) => c.status >= 2 && c.granteeId)) {
+    const key = await request<{ publicKey: string }>(
+      `/api/users/${encodeURIComponent(contact.granteeId!)}/public-key`,
+    );
+    emergency.push({ id: contact.id, publicKey: key.publicKey });
+  }
+  const passkeys = (
+    await request<{ data: { id: string; prfStatus: number; encryptedPublicKey: string | null }[] }>(
+      '/api/webauthn',
+    )
+  ).data
+    .filter((passkey) => passkey.prfStatus === 0 && passkey.encryptedPublicKey)
+    .map((passkey) => ({ id: passkey.id, encryptedPublicKey: passkey.encryptedPublicKey }));
+  const holders = JSON.stringify({ emergency, passkeys });
+  const body = await callJson<unknown>((core) => core.rotate(password, publicKey, holders));
   await request('/api/accounts/key-management/rotate-user-account-keys', { body });
   await endSession();
 }

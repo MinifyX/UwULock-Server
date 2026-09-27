@@ -666,3 +666,145 @@ a {
   padding: 4px 8px;
   font-size: 12.5px;
 }
+
+/* ── Attachments, Sends, the password check ────────────── */
+
+.attachment-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.attachment-add {
+  padding: 6px 12px 8px;
+}
+
+.detail-line {
+  margin: 0;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--uwu-muted);
+}
+
+.detail-card > button.quiet {
+  justify-self: start;
+  margin: 2px 8px 8px;
+}
+
+.multiline {
+  white-space: pre-wrap;
+}
+
+.send-link {
+  font-size: 12.5px;
+  user-select: all;
+}
+
+.send-text {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--uwu-mono);
+  font-size: 13.5px;
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-border);
+  background: var(--uwu-canvas);
+}
+
+.send-file {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.field-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* The password check spans the list and the detail column. */
+.report-pane {
+  grid-column: 2 / -1;
+  min-width: 0;
+  overflow: auto;
+  padding: 20px 24px;
+}
+
+.report-pane .detail {
+  max-width: 820px;
+  margin: 0 auto;
+}
+
+/* Fingerprint phrases: read out word by word, so large and spaced. */
+.fingerprint {
+  margin: 4px 0 8px;
+  padding: 12px 14px;
+  text-align: center;
+  font-family: var(--uwu-mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  word-spacing: 0.25em;
+  color: var(--uwu-pink-ink);
+  border-radius: var(--uwu-radius-control);
+  background: var(--uwu-pink-tint);
+}
+
+.login-other {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--uwu-hairline);
+}
+
+.login-other button {
+  flex: 1 1 auto;
+}
+
+.copy-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.copy-field code {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-border);
+  background: var(--uwu-canvas);
+}
+
+.emergency-items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  max-height: 55vh;
+  overflow: auto;
+}
+
+.emergency-items li {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-hairline);
+  background: var(--uwu-surface);
+  overflow-wrap: anywhere;
+}
+
+.detail-card > .field-hint {
+  margin: 0;
+  padding: 0 16px 6px;
+}

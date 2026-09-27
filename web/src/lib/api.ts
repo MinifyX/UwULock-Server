@@ -11,6 +11,7 @@ import { emit, listen } from './events';
 import { getSettings } from './settings';
 import { call, callJson } from './web/core';
 import { ApiError, currentSession, deviceId, deviceType, request, setSession } from './web/http';
+import * as webauthn from './web/webauthn';
 
 export type Failure = { kind: string; message: string };
 
@@ -50,6 +51,8 @@ export type TwoFactorMethod = {
   kind: 'authenticator' | 'email' | 'yubikey' | 'duo' | 'webauthn' | 'u2f' | 'other';
   supported: boolean;
   hint: string | null;
+  /** For a security key: the options the server gave for it. */
+  options?: Record<string, unknown> | null;
 };
 
 export type LoginStep =
@@ -264,7 +267,7 @@ const TWO_FACTOR_KINDS: Record<string, [TwoFactorMethod['kind'], boolean]> = {
   '1': ['email', true],
   '2': ['duo', false],
   '3': ['yubikey', false],
-  '7': ['webauthn', false],
+  '7': ['webauthn', true],
 };
 
 async function token(extra: Record<string, string>): Promise<LoginStep> {
@@ -291,15 +294,16 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
     if (error instanceof ApiError && error.body && typeof error.body === 'object') {
       const refusal = error.body as Record<string, unknown>;
       const providers = refusal.TwoFactorProviders2 as
-        Record<string, { Email?: string } | null> | undefined;
+        Record<string, ({ Email?: string } & Record<string, unknown>) | null> | undefined;
       if (providers) {
         p.methods = Object.entries(providers).map(([provider, details]) => {
           const [kind, supported] = TWO_FACTOR_KINDS[provider] ?? ['other', false];
           return {
             provider: Number(provider),
             kind,
-            supported,
+            supported: supported && (kind !== 'webauthn' || webauthn.available()),
             hint: details?.Email ?? null,
+            options: kind === 'webauthn' ? details : null,
           };
         });
         const message = extra.twoFactorToken ? error.message : null;
@@ -336,9 +340,145 @@ export const login = async (
 export const loginTwoFactor = (provider: number, code: string, remember: boolean) =>
   token({
     twoFactorProvider: String(provider),
-    twoFactorToken: code.trim().replace(/\s/g, ''),
+    twoFactorToken: provider === 7 ? code : code.trim().replace(/\s/g, ''),
     twoFactorRemember: remember ? '1' : '0',
   });
+
+/** The second step with a security key: it signs the server's challenge. */
+export async function loginSecurityKey(method: TwoFactorMethod, remember: boolean) {
+  if (!method.options) throw { kind: 'invalid', message: 'The server sent no challenge.' };
+  const credential = await webauthn.get(webauthn.requestOptions(method.options));
+  return loginTwoFactor(7, JSON.stringify(webauthn.assertionJson(credential)), remember);
+}
+
+/** A login without the master password: the tokens are here, the key came another way. */
+async function finishKeyless(
+  body: Record<string, unknown>,
+  unlock: (email: string, kdf: string) => Promise<boolean>,
+): Promise<LoginStep> {
+  const claims = JSON.parse(
+    atob(String(body.access_token).split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')),
+  ) as { email: string };
+  const email = claims.email;
+  setSession({
+    email,
+    accessToken: String(body.access_token),
+    refreshToken: String(body.refresh_token ?? ''),
+    expiresAt: Date.now() + Number(body.expires_in ?? 3600) * 1000,
+  });
+  const kdf = await prelogin(email);
+  unlocked = await unlock(email, kdf);
+  if (unlocked) await sync();
+  return { step: 'done', status: await announce() };
+}
+
+function loginForm(extra: Record<string, string>): URLSearchParams {
+  const device = deviceType();
+  return new URLSearchParams({
+    scope: 'api offline_access',
+    client_id: 'web',
+    deviceType: String(device.kind),
+    deviceIdentifier: deviceId(),
+    deviceName: device.name,
+    ...extra,
+  });
+}
+
+/**
+ * Log in with a passkey the browser picks. One that can unlock (PRF) opens the vault too;
+ * with another, the vault stays locked until the master password.
+ */
+export async function loginPasskey(): Promise<LoginStep> {
+  const offer = await request<{ options: Record<string, unknown>; token: string }>(
+    '/identity/accounts/webauthn/assertion-options',
+    { auth: false },
+  );
+  const salt = await call((core) => core.prfSalt());
+  const credential = await webauthn.get(webauthn.requestOptions(offer.options, salt));
+  let body: Record<string, unknown>;
+  try {
+    body = await request<Record<string, unknown>>('/identity/connect/token', {
+      form: loginForm({
+        grant_type: 'webauthn',
+        token: offer.token,
+        deviceResponse: JSON.stringify(webauthn.assertionJson(credential)),
+      }),
+      auth: false,
+    });
+  } catch (error) {
+    throw failure(error);
+  }
+  const prf = webauthn.prfOutput(credential);
+  const option = (body.UserDecryptionOptions as Record<string, unknown> | undefined)
+    ?.WebAuthnPrfOption as Record<string, string> | undefined;
+  return finishKeyless(body, async (email, kdf) => {
+    if (!prf || !option) return false;
+    await call((core) =>
+      core.unlockWithPasskey(
+        email,
+        kdf,
+        prf,
+        option.EncryptedPrivateKey!,
+        option.EncryptedUserKey!,
+      ),
+    );
+    return true;
+  });
+}
+
+export type DeviceLogin = { id: string; fingerprint: string; accessCode: string; email: string };
+
+/** Ask a device that is logged in already to let this one in. */
+export async function startDeviceLogin(email: string): Promise<DeviceLogin> {
+  const address = email.trim().toLowerCase();
+  const made = await callJson<{ publicKey: string; fingerprint: string; accessCode: string }>(
+    (core) => core.startDeviceLogin(address),
+  );
+  const answer = await request<{ id: string }>('/api/auth-requests', {
+    body: {
+      email: address,
+      publicKey: made.publicKey,
+      deviceIdentifier: deviceId(),
+      accessCode: made.accessCode,
+      type: 0,
+    },
+    auth: false,
+  });
+  return {
+    id: answer.id,
+    fingerprint: made.fingerprint,
+    accessCode: made.accessCode,
+    email: address,
+  };
+}
+
+/** Whether the other device answered: `null` while it has not, the login once it said yes. */
+export async function checkDeviceLogin(started: DeviceLogin): Promise<LoginStep | 'denied' | null> {
+  const answer = await request<Record<string, unknown>>(
+    `/api/auth-requests/${encodeURIComponent(started.id)}/response?code=${encodeURIComponent(started.accessCode)}`,
+    { auth: false },
+  );
+  if (answer.requestApproved === false) return 'denied';
+  if (answer.requestApproved !== true || !answer.key) return null;
+  let body: Record<string, unknown>;
+  try {
+    body = await request<Record<string, unknown>>('/identity/connect/token', {
+      form: loginForm({
+        grant_type: 'password',
+        username: started.email,
+        password: started.accessCode,
+        authRequest: started.id,
+      }),
+      auth: false,
+    });
+  } catch (error) {
+    throw failure(error);
+  }
+  return finishKeyless(body, async (email, kdf) => {
+    await call((core) => core.finishDeviceLogin(email, kdf, String(answer.key)));
+    return true;
+  });
+}
 
 export const loginNewDevice = async (_code: string): Promise<LoginStep> => {
   throw { kind: 'unsupported', message: 'This server does not ask for new devices.' };

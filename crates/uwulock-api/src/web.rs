@@ -16,6 +16,12 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self' 'wa
      style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; \
      worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
+/// The WebAuthn connectors are framed by Bitwarden's browser extensions and desktop app, which
+/// is all they are for: framing is allowed for those, and nobody else. They hold no key.
+const CONNECTOR_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+     img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; \
+     frame-ancestors 'self' chrome-extension: moz-extension: safari-web-extension: ms-browser-extension: file:";
+
 pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/", get(app)).route("/admin", get(app)).route("/admin/", get(app))
 }
@@ -72,7 +78,10 @@ fn respond(asset: &'static Asset, request: &HeaderMap) -> Response {
     if let Some(encoding) = encoding {
         headers.insert(header::CONTENT_ENCODING, HeaderValue::from_static(encoding));
     }
-    if asset.content_type.starts_with("text/html") {
+    if asset.path.ends_with("-connector.html") {
+        // With frame-ancestors, browsers ignore X-Frame-Options.
+        headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONNECTOR_POLICY));
+    } else if asset.content_type.starts_with("text/html") {
         headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONTENT_SECURITY_POLICY));
         headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
         // A page that opened the vault gets no handle on it, to send it somewhere else later.
@@ -93,6 +102,21 @@ pub(crate) fn is_built() -> bool {
 mod tests {
     use crate::test_support::*;
     use axum::http::StatusCode;
+
+    #[tokio::test]
+    async fn only_the_connectors_may_be_framed_by_the_extensions() {
+        let server = TestServer::new().await;
+        let page = server.get("/webauthn-connector.html").await;
+        if page.status() == StatusCode::NOT_FOUND {
+            // A build without the web vault: nothing to frame.
+            return;
+        }
+        let policy = page.headers()["content-security-policy"].to_str().unwrap().to_string();
+        assert!(policy.contains("frame-ancestors 'self' chrome-extension: moz-extension:"), "{policy}");
+        let vault = server.get("/").await;
+        assert!(vault.headers()["content-security-policy"].to_str().unwrap().contains("frame-ancestors 'none'"));
+        assert_eq!(vault.headers()["x-frame-options"], "DENY");
+    }
 
     #[tokio::test]
     async fn the_root_answers_with_or_without_a_build() {

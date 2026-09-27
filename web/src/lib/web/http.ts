@@ -197,6 +197,47 @@ export async function request<T = unknown>(path: string, options: Options = {}):
 }
 
 /**
+ * An encrypted file to the server, as the multipart form Bitwarden's uploads take: `data` is the
+ * file, `name` what the part is called (for attachments, their encrypted name).
+ */
+export async function upload(
+  path: string,
+  data: Uint8Array,
+  name: string,
+  fields: Record<string, string> = {},
+): Promise<unknown> {
+  if (session && session.expiresAt - Date.now() < 60_000) await refresh();
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  form.append('data', new Blob([data as BlobPart], { type: 'application/octet-stream' }), name);
+  const extra: Record<string, string> = session
+    ? { Authorization: `Bearer ${session.accessToken}` }
+    : {};
+  let response: Response;
+  try {
+    response = await fetch(path, { method: 'POST', headers: headers(extra), body: form });
+  } catch {
+    throw new ApiError(0, messageOf(0, null), null);
+  }
+  const body = await parse(response);
+  if (!response.ok) throw new ApiError(response.status, messageOf(response.status, body), body);
+  return body;
+}
+
+/** An encrypted file by a download link with its token in it: no access token needed. */
+export async function fetchBytes(url: string): Promise<Uint8Array> {
+  let response: Response;
+  try {
+    response = await fetch(url, { headers: { Accept: 'application/octet-stream' } });
+  } catch {
+    throw new ApiError(0, messageOf(0, null), null);
+  }
+  if (!response.ok)
+    throw new ApiError(response.status, messageOf(response.status, await parse(response)), null);
+  return new Uint8Array(await response.arrayBuffer());
+}
+
+/**
  * A file from the server, with the access token: for downloads the browser cannot fetch itself.
  * With a `body`, it is asked for by POST, with that JSON.
  */
