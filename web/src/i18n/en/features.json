@@ -169,5 +169,7 @@
   "Öffnet …": "Opening …",
   "Übernehmen …": "Take over …",
   "„{name}“ ist danach weg, auf jedem Gerät.": "“{name}” is gone after that, on every device.",
-  "„{name}“ meldet danach nicht mehr an.": "“{name}” won't log in after that."
+  "„{name}“ meldet danach nicht mehr an.": "“{name}” won't log in after that.",
+  "Annehmen": "Accept",
+  "Angenommen ✧": "Accepted ✧"
 }

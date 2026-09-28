@@ -366,7 +366,7 @@ export type MyInvitations = {
 
 export const myInvitations = () => request<MyInvitations>('/uwu/v1/invitations');
 export const invitePerson = (email: string) =>
-  request<{ email: string; link: string; mailed: boolean; expires: string }>(
+  request<{ email: string; link: string | null; mailed: boolean; expires: string }>(
     '/uwu/v1/invitations',
     { body: { email } },
   );

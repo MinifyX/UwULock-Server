@@ -1,7 +1,7 @@
 //! Emergency access, the way Bitwarden's clients ask for it.
 //!
-//! The grantor names somebody with an account on this server; they accept from the mail (or at
-//! once, when the server sends no mail); the grantor confirms them and hands over the user key,
+//! The grantor names somebody by address; whoever has an account with it accepts, from the mail
+//! or in their own settings; the grantor confirms them and hands over the user key,
 //! wrapped for the contact's public key. When the contact asks for access, the grantor is told,
 //! and unless they say no within the wait, the contact may see the vault — or, for a takeover,
 //! set a new master password for it.
@@ -129,7 +129,7 @@ async fn trusted(State(state): State<AppState>, session: Session) -> ApiResult<J
 
 async fn granted(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let mut data = Vec::new();
-    for access in state.store.emergency_granted(&session.user.id).await? {
+    for access in state.store.emergency_granted(&session.user.id, &session.user.email).await? {
         data.push(render_grantor(&state, &access).await?);
     }
     Ok(Json(out::list(data)))
@@ -194,25 +194,33 @@ fn invitation_link(state: &AppState, access: &EmergencyAccess, grantor: &User, t
     )
 }
 
-/// Invite a contact, or — without mail — let one with an account in at once.
+/// Write back a change to `access`, or say that it changed in between.
+async fn save(state: &AppState, access: EmergencyAccess) -> ApiResult<EmergencyAccess> {
+    state
+        .store
+        .save_emergency_access(access)
+        .await?
+        .ok_or_else(|| ApiError::bad("This emergency access changed in the meantime. Load it again and try once more."))
+}
+
+/// Tell the contact about an invitation — by mail, when there is an account with the address and
+/// the server sends mail. The answer is the same whether there is one or not, so nobody learns
+/// here which addresses have an account; whoever has one also finds the invitation in their
+/// settings, and accepts it there.
 async fn send_invitation(state: &AppState, grantor: &User, access: &mut EmergencyAccess) -> ApiResult<()> {
-    let grantee = state.store.user_by_email(&access.email).await?.ok_or_else(|| {
-        ApiError::bad(
-            "Only people with an account on this server can be emergency contacts. Ask an admin to invite them first.",
-        )
-    })?;
-    if state.mailer.enabled() {
-        crate::identity::mail_allowed(state, &access.email, Some(&grantor.id))?;
-        let token = new_token(access);
-        *access = state.store.save_emergency_access(access.clone()).await?;
-        let link = invitation_link(state, access, grantor, &token);
-        tell(state, &grantee, Mail::EmergencyInvited { grantor: called(grantor), link });
-    } else {
-        access.grantee_id = Some(grantee.id.clone());
-        access.status = ACCEPTED;
-        access.token_hash = None;
-        *access = state.store.save_emergency_access(access.clone()).await?;
+    // Counted before anything is looked up, so a list of addresses cannot be tried quickly.
+    if !state.limits.mail.take(format!("emergency-invite:{}", grantor.id)) {
+        return Err(ApiError::too_many("Too many invitations. Wait a few minutes and try again."));
     }
+    let grantee = state.store.user_by_email(&access.email).await?;
+    let Some(grantee) = grantee.filter(|_| state.mailer.enabled()) else { return Ok(()) };
+    if crate::identity::mail_allowed(state, &access.email, Some(&grantor.id)).is_err() {
+        return Ok(());
+    }
+    let token = new_token(access);
+    *access = save(state, access.clone()).await?;
+    let link = invitation_link(state, access, grantor, &token);
+    tell(state, &grantee, Mail::EmergencyInvited { grantor: called(grantor), link });
     Ok(())
 }
 
@@ -226,7 +234,7 @@ async fn invite(State(state): State<AppState>, session: Session, Json(data): Jso
         return Err(ApiError::bad(format!("Grantee user already invited: {email}")));
     }
     let now = clock::now();
-    let mut access = EmergencyAccess {
+    let access = EmergencyAccess {
         id: uuid::Uuid::new_v4().to_string(),
         grantor_id: session.user.id.clone(),
         grantee_id: None,
@@ -241,6 +249,7 @@ async fn invite(State(state): State<AppState>, session: Session, Json(data): Jso
         created: now.clone(),
         revision: now,
     };
+    let mut access = state.store.add_emergency_access(access).await?;
     send_invitation(&state, &session.user, &mut access).await?;
     log(&state, &session, format!("invited {}", access.email)).await;
     Ok(StatusCode::OK)
@@ -279,14 +288,19 @@ async fn update(
     if let Some(key) = data.key_encrypted.filter(|key| !key.is_empty()) {
         access.key_encrypted = Some(key);
     }
-    let access = state.store.save_emergency_access(access).await?;
+    let access = save(&state, access).await?;
     Ok(Json(render_grantee(&state, &access).await?))
 }
 
-/// Either side may end it.
+/// Either side may end it, and whoever it is for may turn an invitation down.
 async fn delete(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<StatusCode> {
     let access = state.store.emergency_access(&id).await?.ok_or_else(invalid)?;
-    if access.grantor_id != session.user.id && access.grantee_id.as_deref() != Some(session.user.id.as_str()) {
+    // An invitation to the session's address may be turned down too.
+    let invited = access.grantee_id.is_none() && access.status == INVITED && access.email == session.user.email;
+    if access.grantor_id != session.user.id
+        && access.grantee_id.as_deref() != Some(session.user.id.as_str())
+        && !invited
+    {
         return Err(invalid());
     }
     state.store.delete_emergency_access(&id).await?;
@@ -296,10 +310,14 @@ async fn delete(State(state): State<AppState>, session: Session, Path(id): Path<
 
 #[derive(Deserialize)]
 struct Accept {
-    token: String,
+    /// From the mail's link; without it, the invitation is accepted from the contact's own
+    /// settings, logged in with the address it is for.
+    #[serde(default)]
+    token: Option<String>,
 }
 
-/// The contact accepts, from the link in the mail, logged in with the address it went to.
+/// The contact accepts, from the link in the mail or in their settings, logged in with the
+/// address the invitation is for.
 async fn accept(
     State(state): State<AppState>,
     session: Session,
@@ -307,10 +325,13 @@ async fn accept(
     Json(data): Json<Accept>,
 ) -> ApiResult<StatusCode> {
     let mut access = state.store.emergency_access(&id).await?.ok_or_else(invalid)?;
-    let token_ok = access
-        .token_hash
-        .as_deref()
-        .is_some_and(|hash| auth::constant_time_eq(hash, &auth::sha256(data.token.trim().as_bytes())));
+    let token_ok = match data.token.as_deref().map(str::trim).filter(|token| !token.is_empty()) {
+        Some(token) => access
+            .token_hash
+            .as_deref()
+            .is_some_and(|hash| auth::constant_time_eq(hash, &auth::sha256(token.as_bytes()))),
+        None => true,
+    };
     let days = i64::from(state.settings().invitation_days);
     let fresh = access.revision > clock::in_seconds(-days * 86_400);
     if access.status != INVITED || !token_ok || !fresh {
@@ -322,7 +343,7 @@ async fn accept(
     access.grantee_id = Some(session.user.id.clone());
     access.status = ACCEPTED;
     access.token_hash = None;
-    let access = state.store.save_emergency_access(access).await?;
+    let access = save(&state, access).await?;
     if let Some(grantor) = state.store.user(&access.grantor_id).await? {
         tell(&state, &grantor, Mail::EmergencyAccepted { grantee: called(&session.user) });
     }
@@ -348,7 +369,7 @@ async fn confirm(
     let grantee = state.store.user(access.grantee_id.as_deref().unwrap_or_default()).await?.ok_or_else(invalid)?;
     access.status = CONFIRMED;
     access.key_encrypted = Some(data.key);
-    let access = state.store.save_emergency_access(access).await?;
+    let access = save(&state, access).await?;
     tell(&state, &grantee, Mail::EmergencyConfirmed { grantor: called(&session.user) });
     log(&state, &session, format!("confirmed {} as emergency contact", grantee.email)).await;
     Ok(Json(render_grantee(&state, &access).await?))
@@ -365,7 +386,7 @@ async fn initiate(State(state): State<AppState>, session: Session, Path(id): Pat
     access.status = RECOVERY_ASKED;
     access.recovery_asked = Some(now.clone());
     access.last_notification = Some(now);
-    let access = state.store.save_emergency_access(access).await?;
+    let access = save(&state, access).await?;
     tell(
         &state,
         &grantor,
@@ -386,7 +407,7 @@ async fn approve(State(state): State<AppState>, session: Session, Path(id): Path
         return Err(invalid());
     }
     access.status = RECOVERY_APPROVED;
-    let access = state.store.save_emergency_access(access).await?;
+    let access = save(&state, access).await?;
     if let Some(grantee) = state.store.user(access.grantee_id.as_deref().unwrap_or_default()).await? {
         tell(&state, &grantee, Mail::EmergencyApproved { grantor: called(&session.user) });
     }
@@ -400,7 +421,7 @@ async fn reject(State(state): State<AppState>, session: Session, Path(id): Path<
     }
     access.status = CONFIRMED;
     access.recovery_asked = None;
-    let access = state.store.save_emergency_access(access).await?;
+    let access = save(&state, access).await?;
     if let Some(grantee) = state.store.user(access.grantee_id.as_deref().unwrap_or_default()).await? {
         tell(&state, &grantee, Mail::EmergencyRejected { grantor: called(&session.user) });
     }
@@ -655,7 +676,7 @@ mod tests {
         // Two days pass.
         let mut access = server.state.store.emergency_access(&id).await.unwrap().unwrap();
         access.recovery_asked = Some(uwulock_store::clock::in_seconds(-2 * 86_400));
-        server.state.store.save_emergency_access(access).await.unwrap();
+        server.state.store.save_emergency_access(access).await.unwrap().unwrap();
         super::tend(&server.state).await.unwrap();
         server
             .wait_for_mail(|mail| mail.to == "nyu@example.com" && mail.subject.contains("hat jetzt Notfallzugriff"))
@@ -675,13 +696,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn only_people_with_an_account_are_contacts() {
+    async fn an_invitation_says_nothing_about_accounts_and_is_accepted_in_the_settings() {
         let server = TestServer::new().await;
         let nyu = server.account("nyu@example.com").await;
-        for (email, kind, days) in [("nobody@example.com", 0, 1), ("nyu@example.com", 0, 1), ("x@example.com", 5, 1)] {
+        let friend = server.account("friend@example.com").await;
+        for (email, kind, days) in [("nyu@example.com", 0, 1), ("x@example.com", 5, 1)] {
             let invite = json!({"email": email, "type": kind, "waitTimeDays": days});
             let response = server.call("POST", "/api/emergency-access/invite", Some(&nyu.token), invite).await;
             assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{email}");
         }
+        for email in ["nobody@example.com", "friend@example.com"] {
+            let invite = json!({"email": email, "type": 0, "waitTimeDays": 1});
+            let response = server.call("POST", "/api/emergency-access/invite", Some(&nyu.token), invite).await;
+            assert_eq!(response.status(), StatusCode::OK, "{email}: the same answer, account or not");
+        }
+        let trusted = json(server.get_as(&nyu.token, "/api/emergency-access/trusted").await).await;
+        assert!(trusted["data"].as_array().unwrap().iter().all(|contact| contact["status"] == 0), "nobody accepted");
+
+        // The invitation waits in the contact's settings, and is accepted there.
+        let granted = json(server.get_as(&friend.token, "/api/emergency-access/granted").await).await;
+        assert_eq!(granted["data"][0]["status"], 0);
+        let id = granted["data"][0]["id"].as_str().unwrap().to_string();
+        let path = format!("/api/emergency-access/{id}/accept");
+        assert_eq!(server.call("POST", &path, Some(&nyu.token), json!({})).await.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(server.call("POST", &path, Some(&friend.token), json!({})).await.status(), StatusCode::OK);
+        let trusted = json(server.get_as(&nyu.token, "/api/emergency-access/trusted").await).await;
+        let friend_row =
+            trusted["data"].as_array().unwrap().iter().find(|c| c["email"] == "friend@example.com").unwrap();
+        assert_eq!(friend_row["status"], 1);
+    }
+
+    #[tokio::test]
+    async fn two_steps_at_once_do_not_undo_each_other() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let invite = json!({"email": "friend@example.com", "type": 0, "waitTimeDays": 1});
+        server.call("POST", "/api/emergency-access/invite", Some(&nyu.token), invite).await;
+        let id = json(server.get_as(&nyu.token, "/api/emergency-access/trusted").await).await["data"][0]["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let read = server.state.store.emergency_access(&id).await.unwrap().unwrap();
+        server.state.store.delete_emergency_access(&id).await.unwrap();
+        assert!(server.state.store.save_emergency_access(read).await.unwrap().is_none(), "a deleted one stays gone");
+        assert!(server.state.store.emergency_access(&id).await.unwrap().is_none());
     }
 }

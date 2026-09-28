@@ -291,7 +291,13 @@ try {
     .getByRole('button', { name: 'Einladen', exact: true })
     .click();
   await nyu.getByText('Eingeladen ✧').waitFor();
-  // Without mail, an invitation to an account is accepted at once.
+  // Without mail the invitation waits in the contact's settings, and is accepted there.
+  await settings(friend, 'Notfallzugriff');
+  await friend.getByRole('button', { name: 'Annehmen', exact: true }).click();
+  await friend.getByText('Angenommen ✧').waitFor();
+  await friend.keyboard.press('Escape');
+  await nyu.keyboard.press('Escape');
+  await settings(nyu, 'Notfallzugriff');
   await nyu.getByRole('button', { name: 'Bestätigen …' }).click();
   await nyu.locator('.modal .fingerprint').waitFor();
   await snap(nyu, 'emergency-confirm');

@@ -15,7 +15,7 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwulock_mail::{Language, Mail};
-use uwulock_store::{Event, UserOverview, backups, clock, normalize_email, with_suffix};
+use uwulock_store::{Event, User, UserOverview, backups, clock, normalize_email, with_suffix};
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -71,11 +71,7 @@ pub struct Invited {
 /// command line (none). The mail goes out if the server can send any; the link comes back
 /// either way, to be passed on by hand.
 pub async fn invite(state: &AppState, email: &str, admin: bool, invited_by: Option<String>) -> ApiResult<Invited> {
-    let email = normalize_email(email);
-    let (local, domain) = email.split_once('@').unwrap_or_default();
-    if local.is_empty() || !domain.contains('.') || email.chars().any(char::is_whitespace) {
-        return Err(ApiError::bad("That is not an email address."));
-    }
+    let email = checked_address(email)?;
     if state.store.user_by_email(&email).await?.is_some() {
         return Err(ApiError::bad("There is an account for this address already."));
     }
@@ -87,25 +83,80 @@ pub async fn invite(state: &AppState, email: &str, admin: bool, invited_by: Opti
         .store
         .invite(&email, auth::sha256(token.as_bytes()), admin, invited_by.clone(), language.code(), expires)
         .await?;
-    let link = format!("{}/#/finish-signup?token={token}&email={}", state.config.public, encode(&email));
-    let mut mailed = false;
-    if state.mailer.enabled() {
-        let inviter = match &invited_by {
-            Some(id) => state.store.user(id).await?.map(|user| user.name.unwrap_or(user.email)),
-            None => None,
-        };
-        let mail = Mail::Invitation {
-            link: link.clone(),
-            server: state.host().to_string(),
-            invited_by: inviter,
-            expires: long_date(&invitation.expires, language),
-        };
-        match state.mailer.send(&email, &mail, language).await {
-            Ok(()) => mailed = true,
-            Err(error) => tracing::warn!(%error, %email, "the invitation mail did not go out"),
+    let link = signup_link(state, &token, &email);
+    let mailed =
+        state.mailer.enabled() && mail_invitation(state, &email, &link, invited_by.as_deref(), &invitation).await;
+    Ok(Invited { email, token, link, mailed, expires: invitation.expires })
+}
+
+/// An invitation by a user who is no admin, within their `quota`. Unlike an admin, they do not
+/// learn whether the address has an account — the answer is the same, and a mail only goes to
+/// an address without one — nor do they get the link while the server can mail it: whoever
+/// holds the link can register the address. `link` is empty then.
+pub async fn invite_as_user(state: &AppState, email: &str, user: &User, quota: i64) -> ApiResult<Invited> {
+    let email = checked_address(email)?;
+    let settings = state.settings();
+    let token = auth::random_token(32);
+    let expires = clock::in_seconds(i64::from(settings.invitation_days) * 86_400);
+    let language = settings.default_language;
+    let invitation = state
+        .store
+        .invite_within(&email, auth::sha256(token.as_bytes()), &user.id, language.code(), expires, quota)
+        .await?
+        .ok_or_else(|| ApiError::bad(format!("You have invited as many people as you may ({quota}).")))?;
+    let link = signup_link(state, &token, &email);
+    let mailer = state.mailer.enabled();
+    if mailer && state.store.user_by_email(&email).await?.is_none() {
+        mail_invitation(state, &email, &link, Some(&user.id), &invitation).await;
+    }
+    Ok(Invited {
+        email,
+        token,
+        link: if mailer { String::new() } else { link },
+        mailed: mailer,
+        expires: invitation.expires,
+    })
+}
+
+fn checked_address(email: &str) -> ApiResult<String> {
+    let email = normalize_email(email);
+    let (local, domain) = email.split_once('@').unwrap_or_default();
+    if local.is_empty() || !domain.contains('.') || email.chars().any(char::is_whitespace) {
+        return Err(ApiError::bad("That is not an email address."));
+    }
+    Ok(email)
+}
+
+fn signup_link(state: &AppState, token: &str, email: &str) -> String {
+    format!("{}/#/finish-signup?token={token}&email={}", state.config.public, encode(email))
+}
+
+/// The invitation mail; whether it went out.
+async fn mail_invitation(
+    state: &AppState,
+    email: &str,
+    link: &str,
+    invited_by: Option<&str>,
+    invitation: &uwulock_store::Invitation,
+) -> bool {
+    let language = state.settings().default_language;
+    let inviter = match invited_by {
+        Some(id) => state.store.user(id).await.ok().flatten().map(|user| user.name.unwrap_or(user.email)),
+        None => None,
+    };
+    let mail = Mail::Invitation {
+        link: link.to_string(),
+        server: state.host().to_string(),
+        invited_by: inviter,
+        expires: long_date(&invitation.expires, language),
+    };
+    match state.mailer.send(email, &mail, language).await {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(%error, %email, "the invitation mail did not go out");
+            false
         }
     }
-    Ok(Invited { email, token, link, mailed, expires: invitation.expires })
 }
 
 fn encode(text: &str) -> String {
