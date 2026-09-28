@@ -299,6 +299,7 @@ async fn create_file(
     if size as u64 > limit {
         return Err(files::too_large(limit));
     }
+    files::check_storage(&state, &session.user.id, size).await?;
     let file_name = data
         .file
         .take()

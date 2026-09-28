@@ -27,7 +27,13 @@ const CONNECTOR_POLICY: &str = "default-src 'self'; script-src 'self'; style-src
      chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension: safari-web-extension:";
 
 pub(crate) fn routes() -> Router<AppState> {
-    Router::new().route("/", get(app)).route("/admin", get(app)).route("/admin/", get(app))
+    Router::new()
+        .route("/", get(app))
+        .route("/admin", get(app))
+        .route("/admin/", get(app))
+        // A file request's link on a send domain (docs/uwu-api.md §11.1): the page reads the
+        // request from the path and the secret from after the `#`.
+        .route("/r/{access_id}", get(app))
 }
 
 async fn app(headers: HeaderMap) -> Response {

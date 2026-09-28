@@ -170,6 +170,23 @@ impl Tokens {
         self.verify_link(token, "send").map(|claims| claims.sub)
     }
 
+    /// The token a file request's upload page gets once the link (and its password) opened:
+    /// it may start submissions to `request_id` for an hour.
+    pub fn upload_token(&self, request_id: &str) -> (String, i64) {
+        let seconds = 60 * 60;
+        let claims = LinkClaims {
+            sub: request_id.to_string(),
+            exp: now_seconds() + seconds,
+            iss: self.link_issuer("filerequest"),
+        };
+        (self.sign(&claims), seconds)
+    }
+
+    /// The file request an upload token is for.
+    pub fn check_upload_token(&self, token: &str) -> Option<String> {
+        self.verify_link(token, "filerequest").map(|claims| claims.sub)
+    }
+
     fn link_issuer(&self, what: &str) -> String {
         format!("{}|{what}", self.issuer.trim_end_matches("|login"))
     }

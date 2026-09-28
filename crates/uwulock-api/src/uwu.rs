@@ -47,6 +47,9 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
     if settings.hibp {
         features.push("hibp");
     }
+    if settings.file_requests.enabled {
+        features.push("file-requests");
+    }
     let rules = &settings.policies.master_password;
     Json(json!({
         "object": "info",
@@ -64,7 +67,11 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
                 "enforceOnLogin": rules.enforce_on_login,
             },
         },
-        "limits": { "maxFileBytes": u64::from(settings.max_file_mb) * 1024 * 1024 },
+        "limits": {
+            "maxFileBytes": u64::from(settings.max_file_mb) * 1024 * 1024,
+            "fileRequestMaxFiles": settings.file_requests.max_files,
+            "fileRequestMaxDays": settings.file_requests.max_days,
+        },
     }))
 }
 
@@ -95,8 +102,11 @@ async fn invitation(
 /// What the web vault needs to know about the account beyond Bitwarden's profile.
 async fn account(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let settings = state.settings();
-    let (factors, unseen) =
-        tokio::try_join!(state.store.two_factors(&session.user.id), state.store.unseen_notices(&session.user.id))?;
+    let (factors, unseen, used) = tokio::try_join!(
+        state.store.two_factors(&session.user.id),
+        state.store.unseen_notices(&session.user.id),
+        state.store.storage_used(&session.user.id),
+    )?;
     let require = &settings.policies.require_two_factor;
     Ok(Json(json!({
         "object": "account",
@@ -108,6 +118,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
             "minimumKdf": settings.policies.minimum_kdf,
         },
         "securityNoticesUnseen": unseen,
+        "storage": { "usedBytes": used, "limitBytes": settings.storage_limit() },
         "admin": session.user.admin,
         "language": session.user.language,
         "mail": state.mailer.enabled(),

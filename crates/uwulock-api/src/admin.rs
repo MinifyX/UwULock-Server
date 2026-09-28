@@ -625,7 +625,11 @@ async fn overview(State(state): State<AppState>, admin: Admin) -> ApiResult<Json
         "failingChannels": failing,
         "storage": {
             "databaseBytes": database_size,
-            "filesBytes": { "attachments": attachments, "sends": sends },
+            "filesBytes": {
+                "attachments": attachments,
+                "sends": sends,
+                "fileRequests": state.store.file_request_bytes().await?,
+            },
         },
         "loki": state.logs.loki().status(),
         "diagnosis": crate::diagnosis::summary(&state).await,

@@ -63,7 +63,7 @@ impl Owner {
 
 /// The item `cipher_id` of `owner`, with its revision moved on: what a change to its attachments
 /// does. Nothing when it is not theirs. The users whose revision moved come back too.
-fn touch_cipher(
+pub(crate) fn touch_cipher(
     tx: &Transaction<'_>,
     owner: &Owner,
     cipher_id: &str,

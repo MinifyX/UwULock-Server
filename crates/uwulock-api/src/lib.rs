@@ -25,6 +25,7 @@ mod cors;
 pub mod diagnosis;
 pub mod emergency;
 mod errors;
+pub mod file_requests;
 pub mod files;
 mod folders;
 mod health;
@@ -32,6 +33,7 @@ mod hibp;
 mod identity;
 mod invitations;
 mod json;
+mod keys;
 mod limits;
 mod logs;
 pub mod loki;
@@ -46,6 +48,7 @@ mod organizations;
 pub(crate) mod outbound;
 mod passkeys;
 pub mod policies;
+pub mod send_hosts;
 mod sends;
 mod settings;
 mod totp;
@@ -282,6 +285,8 @@ pub fn router(state: AppState) -> Router {
         .merge(alerts::routes())
         .merge(diagnosis::routes())
         .merge(offsite::routes())
+        .merge(keys::routes())
+        .merge(file_requests::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())
@@ -293,6 +298,7 @@ pub fn router(state: AppState) -> Router {
         .merge(attachments::upload_routes())
         .merge(sends::upload_routes())
         .merge(diagnosis::upload_routes())
+        .merge(file_requests::upload_routes())
         .layer(DefaultBodyLimit::disable());
     let router = Router::new()
         .merge(quick)

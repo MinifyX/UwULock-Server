@@ -217,6 +217,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
                 tracing::warn!(%error, "sweeping up did not work");
             }
             sweep_files(&config, &state).await;
+            uwulock_api::file_requests::sweep(&state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");

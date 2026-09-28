@@ -44,6 +44,29 @@ pub struct Settings {
     pub metrics: crate::metrics::MetricsSettings,
     /// The log to Grafana Loki.
     pub loki: crate::loki::LokiSettings,
+    /// File requests: links people without an account upload files to.
+    pub file_requests: FileRequestSettings,
+    /// How much an account may keep in files (attachments, Send files, file requests), in MiB;
+    /// none for no limit.
+    pub storage_per_user_mb: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FileRequestSettings {
+    pub enabled: bool,
+    /// Requests one account may have.
+    pub per_user: u32,
+    /// How far ahead a request may run out.
+    pub max_days: u32,
+    /// Files one submission may bring.
+    pub max_files: u32,
+}
+
+impl Default for FileRequestSettings {
+    fn default() -> Self {
+        FileRequestSettings { enabled: true, per_user: 50, max_days: 90, max_files: 20 }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,7 +95,16 @@ impl Default for Settings {
             admin_networks: Vec::new(),
             metrics: crate::metrics::MetricsSettings::default(),
             loki: crate::loki::LokiSettings::default(),
+            file_requests: FileRequestSettings::default(),
+            storage_per_user_mb: None,
         }
+    }
+}
+
+impl Settings {
+    /// The most an account may keep in files, in bytes; none for no limit.
+    pub fn storage_limit(&self) -> Option<i64> {
+        self.storage_per_user_mb.map(|mb| (mb.min(i64::MAX as u64 / (1024 * 1024)) * 1024 * 1024) as i64)
     }
 }
 
@@ -169,6 +201,19 @@ impl Settings {
             .map_err(|error| format!("Admin networks: {error}"))?;
         self.metrics.check()?;
         self.loki.check()?;
+        let requests = &self.file_requests;
+        if !(1..=1000).contains(&requests.per_user) {
+            return Err("An account may have from 1 to 1000 file requests.".into());
+        }
+        if !(1..=365).contains(&requests.max_days) {
+            return Err("A file request may run from 1 to 365 days.".into());
+        }
+        if !(1..=100).contains(&requests.max_files) {
+            return Err("A file request may take from 1 to 100 files at once.".into());
+        }
+        if self.storage_per_user_mb == Some(0) {
+            return Err("The storage per account is at least 1 MB, or no limit.".into());
+        }
         Ok(())
     }
 }

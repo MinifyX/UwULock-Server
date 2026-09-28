@@ -56,6 +56,8 @@ pub enum Mail {
     /// What happened on the account lately, bundled: failed logins, changed credentials, new
     /// devices. `link` opens the list in the web vault.
     SecurityNotices { notices: Vec<NoticeLine>, link: String },
+    /// Somebody uploaded something to one of the reader's file requests; `link` opens it.
+    FileRequestArrived { link: String },
     /// To the admins: something on the server needs looking at (`resolved`: is fine again).
     AdminAlert { event: String, detail: String, resolved: bool, server: String },
 }
@@ -110,6 +112,8 @@ impl NoticeLine {
             ("emergencyAccessTakenOver", false) => format!("Account taken over through emergency access by {about}"),
             ("loginWithDeviceRequested", true) => "Anfrage „Mit Gerät anmelden“".into(),
             ("loginWithDeviceRequested", false) => "“Log in with device” request".into(),
+            ("extrasKeyReset", true) => "UwULock-Extras neu angefangen (Schlüssel zurückgesetzt)".into(),
+            ("extrasKeyReset", false) => "UwULock extras started over (key reset)".into(),
             ("vaultExported", true) => "Tresor exportiert".into(),
             ("vaultExported", false) => "Vault exported".into(),
             ("kdfBelowMinimum", true) => {
@@ -409,6 +413,24 @@ impl Mail {
                 button: None,
                 footer,
             },
+            Mail::FileRequestArrived { link } => Text {
+                subject: if de {
+                    "Zu einer deiner Datei-Anfragen ist etwas angekommen".into()
+                } else {
+                    "Something arrived for one of your file requests".into()
+                },
+                lines: vec![
+                    if de {
+                        "Jemand hat über eine deiner Datei-Anfragen Dateien oder eine Nachricht hochgeladen. Verschlüsselt, nur du kannst sie öffnen."
+                    } else {
+                        "Somebody uploaded files or a message to one of your file requests. It is encrypted; only you can open it."
+                    }
+                    .into(),
+                ],
+                highlight: None,
+                button: Some((if de { "Im Web-Tresor ansehen" } else { "Open in the web vault" }.into(), link.clone())),
+                footer,
+            },
             Mail::EmergencyInvited { grantor, link } => Text {
                 subject: if de { format!("{grantor} möchte dich als Notfallkontakt") } else { format!("{grantor} wants you as an emergency contact") },
                 lines: vec![
@@ -635,6 +657,7 @@ mod tests {
             Mail::TwoFactorNotMoved { method: "Duo".into() },
             Mail::EmergencyInvited { grantor: "Nyu".into(), link: "https://vault.example.com/".into() },
             Mail::EmergencyAccepted { grantee: "Mika".into() },
+            Mail::FileRequestArrived { link: "https://vault.example.com/#/file-requests/x".into() },
             Mail::EmergencyConfirmed { grantor: "Nyu".into() },
             Mail::EmergencyAsked { grantee: "Mika".into(), takeover: true, days: 7, reminder: true },
             Mail::EmergencyApproved { grantor: "Nyu".into() },

@@ -496,6 +496,9 @@ impl Store {
                     )?;
                 }
                 tx.execute("UPDATE org_members SET reset_password_key = NULL WHERE user_id = ?1", [&user.id])?;
+                // The extras key's wrap under the old user key opens nothing any more; the one
+                // for the key pair stays, and the next UwULock client wraps it again.
+                tx.execute("UPDATE extras_keys SET user_key_wrapped = NULL WHERE user_id = ?1", [&user.id])?;
                 for (org_id, key) in &recovery {
                     tx.execute(
                         "UPDATE org_members SET reset_password_key = ?3 WHERE user_id = ?1 AND org_id = ?2",

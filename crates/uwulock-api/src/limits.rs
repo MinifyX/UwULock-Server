@@ -139,6 +139,8 @@ pub struct Limits {
     pub hibp: Limiter<String>,
     /// What clients report themselves, like an export: ten an hour per account.
     pub reports: Limiter<String>,
+    /// Submissions to file requests, per address: ten an hour.
+    pub file_request_uploads: Limiter,
 }
 
 impl Default for Limits {
@@ -151,6 +153,7 @@ impl Default for Limits {
             mail: Limiter::new(5, Duration::from_secs(5 * 60)),
             hibp: Limiter::new(2000, Duration::from_millis(200)),
             reports: Limiter::new(10, Duration::from_secs(6 * 60)),
+            file_request_uploads: Limiter::new(10, Duration::from_secs(6 * 60)),
         }
     }
 }
@@ -174,6 +177,7 @@ impl Limits {
             mail: generous(),
             hibp: generous(),
             reports: generous(),
+            file_request_uploads: generous(),
         }
     }
 }

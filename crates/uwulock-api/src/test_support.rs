@@ -266,3 +266,16 @@ pub(crate) async fn fake_relay() -> (String, tokio::sync::mpsc::UnboundedReceive
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     (format!("http://{address}"), told)
 }
+
+/// An EncString of type 2 with nothing in it, the right form for the server's checks.
+pub(crate) fn type2() -> String {
+    use base64::Engine as _;
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("2.{}|{}|{}", b64(&[1; 16]), b64(&[2; 32]), b64(&[3; 32]))
+}
+
+/// An EncString of type 4, as an RSA-2048 wrap looks.
+pub(crate) fn type4() -> String {
+    use base64::Engine as _;
+    format!("4.{}", base64::engine::general_purpose::STANDARD.encode([4; 256]))
+}

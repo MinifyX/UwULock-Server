@@ -283,6 +283,11 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
     out.head("uwulock_files_bytes", "gauge", "Size of the stored files, by kind.");
     out.sample("uwulock_files_bytes", &[("kind", "attachments")], attachments);
     out.sample("uwulock_files_bytes", &[("kind", "sends")], sends);
+    out.sample(
+        "uwulock_files_bytes",
+        &[("kind", "file_requests")],
+        state.store.file_request_bytes().await.unwrap_or(0),
+    );
 
     out.head("uwulock_accounts", "gauge", "Accounts.");
     out.sample("uwulock_accounts", &[], stats.users);
