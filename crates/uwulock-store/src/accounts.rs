@@ -389,6 +389,20 @@ impl Store {
         Ok(user)
     }
 
+    /// The most PBKDF2 rounds among the password hashes that came over from Vaultwarden and are
+    /// still waiting for their account's next login; 0 when none is left.
+    pub async fn legacy_rounds(&self) -> Result<u32> {
+        self.sqlite_read(|conn| {
+            // `vw-pbkdf2$<rounds>$<salt>$<hash>`, as the import writes them.
+            let hashes: Vec<String> = conn
+                .prepare_cached("SELECT password_hash FROM users WHERE password_hash LIKE 'vw-pbkdf2$%'")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(hashes.iter().filter_map(|hash| hash.split('$').nth(1)?.parse::<u32>().ok()).max().unwrap_or(0))
+        })
+        .await
+    }
+
     /// Mark that something the clients sync changed.
     pub async fn touch_revision(&self, user_id: &str) -> Result<()> {
         let owned = user_id.to_string();

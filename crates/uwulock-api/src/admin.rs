@@ -638,6 +638,7 @@ async fn restore_backup(
     }
     state.relay.reset();
     *state.settings.write() = settings;
+    state.count_legacy_hashes().await;
     record(&state, &admin, format!("restored the backup {name} (what was there before: {before})")).await;
     Ok(Json(json!({ "restored": name, "before": before })))
 }
@@ -811,6 +812,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let before = json(response).await["before"].as_str().unwrap().to_string();
         assert!(server.state.store.invitation("later@example.com").await.unwrap().is_none(), "as it was");
+        let status = server.get_as(&admin.token, "/uwu/v1/admin/backups").await.status();
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "every session ended, this one too");
+        let admin = server.login("admin@example.com", "admin-device").await;
         let list = json(server.get_as(&admin.token, "/uwu/v1/admin/backups").await).await;
         assert_eq!(list[0]["name"], before.as_str(), "how it was just now is the newest backup");
 
@@ -819,6 +823,7 @@ mod tests {
         let response = server.call("POST", &path, Some(&admin.token), secret.clone()).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert!(server.state.store.invitation("later@example.com").await.unwrap().is_some());
+        let admin = server.login("admin@example.com", "admin-device").await;
 
         // Somebody else's server does not come in this way.
         let other = TestServer::new().await;

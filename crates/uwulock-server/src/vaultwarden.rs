@@ -17,10 +17,21 @@ use rusqlite::{Connection, OptionalExtension, Row};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use uwulock_api::files::valid_id;
 use uwulock_store::emergency::EmergencyAccess;
 use uwulock_store::organizations::{Collection, Group, Member, Organization, Policy};
 use uwulock_store::sends::Send;
 use uwulock_store::{Attachment, Cipher, Folder, Kdf, Migration, MovedDevice, MovedTwoFactor, MovedUser, Store, clock};
+
+/// The name of a kind of two-step login this server does not have, for the mail about it.
+fn method_name(kind: i64) -> String {
+    match kind {
+        2 | 6 => "Duo".into(),
+        3 => "YubiKey OTP".into(),
+        4 => "U2F".into(),
+        kind => format!("type {kind}"),
+    }
+}
 
 /// What an import found, and what it left behind.
 #[derive(Debug, Default)]
@@ -36,6 +47,9 @@ pub struct Summary {
     pub emergency: usize,
     /// What did not come over, for the person running the import.
     pub notes: Vec<String>,
+    /// Accounts whose two-step login did not come over, and whose alone it was: address,
+    /// language, and the method. They are told by mail when mail is set up.
+    pub lost_two_factor: Vec<(String, String, String)>,
 }
 
 impl std::fmt::Display for Summary {
@@ -338,7 +352,9 @@ pub fn read_vaultwarden(
             kind: d.3,
             created: now_or(d.4),
             last_seen: now_or(d.5),
-            refresh_hash: Some(d.6).filter(|token| !token.is_empty()).map(|token| sha256(token.as_bytes())),
+            refresh_hash: Some(d.6)
+                .filter(|token| !token.is_empty())
+                .map(|token| uwulock_api::vaultwarden::moved_token_hash(&token)),
             remember_hash: d.7.filter(|token| !token.is_empty()).map(|token| sha256(token.as_bytes())),
             push_token: d.9.filter(|token| !token.is_empty()),
             push_id: d.8,
@@ -347,6 +363,7 @@ pub fn read_vaultwarden(
     summary.devices = migration.devices.len();
 
     let mut with_factor: HashSet<String> = HashSet::new();
+    let mut lost: Vec<(String, String)> = Vec::new();
     for f in read(&conn, "SELECT user_uuid, atype, enabled, data, last_used FROM twofactor", |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -386,11 +403,25 @@ pub fn read_vaultwarden(
                     last_used: f.4,
                 });
             }
-            None if f.2 => summary.notes.push(format!(
-                "{email} had two-step login of a kind this server does not have (type {}): it did not come over",
-                f.1
-            )),
+            None if f.2 => {
+                summary.notes.push(format!(
+                    "{email} had two-step login of a kind this server does not have (type {}): it did not come over",
+                    f.1
+                ));
+                lost.push((f.0.clone(), method_name(f.1)));
+            }
             None => {}
+        }
+    }
+    // Whoever is left with no second step at all is told; whoever still has one is not.
+    for (user_id, method) in lost {
+        if with_factor.contains(&user_id) {
+            continue;
+        }
+        if let Some(user) = migration.users.iter().find(|user| user.id == user_id)
+            && !summary.lost_two_factor.iter().any(|(email, _, _)| *email == user.email)
+        {
+            summary.lost_two_factor.push((user.email.clone(), user.language.clone(), method));
         }
     }
     for user in &mut migration.users {
@@ -576,6 +607,11 @@ pub fn read_vaultwarden(
         if !ciphers.contains(&a.1) {
             continue;
         }
+        // Ids become paths; one that is not an id of Vaultwarden's does not get to be one.
+        if !valid_id(&a.0) || !valid_id(&a.1) {
+            summary.notes.push(format!("attachment {:?} has an id no Vaultwarden makes: not moved over", a.0));
+            continue;
+        }
         if !data.join("attachments").join(&a.1).join(&a.0).exists() {
             summary.notes.push(format!("the file of attachment {} is missing: not moved over", a.0));
             continue;
@@ -622,6 +658,10 @@ pub fn read_vaultwarden(
         },
     )? {
         let Some(user) = s.1.filter(|user| moved_users.contains(user)) else { continue };
+        if !valid_id(&s.0) {
+            summary.notes.push(format!("Send {:?} has an id no Vaultwarden makes: not moved over", s.0));
+            continue;
+        }
         let data = serde_json::from_str::<Value>(&s.5).map(lower_keys).unwrap_or_else(|_| json!({}));
         // A file Send's file is looked for below.
         let uploaded = s.4 != 1;
@@ -654,7 +694,8 @@ pub fn read_vaultwarden(
             let file = serde_json::from_str::<Value>(&send.data)
                 .ok()
                 .and_then(|data| data.get("id").and_then(Value::as_str).map(str::to_string));
-            send.uploaded = file.is_some_and(|file| data.join("sends").join(&send.id).join(file).exists());
+            send.uploaded =
+                file.is_some_and(|file| valid_id(&file) && data.join("sends").join(&send.id).join(file).exists());
         }
     }
     summary.sends = migration.sends.len();
@@ -1049,6 +1090,31 @@ mod tests {
         assert!(error.contains("db.sqlite3"), "{error}");
     }
 
+    #[test]
+    fn who_loses_their_only_second_step_is_named_and_odd_ids_stay_out() {
+        let source = vaultwarden();
+        let conn = Connection::open(source.path().join("db.sqlite3")).unwrap();
+        let nyu: String =
+            conn.query_row("SELECT uuid FROM users WHERE email = 'nyu@example.com'", [], |row| row.get(0)).unwrap();
+        let mio: String =
+            conn.query_row("SELECT uuid FROM users WHERE email = 'mio@example.com'", [], |row| row.get(0)).unwrap();
+        for (user, kind) in [(&nyu, 2), (&mio, 3)] {
+            conn.execute(
+                "INSERT INTO twofactor (uuid, user_uuid, atype, enabled, data, last_used) VALUES (?1, ?2, ?3, 1, '{}', 0)",
+                rusqlite::params![format!("tf-{kind}"), user, kind],
+            )
+            .unwrap();
+        }
+        conn.execute("UPDATE sends SET uuid = '../../escape' WHERE atype = 0", []).unwrap();
+        drop(conn);
+        let (migration, _, summary) = read_vaultwarden(source.path(), &[], "en").unwrap();
+        let lost: Vec<_> =
+            summary.lost_two_factor.iter().map(|(email, _, method)| (email.as_str(), method.as_str())).collect();
+        assert_eq!(lost, [("nyu@example.com", "Duo")], "mio still has the authenticator app");
+        assert!(migration.sends.iter().all(|send| valid_id(&send.id)));
+        assert!(summary.notes.iter().any(|note| note.contains("no Vaultwarden makes")));
+    }
+
     async fn call(app: &axum::Router, request: Request<Body>) -> (StatusCode, Value) {
         let response = app.clone().oneshot(request).await.unwrap();
         let status = response.status();
@@ -1107,6 +1173,7 @@ mod tests {
         let store = store(target.path());
         let fixture = accounts();
         import(&store, source.path(), target.path(), &[], "en", false).await.unwrap();
+        assert!(store.legacy_rounds().await.unwrap() >= 5000, "hashes of Vaultwarden's wait for their login");
         // The files came along.
         let router_id = fixture["router"].as_str().unwrap();
         assert_eq!(std::fs::read_dir(target.path().join("attachments").join(router_id)).unwrap().count(), 1);
@@ -1148,6 +1215,20 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "only once");
+
+        // An older Vaultwarden's device holds the bare token: taken once, and replaced too.
+        let bare: String = conn
+            .query_row("SELECT refresh_token FROM devices WHERE uuid <> ?1 LIMIT 1", [device], |row| row.get(0))
+            .unwrap();
+        let refresh = |token: String| {
+            token_request(&[("grant_type", "refresh_token"), ("client_id", "web"), ("refresh_token", &token)])
+        };
+        let (status, replaced) = call(&app, refresh(bare.clone())).await;
+        assert_eq!(status, StatusCode::OK, "{replaced}");
+        assert_ne!(replaced["refresh_token"].as_str(), Some(bare.as_str()));
+        assert_eq!(call(&app, refresh(bare)).await.0, StatusCode::BAD_REQUEST, "the old database's copy is dead");
+        let fresh = replaced["refresh_token"].as_str().unwrap().to_string();
+        assert_eq!(call(&app, refresh(fresh)).await.0, StatusCode::OK);
 
         let access = refreshed["access_token"].as_str().unwrap();
         let (status, sync) = call(

@@ -17,7 +17,6 @@
   "Aktuelles Master-Passwort": "Current master password",
   "Alle": "All",
   "Alles": "Everything",
-  "Alles kommt auf den Stand von {when}: Konten, Tresore, Einstellungen. Was seitdem dazukam, ist dann weg – außer im Backup, das jetzt vorher geschrieben wird. Angemeldete Geräte synchronisieren neu.": "Everything goes back to how it was on {when}: accounts, vaults, settings. What came since is gone then — except in the backup that is written first, right now. Logged-in devices sync anew.",
   "als Admin": "as admin",
   "An.": "On.",
   "Angelegt {date} · Sprache {language} · {kdf}": "Created {date} · language {language} · {kdf}",
@@ -288,7 +287,6 @@
   "Zum Admin machen": "Make admin",
   "Zum Tresor": "To the vault",
   "Zur Anmeldung": "To the login",
-  "Zurückgespielt ✧ Der Stand davor ist jetzt {name}.": "Restored ✧ How it was before is now {name}.",
   "Zurückspielen": "Restore",
   "Zurückziehen": "Withdraw",
   "Zwei-Schritt-Anmeldung": "Two-step login",
@@ -329,5 +327,7 @@
   "Übersicht": "Overview",
   "„Auf diesem Gerät merken“ lässt den zweiten Schritt 30 Tage lang weg.": "“Remember this device” skips the second step for 30 days.",
   "„System“ folgt der Einstellung des Systems.": "“System” follows the system's setting.",
-  "Deine Vertrauenspersonen bekommen den neuen Schlüssel auch. Vergleiche ihre Sätze mit denen in ihren Einstellungen unter Konto → Fingerabdruck. Stimmt einer nicht, brich ab.": "Your trusted contacts get the new key too. Compare their phrases with the ones in their settings under Account → Fingerprint. If one doesn't match, cancel."
+  "Deine Vertrauenspersonen bekommen den neuen Schlüssel auch. Vergleiche ihre Sätze mit denen in ihren Einstellungen unter Konto → Fingerabdruck. Stimmt einer nicht, brich ab.": "Your trusted contacts get the new key too. Compare their phrases with the ones in their settings under Account → Fingerprint. If one doesn't match, cancel.",
+  "Alles kommt auf den Stand von {when}: Konten, Tresore, Einstellungen. Was seitdem dazukam, ist dann weg – außer im Backup, das jetzt vorher geschrieben wird. Danach melden sich alle neu an, auf jedem Gerät, du auch.": "Everything goes back to how it was on {when}: accounts, vaults, settings. Whatever came since is gone — except in the backup written first. Afterwards everybody logs in again, on every device, you too.",
+  "Zurückgespielt ✧ Der Stand davor ist jetzt {name}. Melde dich neu an.": "Restored ✧ What was there before is now {name}. Log in again."
 }

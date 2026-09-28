@@ -132,6 +132,9 @@ pub struct Rotation {
     /// Passkeys that unlock: id, the new user key wrapped for its key pair, and its public key
     /// under the new user key.
     pub passkeys: Vec<(String, String, String)>,
+    /// Organisations the account is enrolled in account recovery with, and the new user key
+    /// wrapped for each. An enrolment left out ends: its key is of the old user key.
+    pub recovery: Vec<(String, String)>,
 }
 
 /// What a change to several items at once does to each.
@@ -417,7 +420,7 @@ impl Store {
         let user_id = rotation.user.id.clone();
         let done = self
             .sqlite_write(move |tx| {
-                let Rotation { user, folders, ciphers, attachments, sends, emergency, passkeys } = rotation;
+                let Rotation { user, folders, ciphers, attachments, sends, emergency, passkeys, recovery } = rotation;
                 let have = |sql: &str| -> rusqlite::Result<Vec<String>> {
                     let mut ids = tx
                         .prepare(sql)?
@@ -452,8 +455,11 @@ impl Store {
                 {
                     return Ok(false);
                 }
-                if have("SELECT id FROM passkeys WHERE user_id = ?1 AND supports_prf")?
-                    != sorted(passkeys.iter().map(|(id, _, _)| id.clone()).collect())
+                // Only the passkeys that unlock hold the user key; one that could but was not set
+                // up for it has nothing to wrap again.
+                if have(
+                    "SELECT id FROM passkeys WHERE user_id = ?1 AND supports_prf AND encrypted_user_key IS NOT NULL",
+                )? != sorted(passkeys.iter().map(|(id, _, _)| id.clone()).collect())
                 {
                     return Ok(false);
                 }
@@ -487,6 +493,13 @@ impl Store {
                         "UPDATE passkeys SET encrypted_user_key = ?3, encrypted_public_key = ?4 \
                          WHERE id = ?1 AND user_id = ?2",
                         params![id, user.id, user_key, public_key],
+                    )?;
+                }
+                tx.execute("UPDATE org_members SET reset_password_key = NULL WHERE user_id = ?1", [&user.id])?;
+                for (org_id, key) in &recovery {
+                    tx.execute(
+                        "UPDATE org_members SET reset_password_key = ?3 WHERE user_id = ?1 AND org_id = ?2",
+                        params![user.id, org_id, key],
                     )?;
                 }
                 let mut user = user;
@@ -631,6 +644,7 @@ pub(crate) mod tests {
             sends: Vec::new(),
             emergency: Vec::new(),
             passkeys: Vec::new(),
+            recovery: Vec::new(),
         };
         assert!(!store.rotate_keys(rotation(rotated.clone(), vec![a.clone()])).await.unwrap());
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().user_key, user.user_key, "nothing changed");
@@ -641,6 +655,50 @@ pub(crate) mod tests {
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().user_key, "new key");
         assert!(store.ciphers(&user.id).await.unwrap().iter().all(|cipher| cipher.name == "new"));
         assert_eq!(store.folder(&user.id, &folder.id).await.unwrap().unwrap().name, "new");
+    }
+
+    #[tokio::test]
+    async fn new_keys_take_account_recovery_along_and_skip_passkeys_that_do_not_unlock() {
+        let (store, _dir) = store();
+        let (_, member, _) = crate::organizations::tests::setting(&store).await;
+        let member_id = member.clone();
+        store
+            .sqlite_write(move |tx| {
+                tx.execute("UPDATE org_members SET reset_password_key = '4.old' WHERE user_id = ?1", [&member_id])?;
+                tx.execute(
+                    "INSERT INTO passkeys (id, user_id, name, public_key, supports_prf, created) \
+                     VALUES ('pk', ?1, 'Stick', 'cose', 1, '2026-09-28T00:00:00.000000Z')",
+                    [&member_id],
+                )?;
+                Ok(())
+            })
+            .await
+            .unwrap();
+        let user = store.user(&member).await.unwrap().unwrap();
+        let rotation = |recovery: Vec<(String, String)>| Rotation {
+            user: user.clone(),
+            folders: Vec::new(),
+            ciphers: Vec::new(),
+            attachments: Vec::new(),
+            sends: Vec::new(),
+            emergency: Vec::new(),
+            passkeys: Vec::new(),
+            recovery,
+        };
+        let recovery_key = |store: Store, member: String| async move {
+            store
+                .sqlite_read(move |conn| {
+                    conn.query_row("SELECT reset_password_key FROM org_members WHERE user_id = ?1", [&member], |row| {
+                        row.get::<_, Option<String>>(0)
+                    })
+                })
+                .await
+                .unwrap()
+        };
+        assert!(store.rotate_keys(rotation(vec![("org".into(), "4.new".into())])).await.unwrap());
+        assert_eq!(recovery_key(store.clone(), member.clone()).await.as_deref(), Some("4.new"));
+        assert!(store.rotate_keys(rotation(Vec::new())).await.unwrap());
+        assert_eq!(recovery_key(store.clone(), member.clone()).await, None, "left out: the enrolment ends");
     }
 
     #[tokio::test]

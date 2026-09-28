@@ -154,6 +154,7 @@ impl Store {
         .await
         .map_err(|_| "the restore stopped halfway".to_string())?
         .map_err(|error| error.to_string())?;
+        self.sqlite_write(|tx| backup::end_sessions(tx)).await.map_err(|error| error.to_string())?;
         let mut sessions = self.sessions.write();
         sessions.by_user.clear();
         sessions.forgotten += 1;

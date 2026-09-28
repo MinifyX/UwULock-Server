@@ -350,6 +350,50 @@ pub async fn verify_password(cost: HashCost, hash: Option<&str>, secret: &str) -
     .unwrap_or(false)
 }
 
+/// Like [`verify_password`], for a login: while hashes from Vaultwarden are left, every check
+/// does the work of both kinds — Argon2id, and PBKDF2 with the most rounds among them — so the
+/// time a login takes does not tell an account that has not logged in since the move from one
+/// that has, or from an address without one.
+pub async fn verify_login(cost: HashCost, hash: Option<&str>, secret: &str, legacy_rounds: u32) -> bool {
+    if legacy_rounds == 0 {
+        return verify_password(cost, hash, secret).await;
+    }
+    use argon2::password_hash::{PasswordHasher, PasswordVerifier, SaltString};
+    let hash = hash.map(str::to_string);
+    let secret = secret.to_string();
+    let Ok(turn) = hashing().acquire().await else { return false };
+    tokio::task::spawn_blocking(move || {
+        let _turn = turn;
+        let dummy_pbkdf2 = || {
+            let mut out = [0u8; 32];
+            let rounds = std::num::NonZeroU32::new(legacy_rounds).expect("not 0");
+            ring::pbkdf2::derive(ring::pbkdf2::PBKDF2_HMAC_SHA256, rounds, &[0u8; 16], secret.as_bytes(), &mut out);
+        };
+        let dummy_argon2 = || {
+            let salt = SaltString::encode_b64(&[0u8; 16]).expect("a fixed salt");
+            let _ = cost.argon2().hash_password(secret.as_bytes(), &salt);
+        };
+        match hash {
+            Some(hash) if is_legacy(&hash) => {
+                dummy_argon2();
+                verify_legacy(&hash, &secret)
+            }
+            Some(hash) => {
+                dummy_pbkdf2();
+                argon2::password_hash::PasswordHash::new(&hash)
+                    .is_ok_and(|parsed| argon2::Argon2::default().verify_password(secret.as_bytes(), &parsed).is_ok())
+            }
+            None => {
+                dummy_pbkdf2();
+                dummy_argon2();
+                false
+            }
+        }
+    })
+    .await
+    .unwrap_or(false)
+}
+
 // ── Where a request comes from ────────────────────────────
 
 /// The address a request comes from: the peer's, or behind a trusted proxy the last one in
@@ -563,6 +607,15 @@ mod tests {
         assert!(verify_password(HashCost::cheap(), Some(&hash), "client-hash").await);
         assert!(!verify_password(HashCost::cheap(), Some(&hash), "other").await);
         assert!(!verify_password(HashCost::cheap(), Some("vw-pbkdf2$x$y"), "client-hash").await);
+
+        // A login does the work of both kinds while such hashes are left, and says the same.
+        let argon = hash_password(HashCost::cheap(), "client-hash").await.unwrap();
+        for rounds in [0, 1000] {
+            assert!(verify_login(HashCost::cheap(), Some(&hash), "client-hash", rounds).await);
+            assert!(verify_login(HashCost::cheap(), Some(&argon), "client-hash", rounds).await);
+            assert!(!verify_login(HashCost::cheap(), Some(&argon), "other", rounds).await);
+            assert!(!verify_login(HashCost::cheap(), None, "client-hash", rounds).await);
+        }
     }
 
     #[test]

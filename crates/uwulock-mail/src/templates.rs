@@ -34,6 +34,9 @@ pub enum Mail {
     NewDevice { device: String, ip: String, time: String },
     /// Two-step login was turned off with the recovery code.
     RecoveryUsed,
+    /// The account moved over from Vaultwarden, and its two-step login (`method`: Duo, YubiKey
+    /// OTP, U2F) did not: this server does not have it.
+    TwoFactorNotMoved { method: String },
     /// Somebody names the reader as an emergency contact, with the link that accepts.
     EmergencyInvited { grantor: String, link: String },
     /// To the grantor: the contact accepted, and waits to be confirmed.
@@ -265,6 +268,25 @@ impl Mail {
                 button: None,
                 footer,
             },
+            Mail::TwoFactorNotMoved { method } => Text {
+                subject: if de { "Deine Zwei-Schritt-Anmeldung ist nicht mitgekommen" } else { "Your two-step login did not come along" }.into(),
+                lines: vec![
+                    if de {
+                        format!("Dein Konto ist von Vaultwarden zu UwULock umgezogen. Die Zwei-Schritt-Anmeldung mit {method} gibt es hier nicht; dein Konto braucht jetzt nur noch das Master-Passwort.")
+                    } else {
+                        format!("Your account moved from Vaultwarden to UwULock. Two-step login with {method} doesn't exist here, so your account now only needs the master password.")
+                    },
+                    if de {
+                        "Richte im Web-Tresor unter Einstellungen → Zwei-Schritt-Anmeldung eine neue ein: eine Authenticator-App, einen Sicherheitsschlüssel oder Codes per Mail."
+                    } else {
+                        "Set up a new one in the web vault under Settings → Two-step login: an authenticator app, a security key or codes by mail."
+                    }
+                    .into(),
+                ],
+                highlight: None,
+                button: None,
+                footer,
+            },
             Mail::EmergencyInvited { grantor, link } => Text {
                 subject: if de { format!("{grantor} möchte dich als Notfallkontakt") } else { format!("{grantor} wants you as an emergency contact") },
                 lines: vec![
@@ -451,6 +473,7 @@ mod tests {
             Mail::PasswordHint { hint: None },
             Mail::NewDevice { device: "Firefox".into(), ip: "192.0.2.1".into(), time: "now".into() },
             Mail::RecoveryUsed,
+            Mail::TwoFactorNotMoved { method: "Duo".into() },
             Mail::EmergencyInvited { grantor: "Nyu".into(), link: "https://vault.example.com/".into() },
             Mail::EmergencyAccepted { grantee: "Mika".into() },
             Mail::EmergencyConfirmed { grantor: "Nyu".into() },

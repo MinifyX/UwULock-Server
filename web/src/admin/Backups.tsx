@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PasswordPrompt, save } from '../components/web/controls';
+import { logout } from '../lib/api';
 import { backups, createBackup, downloadBackup, restoreBackup, type Backup } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
@@ -108,7 +109,7 @@ export function Backups() {
           title={t('Dieses Backup zurückspielen?')}
           tone="warning"
           lead={t(
-            'Alles kommt auf den Stand von {when}: Konten, Tresore, Einstellungen. Was seitdem dazukam, ist dann weg – außer im Backup, das jetzt vorher geschrieben wird. Angemeldete Geräte synchronisieren neu.',
+            'Alles kommt auf den Stand von {when}: Konten, Tresore, Einstellungen. Was seitdem dazukam, ist dann weg – außer im Backup, das jetzt vorher geschrieben wird. Danach melden sich alle neu an, auf jedem Gerät, du auch.',
             { when: stampText(list?.find((b) => b.name === restoring)?.time ?? null) },
           )}
           confirm={t('Zurückspielen')}
@@ -117,10 +118,13 @@ export function Backups() {
             const done = await restoreBackup(restoring, password);
             setRestoring(null);
             toast(
-              t('Zurückgespielt ✧ Der Stand davor ist jetzt {name}.', { name: done.before }),
+              t('Zurückgespielt ✧ Der Stand davor ist jetzt {name}. Melde dich neu an.', {
+                name: done.before,
+              }),
               'info',
             );
-            load();
+            // Every session ended with the restore, this one too.
+            await logout();
           }}
         />
       )}

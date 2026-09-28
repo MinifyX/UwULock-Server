@@ -162,6 +162,8 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             if let Err(error) = hourly.store.record_day().await {
                 tracing::warn!(%error, "the numbers of the day were not written down");
             }
+            // An import may have run beside the server.
+            hourly.count_legacy_hashes().await;
             tokio::time::sleep(Duration::from_secs(60 * 60)).await;
         }
     });
