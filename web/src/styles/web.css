@@ -1281,3 +1281,64 @@ a {
     margin: 8px;
   }
 }
+
+/* ── Off-site backups ─────────────────────────────────── */
+
+.offsite {
+  margin-bottom: 20px;
+}
+
+code.wrap {
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--uwu-canvas);
+}
+
+.recovery-key {
+  display: block;
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  text-align: center;
+  word-break: break-all;
+  user-select: all;
+  background: var(--uwu-canvas);
+}
+
+.detail-line[data-tone='warning'] {
+  color: var(--uwu-alarm);
+}
+
+/* ── File requests ────────────────────────────────────── */
+
+.picked-files {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.picked-files li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.picked-files li[data-bad] {
+  color: var(--uwu-alarm);
+}
+
+.detail-subhead {
+  margin: 18px 0 8px;
+  font-size: 1rem;
+}

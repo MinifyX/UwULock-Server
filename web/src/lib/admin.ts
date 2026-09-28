@@ -198,6 +198,9 @@ export type Settings = {
   adminNetworks: string[];
   metrics: Metrics;
   loki: Loki;
+  fileRequests: { enabled: boolean; perUser: number; maxDays: number; maxFiles: number };
+  /** How much an account may keep in files; null: no limit. */
+  storagePerUserMb: number | null;
 };
 
 /** One day of the numbers over time. */
@@ -515,4 +518,97 @@ export async function checkUpload(mib = 16): Promise<UploadResult> {
   } catch {
     return { ok: false, status: null, bytes: body.size };
   }
+}
+
+// ── Off-site backups (§21.2) ──────────────────────────────
+
+export type OffsiteKind = 'sftp' | 's3' | 'folder';
+
+export type OffsiteTarget = {
+  kind: OffsiteKind;
+  host?: string;
+  port?: number;
+  user?: string;
+  path?: string;
+  method?: 'key' | 'password';
+  publicKey?: string | null;
+  passwordSet?: boolean;
+  hostKey?: string | null;
+  endpoint?: string;
+  region?: string;
+  bucket?: string;
+  prefix?: string;
+  accessKey?: string;
+  secretKeySet?: boolean;
+  pathStyle?: boolean;
+};
+
+export type Retention = { days: number; weeks: number; months: number };
+
+export type Offsite = {
+  enabled: boolean;
+  hour: number;
+  minute: number;
+  retention: Retention;
+  encrypted: boolean;
+  warnAfterHours: number;
+  target: OffsiteTarget | null;
+  status: {
+    lastSuccess: string | null;
+    lastAttempt: string | null;
+    lastError: string | null;
+    lastDuration: number | null;
+    bytes: number | null;
+    uploaded: number | null;
+  };
+  running: boolean;
+  stale: boolean;
+  /** Only in the answer to the first save that encrypts: shown once. */
+  recoveryKey?: string | null;
+};
+
+/** What the portal sends: the target with the secrets typed (empty keeps the stored ones). */
+export type OffsiteDraft = Omit<
+  Offsite,
+  'status' | 'running' | 'stale' | 'recoveryKey' | 'target'
+> & {
+  target: (OffsiteTarget & { password?: string; secretKey?: string }) | null;
+};
+
+export type Snapshot = {
+  id: string;
+  date: string;
+  bytes: number;
+  version: string;
+  hostname: string;
+  uploaded: number;
+};
+
+const offsiteBase = `${base}/backups/offsite`;
+
+export const offsite = () => request<Offsite>(offsiteBase);
+export const saveOffsite = (draft: OffsiteDraft) =>
+  request<Offsite>(offsiteBase, { method: 'PUT', body: draft });
+export const testOffsite = () =>
+  request<{ kind: OffsiteKind; hostKey: string | null; known: boolean }>(`${offsiteBase}/test`, {
+    body: {},
+  });
+export const forgetHostKey = () => request<Offsite>(`${offsiteBase}/forget-host-key`, { body: {} });
+export const runOffsite = () => request(`${offsiteBase}/run`, { body: {} });
+export const snapshots = async () =>
+  (await request<{ data: Snapshot[] }>(`${offsiteBase}/snapshots`)).data;
+
+export async function restoreSnapshot(snapshot: string, password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<{ restored: string; before: string; files: number }>(`${offsiteBase}/restore`, {
+    body: { snapshot, masterPasswordHash },
+  });
+}
+
+export async function recoveryKey(password: string): Promise<string> {
+  const masterPasswordHash = await passwordHash(password);
+  const answer = await request<{ recoveryKey: string }>(`${offsiteBase}/recovery-key`, {
+    body: { masterPasswordHash },
+  });
+  return answer.recoveryKey;
 }

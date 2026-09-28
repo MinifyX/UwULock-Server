@@ -30,6 +30,7 @@ import { NyuScene } from './nyu/scenes';
 import { DeviceRequests } from './web/DeviceRequests';
 import { HealthReport } from './web/HealthReport';
 import { BackToList, Panes } from './panes';
+import { FileRequestsView } from './web/FileRequestsView';
 import { SendsView } from './web/SendsView';
 
 export type Filter =
@@ -41,6 +42,7 @@ export type Filter =
   | { kind: 'archive' }
   | { kind: 'trash' }
   | { kind: 'sends' }
+  | { kind: 'requests' }
   | { kind: 'health' };
 
 const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
@@ -52,7 +54,8 @@ const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
 ];
 
 function matches(filter: Filter, item: ItemSummary): boolean {
-  if (filter.kind === 'sends' || filter.kind === 'health') return false;
+  if (filter.kind === 'sends' || filter.kind === 'requests' || filter.kind === 'health')
+    return false;
   if (filter.kind === 'trash') return item.deleted;
   if (item.deleted) return false;
   // Archived items are out of the way: only in the archive.
@@ -81,12 +84,14 @@ type Props = {
   /** The search field, for Ctrl+F from the app. */
   searchRef: React.RefObject<HTMLInputElement | null>;
   onAddAccount: () => void;
+  /** A file request to open, from the link in the mail about it. */
+  openRequest?: string | null;
 };
 
 /** What the editor is open for: an item to change, or a new one of that kind. */
 type Editing = { summary: ItemSummary | null; kind: ItemKind };
 
-export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
+export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Props) {
   useLanguage();
   const settings = useSettings();
   const [items, setItems] = useState<ItemSummary[]>([]);
@@ -99,6 +104,16 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
+  const [requestShown, setRequestShown] = useState<string | null>(null);
+
+  // The link in the mail about a file request: its page, and the link is used up.
+  useEffect(() => {
+    if (!openRequest) return;
+    setFilter({ kind: 'requests' });
+    setRequestShown(openRequest);
+    setView('detail');
+    location.hash = '';
+  }, [openRequest]);
   const [folderMenu, setFolderMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   const [folderDialog, setFolderDialog] = useState<null | { id: string | null; name: string }>(
     null,
@@ -217,7 +232,9 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
                   ? (overview?.collections.find((c) => c.id === filter.id)?.name ?? '')
                   : filter.kind === 'sends'
                     ? t('Sends')
-                    : t('Passwortprüfung');
+                    : filter.kind === 'requests'
+                      ? t('Datei-Anfragen')
+                      : t('Passwortprüfung');
 
   const pick = (next: Filter) => {
     setFilter(next);
@@ -317,6 +334,16 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
               >
                 <Icon name="send" size={16} />
                 <span className="nav-label">{t('Sends')}</span>
+              </button>
+            </li>
+            <li>
+              <button
+                className="nav-row"
+                aria-current={filter.kind === 'requests' ? 'true' : undefined}
+                onClick={() => pick({ kind: 'requests' })}
+              >
+                <Icon name="download" size={16} />
+                <span className="nav-label">{t('Datei-Anfragen')}</span>
               </button>
             </li>
             <li>
@@ -423,6 +450,8 @@ export function VaultScreen({ status, searchRef, onAddAccount }: Props) {
 
         {filter.kind === 'sends' ? (
           <SendsView />
+        ) : filter.kind === 'requests' ? (
+          <FileRequestsView open={requestShown} />
         ) : filter.kind === 'health' ? (
           <HealthReport
             onOpen={(id) => {

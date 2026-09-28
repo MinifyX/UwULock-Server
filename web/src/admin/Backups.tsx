@@ -6,6 +6,7 @@ import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { Offsite } from './Offsite';
 
 /**
  * What the time stamp in a backup's name says: `2026-09-25-031000`, and whether it is the one
@@ -40,6 +41,8 @@ export function Backups() {
 
   return (
     <>
+      <Offsite />
+      <h2 className="settings-heading">{t('Backups auf diesem Server')}</h2>
       <p className="settings-lead">
         {t(
           'Backups liegen im selben Volume wie die Datenbank. Gegen eine kaputte Platte hilft nur eine Kopie woanders: Lade ab und zu eines herunter. Beim Zurückspielen wird der jetzige Stand vorher selbst ein Backup – so lässt es sich auf demselben Weg rückgängig machen.',

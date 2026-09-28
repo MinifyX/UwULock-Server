@@ -8,6 +8,7 @@ import { TitleBar } from './components/TitleBar';
 import { VaultScreen } from './components/VaultScreen';
 import { lacksTwoFactor, PolicyBanners, TwoFactorRequired } from './components/web/Policies';
 import { RegisterScreen } from './components/web/RegisterScreen';
+import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
 import { errorText } from './lib/errors';
 import { acceptContact } from './lib/features';
@@ -104,6 +105,15 @@ export function App() {
 
   const registering = route.path === '/finish-signup' || route.path === '/register';
   const sendLink = route.path.match(/^\/send\/([^/]+)\/([^/]+)$/);
+  // A file request's link: `#/request/<access id>/<secret>` here, `/r/<access id>#<secret>` on a
+  // send domain.
+  const requestLink =
+    route.path.match(/^\/request\/([^/]+)\/([^/]+)$/) ??
+    (() => {
+      const path = location.pathname.match(/^\/r\/([A-Za-z0-9_-]+)$/);
+      return path ? [path[0], path[1], location.hash.replace(/^#/, '')] : null;
+    })();
+  const fileRequest = route.path.match(/^\/file-requests\/([^/]+)$/)?.[1] ?? null;
 
   // The link from an emergency access invitation: accepted once the vault is open.
   useEffect(() => {
@@ -167,6 +177,8 @@ export function App() {
         <main className="stage">
           {sendLink ? (
             <SendPage accessId={sendLink[1]!} urlKey={sendLink[2]!} />
+          ) : requestLink ? (
+            <RequestPage accessId={requestLink[1]!} secret={requestLink[2]!} />
           ) : registering ? (
             <RegisterScreen
               token={route.query.get('token') ?? ''}
@@ -190,7 +202,12 @@ export function App() {
           ) : (
             <div className="vault-frame">
               <PolicyBanners status={status} info={info} onSettings={setSettingsOpen} />
-              <VaultScreen status={status} searchRef={searchRef} onAddAccount={() => undefined} />
+              <VaultScreen
+                status={status}
+                searchRef={searchRef}
+                onAddAccount={() => undefined}
+                openRequest={fileRequest}
+              />
             </div>
           )}
         </main>
