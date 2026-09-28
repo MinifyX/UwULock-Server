@@ -9,7 +9,7 @@ Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit 
 Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind zusammen als
 0.4.0-beta.1 erschienen, nach einem Sicherheitsreview
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
-0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 5.
+0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit), dann Stufe 5.
 
 ## Leitlinien
 
@@ -149,13 +149,67 @@ mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf 
 - [x] Passwortprüfung im Web-Tresor: schwach, mehrfach, ohne https, Datenlecks über den eigenen
       Server bei Have I Been Pwned (k-Anonymität, im Admin-Portal abschaltbar)
 
+### Stufe 4b — Betrieb und Sicherheit (vor Stufe 5)
+
+Was ein Server für eine Familie oder ein kleines Büro braucht, bevor Firmen dazukommen. Kommt nach
+den Tests auf echten Geräten.
+
+- Backups auf anderen Systemen, wie bei UwUMail Server (dort `docs/backups.md`): SFTP (z. B. ein
+  NAS), S3 (MinIO, B2, Hetzner, Garage, …) oder ein eingehängter Ordner. Nächtlich und auf
+  Knopfdruck, dedupliziert, standardmäßig verschlüsselt (Wiederherstellungsschlüssel einmal im
+  Admin-Portal, später nach Passwort erneut), aufheben 7 Tage / 4 Wochen / 6 Monate (änderbar).
+  Enthält Datenbank, Anhänge, Send-Dateien und die Schlüssel des Servers. Zurückspielen über die
+  Kommandozeile auf einem neuen Server und im Admin-Portal wie die lokalen Backups; eine Warnung
+  (Admin-Portal, Mail, Metrik), wenn das letzte gelungene Backup zu alt ist. Die lokalen Backups
+  bleiben daneben.
+- Sicherheitshinweise für Nutzer, per Mail und als Liste im Web-Tresor (*Einstellungen →
+  Sicherheit*, mit Gerät, IP und Zeit), in der Sprache des Kontos:
+  - Fehlversuche: mehrere falsche Passwörter oder 2FA-Codes für das Konto
+  - Konto-Änderungen: Master-Passwort, E-Mail, KDF, 2FA an oder aus, Schlüssel rotiert, API-Key
+    erzeugt oder erneuert
+  - Zugriffe: Notfallzugriff angefragt oder übernommen, „Mit Gerät anmelden"-Anfragen, Export
+    des Tresors
+  - Neues Gerät: die Mail gibt es schon, sie kommt mit in die Liste
+  Mails werden gebündelt, damit ein Angriff nicht zur Mailflut wird; der Admin kann einzelne
+  Arten abschalten. Das Ereignisprotokoll von Stufe 5 baut darauf auf.
+- Datei-Anfragen (Sends in umgekehrter Richtung): Ein Nutzer erstellt einen Link, über den
+  jemand ohne Konto Dateien und Text zu ihm hochlädt, z. B. Ausweis-Scans. Verschlüsselt wird im
+  Browser des Absenders mit dem öffentlichen Schlüssel des Kontos, der Server sieht nur
+  Verschlüsseltes. Einstellbar: Ablauf, Anzahl und Größe der Dateien, Passwort, ein Hinweistext.
+  Mail an den Nutzer, wenn etwas ankommt; ansehen und als Eintrag übernehmen in Web-Tresor und
+  UwULock-Client (die offiziellen Clients kennen das nicht). Rate-Limits gegen Missbrauch; läuft
+  auch unter den Send-Domains aus Stufe 6.
+- UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
+  - Admin-Portal: Admins melden sich über UwUAuth an, auf Wunsch nur Mitglieder einer Gruppe
+  - Tresor: „Mit SSO anmelden" in Erweiterung, Apps und Web-Tresor wie bei Vaultwarden (die
+    SSO-Kennung der Clients ist egal); das Master-Passwort entsperrt den Tresor weiterhin, der
+    Server sieht es nie
+  - Konten: Wer in UwUAuth (in einer bestimmten Gruppe) ist, darf sich ohne Einladung
+    registrieren und legt beim ersten Mal sein Master-Passwort fest; SCIM aus UwUAuth sperrt oder
+    entfernt Konten
+  - Suite-Kopplung per Code, sobald UwUAuth sie hat (dort Stufe 4), statt Client-ID und
+    Adressen von Hand einzutragen
+  Die Anmeldung per Einladung und Passwort bleibt daneben.
+- Notfallblatt als PDF, im Browser erzeugt (der Server bekommt es nie): Server-Adresse und
+  E-Mail als Text und QR-Code, ein leeres Feld für das Master-Passwort zum Eintragen von Hand, der
+  2FA-Wiederherstellungscode (nach dem Master-Passwort) und eine kurze Anleitung für Angehörige,
+  mit Hinweis auf eingerichtete Notfallzugriffe und ihre Wartezeit. Deutsch und Englisch.
+- Monitoring:
+  - `/metrics` für Prometheus, wie bei UwUMail Server (dort `docs/metrics.md`): abschaltbar,
+    mit Token oder nur auf einer eigenen Adresse; Anfragen und Latenzen, Anmeldungen (gelungen,
+    fehlgeschlagen), Sync-Dauer, Live-Verbindungen, Push-Relay- und Mail-Fehler, Größe der
+    Datenbank und der Dateien, Alter des letzten Backups, Ablauf des Zertifikats. Keine
+    Adressen oder anderen Nutzerdaten als Labels. Dazu Beispiel-Alarmregeln.
+  - Logs an Grafana Loki, wie bei UwUMail Server: im Admin-Portal einschaltbar, gleiches JSON
+    wie `log.format = json`, damit dieselben Abfragen für beide Wege gehen.
+
 ### Stufe 5 — Firma
 
 - Organisationen, Sammlungen, Rollen, Einladungen
 - Gruppen, Richtlinien (2FA-Pflicht, Master-Passwort-Anforderungen, Account-Recovery)
-- Ereignisprotokoll / Audit
+- Ereignisprotokoll / Audit (auf den Sicherheitshinweisen aus Stufe 4b)
 - PostgreSQL
-- SSO über OIDC (Entra ID), Bitwarden Directory Connector (LDAP, Entra)
+- SSO mit Entra ID (OIDC an sich kommt mit Stufe 4b), Bitwarden Directory Connector (LDAP, Entra)
 
 ### Stufe 6 — UwU-Extras (unter `/uwu/v1`, angekündigt unter `GET /uwu/v1/info`)
 
@@ -227,7 +281,8 @@ Docker-Images für amd64 und arm64 auf GHCR, dazu `install.sh`, `update.sh`, `co
 
 ## Festgelegt
 
-- Stufe 5 (Firma) vor Stufe 6 (UwU-Extras); die beiden lassen sich tauschen.
+- Stufe 4b (Betrieb und Sicherheit) vor Stufe 5 (Firma) vor Stufe 6 (UwU-Extras); 5 und 6 lassen
+  sich tauschen.
 - Web-Tresor und Admin-Portal schon in 0.1: der Web-Tresor an der Wurzel `/`, das Admin-Portal
   unter `/admin`, beide im Look der UwULock-App.
 - Keine Bestätigung neuer Geräte per Mail (Bitwardens „new device verification"): wer mehr
