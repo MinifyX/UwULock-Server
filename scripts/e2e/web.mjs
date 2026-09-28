@@ -156,6 +156,11 @@ try {
   await page.locator('.modal input[type=password]').fill(password);
   await page.getByRole('button', { name: 'Ausschalten', exact: true }).click();
   await page.getByText('Ausgeschaltet.').waitFor();
+  // Both switches are security notices now, under Sicherheit.
+  await page.getByRole('navigation').getByRole('button', { name: /^Sicherheit/ }).click();
+  await page.getByText(/Zwei-Schritt-Anmeldung ausgeschaltet/).first().waitFor();
+  await page.getByText(/Zwei-Schritt-Anmeldung eingeschaltet/).first().waitFor();
+  await snap('security-notices');
   await page.keyboard.press('Escape');
 
   step('the admin portal');
@@ -167,7 +172,7 @@ try {
   await page.getByRole('button', { name: 'Einladen' }).click();
   await page.locator('.invite-link').waitFor();
   await snap('admin-invited');
-  for (const name of ['Nutzer', 'Einstellungen', 'Ereignisse', 'Log', 'Backups']) {
+  for (const name of ['Nutzer', 'Einstellungen', 'Benachrichtigungen', 'Ereignisse', 'Log', 'Backups']) {
     await page.getByRole('navigation').getByRole('button', { name }).click();
     await page.getByRole('heading', { name, exact: true }).waitFor();
     await page.waitForTimeout(400);
@@ -186,6 +191,19 @@ try {
   ]);
   if (!/^uwulock-.*\.db$/.test(backup.suggestedFilename()))
     throw new Error(`the backup came as ${backup.suggestedFilename()}`);
+
+  step('the diagnosis, with the browser checks against this server');
+  await page.getByRole('navigation').getByRole('button', { name: 'Diagnose' }).click();
+  await page.getByRole('button', { name: 'Diagnose starten' }).click();
+  // The WebSocket goes through, and 16 MB are taken: no proxy is in front here.
+  for (const id of ['proxy.websocket', 'proxy.uploadLimit']) {
+    await page
+      .locator(`.check-card[data-status="ok"]`)
+      .filter({ hasText: id === 'proxy.websocket' ? 'WebSockets' : 'Upload' })
+      .first()
+      .waitFor({ timeout: 60000 });
+  }
+  await snap('admin-diagnosis');
 
   step('a backup goes back while the server runs');
   await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
