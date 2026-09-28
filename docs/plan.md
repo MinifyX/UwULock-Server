@@ -11,6 +11,9 @@ Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind z
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
 0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit), 4c (Tresor-Komfort) und 4d (Familie), dann Stufe 5.
 
+Die Schnittstellen, die Server, Web-Tresor, UwULock-Client, Browsererweiterung, UwUSSH, UwURDP,
+UwUMail und UwUAuth für 0.6 gemeinsam umsetzen, stehen in [uwu-api.md](uwu-api.md).
+
 ## Leitlinien
 
 - **Zero-Knowledge wie bei Bitwarden.** Der Server sieht nie ein Passwort und nie einen Eintrag im
