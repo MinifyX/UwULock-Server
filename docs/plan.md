@@ -9,7 +9,7 @@ Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit 
 Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind zusammen als
 0.4.0-beta.1 erschienen, nach einem Sicherheitsreview
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
-0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit), dann Stufe 5.
+0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit) und 4c (Tresor-Komfort), dann Stufe 5.
 
 ## Leitlinien
 
@@ -20,8 +20,9 @@ Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind z
   offiziellen Clients nie hinschauen.
 - **Eine Datei, ein Container.** SQLite, ein Docker-Image, `install.sh` und `update.sh` wie bei
   UwUSync. PostgreSQL kommt später als zweites Backend hinter derselben Schicht.
-- **Keine Favicon-Abfragen bei Dritten** (UwULock-Vision): `/icons/…` liefert nichts, die
-  Erweiterung zeigt dann ihr Standard-Symbol.
+- **Der Browser spricht nie mit Dritten.** Heute liefert `/icons/…` nichts, die Erweiterung zeigt
+  ihr Standard-Symbol. Mit Stufe 4c holt der Server Website-Icons selbst und liefert sie aus
+  (abschaltbar); Web-Tresor und Apps fragen weiter nur den eigenen Server.
 
 ## Aufbau
 
@@ -203,6 +204,51 @@ den Tests auf echten Geräten.
   - Logs an Grafana Loki, wie bei UwUMail Server: im Admin-Portal einschaltbar, gleiches JSON
     wie `log.format = json`, damit dieselben Abfragen für beide Wege gehen.
 
+### Stufe 4c — Tresor-Komfort (vor Stufe 5)
+
+Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach Stufe 4b.
+
+- Icons für Einträge:
+  - Automatisch: Der Server holt das Icon der Website (`<link rel="icon">`,
+    `apple-touch-icon`, `/favicon.ico`), rechnet es in PNG um und hebt es auf; Web-Tresor,
+    UwULock-Client und die offiziellen Clients bekommen es über `/icons/<host>/icon.png`.
+    Standardmäßig an, im Admin-Portal abschaltbar, Cache dort leerbar. Nur öffentliche Adressen:
+    Der Server prüft jede aufgelöste IP (auch nach Weiterleitungen, gegen DNS-Rebinding), mit
+    Zeit- und Größenlimits; die Website sieht nur die IP des Servers.
+  - Lokale Adressen (private IPs, `.local`, `.lan`, Namen ohne Punkt): Der Server fragt nie ins
+    interne Netz. Web-Tresor und UwULock-Client laden das Icon selbst vom Gerät im Heimnetz und
+    speichern es als eigenes Icon. Im Browser verhindern Mixed Content (https-Tresor,
+    http-Gerät) und CORS das oft; dann geht es im UwULock-Client oder von Hand.
+  - Eigene Icons: hochladen (PNG, JPEG, WebP; SVG nur in PNG umgerechnet), im Client auf
+    128 px verkleinert, mit dem Schlüssel des Kontos verschlüsselt unter `/uwu/v1` zur
+    Eintrags-ID gespeichert. Sichtbar in Web-Tresor und UwULock-Client; die offiziellen Clients
+    fragen Icons ohne Anmeldung nur pro Hostname ab und zeigen deshalb das automatische.
+  - Icon-Bibliothek: [selfh.st Icons](https://selfh.st/icons/), eventuell auch Dashboard Icons
+    und Simple Icons (Lizenzen vorher prüfen, Quelle und Lizenz im Tresor angeben). Der Server
+    spiegelt nur den Index; die Suche läuft im Tresor darüber. Ein gewähltes Icon holt der Server
+    bei Bedarf, hebt es auf und liefert es aus — der Browser spricht nie mit selfh.st oder einem
+    CDN. Im Eintrag wird es wie ein eigenes Icon verschlüsselt gespeichert, damit der Server
+    nicht erfährt, welches Icon zu welchem Eintrag gehört.
+  - Reihenfolge: eigenes Icon, sonst automatisches, sonst Standard-Symbol.
+- Import aus anderen Passwort-Managern im Web-Tresor, gelesen im Browser (der Server sieht nur
+  Verschlüsseltes): KeePass/KeePassXC (KDBX mit dessen Passwort, und CSV), 1Password (1PUX und
+  CSV), Chrome/Edge, Firefox, Apple Passwörter, Proton Pass, LastPass. Mit Vorschau, Ordnern und
+  TOTP; was nicht passt, wird zur Notiz. Bitwardens eigene Importer dienen als Maßstab.
+- Reisemodus: Ordner lassen sich als „auf Reisen ausblenden" markieren. Ist der Modus an, lässt
+  der Server deren Einträge (samt Anhängen) aus Sync und allen Abfragen weg; die Apps entfernen
+  sie beim nächsten Sync auch lokal — das geht mit den offiziellen Clients. Einschalten auf jedem
+  Gerät im Web-Tresor, ausschalten nur mit Master-Passwort und 2FA. Der Server kennt dafür nur
+  die Ordner-IDs, nie ihre Namen.
+- Versionen von Einträgen: Bei jeder Änderung hebt der Server den vorigen verschlüsselten Stand
+  auf (Anzahl bzw. Tage im Admin-Portal einstellbar, zählt zum Speicher); zurückholen im
+  Web-Tresor und UwULock-Client. Anhänge nicht. Beim Rotieren der Schlüssel werden die alten
+  Stände im Client neu verschlüsselt oder verworfen (noch zu entscheiden); endgültig gelöschte
+  Einträge verlieren auch ihre Versionen.
+- Erinnerung ans Erneuern eines Passworts, nur wenn man sie pro Eintrag einstellt (nach N Monaten
+  oder an einem Datum). Der Server speichert nur Eintrags-ID und Datum und schickt dann eine Mail
+  ohne Namen des Eintrags („Ein Eintrag in deinem Tresor ist fällig") mit Link in den
+  Web-Tresor; dort und im UwULock-Client sind fällige Einträge markiert.
+
 ### Stufe 5 — Firma
 
 - Organisationen, Sammlungen, Rollen, Einladungen
@@ -281,8 +327,8 @@ Docker-Images für amd64 und arm64 auf GHCR, dazu `install.sh`, `update.sh`, `co
 
 ## Festgelegt
 
-- Stufe 4b (Betrieb und Sicherheit) vor Stufe 5 (Firma) vor Stufe 6 (UwU-Extras); 5 und 6 lassen
-  sich tauschen.
+- Stufe 4b (Betrieb und Sicherheit) und 4c (Tresor-Komfort) vor Stufe 5 (Firma) vor Stufe 6
+  (UwU-Extras); 5 und 6 lassen sich tauschen.
 - Web-Tresor und Admin-Portal schon in 0.1: der Web-Tresor an der Wurzel `/`, das Admin-Portal
   unter `/admin`, beide im Look der UwULock-App.
 - Keine Bestätigung neuer Geräte per Mail (Bitwardens „new device verification"): wer mehr
