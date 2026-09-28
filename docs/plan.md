@@ -159,14 +159,14 @@ mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf 
 Was ein Server für eine Familie oder ein kleines Büro braucht, bevor Firmen dazukommen. Kommt nach
 den Tests auf echten Geräten.
 
-- [ ] Backups auf anderen Systemen, wie bei UwUMail Server (dort `docs/backups.md`): SFTP (z. B. ein
+- [x] Backups auf anderen Systemen, wie bei UwUMail Server (dort `docs/backups.md`): SFTP (z. B. ein
       NAS), S3 (MinIO, B2, Hetzner, Garage, …) oder ein eingehängter Ordner. Nächtlich und auf
       Knopfdruck, dedupliziert, standardmäßig verschlüsselt (Wiederherstellungsschlüssel einmal im
       Admin-Portal, später nach Passwort erneut), aufheben 7 Tage / 4 Wochen / 6 Monate (änderbar).
       Enthält Datenbank, Anhänge, Send-Dateien und die Schlüssel des Servers. Zurückspielen über die
       Kommandozeile auf einem neuen Server und im Admin-Portal wie die lokalen Backups; eine Warnung
       (Admin-Portal, Mail, Metrik), wenn das letzte gelungene Backup zu alt ist. Die lokalen Backups
-      bleiben daneben.
+      bleiben daneben. (Enthält auch die Dateien der Datei-Anfragen; `docs/backups.md`.)
 - [x] Sicherheitshinweise für Nutzer, per Mail und als Liste im Web-Tresor (*Einstellungen →
       Sicherheit*, mit Gerät, IP und Zeit), in der Sprache des Kontos:
   - Fehlversuche: mehrere falsche Passwörter oder 2FA-Codes für das Konto
@@ -177,13 +177,17 @@ den Tests auf echten Geräten.
   - Neues Gerät: die Mail gibt es schon, sie kommt mit in die Liste
   Mails werden gebündelt, damit ein Angriff nicht zur Mailflut wird; der Admin kann einzelne
   Arten abschalten. Das Ereignisprotokoll von Stufe 5 baut darauf auf.
-- [ ] Datei-Anfragen (Sends in umgekehrter Richtung): Ein Nutzer erstellt einen Link, über den
+- [x] Datei-Anfragen (Sends in umgekehrter Richtung): Ein Nutzer erstellt einen Link, über den
       jemand ohne Konto Dateien und Text zu ihm hochlädt, z. B. Ausweis-Scans. Verschlüsselt wird im
       Browser des Absenders mit dem öffentlichen Schlüssel des Kontos, der Server sieht nur
       Verschlüsseltes. Einstellbar: Ablauf, Anzahl und Größe der Dateien, Passwort, ein Hinweistext.
       Mail an den Nutzer, wenn etwas ankommt; ansehen und als Eintrag übernehmen in Web-Tresor und
       UwULock-Client (die offiziellen Clients kennen das nicht). Rate-Limits gegen Missbrauch; läuft
-      auch unter den Send-Domains aus Stufe 6.
+      auch unter den Send-Domains aus Stufe 6. (Server und Web-Tresor fertig, mit dem
+      Extras-Schlüssel und `storagePerUserMb`; `docs/file-requests.md`. Die Seite unter `/r/<id>`
+      und die Regel, was eine Send-Domain beantwortet, stehen bereit. Die Live-Meldung an den
+      Besitzer und das Zählen im Delta-Sync kommen mit dem Echtzeit-Kanal und dem Delta-Sync;
+      die Seite im UwULock-Client mit dessen 0.3.)
 - [ ] UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
   - Admin-Portal: Admins melden sich über UwUAuth an, auf Wunsch nur Mitglieder einer Gruppe
   - Tresor: „Mit SSO anmelden" in Erweiterung, Apps und Web-Tresor wie bei Vaultwarden (die
@@ -195,10 +199,12 @@ den Tests auf echten Geräten.
   - Suite-Kopplung per Code, sobald UwUAuth sie hat (dort Stufe 4), statt Client-ID und
     Adressen von Hand einzutragen
   Die Anmeldung per Einladung und Passwort bleibt daneben.
-- [ ] Notfallblatt als PDF, im Browser erzeugt (der Server bekommt es nie): Server-Adresse und
+- [x] Notfallblatt als PDF, im Browser erzeugt (der Server bekommt es nie): Server-Adresse und
       E-Mail als Text und QR-Code, ein leeres Feld für das Master-Passwort zum Eintragen von Hand, der
       2FA-Wiederherstellungscode (nach dem Master-Passwort) und eine kurze Anleitung für Angehörige,
       mit Hinweis auf eingerichtete Notfallzugriffe und ihre Wartezeit. Deutsch und Englisch.
+      (Unter *Einstellungen → Notfallzugriff*; ein kleiner eigener PDF-Schreiber mit den
+      Standardschriften, der QR-Code von `uqr` wie bei der Zwei-Schritt-Anmeldung.)
 - [x] Monitoring:
   - [x] `/metrics` für Prometheus, wie bei UwUMail Server (dort `docs/metrics.md`): abschaltbar,
         mit Token oder nur auf einer eigenen Adresse; Anfragen und Latenzen, Anmeldungen (gelungen,

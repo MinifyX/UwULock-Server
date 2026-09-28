@@ -34,6 +34,30 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   address, the public address), each with what to do for Caddy and nginx.
 - Errors under `/uwu/v1` carry a machine-readable `code`.
 
+**Stufe 4b, second part.**
+
+- **Backups on another system**: an SFTP server (a NAS), an S3 bucket (Amazon, MinIO, B2,
+  Hetzner, Garage, …) or a mounted folder, every night and at the press of a button,
+  deduplicated (only what is new goes up), encrypted with a recovery key shown once (and again
+  after the master password), kept 7 days / 4 weeks / 6 months. They hold the database, the
+  attachments, Send files, file requests and the server's keys. A snapshot goes back in the admin
+  portal like a local backup, or with `uwulock-server backup restore --sftp|--s3|--folder` onto a
+  new machine. A failed or too old off-site backup is an alert, a warning in the diagnosis and a
+  metric. The local backups stay beside them ([docs/backups.md](docs/backups.md)).
+- **File requests**: a link through which somebody without an account uploads files and a message
+  to you, encrypted in their browser for your account — with an expiry, a number of submissions,
+  files and bytes, a password and a note. A mail when something arrives; read it, download it, or
+  take it over as an item with the files attached, in the web vault. Rate-limited against abuse,
+  deleted 30 days after it expired ([docs/file-requests.md](docs/file-requests.md)).
+- **The emergency sheet**: a PDF for your family, made in the browser (the server never sees it),
+  in German or English — the server's address and your email as text and QR codes, a box for
+  the master password to write in by hand, the recovery code of two-step login, and what to do,
+  with your emergency contacts and their waiting times. Under *Settings → Emergency access*.
+- **Storage per account** (`storagePerUserMb`): attachments, Send files and file requests
+  together; uploads past it are refused. The web vault's account data says how much is used.
+- The extras key of the 0.6 API (`/uwu/v1/keys`), which UwULock's own things are encrypted
+  under so that a key rotation by any client loses nothing.
+
 - Development: `scripts/test.sh` runs the tests quietly, with only a summary and what failed.
   The tests take about half the time (the crypto and SQLite are built optimised in the dev
   profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).

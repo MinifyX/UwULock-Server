@@ -308,8 +308,10 @@ Every night, and before every update, the server writes a consistent copy of its
 fill the disk: a backup is only written if a twentieth of the disk (at least 256 MiB) stays free
 afterwards.
 
-Those backups protect against a bad update or a mistake, not against a dead disk. Copy them
-somewhere else:
+Those backups protect against a bad update or a mistake, not against a dead disk. For that, set
+up **backups on another system** in the admin portal — an SFTP server, an S3 bucket or a mounted
+folder, deduplicated and encrypted, every night: [backups.md](backups.md). Or copy them somewhere
+else by hand:
 
 ```bash
 cd /opt/uwulock
@@ -337,9 +339,9 @@ master password): how things are right then is written as a backup first
 backups of this server; one of another server goes back on the command line as above. Here too,
 everybody logs in again afterwards, the admin who put it back included.
 
-Attachments and the files of Sends are not in the database: they are files next to it, in
-`/data/attachments` and `/data/sends`, encrypted by the clients. Copy those along with the
-backups. A file whose attachment or Send is deleted stays another week before the nightly sweep
+Attachments, the files of Sends and uploads to file requests are not in the database: they are
+files next to it, in `/data/attachments`, `/data/sends` and `/data/file-requests`, encrypted by
+the clients. The backups on another system carry them; a copy by hand should too. A file whose attachment or Send is deleted stays another week before the nightly sweep
 takes it, so a backup from that week that is put back still finds its files.
 
 ## Push notifications for the phone apps

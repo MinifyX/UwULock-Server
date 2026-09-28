@@ -76,16 +76,15 @@ few minutes is plenty. Answers are never cached.
 | `uwulock_push_relay_errors_total` | counter | | Requests Bitwarden's push relay did not take |
 | `uwulock_mail_sent_total`, `uwulock_mail_errors_total` | counter | | Mails that went out, and those the mail server did not take |
 | `uwulock_database_bytes` | gauge | | The database, with its write-ahead log |
-| `uwulock_files_bytes` | gauge | `kind`: `attachments`, `sends` | Stored files |
+| `uwulock_files_bytes` | gauge | `kind`: `attachments`, `sends`, `file_requests` | Stored files |
 | `uwulock_accounts`, `uwulock_items` | gauge | | Accounts; items, those in the trash included |
-| `uwulock_backup_last_success_timestamp_seconds` | gauge | `target`: `local` | When the newest backup was written |
+| `uwulock_backup_last_success_timestamp_seconds` | gauge | `target`: `local`, `offsite` | When the newest backup was written; `offsite` once one to another system worked ([backups.md](backups.md)) |
 | `uwulock_certificate_expiry_timestamp_seconds` | gauge | `domain`: `main` | When the certificate clients see runs out: the server's own, or the proxy's in front of it. Looked at every six hours |
 | `uwulock_loki_dropped_total` | counter | | Log lines dropped because Loki was away too long or refused them |
 | `process_*` | | | The usual: CPU seconds, resident and virtual memory, open and allowed file descriptors, start time |
 
 Counters start at 0 with every start of the server, which `rate()` and `increase()` understand.
-Later versions add `target="offsite"` for backups on other machines, the send domains'
-certificates, the realtime channel and the icon fetches.
+Later versions add the send domains' certificates, the realtime channel and the icon fetches.
 
 ## Alert rules to start with
 
@@ -98,6 +97,11 @@ groups:
         for: 1h
         annotations:
           summary: The newest backup of UwULock Server is older than two days.
+      - alert: UwULockOffsiteBackupOld
+        expr: time() - uwulock_backup_last_success_timestamp_seconds{target="offsite"} > 2 * 86400
+        for: 1h
+        annotations:
+          summary: The last backup of UwULock Server on another system is older than two days.
       - alert: UwULockCertificateExpiring
         expr: uwulock_certificate_expiry_timestamp_seconds - time() < 14 * 86400
         annotations:

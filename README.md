@@ -51,11 +51,12 @@ teams and SSO.
   emergency access and organisations over in one go. Tested in CI against a real Vaultwarden.
 - **UwULock's own web vault** at `/`, in the look of the UwULock app: the vault in three panes
   (one at a time on a phone), several items at once, the generator, import and export (Bitwarden
-  JSON and CSV), Sends, the password check, and every account setting. The crypto runs in the
+  JSON and CSV), Sends, file requests, the password check, the emergency sheet, and every account
+  setting. The crypto runs in the
   browser, as WebAssembly: the same code the UwULock app uses.
 - **An admin portal** at `/admin`: users with their files, invitations and who may send them,
   mail, push and other settings, numbers over time, the event log, the server's log, backups —
-  put back while the server runs — and the update notice. Admins are ordinary accounts with the
+  here and on another system, put back while the server runs — and the update notice. Admins are ordinary accounts with the
   admin right.
 - **Registration only by invitation**: by mail, or as a link to pass on by hand; users may
   invite a few people too, if the admin allows it.
@@ -114,6 +115,7 @@ version.
 | Path                    | What lives there                                                           |
 | ----------------------- | -------------------------------------------------------------------------- |
 | `crates/uwulock-store`  | The database: SQLite now, behind methods PostgreSQL can implement later     |
+| `crates/uwulock-backup` | Backups on another system: SFTP, S3 or a folder, deduplicated and encrypted |
 | `crates/uwulock-api`    | HTTP: Bitwarden's API, UwULock's own and the admin API under `/uwu/v1`      |
 | `crates/uwulock-mail`   | SMTP, and what the mails say, in German and English                        |
 | `crates/uwulock-notify` | Live updates: Bitwarden's notification hub, and push through its relay     |
@@ -170,6 +172,8 @@ GitHub release with the scripts.
 
 - [Plan](docs/plan.md) — where this is going, stage by stage (German)
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
+- [Backups](docs/backups.md) — on another system: SFTP, S3 or a folder, and back onto a new machine
+- [File requests](docs/file-requests.md) — links through which people without an account send you files
 - [Performance](docs/performance.md) — how it is measured, and the numbers
 - [Security review, September 2026](docs/security-review-2026-09.md) — what was found for 0.4,
   and how it was fixed

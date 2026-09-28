@@ -291,7 +291,11 @@ The client makes 64 random bytes, wraps them for the user key and for the public
 the token response (`AccountKeys.publicKeyEncryptionKeyPair.publicKey`, SPKI DER, base64). Answer:
 the `GET` body. 409 `exists` when there is one already (two clients raced): the loser fetches it.
 400 `no_key_pair` if the account has no key pair (only possible for accounts that never finished
-registration).
+registration), 400 `invalid` when a wrap is not an EncString of its type. A key that is `lost`
+makes way for the new one, without a `DELETE` first. The server keeps the account's public key
+beside the wraps: `lost` is that it differs from the account's now. A rotation through Bitwarden's
+`/api/accounts/key-management/rotate-user-account-keys` (by any client) drops `userKeyWrapped` in
+the same transaction.
 
 ### `PUT /uwu/v1/keys/user-wrap` — auth `user` or `suite`
 
@@ -1146,6 +1150,12 @@ full requests are the same 404 `gone`, so a link cannot be probed.
 
 Submissions not completed within 24 hours are deleted with their files.
 
+Also answered: `POST …/submissions` 401 `unauthorized` without a valid upload token (the page
+opens the link again), 413 `too_large` for a file above `maxFileBytes + 65`, 400 `invalid` for
+anything not of the form above; `PUT <file url>` 400 `invalid` when the first byte is not `0x02`.
+The upload token of one request does not open another (404 `gone`). The main host serves the page
+at `GET /r/<accessId>` too, the path a send domain's link has (§14.1).
+
 ### 11.4 Owner endpoints — auth `user`
 
 The request object:
@@ -1217,6 +1227,15 @@ The request object:
 
 "Take over as an item" in the clients: create the item with Bitwarden's API (e.g. a secure note
 with the text), then `attach` each file, then delete the submission.
+
+Checks on the owner's side: `name`, `linkSecret` (at most 4000 characters) and `publicInfo` (at
+most 20 000) must be EncStrings of type 2 (400 `invalid`); `maxFileBytes` is ignored when
+`maxFiles` is 0, and then `textAllowed` must be true. `GET` lists newest first; `unseen` counts
+completed submissions not marked seen, `bytes` the files (those still arriving included).
+`attach` answers 404 `not_found` for an item the account may not change. The files lie at
+`file-requests/<request id>/<file id>` in the data directory and are part of the off-site
+backups (§21.2). With `fileRequests.enabled` off, every endpoint here and in §11.3 answers 404
+`feature_off`.
 
 **Clients:** web vault (owner pages; the public upload page on the main host and send domains),
 UwULock desktop (owner side: list, open, take over).
@@ -2307,7 +2326,7 @@ defaults in brackets):
 | `metrics` | `{ enabled [false], tokenSet, listen [null] }` (§22); `token` write-only |
 | `loki` | `{ enabled [false], url, tenant, username, passwordSet, labels [{"job":"uwulock"}] }` (§21.7) |
 | `scim` | `{ onDelete ["disable"], tokenSet }` (§19.4) |
-| `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite |
+| `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite; what would go past it is refused with 422 `quota` (announcing an attachment of an own item, a Send file, a file-request submission for its owner) |
 
 `metrics` is stored with `tokenHash` (hex SHA-256), which `GET` replaces by `tokenSet`; on `PUT`,
 `token` left out or `null` keeps it, `""` removes it, otherwise it needs 16 characters. `loki`
@@ -2328,22 +2347,41 @@ files (token key, the secret of §13.2).
 
 - `GET /uwu/v1/admin/backups/offsite` →
   `{ "object": "offsiteBackups", "enabled", "hour", "minute", "retention": { "days": 7, "weeks": 4, "months": 6 }, "encrypted", "target", "status": { "lastSuccess", "lastError", "lastDuration", "bytes" }, "running", "warnAfterHours": 48 }`.
+  Also in `status`: `lastAttempt`, `uploaded` (bytes the last run sent) and `snapshot` (its
+  name); beside it `stale` (the last success is older than `warnAfterHours`). Times are the
+  store's format; `lastDuration` is seconds, `bytes` what the last snapshot holds. `hour` and
+  `minute` are UTC (default 02:30). `target` is `null` until one is set.
   `target` as UwUMail's view: `{ "kind": "sftp", "host", "port", "user", "path", "method": "key" | "password", "publicKey", "passwordSet", "hostKey" }`,
   `{ "kind": "s3", "endpoint", "region", "bucket", "prefix", "accessKey", "secretKeySet", "pathStyle" }`,
   or `{ "kind": "folder", "path" }`.
 - `PUT /uwu/v1/admin/backups/offsite` — `{ enabled, hour, minute, retention, encrypted, warnAfterHours, target: { kind, …, password?, secretKey? } }`;
-  the first save with `encrypted: true` answers `recoveryKey` once. `encrypted` is fixed once
-  there are backups (400).
+  the first save with `encrypted: true` answers `recoveryKey` once (the `GET` body plus
+  `recoveryKey`; `null` on every later save). `encrypted` is fixed once there are backups (400):
+  once a backup succeeded and the target is still the same place. `encrypted` left out means
+  `true`. `enabled` needs a target. For SFTP, `method: "key"` makes the server's own Ed25519 key
+  on the first save and keeps it whatever the target; the view shows its `publicKey` line for
+  `authorized_keys`. The host key is kept while host and port stay the same. A folder must be an
+  absolute path outside the data directory (400).
 - `POST …/offsite/test` → `{ "kind", "hostKey": "…" | null, "known": true }` (SFTP: first contact
-  shows and remembers the host key); `POST …/offsite/forget-host-key`.
-- `POST …/offsite/run` → 202; progress in `GET`.
-- `GET …/offsite/snapshots` → list `{ id, date, bytes, version }`.
+  shows and remembers the host key); `POST …/offsite/forget-host-key` → the `GET` body. The test
+  writes a small file there, reads it back and removes it.
+- `POST …/offsite/run` → 202; progress in `GET`. 409 `conflict` while one runs.
+- `GET …/offsite/snapshots` → list `{ id, date, bytes, version }`, newest first, each also with
+  `hostname` (the public host of the server that made it) and `uploaded`.
+- Errors of the target itself (unreachable, login refused, host key changed, damaged backup)
+  are 502 `upstream` with the reason; settings that cannot work are 400.
 - `POST …/offsite/restore` — `{ "snapshot", "masterPasswordHash" }`: like the local restore (a
   local backup first, only backups of this server, into the running server); bumps the server
-  epoch (§4.3).
+  epoch (§4.3). Answer `{ "restored", "before", "files" }` (`before`: the local backup of how it
+  was; `files`: how many files came back). The off-site settings and status stay those from
+  before the restore; so they do when a local backup goes back.
 - `POST …/offsite/recovery-key` — `{ "masterPasswordHash" }` → `{ "recoveryKey" }`.
 - Command line (not HTTP): `uwulock-server backup restore --sftp … | --s3 … | --folder … --into /data`
-  for a new machine, keys from the environment.
+  for a new machine, keys from the environment (`UWULOCK_BACKUP_KEY`,
+  `UWULOCK_BACKUP_SFTP_PASSWORD`, `UWULOCK_BACKUP_S3_ACCESS_KEY`, `UWULOCK_BACKUP_S3_SECRET_KEY`);
+  `--list`, `--snapshot`, `--host-key`, `--ssh-key`, `--endpoint`, `--region`, `--path-style`. It
+  switches the off-site backups off in the restored database. `uwulock-server backup offsite`
+  and `backup list` back up and list with the portal's settings ([backups.md](backups.md)).
 - Too old (`warnAfterHours`): an alert (§21.3), a warning on the overview, the metric of §22.
 
 ### 21.3 Notification channels
