@@ -447,6 +447,8 @@ fn canonical(ip: IpAddr) -> IpAddr {
 pub struct Session {
     pub user: Arc<User>,
     pub device: String,
+    /// The client the token was made for: `web`, `browser`, `desktop`, `cli`, `mobile`, …
+    pub client_id: String,
 }
 
 impl FromRequestParts<AppState> for Session {
@@ -456,6 +458,13 @@ impl FromRequestParts<AppState> for Session {
         let header = parts.headers.get("authorization").and_then(|value| value.to_str().ok()).unwrap_or_default();
         // Bitwarden takes what follows the last "Bearer ", or the whole value.
         let token = header.rsplit_once("Bearer ").map_or(header, |(_, token)| token);
+        Session::from_token(state, token).await
+    }
+}
+
+impl Session {
+    /// The session an access token stands for, if it still does.
+    pub async fn from_token(state: &AppState, token: &str) -> Result<Self, ApiError> {
         if token.is_empty() {
             return Err(ApiError::unauthorized());
         }
@@ -466,7 +475,7 @@ impl FromRequestParts<AppState> for Session {
         if user.disabled || user.security_stamp != claims.sstamp || !devices.contains(&claims.device) {
             return Err(ApiError::unauthorized());
         }
-        Ok(Session { user, device: claims.device })
+        Ok(Session { user, device: claims.device, client_id: claims.client_id })
     }
 }
 

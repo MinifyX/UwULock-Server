@@ -78,6 +78,12 @@ fn recovery_code() -> String {
     totp::base32_encode(&auth::random_bytes(20))
 }
 
+/// A security notice about a provider switched on or off, from this session.
+async fn noted(state: &AppState, session: &Session, ip: std::net::IpAddr, kind: &str, provider: i64) {
+    let context = crate::notices::Context::of(state, session, ip).await;
+    crate::notices::record(state, &session.user, kind, &context, json!({ "provider": provider })).await;
+}
+
 // ── At login ──────────────────────────────────────────────
 
 /// The second step of a password login. `Ok(None)` when the account has no two-step login or
@@ -131,7 +137,7 @@ pub(crate) async fn check_login(
             "error_description": "Two factor required.",
             "TwoFactorProviders": usable.iter().map(|factor| factor.kind.to_string()).collect::<Vec<_>>(),
             "TwoFactorProviders2": providers2,
-            "MasterPasswordPolicy": { "Object": "masterPasswordPolicy" },
+            "MasterPasswordPolicy": state.settings().policies.master_password_policy(),
         }))
     };
 
@@ -191,6 +197,17 @@ pub(crate) async fn check_login(
                 if state.mailer.enabled() {
                     send_later(state, &user.email, Mail::RecoveryUsed, Language::from_code(&user.language));
                 }
+                // Mailed already, just now: listed, not mailed again.
+                let context = crate::notices::Context::ip(ip);
+                crate::notices::record_mailed(
+                    state,
+                    user,
+                    "twoFactorDisabled",
+                    &context,
+                    json!({ "provider": RECOVERY }),
+                    state.mailer.enabled(),
+                )
+                .await;
                 return Ok(false);
             }
             AUTHENTICATOR if usable.iter().any(|factor| factor.kind == AUTHENTICATOR) => {
@@ -356,6 +373,7 @@ struct Disable {
 
 async fn disable(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(request): Json<Disable>,
 ) -> ApiResult<Json<Value>> {
@@ -363,6 +381,7 @@ async fn disable(
     let kind: i64 = request.kind.parse().map_err(|_| ApiError::bad("Invalid two factor provider"))?;
     state.store.remove_two_factor(&session.user.id, Some(kind)).await?;
     state.store.forget_remembered_devices(&session.user.id).await?;
+    noted(&state, &session, ip, "twoFactorDisabled", kind).await;
     Ok(Json(json!({ "enabled": false, "type": kind, "object": "twoFactorProvider" })))
 }
 
@@ -395,6 +414,7 @@ struct ActivateAuthenticator {
 
 async fn activate_authenticator(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(request): Json<ActivateAuthenticator>,
 ) -> ApiResult<Json<Value>> {
@@ -408,6 +428,7 @@ async fn activate_authenticator(
     let key = totp::base32_encode(&secret);
     state.store.set_two_factor(&session.user.id, AUTHENTICATOR, key, recovery_code()).await?;
     state.store.use_totp_step(&session.user.id, step).await?;
+    noted(&state, &session, ip, "twoFactorEnabled", AUTHENTICATOR).await;
     Ok(Json(json!({ "enabled": true, "key": request.key, "object": "twoFactorAuthenticator" })))
 }
 
@@ -421,6 +442,7 @@ struct DeleteAuthenticator {
 
 async fn delete_authenticator(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(request): Json<DeleteAuthenticator>,
 ) -> ApiResult<Json<Value>> {
@@ -433,6 +455,7 @@ async fn delete_authenticator(
         }
         state.store.remove_two_factor(&session.user.id, Some(AUTHENTICATOR)).await?;
         state.store.forget_remembered_devices(&session.user.id).await?;
+        noted(&state, &session, ip, "twoFactorDisabled", AUTHENTICATOR).await;
     }
     Ok(Json(json!({ "enabled": false, "type": AUTHENTICATOR, "object": "twoFactorProvider" })))
 }
@@ -505,6 +528,7 @@ struct ActivateEmail {
 
 async fn activate_email(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(request): Json<ActivateEmail>,
 ) -> ApiResult<Json<Value>> {
@@ -526,6 +550,7 @@ async fn activate_email(
         .store
         .set_two_factor(&session.user.id, EMAIL, json!({ "email": address }).to_string(), recovery_code())
         .await?;
+    noted(&state, &session, ip, "twoFactorEnabled", EMAIL).await;
     Ok(Json(json!({ "email": address, "enabled": true, "object": "twoFactorEmail" })))
 }
 
@@ -615,6 +640,7 @@ struct ActivateWebauthn {
 
 async fn activate_webauthn(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(request): Json<ActivateWebauthn>,
 ) -> ApiResult<Json<Value>> {
@@ -645,6 +671,7 @@ async fn activate_webauthn(
     keys.sort_by_key(|key| key.id);
     let data = serde_json::to_string(&keys).expect("keys serialize");
     state.store.set_two_factor(&session.user.id, WEBAUTHN, data, recovery_code()).await?;
+    noted(&state, &session, ip, "twoFactorEnabled", WEBAUTHN).await;
     Ok(Json(keys_answer(&keys)))
 }
 
@@ -659,6 +686,7 @@ struct DeleteWebauthn {
 
 async fn delete_webauthn(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(request): Json<DeleteWebauthn>,
 ) -> ApiResult<Json<Value>> {
@@ -669,6 +697,7 @@ async fn delete_webauthn(
     if keys.is_empty() {
         state.store.remove_two_factor(&session.user.id, Some(WEBAUTHN)).await?;
         state.store.forget_remembered_devices(&session.user.id).await?;
+        noted(&state, &session, ip, "twoFactorDisabled", WEBAUTHN).await;
     } else {
         let data = serde_json::to_string(&keys).expect("keys serialize");
         state.store.set_two_factor_data(&session.user.id, WEBAUTHN, data).await?;

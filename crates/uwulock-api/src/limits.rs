@@ -137,6 +137,8 @@ pub struct Limits {
     /// Questions to Have I Been Pwned, per account: a whole vault checked at once, but not a
     /// flood.
     pub hibp: Limiter<String>,
+    /// What clients report themselves, like an export: ten an hour per account.
+    pub reports: Limiter<String>,
 }
 
 impl Default for Limits {
@@ -148,6 +150,7 @@ impl Default for Limits {
             password: Limiter::new(10, Duration::from_secs(60)),
             mail: Limiter::new(5, Duration::from_secs(5 * 60)),
             hibp: Limiter::new(2000, Duration::from_millis(200)),
+            reports: Limiter::new(10, Duration::from_secs(6 * 60)),
         }
     }
 }
@@ -170,6 +173,7 @@ impl Limits {
             password: generous(),
             mail: generous(),
             hibp: generous(),
+            reports: generous(),
         }
     }
 }

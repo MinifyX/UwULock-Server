@@ -6,7 +6,7 @@
 //! and unless they say no within the wait, the contact may see the vault — or, for a takeover,
 //! set a new master password for it.
 
-use crate::auth::{self, Session};
+use crate::auth::{self, ClientIp, Session};
 use crate::ciphers::attachments_by_cipher;
 use crate::errors::{ApiError, ApiResult};
 use crate::identity::send_later;
@@ -376,7 +376,12 @@ async fn confirm(
 }
 
 /// The contact asks for access; the grantor hears of it.
-async fn initiate(State(state): State<AppState>, session: Session, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+async fn initiate(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    session: Session,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
     let mut access = as_grantee(&state, &session, &id).await?;
     if access.status != CONFIRMED {
         return Err(invalid());
@@ -398,6 +403,18 @@ async fn initiate(State(state): State<AppState>, session: Session, Path(id): Pat
         },
     );
     log(&state, &session, format!("asked for emergency access to {}", grantor.email)).await;
+    let context = crate::notices::Context::of(&state, &session, ip).await;
+    // The grantor had a mail about it just now: listed, not mailed again.
+    let mailed = state.mailer.enabled();
+    crate::notices::record_mailed(
+        &state,
+        &grantor,
+        "emergencyAccessRequested",
+        &context,
+        json!({ "grantee": session.user.email }),
+        mailed,
+    )
+    .await;
     Ok(Json(render_grantor(&state, &access).await?))
 }
 
@@ -495,6 +512,7 @@ struct NewPassword {
 /// mail.
 async fn password(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Path(id): Path<String>,
     Json(data): Json<NewPassword>,
@@ -504,6 +522,9 @@ async fn password(
         return Err(ApiError::bad("Invalid request!"));
     }
     let kdf = data.kdf.map(crate::identity::KdfData::check).transpose()?;
+    if let Some(kdf) = &kdf {
+        state.settings().policies.check_kdf(kdf)?;
+    }
     let password_hash = auth::hash_password(state.config.hash_cost, &data.new_master_password_hash).await?;
     let key = data.key;
     state
@@ -529,6 +550,18 @@ async fn password(
     crate::notify::user(&state, &grantor.id, None, uwulock_notify::Kind::LogOut);
     tell(&state, &grantor, Mail::EmergencyTakenOver { grantee: called(&session.user) });
     log(&state, &session, format!("took over {}", grantor.email)).await;
+    let context = crate::notices::Context::of(&state, &session, ip).await;
+    // The grantor had a mail about it just now: listed, not mailed again.
+    let mailed = state.mailer.enabled();
+    crate::notices::record_mailed(
+        &state,
+        &grantor,
+        "emergencyAccessTakenOver",
+        &context,
+        json!({ "grantee": session.user.email }),
+        mailed,
+    )
+    .await;
     tracing::info!(grantor = %grantor.id, grantee = %session.user.id, "account taken over by emergency access");
     Ok(StatusCode::OK)
 }

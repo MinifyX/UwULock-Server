@@ -55,6 +55,8 @@ impl TestServer {
             hibp_url: hibp_url.into(),
             login_attempts: 10,
             start_settings: settings,
+            certificate_probe: None,
+            time_sources: Vec::new(),
         };
         let mut state = AppState::new(store, config, "0.0.0-test", LogBuffer::new(100)).await.unwrap();
         state.mailer = Mailer::capturing();
@@ -67,6 +69,35 @@ impl TestServer {
         self.state.limits = Arc::new(limits);
         self.router = router(self.state.clone());
         self
+    }
+
+    /// Behind a proxy it trusts: `X-Forwarded-For` says where a request comes from.
+    pub(crate) fn behind_proxy(mut self) -> Self {
+        let mut config = (*self.state.config).clone();
+        config.trust_forwarded = true;
+        self.state.config = Arc::new(config);
+        self.router = router(self.state.clone());
+        self
+    }
+
+    /// `method` with a JSON body and a token, from `ip` (behind a proxy it trusts).
+    pub(crate) async fn call_from(
+        &self,
+        ip: &str,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: Value,
+    ) -> Response<Body> {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {token}"))
+            .header("x-forwarded-for", ip)
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        self.send(request).await
     }
 
     pub(crate) async fn send(&self, request: Request<Body>) -> Response<Body> {

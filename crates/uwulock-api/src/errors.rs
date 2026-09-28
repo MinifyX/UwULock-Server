@@ -15,6 +15,9 @@ use serde_json::{Value, json};
 pub struct ApiError {
     pub status: StatusCode,
     body: Body,
+    /// The machine-readable reason UwULock's own clients branch on (docs/uwu-api.md §1.3). One
+    /// that follows from the status when none is given.
+    code: Option<&'static str>,
 }
 
 #[derive(Debug)]
@@ -31,11 +34,11 @@ pub type ApiResult<T> = Result<T, ApiError>;
 impl ApiError {
     /// 400 with a message for the person in front of the client.
     pub fn bad(message: impl Into<String>) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, body: Body::Message(message.into()) }
+        Self { status: StatusCode::BAD_REQUEST, body: Body::Message(message.into()), code: None }
     }
 
     pub fn new(status: StatusCode, message: impl Into<String>) -> Self {
-        Self { status, body: Body::Message(message.into()) }
+        Self { status, body: Body::Message(message.into()), code: None }
     }
 
     /// 401: the clients try their refresh token, and log out if that does not help either.
@@ -57,18 +60,29 @@ impl ApiError {
 
     /// 400 with exactly this JSON as the body.
     pub fn json(value: Value) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, body: Body::Json(value) }
+        Self { status: StatusCode::BAD_REQUEST, body: Body::Json(value), code: None }
     }
 
     /// 400 "The model state is invalid." with messages by field.
     pub fn validation(errors: serde_json::Map<String, Value>) -> Self {
-        Self { status: StatusCode::BAD_REQUEST, body: Body::Validation(errors) }
+        Self { status: StatusCode::BAD_REQUEST, body: Body::Validation(errors), code: None }
     }
 
     /// Something went wrong on this side. What exactly goes to the log, not to the client.
     pub fn internal(error: impl std::fmt::Display) -> Self {
         tracing::error!(%error, "request failed");
         Self::new(StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong on the server. Try again later.")
+    }
+
+    /// With `code` as the machine-readable reason.
+    pub fn code(mut self, code: &'static str) -> Self {
+        self.code = Some(code);
+        self
+    }
+
+    /// 502: a server this one asked (a notification channel, Loki) did not do it.
+    pub fn upstream(message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_GATEWAY, message).code("upstream")
     }
 
     /// The message a person would read, for tests and logs.
@@ -87,8 +101,24 @@ impl From<uwulock_store::StoreError> for ApiError {
     }
 }
 
+fn default_code(status: StatusCode) -> &'static str {
+    match status.as_u16() {
+        400 => "invalid",
+        401 => "unauthorized",
+        403 => "forbidden",
+        404 => "not_found",
+        409 => "conflict",
+        413 => "too_large",
+        422 => "quota",
+        429 => "rate_limited",
+        502 => "upstream",
+        _ => "error",
+    }
+}
+
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let code = self.code.unwrap_or_else(|| default_code(self.status));
         let body = match self.body {
             Body::Message(message) => json!({
                 "message": message,
@@ -100,6 +130,7 @@ impl IntoResponse for ApiError {
                 "exceptionStackTrace": null,
                 "innerExceptionMessage": null,
                 "object": "error",
+                "code": code,
             }),
             Body::Json(value) => value,
             Body::Validation(errors) => json!({

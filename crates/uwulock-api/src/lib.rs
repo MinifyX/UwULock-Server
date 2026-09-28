@@ -15,11 +15,14 @@
 
 mod accounts;
 mod admin;
+pub mod alerts;
 mod attachments;
 mod auth;
 mod auth_requests;
+pub mod certificate;
 mod ciphers;
 mod cors;
+pub mod diagnosis;
 pub mod emergency;
 mod errors;
 pub mod files;
@@ -31,11 +34,17 @@ mod invitations;
 mod json;
 mod limits;
 mod logs;
+pub mod loki;
 mod meta;
+pub mod metrics;
+pub mod networks;
+pub mod notices;
 mod notifications;
 pub(crate) mod notify;
 mod organizations;
+pub(crate) mod outbound;
 mod passkeys;
+pub mod policies;
 mod sends;
 mod settings;
 mod totp;
@@ -86,6 +95,11 @@ pub struct ApiConfig {
     pub login_attempts: u32,
     /// The settings a new server starts with, until an admin saves others.
     pub start_settings: Settings,
+    /// Where the diagnosis and the metrics look at the certificate clients get; none for a
+    /// server at an http address.
+    pub certificate_probe: Option<certificate::Probe>,
+    /// Servers whose `Date` the diagnosis compares the clock with.
+    pub time_sources: Vec<String>,
 }
 
 /// What the admin portal says about updates. The server's daily look at GitHub fills it in.
@@ -135,6 +149,16 @@ pub struct AppState {
     pub hub: Arc<uwulock_notify::Hub>,
     /// Bitwarden's push relay, for the phone apps.
     pub relay: uwulock_notify::relay::Relay,
+    /// What `/metrics` counts.
+    pub metrics: Arc<metrics::Metrics>,
+    /// What the admins hear of: events going on, the channels' state.
+    pub alerts: Arc<alerts::Alerts>,
+    /// The certificate clients see, as last looked at.
+    pub certificate: Arc<RwLock<Option<certificate::Seen>>>,
+    /// Told whenever an admin saved the settings, for what runs beside the requests.
+    pub settings_changed: Arc<tokio::sync::Notify>,
+    /// When the admin networks were last read again from the database, as seconds since 1970.
+    pub admin_reloaded: Arc<std::sync::atomic::AtomicI64>,
 }
 
 impl AppState {
@@ -151,6 +175,7 @@ impl AppState {
         let party = webauthn::Party::from_public(&config.public);
         let limits = Arc::new(Limits::with_login_attempts(config.login_attempts));
         let legacy_rounds = store.legacy_rounds().await.map_err(|error| error.to_string())?;
+        logs.loki().configure(&settings.loki);
         Ok(AppState {
             store,
             version,
@@ -170,7 +195,19 @@ impl AppState {
             legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
             hub: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
+            metrics: Arc::default(),
+            alerts: Arc::default(),
+            certificate: Arc::default(),
+            settings_changed: Arc::default(),
+            admin_reloaded: Arc::default(),
         })
+    }
+
+    /// Settings an admin saved, or a restore brought, take effect everywhere.
+    pub fn apply_settings(&self, settings: Settings) {
+        self.logs.loki().configure(&settings.loki);
+        *self.settings.write() = settings;
+        self.settings_changed.notify_one();
     }
 
     /// Look again at how many hashes from Vaultwarden are left, after one was replaced or the
@@ -230,7 +267,11 @@ pub fn router(state: AppState) -> Router {
         .merge(meta::routes())
         .merge(uwu::routes())
         .merge(invitations::routes())
+        .merge(notices::routes())
         .merge(admin::routes())
+        .merge(alerts::routes())
+        .merge(diagnosis::routes())
+        .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
@@ -240,12 +281,15 @@ pub fn router(state: AppState) -> Router {
     let uploads = Router::new()
         .merge(attachments::upload_routes())
         .merge(sends::upload_routes())
+        .merge(diagnosis::upload_routes())
         .layer(DefaultBodyLimit::disable());
     let router = Router::new()
         .merge(quick)
         .merge(uploads)
         .fallback(web::fallback)
         .layer(axum::middleware::from_fn_with_state(state.clone(), cors::cors))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), networks::guard))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), metrics::track))
         .with_state(state)
         // A vault is JSON, and JSON shrinks to a fraction of itself. Clients ask for gzip; brotli
         // for whoever says they take it. The web vault's files come compressed already.
