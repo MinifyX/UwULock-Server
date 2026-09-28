@@ -39,6 +39,11 @@ pub(crate) fn upload_routes() -> Router<AppState> {
         .route("/api/ciphers/{id}/attachment-admin", post(upload_legacy))
 }
 
+/// What a download link's token is for: an attachment, never a Send's file of the same ids.
+fn attachment_subject(cipher_id: &str, id: &str) -> String {
+    format!("attachment:{cipher_id}/{id}")
+}
+
 /// Attachments as the clients read them, with a download link each that works for `seconds`.
 pub(crate) fn render<'a>(
     state: &AppState,
@@ -49,7 +54,7 @@ pub(crate) fn render<'a>(
 }
 
 pub(crate) fn render_one(state: &AppState, attachment: &Attachment, seconds: i64) -> Value {
-    let token = state.tokens.file_token(&format!("{}/{}", attachment.cipher_id, attachment.id), seconds);
+    let token = state.tokens.file_token(&attachment_subject(&attachment.cipher_id, &attachment.id), seconds);
     json!({
         "id": attachment.id,
         "url": format!("{}/attachments/{}/{}?token={token}", state.config.public, attachment.cipher_id, attachment.id),
@@ -219,12 +224,13 @@ async fn upload(
     }
     let path = files::attachment_path(&state, &id, &attachment)?;
     let limit = files::limit(&state).min((announced.size + LEEWAY).max(0) as u64);
+    let _uploading = state.uploads.start(&session.user.id)?;
     let uploaded = files::receive(form, &path, limit).await?;
     if uploaded.size < announced.size - LEEWAY {
-        files::discard(&path).await;
+        files::discard(&uploaded).await;
         return Err(ApiError::bad("The file is smaller than announced."));
     }
-    files::keep(&path).await?;
+    files::keep(&uploaded, &path).await?;
     let cipher = state
         .store
         .attachment_uploaded(&owner, &id, &attachment, uploaded.size)
@@ -244,13 +250,14 @@ async fn upload_legacy(
     let (_, owner, collections) = changeable(&state, &session, &id).await?;
     let attachment_id = files::new_file_id();
     let path = files::attachment_path(&state, &id, &attachment_id)?;
+    let _uploading = state.uploads.start(&session.user.id)?;
     let uploaded = files::receive(form, &path, files::limit(&state)).await?;
     let key = uploaded.fields.iter().find(|(name, _)| name == "key").map(|(_, key)| key.clone());
-    let (Some(file_name), Some(key)) = (uploaded.file_name.filter(|name| !name.is_empty()), key) else {
-        files::discard(&path).await;
+    let Some((file_name, key)) = uploaded.file_name.clone().filter(|name| !name.is_empty()).zip(key) else {
+        files::discard(&uploaded).await;
         return Err(ApiError::bad("No file name or no key for the attachment."));
     };
-    files::keep(&path).await?;
+    files::keep(&uploaded, &path).await?;
     let attachment = Attachment {
         id: attachment_id,
         cipher_id: id.clone(),
@@ -293,7 +300,7 @@ async fn download(
     Path((id, attachment)): Path<(String, String)>,
     Query(query): Query<DownloadQuery>,
 ) -> ApiResult<Response> {
-    if !state.tokens.check_file_token(&query.token, &format!("{id}/{attachment}")) {
+    if !state.tokens.check_file_token(&query.token, &attachment_subject(&id, &attachment)) {
         return Err(ApiError::unauthorized());
     }
     let found = state.store.attachment(&id, &attachment).await?.filter(|found| found.uploaded);

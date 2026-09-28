@@ -202,7 +202,7 @@ impl Store {
             .sqlite_write(move |tx| {
                 let Some(changed) = touch_cipher(tx, &owned, &cipher_id)? else { return Ok(None) };
                 let done = tx.execute(
-                    "UPDATE attachments SET uploaded = 1, size = ?3 WHERE id = ?1 AND cipher_id = ?2",
+                    "UPDATE attachments SET uploaded = 1, size = ?3 WHERE id = ?1 AND cipher_id = ?2 AND uploaded = 0",
                     params![id, cipher_id, size],
                 )? > 0;
                 Ok(done.then_some(changed))

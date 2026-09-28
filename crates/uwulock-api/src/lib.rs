@@ -127,6 +127,8 @@ pub struct AppState {
     /// The most PBKDF2 rounds of the password hashes from Vaultwarden still waiting for a login,
     /// or 0: see [`auth::verify_login`].
     pub legacy_rounds: Arc<std::sync::atomic::AtomicU32>,
+    /// Uploads running, per account.
+    pub uploads: Arc<files::Uploads>,
     /// "Log in with a device" requests for addresses without an account.
     pub unanswerable: Arc<auth_requests::Unanswerable>,
     /// Who listens for live updates.
@@ -164,6 +166,7 @@ impl AppState {
             challenges: Arc::default(),
             hibp: Arc::default(),
             unanswerable: Arc::default(),
+            uploads: Arc::default(),
             legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
             hub: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
