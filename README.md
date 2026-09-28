@@ -135,8 +135,10 @@ and the scripts.
 ```bash
 cargo run -p uwulock-server          # plain HTTP on 0.0.0.0:8443, data in ./data
 cargo run -p uwulock-server -- invite --admin you@example.com
-cargo test --workspace
-cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings
+scripts/test.sh                      # every Rust test, quietly: one line, and only what failed
+scripts/test.sh --all                # and rustfmt, clippy and all of the web vault's checks
+scripts/test.sh -p uwulock-api sends # anything else goes to `cargo test` as it is
+cargo test --workspace               # the same tests with cargo's own output
 
 cd web && pnpm install && pnpm build # the web vault, into web/dist; then build the server again
 pnpm dev                             # the web vault on :5173, talking to the server on :8443
@@ -144,9 +146,19 @@ pnpm dev                             # the web vault on :5173, talking to the se
 
 The web vault needs a secure context for its crypto: `localhost`, or https.
 
+`scripts/test.sh` is the way to run the tests while working, for people and for coding agents
+alike: it prints one line per step and the output of a failure, and keeps the full output in
+`target/test-logs/`. The tests stay fast, and should: unit tests next to the code, calling the
+API in process without a socket (`crates/uwulock-api/src/test_support.rs`); one integration test
+binary per crate (`tests/integration/main.rs`, a new file there is a module of it); a temporary
+directory per test and ports on `127.0.0.1:0`; local fakes for anything outside, and
+`#[ignore = "…"]` for what needs the internet; cheap hashing; waiting for the event, never a fixed
+sleep. The dev profile builds the crypto and SQLite optimised, so tests that log in do not wait
+for unoptimised code.
+
 The Let's Encrypt test needs Pebble, Let's Encrypt's test CA; CI runs it, and the comment on
-`a_certificate_from_an_acme_ca` in `crates/uwulock-server/tests/serve.rs` says how to run it
-locally.
+`a_certificate_from_an_acme_ca` in `crates/uwulock-server/tests/integration/serve.rs` says how
+to run it locally.
 
 Releasing: set the version in `Cargo.toml` (and `web/package.json`), add its section to
 `CHANGELOG.md`, commit, tag `v<version>` and push both. CI checks that they match, tests

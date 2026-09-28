@@ -8,4 +8,8 @@ repository.workspace = true
 rust-version.workspace = true
 build = "build.rs"
 
+# No examples in the docs to run: rustdoc would only take time on every `cargo test`.
+[lib]
+doctest = false
+
 [dependencies]

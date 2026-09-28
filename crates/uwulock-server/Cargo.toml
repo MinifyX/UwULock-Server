@@ -7,9 +7,16 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+# No examples in the docs to run: rustdoc would only take time on every `cargo test`.
+[lib]
+doctest = false
+
+# Its tests are the library's and those in tests/: a test harness of main.rs would only be
+# linked for nothing.
 [[bin]]
 name = "uwulock-server"
 path = "src/main.rs"
+test = false
 
 [dependencies]
 uwulock-api.workspace = true

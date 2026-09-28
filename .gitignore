@@ -27,5 +27,6 @@ node_modules/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs, and what a dev server leaves behind
 *.log
+*.pid

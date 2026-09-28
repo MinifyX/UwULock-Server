@@ -98,6 +98,17 @@ opt-level = 3
 [profile.dev.package.ring]
 opt-level = 3
 
+# SQLite is C, built by the `cc` crate at the opt-level of its crate: unoptimised, every test
+# that touches the database — nearly all of them — takes about three times as long. -O1 gets all
+# of that back; -O3 would take a minute longer to compile and win nothing more.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 1
+
+# The client's crypto in the end-to-end tests. PBKDF2 and HMAC are generic, so their code is
+# made in the crate that calls them: optimising `pbkdf2` alone does not reach it.
+[profile.dev.package.uwulock-core]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 # No `panic = "abort"`: a bug in one request should fail that request, not the whole server.

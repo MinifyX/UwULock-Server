@@ -8,6 +8,12 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+# No tests in it: a test harness would only be linked for nothing.
+[[bin]]
+name = "uwulock-bench"
+path = "src/main.rs"
+test = false
+
 [dependencies]
 clap.workspace = true
 reqwest.workspace = true

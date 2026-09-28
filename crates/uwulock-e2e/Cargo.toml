@@ -8,6 +8,11 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
+# The library is empty; the tests are in tests/.
+[lib]
+test = false
+doctest = false
+
 [dependencies]
 
 [dev-dependencies]
