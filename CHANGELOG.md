@@ -3,6 +3,12 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+- Development: `scripts/test.sh` runs the tests quietly, with only a summary and what failed.
+  The tests take about half the time (the crypto and SQLite are built optimised in the dev
+  profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).
+
 ## 0.4.0-beta.2
 
 **The rest of the security review.** 0.4.0-beta.1 fixed what the review before it found high
