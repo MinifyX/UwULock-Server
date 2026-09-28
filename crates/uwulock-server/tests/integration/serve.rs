@@ -138,7 +138,7 @@ fn roots(extra: &[rustls::pki_types::CertificateDer<'static>]) -> rustls::Client
 /// docker run -d -p 14000:14000 -e PEBBLE_VA_ALWAYS_VALID=1 -e PEBBLE_VA_NOSLEEP=1 ghcr.io/letsencrypt/pebble
 /// curl -fsSLo /tmp/pebble.minica.pem https://raw.githubusercontent.com/letsencrypt/pebble/main/test/certs/pebble.minica.pem
 /// UWULOCK_TEST_PEBBLE=https://localhost:14000/dir UWULOCK_TEST_PEBBLE_CA=/tmp/pebble.minica.pem \
-///   cargo test -p uwulock-server --test serve -- --ignored
+///   cargo test -p uwulock-server --test integration -- --ignored serve::
 /// ```
 #[tokio::test]
 #[ignore = "needs Pebble, see the comment"]

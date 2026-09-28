@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+# No examples in the docs to run: rustdoc would only take time on every `cargo test`.
+[lib]
+doctest = false
+
 [dependencies]
 libc.workspace = true
 parking_lot.workspace = true

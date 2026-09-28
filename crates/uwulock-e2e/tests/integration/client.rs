@@ -3,7 +3,6 @@
 //! refresh, two-step login with a remembered device — all with the crypto the desktop app uses.
 
 use std::net::SocketAddr;
-use std::time::Duration;
 use tokio::sync::oneshot;
 use uwulock_bitwarden::api::{LoginOutcome, PasswordLogin, TwoFactorAnswer, parse_sync};
 use uwulock_bitwarden::crypto::{self, EncString, SymmetricKey, decrypt_user_key};
@@ -230,7 +229,6 @@ async fn two_step_login_and_a_remembered_device() {
     let outcome =
         elsewhere.login(PasswordLogin { remember_token: Some(remember.as_str()), ..login(&hash) }).await.unwrap();
     assert!(matches!(outcome, LoginOutcome::TwoFactor { .. }), "but only that device");
-    tokio::time::sleep(Duration::from_millis(1)).await;
 }
 
 /// What 0.4 adds to a sync — attachments on items, Sends — does not trip the client up: it opens
