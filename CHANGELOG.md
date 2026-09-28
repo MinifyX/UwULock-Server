@@ -3,6 +3,42 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.4.0-beta.2
+
+**The rest of the security review.** 0.4.0-beta.1 fixed what the review before it found high
+or medium; this fixes every low finding too — [docs/security-review-2026-09.md](docs/security-review-2026-09.md)
+lists them. Update with `sudo bash update.sh`. Three things behave differently:
+
+- **Putting a backup back logs everybody out**, on every device, the admin who did it included: a
+  backup carries the sessions of its day, among them ones that were taken back since.
+- **Emergency contacts are never accepted by themselves.** Without mail, an invitation used to
+  count as accepted at once; now it waits in the contact's settings (Emergency access → Accept),
+  and inviting answers the same whether the address has an account or not.
+- **Users who may invite** get the signup link only when the server cannot mail it.
+
+Also:
+
+- Logging in: a login by another device's approval always mails; a request to unlock does not
+  log in; a login takes the same time whether the account came from Vaultwarden or not; refresh
+  tokens from Vaultwarden are replaced at their first use, signed or not — and afterwards, the
+  old Vaultwarden data is best destroyed ([docs/deployment.md](docs/deployment.md)).
+- Files and Sends: uploads give up after a minute without a byte and run four at a time per
+  account; two uploads of the same file cannot write into each other; a Send limited to one
+  opening opens once in the newest apps too; a Send's download link stops with the Send.
+- Live updates end with their session (a new password, a logout), checked every 15 seconds.
+- The password check keeps what Have I Been Pwned answered per account, and says what the
+  server sees.
+- New keys in the web vault refuse a public key on the server that does not belong to the
+  account; an emergency takeover gives the new password today's key derivation when the old one
+  was weaker; key rotation takes organisation account recovery along.
+- The import checks every id before it becomes a path, and mails whoever lost their only second
+  step (Duo, YubiKey OTP, U2F).
+- The WebAuthn pages may be framed only by Bitwarden's browser extensions.
+- [docs/deployment.md](docs/deployment.md) shows how to keep the clients' access tokens out of
+  Caddy's and nginx's access logs.
+
+The UwULock app stays at [0.2.0-beta.3](https://github.com/MinifyX/UwULock-Client/releases/tag/v0.2.0-beta.3).
+
 ## 0.4.0-beta.1
 
 **Everything Vaultwarden does for one person, and the way over from it.** Attachments, Sends,

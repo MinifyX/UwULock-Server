@@ -3197,7 +3197,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-api"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "argon2",
  "axum",
@@ -3229,7 +3229,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-bench"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "clap",
  "reqwest 0.13.5",
@@ -3282,7 +3282,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-e2e"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "reqwest 0.13.5",
  "rustls",
@@ -3298,7 +3298,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-mail"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "lettre",
  "parking_lot",
@@ -3310,7 +3310,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-notify"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "axum",
  "parking_lot",
@@ -3326,7 +3326,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-server"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "axum",
  "axum-server",
@@ -3361,7 +3361,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-store"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 dependencies = [
  "libc",
  "parking_lot",
@@ -3376,7 +3376,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-web"
-version = "0.4.0-beta.1"
+version = "0.4.0-beta.2"
 
 [[package]]
 name = "valuable"
