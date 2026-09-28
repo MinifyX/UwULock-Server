@@ -53,6 +53,128 @@ pub enum Mail {
     EmergencyWaited { grantee: String },
     /// To the grantor: the contact set a new master password for the account.
     EmergencyTakenOver { grantee: String },
+    /// What happened on the account lately, bundled: failed logins, changed credentials, new
+    /// devices. `link` opens the list in the web vault.
+    SecurityNotices { notices: Vec<NoticeLine>, link: String },
+    /// To the admins: something on the server needs looking at (`resolved`: is fine again).
+    AdminAlert { event: String, detail: String, resolved: bool, server: String },
+}
+
+/// One notice in a [`Mail::SecurityNotices`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NoticeLine {
+    /// The notice's kind, as the API names it: `failedLogins`, `newDevice`, …
+    pub kind: String,
+    /// When, already written for the reader.
+    pub time: String,
+    pub ip: Option<String>,
+    /// The device, already written for the reader: `firefox (Firefox Extension)`.
+    pub device: Option<String>,
+    /// For failed attempts: how many.
+    pub count: Option<i64>,
+    /// Somebody the notice names: the emergency contact, the export's format.
+    pub about: Option<String>,
+}
+
+impl NoticeLine {
+    /// What happened, in a few words.
+    fn what(&self, de: bool) -> String {
+        let count = self.count.unwrap_or(1);
+        let about = self.about.clone().unwrap_or_default();
+        match (self.kind.as_str(), de) {
+            ("failedLogins", true) => format!("{count} falsche Master-Passwörter"),
+            ("failedLogins", false) => format!("{count} wrong master passwords"),
+            ("failedTwoFactor", true) => format!("{count} falsche Codes der Zwei-Schritt-Anmeldung"),
+            ("failedTwoFactor", false) => format!("{count} wrong two-step login codes"),
+            ("newDevice", true) => "Anmeldung auf einem neuen Gerät".into(),
+            ("newDevice", false) => "Login on a new device".into(),
+            ("passwordChanged", true) => "Master-Passwort geändert".into(),
+            ("passwordChanged", false) => "Master password changed".into(),
+            ("emailChanged", true) => "E-Mail-Adresse geändert".into(),
+            ("emailChanged", false) => "Email address changed".into(),
+            ("kdfChanged", true) => "Schlüsselableitung (KDF) geändert".into(),
+            ("kdfChanged", false) => "Key derivation (KDF) changed".into(),
+            ("keysRotated", true) => "Schlüssel des Kontos erneuert".into(),
+            ("keysRotated", false) => "Account keys rotated".into(),
+            ("twoFactorEnabled", true) => "Zwei-Schritt-Anmeldung eingeschaltet".into(),
+            ("twoFactorEnabled", false) => "Two-step login turned on".into(),
+            ("twoFactorDisabled", true) => "Zwei-Schritt-Anmeldung ausgeschaltet".into(),
+            ("twoFactorDisabled", false) => "Two-step login turned off".into(),
+            ("apiKeyCreated", true) => "API-Key erzeugt".into(),
+            ("apiKeyCreated", false) => "API key created".into(),
+            ("apiKeyRotated", true) => "API-Key erneuert".into(),
+            ("apiKeyRotated", false) => "API key rotated".into(),
+            ("emergencyAccessRequested", true) => format!("Notfallzugriff angefragt von {about}"),
+            ("emergencyAccessRequested", false) => format!("Emergency access requested by {about}"),
+            ("emergencyAccessTakenOver", true) => format!("Konto übernommen per Notfallzugriff von {about}"),
+            ("emergencyAccessTakenOver", false) => format!("Account taken over through emergency access by {about}"),
+            ("loginWithDeviceRequested", true) => "Anfrage „Mit Gerät anmelden“".into(),
+            ("loginWithDeviceRequested", false) => "“Log in with device” request".into(),
+            ("vaultExported", true) => "Tresor exportiert".into(),
+            ("vaultExported", false) => "Vault exported".into(),
+            ("kdfBelowMinimum", true) => {
+                "Deine Schlüsselableitung (KDF) ist schwächer als dieser Server verlangt: Stell sie im Web-Tresor um"
+                    .into()
+            }
+            ("kdfBelowMinimum", false) => {
+                "Your key derivation (KDF) is weaker than this server asks for: switch it in the web vault".into()
+            }
+            (other, _) => other.to_string(),
+        }
+    }
+
+    fn render(&self, de: bool) -> String {
+        let mut line = format!("{}: {}", self.time, self.what(de));
+        let mut from = Vec::new();
+        if let Some(device) = &self.device {
+            from.push(device.clone());
+        }
+        if let Some(ip) = &self.ip {
+            from.push(format!("IP {ip}"));
+        }
+        if !from.is_empty() {
+            line.push_str(&format!(" ({})", from.join(", ")));
+        }
+        line
+    }
+}
+
+/// An admin alert's event, in words.
+fn event_text(event: &str, de: bool) -> &'static str {
+    match (event, de) {
+        ("backupFailed", true) => "Das Backup ist fehlgeschlagen",
+        ("backupFailed", false) => "The backup failed",
+        ("backupStale", true) => "Das letzte gelungene Backup ist zu alt",
+        ("backupStale", false) => "The last good backup is too old",
+        ("certificateExpiring", true) => "Das Zertifikat läuft bald ab",
+        ("certificateExpiring", false) => "The certificate expires soon",
+        ("updateAvailable", true) => "Ein Update ist verfügbar",
+        ("updateAvailable", false) => "An update is available",
+        ("manyFailedLogins", true) => "Viele fehlgeschlagene Anmeldungen",
+        ("manyFailedLogins", false) => "Many failed logins",
+        ("diskLow", true) => "Die Platte ist fast voll",
+        ("diskLow", false) => "The disk is almost full",
+        ("pushRelayFailing", true) => "Das Push-Relay ist gestört",
+        ("pushRelayFailing", false) => "The push relay is failing",
+        ("mailFailing", true) => "Der Mailversand ist gestört",
+        ("mailFailing", false) => "Sending mail is failing",
+        ("test", true) => "Test aus dem Admin-Portal",
+        ("test", false) => "Test from the admin portal",
+        (_, true) => "Ein Ereignis auf dem Server",
+        (_, false) => "Something on the server",
+    }
+}
+
+/// An admin alert's title and text, for the channels that are not mail (ntfy, Gotify, Matrix).
+pub fn alert_text(event: &str, detail: &str, resolved: bool, server: &str, language: Language) -> (String, String) {
+    let de = language == Language::De;
+    let what = event_text(event, de);
+    let title = match (resolved, de) {
+        (false, _) => format!("UwULock {server}: {what}"),
+        (true, true) => format!("UwULock {server}: wieder in Ordnung – {what}"),
+        (true, false) => format!("UwULock {server}: resolved – {what}"),
+    };
+    (title, detail.to_string())
 }
 
 struct Text {
@@ -407,6 +529,43 @@ impl Mail {
                 button: None,
                 footer,
             },
+            Mail::SecurityNotices { notices, link } => {
+                let mut lines = vec![if de {
+                    "Auf deinem UwULock-Konto ist gerade Folgendes passiert. Alle Hinweise stehen im Web-Tresor unter Einstellungen → Sicherheit:"
+                } else {
+                    "This just happened on your UwULock account. All notices are in the web vault under Settings → Security:"
+                }
+                .to_string()];
+                lines.extend(notices.iter().map(|notice| notice.render(de)));
+                lines.push(not_you(de));
+                let failed = notices.iter().any(|notice| notice.kind.starts_with("failed"));
+                Text {
+                    subject: match (failed, de) {
+                        (true, true) => "Fehlgeschlagene Anmeldungen bei UwULock".into(),
+                        (true, false) => "Failed logins to UwULock".into(),
+                        (false, true) => "Sicherheitshinweis zu deinem UwULock-Konto".into(),
+                        (false, false) => "Security notice for your UwULock account".into(),
+                    },
+                    lines,
+                    highlight: None,
+                    button: Some((if de { "Im Web-Tresor ansehen" } else { "Open in the web vault" }.into(), link.clone())),
+                    footer,
+                }
+            }
+            Mail::AdminAlert { event, detail, resolved, server } => {
+                let (title, _) = alert_text(event, detail, *resolved, server, language);
+                let mut lines = vec![title.clone()];
+                if !detail.is_empty() {
+                    lines.push(detail.clone());
+                }
+                lines.push(if de {
+                    "Die Diagnose im Admin-Portal sagt mehr. Welche Ereignisse wohin gehen, stellst du unter Benachrichtigungen ein."
+                } else {
+                    "The diagnosis in the admin portal says more. Which events go where is set under Notifications."
+                }
+                .into());
+                Text { subject: title, lines, highlight: None, button: None, footer }
+            }
         }
     }
 }
@@ -482,6 +641,16 @@ mod tests {
             Mail::EmergencyRejected { grantor: "Nyu".into() },
             Mail::EmergencyWaited { grantee: "Mika".into() },
             Mail::EmergencyTakenOver { grantee: "Mika".into() },
+            Mail::SecurityNotices {
+                notices: vec![NoticeLine { kind: "failedLogins".into(), count: Some(5), ..NoticeLine::default() }],
+                link: "https://vault.example.com/".into(),
+            },
+            Mail::AdminAlert {
+                event: "diskLow".into(),
+                detail: "2 GB free".into(),
+                resolved: false,
+                server: "vault.example.com".into(),
+            },
         ];
         for mail in mails {
             let (de, _, _) = mail.render(Language::De);

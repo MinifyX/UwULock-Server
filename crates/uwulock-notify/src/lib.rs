@@ -293,6 +293,15 @@ impl Hub {
         Self::deliver(&self.anonymous, request_id, update.anonymous_message().into());
     }
 
+    /// How many connections are open, of logged-in devices and of devices that wait for a
+    /// "log in with a device" answer.
+    pub fn connection_counts(&self) -> (usize, usize) {
+        (
+            self.users.lock().values().map(Vec::len).sum::<usize>(),
+            self.anonymous.lock().values().map(Vec::len).sum::<usize>(),
+        )
+    }
+
     /// How many connections are open, for the admin portal.
     pub fn connections(&self) -> usize {
         self.users.lock().values().map(Vec::len).sum::<usize>()
