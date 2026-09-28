@@ -167,6 +167,18 @@ mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf 
   UwUSync-Datenbank
 - Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
   einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf
+- Eigene Domains für Sends: Im Admin-Portal lassen sich weitere Domains oder Subdomains
+  (z. B. `send.example.com` neben `lock.example.com`) anlegen, unter denen nur Sends erreichbar
+  sind — die Send-Seite und `/api/sends/access…`, kein Tresor, keine Anmeldung, kein
+  Admin-Portal. Links werden kürzer, etwa `https://send.example.com/<access id>#<schlüssel>`;
+  der Schlüssel bleibt hinter dem `#`, sonst sähe ihn der Server. Alte Links unter
+  `/#/send/…` gehen weiter. Noch zu klären, bevor es gebaut wird:
+  - Die offiziellen Bitwarden-Clients bauen den Link selbst aus ihrer Web-Tresor-Adresse; die
+    eigene Domain nutzen also nur Web-Tresor und UwULock-Client (dort über `/uwu/v1/info`).
+  - Eine Send-Domain für alle, oder wählbar pro Send bzw. pro Konto?
+  - TLS für die zusätzlichen Domains: Let's Encrypt über den Server selbst, oder nur hinter
+    einem Proxy (Caddy)?
+  - Eigene Optik der Send-Seite pro Domain (Name, Logo)?
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
