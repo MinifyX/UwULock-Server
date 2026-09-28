@@ -89,10 +89,20 @@ pub fn has_room(path: &Path, need: u64) -> bool {
     path.ancestors().find_map(disk_space).is_none_or(|(free, total)| enough_room(free, total, need))
 }
 
+/// When the newest backup under `dir` was written, as seconds since 1970.
+pub fn newest(dir: &Path) -> Option<u64> {
+    list(dir)
+        .iter()
+        .filter_map(|(name, _)| std::fs::metadata(dir.join(name)).ok()?.modified().ok())
+        .filter_map(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|since| since.as_secs())
+        .max()
+}
+
 /// Free and total bytes of the file system `path` is on, for whoever may write there.
 #[cfg(unix)]
 #[allow(clippy::unnecessary_cast)]
-fn disk_space(path: &Path) -> Option<(u64, u64)> {
+pub fn disk_space(path: &Path) -> Option<(u64, u64)> {
     use std::os::unix::ffi::OsStrExt;
     let path = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
     // SAFETY: statvfs reads a NUL-terminated path and writes one struct, both of which live on
@@ -110,7 +120,7 @@ fn disk_space(path: &Path) -> Option<(u64, u64)> {
 }
 
 #[cfg(not(unix))]
-fn disk_space(_path: &Path) -> Option<(u64, u64)> {
+pub fn disk_space(_path: &Path) -> Option<(u64, u64)> {
     None
 }
 
