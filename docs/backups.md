@@ -55,7 +55,10 @@ there are backups at the target; for a change, use another folder or bucket.
 Whether a backup is encrypted is this server's decision, by whether it has a recovery key, never
 the backup server's. A target that claims to hold an unencrypted backup while the server has a
 key is refused, and so is anything in an encrypted backup that is not encrypted, that sits under
-another object's name, or a snapshot stored under another snapshot's name.
+another object's name, or a snapshot stored under another snapshot's name. An unencrypted backup
+has no such protection: its content is checked against its names, which catches damage, but
+whoever controls the backup server can read it (the server's signing key included) and change
+both.
 
 ## Where backups go
 

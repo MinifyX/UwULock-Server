@@ -405,7 +405,11 @@ async fn attach(
     let from = file_path(&state, &id, &file.id)?;
     let to = crate::files::attachment_path(&state, &body.cipher_id, &attachment)?;
     tokio::fs::create_dir_all(to.parent().expect("attachments have a folder")).await.map_err(ApiError::internal)?;
-    tokio::fs::rename(&from, &to).await.map_err(ApiError::internal)?;
+    // A second attach of the same file at once finds it gone: taken already.
+    tokio::fs::rename(&from, &to).await.map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => not_found(),
+        _ => ApiError::internal(error),
+    })?;
     let taken = state
         .store
         .take_request_file(
