@@ -4,20 +4,24 @@ name: CI
 # pushes skip it. A `v…` tag also publishes: the image with its tags, and a GitHub release with
 # install.sh, update.sh, compose.yaml and env.example, each with its checksum.
 #
-# The jobs run side by side where they can: the server's tests, the web vault (its WebAssembly
-# and its page), the scripts, the audit. The binaries wait for the web vault, which goes into
-# them; the end-to-end test (a browser and Bitwarden's own CLI against the release binary), the
-# move from a real Vaultwarden and the install test wait for the binaries.
+# The jobs run side by side where they can: the server's tests (with a certificate from
+# Let's Encrypt's test CA), the web vault (its WebAssembly and its page), the scripts, the audit.
+# The two binaries, amd64 and arm64, wait only for the web vault, which goes into them, and build
+# at the same time; the end-to-end test (a browser and Bitwarden's own CLI against the release
+# binary), the move from a real Vaultwarden and the install test need only the amd64 one, so
+# they start as soon as it is there. The image waits for everything.
 on:
   push:
     branches: [main]
     tags: ["v*"]
     paths-ignore:
       - "docs/**"
+      - "brand/**"
       - "**/*.md"
   pull_request:
     paths-ignore:
       - "docs/**"
+      - "brand/**"
       - "**/*.md"
   workflow_dispatch:
 
@@ -36,26 +40,10 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        # A release is built from nothing any earlier run left behind.
-        if: github.ref_type != 'tag'
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      - run: cargo test --workspace --all-targets --locked
-
-  acme:
-    name: Certificate from an ACME CA
-    runs-on: ubuntu-latest
     services:
-      # Let's Encrypt's test CA. It takes every challenge as passed, so the server needs no
-      # port 443 for it; what is tested is everything else — account, order, certificate, serving.
+      # Let's Encrypt's test CA, for the one test that gets a real certificate. It takes every
+      # challenge as passed, so the server needs no port 443 for it; what is tested is everything
+      # else — account, order, certificate, serving.
       pebble:
         image: ghcr.io/letsencrypt/pebble@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
         env:
@@ -69,19 +57,26 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         # A release is built from nothing any earlier run left behind.
         if: github.ref_type != 'tag'
-      - name: The CA certificate Pebble's own HTTPS uses
-        run: |
-          curl -fsSLo "$RUNNER_TEMP/pebble.minica.pem" \
-            https://raw.githubusercontent.com/letsencrypt/pebble/v2.10.1/test/certs/pebble.minica.pem
-      - name: Get a certificate and serve it
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # Libraries, the integration tests in each crate's tests/integration; no doc tests and no
+      # empty test harnesses for the binaries (see each crate's Cargo.toml).
+      - run: cargo test --workspace --locked
+      - name: A certificate from an ACME CA, and served
         env:
           UWULOCK_TEST_PEBBLE: https://localhost:14000/dir
         run: |
-          UWULOCK_TEST_PEBBLE_CA="$RUNNER_TEMP/pebble.minica.pem" \
-            cargo test --locked -p uwulock-server --test serve -- --ignored a_certificate_from_an_acme_ca
+          # The CA certificate Pebble's own HTTPS uses.
+          curl -fsSLo "$RUNNER_TEMP/pebble.minica.pem" \
+            https://raw.githubusercontent.com/letsencrypt/pebble/v2.10.1/test/certs/pebble.minica.pem
+          # The same selection of crates as the step before, so nothing is built again.
+          UWULOCK_TEST_PEBBLE_CA="$RUNNER_TEMP/pebble.minica.pem" cargo test --workspace --locked -- \
+            --ignored --exact serve::a_certificate_from_an_acme_ca
 
   scripts:
     name: Scripts
@@ -92,8 +87,8 @@ jobs:
           persist-credentials: false
       - name: Everything anybody is told to run with bash, checked before anybody runs it
         run: |
-          for script in install.sh update.sh scripts/e2e/*.sh; do bash -n "$script"; done
-          shellcheck --severity=warning install.sh update.sh scripts/e2e/*.sh
+          for script in install.sh update.sh scripts/*.sh scripts/e2e/*.sh; do bash -n "$script"; done
+          shellcheck --severity=warning install.sh update.sh scripts/*.sh scripts/e2e/*.sh
           for script in scripts/e2e/*.mjs web/scripts/*.mjs; do node --check "$script"; done
 
   version:
@@ -174,8 +169,8 @@ jobs:
         run: cargo test --locked
       - run: pnpm format:check
       - run: pnpm lint
-      - run: pnpm typecheck
       - run: pnpm test
+      # Type-checks first, as `pnpm typecheck` would.
       - run: pnpm run build:web
       - name: The build holds its crypto, compressed
         run: |
@@ -187,9 +182,11 @@ jobs:
           path: web/dist
           retention-days: 3
 
-  binaries:
-    name: Binaries
-    needs: [test, scripts, web]
+  # One job per architecture, side by side: the tests below need only amd64 and start as soon as
+  # it is there.
+  binary-amd64:
+    name: Binary amd64
+    needs: web
     runs-on: ubuntu-latest
     env:
       # The server knows its commit and, for a release, checks for newer releases instead of
@@ -207,40 +204,74 @@ jobs:
           path: web/dist
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
-          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+          targets: x86_64-unknown-linux-gnu
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        # A release is built from nothing any earlier run left behind.
+        if: github.ref_type != 'tag'
+        with:
+          key: release-amd64
+      - name: Build
+        run: cargo build --release --locked --target x86_64-unknown-linux-gnu -p uwulock-server
+      - name: Collect it
+        run: |
+          mkdir -p dist/amd64
+          cp target/x86_64-unknown-linux-gnu/release/uwulock-server dist/amd64/
+          dist/amd64/uwulock-server --version
+          # It carries the web vault: a binary without it would serve and simply have none.
+          grep -q 'core_bg-.*\.wasm' dist/amd64/uwulock-server
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: binary-amd64
+          path: dist
+          retention-days: 3
+
+  binary-arm64:
+    name: Binary arm64
+    needs: web
+    runs-on: ubuntu-latest
+    env:
+      UWULOCK_GIT_SHA: ${{ github.sha }}
+      UWULOCK_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: web-dist
+          path: web/dist
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      # Cross-compiled on this amd64 runner rather than built under QEMU.
       - name: Cross compiler for arm64
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         # A release is built from nothing any earlier run left behind.
         if: github.ref_type != 'tag'
         with:
-          key: release
-      - name: Build amd64
-        run: cargo build --release --locked --target x86_64-unknown-linux-gnu -p uwulock-server
-      - name: Build arm64
+          key: release-arm64
+      - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
           AR_aarch64_unknown_linux_gnu: aarch64-linux-gnu-ar
         run: cargo build --release --locked --target aarch64-unknown-linux-gnu -p uwulock-server
-      - name: Collect them
+      - name: Collect it
         run: |
-          mkdir -p dist/amd64 dist/arm64
-          cp target/x86_64-unknown-linux-gnu/release/uwulock-server dist/amd64/
+          mkdir -p dist/arm64
           cp target/aarch64-unknown-linux-gnu/release/uwulock-server dist/arm64/
-          dist/amd64/uwulock-server --version
           file dist/arm64/uwulock-server | grep -q aarch64
-          # Both carry the web vault: a binary without it would serve and simply have none.
-          for arch in amd64 arm64; do grep -q 'core_bg-.*\.wasm' "dist/$arch/uwulock-server"; done
+          grep -q 'core_bg-.*\.wasm' dist/arm64/uwulock-server
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: binaries
+          name: binary-arm64
           path: dist
           retention-days: 3
 
   e2e:
     name: A browser and Bitwarden's CLI
-    needs: binaries
+    needs: binary-amd64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -248,7 +279,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: binaries
+          name: binary-amd64
           path: dist
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
@@ -313,7 +344,7 @@ jobs:
 
   vaultwarden:
     name: Moving in from Vaultwarden
-    needs: binaries
+    needs: binary-amd64
     runs-on: ubuntu-latest
     env:
       VAULTWARDEN: vaultwarden/server:1.37.3
@@ -325,7 +356,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: binaries
+          name: binary-amd64
           path: dist
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
@@ -385,7 +416,7 @@ jobs:
 
   install:
     name: Install and update
-    needs: binaries
+    needs: binary-amd64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -393,7 +424,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: binaries
+          name: binary-amd64
           path: dist
       - name: Three versions, only on this machine
         run: |
@@ -503,7 +534,7 @@ jobs:
   image:
     name: Container image
     if: github.event_name != 'pull_request'
-    needs: [test, acme, scripts, audit, web, e2e, vaultwarden, install, version]
+    needs: [test, scripts, audit, web, binary-arm64, e2e, vaultwarden, install, version]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -514,9 +545,11 @@ jobs:
           # This job can push images. Nothing here needs git credentials afterwards, so none are
           # left lying in .git/config.
           persist-credentials: false
+      # Both binaries, each in its own directory under dist/.
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: binaries
+          pattern: binary-*
+          merge-multiple: true
           path: dist
       - run: chmod +x dist/*/uwulock-server
       # No QEMU: the only stage that runs anything runs on the machine that builds.
