@@ -3,6 +3,7 @@ import { exportVault, importVault } from '../../lib/account';
 import { syncNow } from '../../lib/api';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
+import { reportExport } from '../../lib/notices';
 import { PasswordPrompt, ResultLine, Row, Segmented, save, type Result } from './controls';
 
 /**
@@ -83,6 +84,8 @@ export function TransferSettings() {
             const blob = await exportVault(format, password);
             const day = new Date().toISOString().slice(0, 10);
             save(blob, `uwulock-export-${day}.${format}`);
+            // A security notice for the account, and a mail: an export holds every password.
+            reportExport(format);
             setExporting(false);
           }}
         />

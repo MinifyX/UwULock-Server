@@ -6,6 +6,7 @@ import { LoginScreen } from './components/LoginScreen';
 import { SettingsDialog, type SettingsSection } from './components/SettingsDialog';
 import { TitleBar } from './components/TitleBar';
 import { VaultScreen } from './components/VaultScreen';
+import { lacksTwoFactor, PolicyBanners, TwoFactorRequired } from './components/web/Policies';
 import { RegisterScreen } from './components/web/RegisterScreen';
 import { SendPage } from './components/web/SendPage';
 import { errorText } from './lib/errors';
@@ -119,10 +120,24 @@ export function App() {
     );
   }, [route, unlocked]);
 
+  // The link in a security notice's mail: the list, once the vault is open.
+  useEffect(() => {
+    if (route.path !== '/settings/security' || !unlocked) return;
+    location.hash = '';
+    setSettingsOpen('security');
+  }, [route, unlocked]);
+
+  const unseen = unlocked ? (info?.securityNoticesUnseen ?? 0) : 0;
+  // Two-step login is required, the date has passed, and there is none: only its setup shows.
+  const mustSetUp = unlocked && info && lacksTwoFactor(info) && info.policy?.twoFactorEnforced;
+
   return (
     <div className="shell">
       <div className="background" ref={backgroundRef}>
-        <TitleBar onSettings={() => setSettingsOpen('appearance')}>
+        <TitleBar
+          badge={unseen}
+          onSettings={() => setSettingsOpen(unseen > 0 ? 'security' : 'appearance')}
+        >
           {info?.admin && (
             <a className="titlebar-link" href="/admin">
               <Icon name="shield" size={15} />
@@ -170,8 +185,13 @@ export function App() {
               onLoggedOut={() => void vaultStatus().then(setStatus)}
               onAddAccount={() => undefined}
             />
+          ) : mustSetUp ? (
+            <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
           ) : (
-            <VaultScreen status={status} searchRef={searchRef} onAddAccount={() => undefined} />
+            <div className="vault-frame">
+              <PolicyBanners status={status} info={info} onSettings={setSettingsOpen} />
+              <VaultScreen status={status} searchRef={searchRef} onAddAccount={() => undefined} />
+            </div>
           )}
         </main>
       </div>

@@ -12,6 +12,7 @@ import { DeviceSettings } from './web/DeviceSettings';
 import { EmergencySettings } from './web/EmergencySettings';
 import { PasskeySettings } from './web/PasskeySettings';
 import { InviteSettings } from './web/InviteSettings';
+import { SecurityNotices } from './web/SecurityNotices';
 import { TransferSettings } from './web/TransferSettings';
 import { TwoFactorSettings } from './web/TwoFactorSettings';
 
@@ -105,7 +106,7 @@ function Appearance() {
   );
 }
 
-function Security({ onClose }: { onClose: () => void }) {
+function Security({ onClose, onSeen }: { onClose: () => void; onSeen: () => void }) {
   const settings = useSettings();
   const minutes = (n: number) => (n === 1 ? t('1 Minute') : t('{n} Minuten', { n }));
   return (
@@ -162,6 +163,7 @@ function Security({ onClose }: { onClose: () => void }) {
           {t('Sperren')}
         </button>
       </Row>
+      <SecurityNotices onSeen={onSeen} />
     </>
   );
 }
@@ -203,6 +205,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   const sections = SECTIONS.filter(
     (s) => (loggedIn || !s.needsLogin) && (s.id !== 'invite' || info?.mayInvite),
   );
+  const unseen = info?.securityNoticesUnseen ?? 0;
   return (
     <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
       <div className="settings">
@@ -215,12 +218,22 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
               onClick={() => setSection(id)}
             >
               {t(label)}
+              {id === 'security' && unseen > 0 && (
+                <span className="badge" aria-label={t('{n} neue Hinweise', { n: unseen })}>
+                  {unseen}
+                </span>
+              )}
             </button>
           ))}
         </nav>
         <div className="settings-content">
           {section === 'appearance' && <Appearance />}
-          {section === 'security' && loggedIn && <Security onClose={onClose} />}
+          {section === 'security' && loggedIn && (
+            <Security
+              onClose={onClose}
+              onSeen={() => onInfo(info && { ...info, securityNoticesUnseen: 0 })}
+            />
+          )}
           {section === 'account' && loggedIn && (
             <AccountSettings status={status} info={info} onInfo={onInfo} onClose={onClose} />
           )}

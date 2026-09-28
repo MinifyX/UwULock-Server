@@ -11,9 +11,11 @@ import { go, useRoute } from '../lib/route';
 import { useToast } from '../lib/toast';
 import { AdminSettings } from './AdminSettings';
 import { Backups } from './Backups';
+import { Diagnosis } from './Diagnosis';
 import { Events } from './Events';
 import { Invitations } from './Invitations';
 import { Logs } from './Logs';
+import { Notifications } from './Notifications';
 import { Overview } from './Overview';
 import { Users } from './Users';
 
@@ -25,6 +27,8 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
   { path: '/events', label: N_('Ereignisse'), icon: 'history' },
   { path: '/logs', label: N_('Log'), icon: 'terminal' },
   { path: '/backups', label: N_('Backups'), icon: 'drive' },
+  { path: '/notifications', label: N_('Benachrichtigungen'), icon: 'bell' },
+  { path: '/diagnosis', label: N_('Diagnose'), icon: 'lifebuoy' },
 ];
 
 /**
@@ -103,6 +107,8 @@ export function AdminApp() {
           {page.path === '/events' && <Events />}
           {page.path === '/logs' && <Logs />}
           {page.path === '/backups' && <Backups />}
+          {page.path === '/notifications' && <Notifications />}
+          {page.path === '/diagnosis' && <Diagnosis />}
         </section>
       </div>
     );
