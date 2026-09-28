@@ -352,6 +352,14 @@ pub async fn tick(state: &AppState) {
 
 /// Send what waits for `channel`, if it is its turn.
 async fn deliver(state: &AppState, channel: &Channel) {
+    // Mail to the admins without a mail server is nothing to try again: the server was never
+    // set up to send any. (Its test says so.)
+    if channel.kind == "mail" && !state.mailer.enabled() {
+        if let Some(entry) = state.alerts.channels.lock().get_mut(&channel.id) {
+            entry.queue.clear();
+        }
+        return;
+    }
     loop {
         let next = {
             let states = state.alerts.channels.lock();
