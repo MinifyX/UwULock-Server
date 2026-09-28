@@ -5,6 +5,35 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Running it and keeping it safe (Stufe 4b, first part).**
+
+- **Security notices** for everybody, under *Settings → Security* in the web vault and by mail in
+  the account's language: failed passwords and two-step codes (a burst is one notice that counts
+  up), a new device, changes to the master password, address, KDF, keys, two-step login and API
+  key, emergency access asked for or taken over, "log in with a device" requests, exports of the
+  vault (the web vault says so, and so do Bitwarden's apps). Mails come bundled — five minutes
+  after the first notice, at most one every fifteen minutes — so an attack does not flood an
+  inbox; the admin chooses which kinds are mailed.
+- **Server policies** in the admin portal: two-step login required from a date on (then only the
+  web vault lets such an account in, to set it up; the apps say what to do), a minimum key
+  derivation (weaker ones are refused; accounts below it get a notice and a *Switch now* button),
+  and rules for the master password, which the web vault checks and Bitwarden's apps get with
+  every login.
+- **The admin portal only from some networks**: outside them `/admin` and its API answer 404.
+  `uwulock-server settings set adminNetworks '[]'` is the way back in; `uwulock-server settings`
+  reads and changes every setting of the portal.
+- **Monitoring**: `/metrics` for Prometheus (off by default; with a token or on an address of its
+  own; no user data in labels) with example alert rules in [docs/metrics.md](docs/metrics.md),
+  the log to Grafana Loki from the admin portal, and `UWULOCK_LOG_FORMAT=json` with the same lines.
+- **Admin notifications** by mail, ntfy, Gotify and Matrix when a backup fails or is too old, the
+  certificate runs out, an update is out, many logins fail, the disk fills up, or the push relay
+  or mail stop working — per channel which, with a test; tokens stay on the server
+  ([docs/notifications.md](docs/notifications.md)).
+- **Diagnosis** in the admin portal, on demand and after every update: certificate, clock, mail,
+  push relay, backups, disk, and the reverse proxy (WebSockets, upload limit, the client's
+  address, the public address), each with what to do for Caddy and nginx.
+- Errors under `/uwu/v1` carry a machine-readable `code`.
+
 - Development: `scripts/test.sh` runs the tests quietly, with only a summary and what failed.
   The tests take about half the time (the crypto and SQLite are built optimised in the dev
   profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).

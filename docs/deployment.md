@@ -209,6 +209,15 @@ networks:
 
 then `docker compose up -d`.
 
+### Whether the proxy does its job
+
+The admin portal's *Diagnosis* checks it from your browser and from the server: whether
+WebSockets get through (the clients' live updates and "log in with a device" need them), whether
+the proxy takes an upload as large as the largest allowed file, whether the server sees the
+client's address and not the proxy's, and whether the address the portal is open at is
+`UWULOCK_PUBLIC`. Each problem comes with the lines for Caddy and nginx that fix it. See
+[Diagnosis](#diagnosis).
+
 ## With your own certificate
 
 `UWULOCK_TLS=files`, with `UWULOCK_TLS_CERT` and `UWULOCK_TLS_KEY` pointing at PEM files inside
@@ -349,6 +358,79 @@ on, see above).
 The server then sends the relay the ids of the changed item, folder or Send and of the account —
 never anything of a vault's content.
 
+## Diagnosis
+
+*Admin portal → Diagnosis* looks at everything that tends to go wrong once, and the server runs it
+by itself after every update (the overview says when it found something):
+
+- the **certificate** clients see — the server's own, or the proxy's in front of it — and when it
+  runs out;
+- the **clock**, against the `Date` of GitHub's answers (which the update check asks anyway) and
+  of Bitwarden's push relay — codes of two-step login fail when it is off by more than half a
+  minute. `UWULOCK_TIME_SOURCE` names other http(s) addresses to compare with, or `off`;
+- the **mail server** (connect, TLS, login — nothing is sent), the **push relay**, the age of the
+  newest **backup**, the free **disk**;
+- the **reverse proxy**: WebSockets, the upload limit (16 MB first; *Try the full size* sends as
+  much as the largest allowed file), the client's address, the public address. These run from
+  your browser against your own server; the browser talks to nobody else.
+
+Every check that is not fine says what to do, with an example for Caddy and one for nginx where
+the proxy is the answer.
+
+## The admin portal from some networks only
+
+*Admin portal → Policies → Admin networks*: addresses or networks, one a line (`192.0.2.0/24`,
+`2001:db8::/32`, a VPN's range). From anywhere else, `/admin` and the admin API answer 404, as if
+there were no admin portal. The address counted is the client's — behind a proxy the one it
+passes on, with `UWULOCK_TRUST_FORWARDED=on`. The vault, Sends and the command line are not
+affected. An empty list means everywhere.
+
+The portal refuses a list that would shut out the address you save it from. Locked out anyway
+(a new VPN, a changed network)? From a shell on the box:
+
+```bash
+cd /opt/uwulock
+sudo docker compose exec uwulock uwulock-server settings set adminNetworks '[]'
+```
+
+The running server takes it over with the next request that it would have refused.
+
+## Settings from the command line
+
+What the admin portal changes, the command line reads and changes too — for a script, or when the
+portal is out of reach:
+
+```bash
+sudo docker compose exec uwulock uwulock-server settings list          # passwords only as "set"
+sudo docker compose exec uwulock uwulock-server settings get policies
+sudo docker compose exec uwulock uwulock-server settings set policies.requireTwoFactor.enabled true
+printf '%s' "$TOKEN" | sudo docker compose exec -T uwulock uwulock-server settings set metrics.token -
+```
+
+Names are the portal's, with dots for the parts; the value is JSON, `-` reads it from standard
+input so a secret stays out of the shell's history. The same checks as in the portal apply. A
+running server takes `adminNetworks` over at once and the rest when it starts again
+(`sudo docker compose restart uwulock`).
+
+## Logs, metrics and notifications
+
+- **Logs** go to the container's output (`docker compose logs uwulock`), and the newest few
+  thousand lines to the admin portal. `UWULOCK_LOG_FORMAT=json` writes one JSON object a line, as
+  Grafana Alloy, Promtail or Vector like them.
+- **Grafana Loki** can get them straight from the server, without anything running next to it:
+  *Admin portal → Monitoring → Logs to Loki* with Loki's address (`http://192.0.2.20:3100`;
+  `/loki/api/v1/push` is added when the address has no path), optionally a tenant
+  (`X-Scope-OrgID`), a user and password for basic authentication, and labels (`job=uwulock` to
+  start with; the server adds `level`). The lines are the same JSON as with
+  `UWULOCK_LOG_FORMAT=json`, so the same queries work either way:
+  `{job="uwulock", level="warn"} | json | fields_message=~"login refused.*"`. They go out every
+  second or every megabyte; while Loki is away, up to 10,000 lines wait, and after that the
+  oldest are dropped and counted (the overview shows it). A request never waits for Loki. Log
+  lines hold addresses and IP addresses — what a Loki gets, it keeps.
+- **Prometheus**: [metrics.md](metrics.md).
+- **Mail, ntfy, Gotify, Matrix** to the admins when backups fail, the certificate runs out or the
+  disk fills up, and **security notices** to everybody: [notifications.md](notifications.md).
+
 ## Settings
 
 All in `.env`, read when the container starts (`docker compose up -d` after a change). Mail,
@@ -369,6 +451,8 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. |
 | `UWULOCK_LANGUAGE` | `de` | Invitations, and new accounts until their owner picks: `de` or `en`. Start value; the admin portal changes it. |
 | `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |
+| `UWULOCK_LOG_FORMAT` | `text` | `json` for one JSON object a line, the same the server sends to Loki. |
+| `UWULOCK_TIME_SOURCE` | GitHub's API, with the update check on | http(s) addresses whose `Date` the diagnosis compares the clock with, or `off`. |
 | `RUST_LOG` | `info` for the server | How much it logs, e.g. `uwulock_server=debug`. |
 
 ## Without Docker

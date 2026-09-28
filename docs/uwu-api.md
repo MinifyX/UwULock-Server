@@ -104,6 +104,10 @@ this file are part of the contract; messages are not (they are English, readable
 | 429 | rate limit; `Retry-After: <seconds>` header | `rate_limited` |
 | 502 | an upstream (UwUMail, IdP, icon site) failed | `upstream` |
 
+A message without a named code carries the one of its status in the table above (`error` for
+any other status); the Bitwarden-shaped bodies of `/identity` (`invalid_grant` and friends) carry
+none. Named so far: `would_lock_out` (§21.4), `kdf_too_weak` (§20), `upstream`.
+
 "Not yours" is always 404, never 403, so ids cannot be probed. A switched-off feature (admin
 setting) answers 404 `feature_off` on all its endpoints, and `/uwu/v1/info` says it is off.
 
@@ -202,7 +206,8 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   works, §19.1); `label` is what the web vault writes on the button.
 - `branding.logoLight`/`logoDark`/`favicon`: absolute URLs of §14.5 or `null`. On a send domain,
   that domain's branding.
-- `policies.masterPassword`: §20, for the registration and change-password pages.
+- `policies.masterPassword`: §20, for the registration and change-password pages; it also carries
+  `enforceOnLogin`.
 - `limits`: what the web vault and clients show before the server would refuse.
 
 Clients cache the answer for the session and fetch it again after a realtime `info` message (§5).
@@ -222,6 +227,10 @@ Unchanged keys plus:
   "storage": { "usedBytes": 1234567, "limitBytes": null }
 }
 ```
+
+`policy` also carries `twoFactorEnforced` (the deadline passed: only the web vault gets a token
+without two-step login) and `minimumKdf` (§20's object), so the web vault can offer settings that
+meet it.
 
 `sendDomainId` is §14.2, `travel` §9, `families` §16.4, `policy` §20, `storage` counts
 attachments, Send files, file-request submissions, versions and own icons.
@@ -1243,7 +1252,10 @@ Every notice has the time, the client IP, and the device (name, type, app) where
 
 **Mails:** collected per account for 5 minutes after the first notice, then one mail listing all
 of them (failed attempts summed); at most one mail per account per 15 minutes, the rest goes into
-the next. `emailChanged` also goes to the old address. The admin switches kinds off for mail
+the next. `emailChanged` also goes to the old address, at once. Notices whose event has its own
+mail already — `newDevice` (as before, governed by the `newDeviceMail` setting too), the
+emergency access mails, `twoFactorDisabled` by the recovery code — are listed with `mailed: true`
+and not bundled again. The admin switches kinds off for mail
 (`securityNotices.mailOff`, §21); they stay in the list. Without a mail server: list only.
 Kept 180 days.
 
@@ -2243,13 +2255,16 @@ without an enabled provider:
 
 - gets a token only for `client_id=web` (UwULock's web vault), which then shows nothing but the
   two-step setup until one is enabled;
-- from every other client (official or ours), `POST /identity/connect/token` answers 400
+- from every other client (official or ours), `POST /identity/connect/token` — every grant that
+  logs in an account: password, `refresh_token`, `client_credentials`, `webauthn` — answers 400
   `{ "error": "invalid_grant", "error_description": "two_factor_required", "ErrorModel": { "Message": "This server requires two-step login. Set it up in the web vault at https://lock.example.com, then log in again.", "Object": "error" } }`
   — the official clients show `ErrorModel.Message`.
 
-**Minimum KDF.** The server refuses weaker KDF settings (400, the message names the minimum) in
-registration, `POST /api/accounts/kdf`, `POST /api/accounts/password`, set-password (§19.2),
-emergency takeover, and key rotation. Existing accounts below it (e.g. PBKDF2 from Vaultwarden)
+**Minimum KDF.** The server refuses weaker KDF settings (400, the message names the minimum, `code`
+`kdf_too_weak`) in registration, `POST /api/accounts/kdf`, set-password (§19.2) and emergency
+takeover when the contact sends a KDF of its own. `POST /api/accounts/password` and key rotation
+cannot change the KDF at all (they refuse any other than the account's), so there is nothing to
+check there. Existing accounts below it (e.g. PBKDF2 from Vaultwarden)
 keep working and get `policy.kdfBelowMinimum: true` in `/uwu/v1/account`, a security notice
 `kdfBelowMinimum` (once), and a button in the web vault that calls **[BW]** `POST /api/accounts/kdf`.
 
@@ -2294,6 +2309,12 @@ defaults in brackets):
 | `scim` | `{ onDelete ["disable"], tokenSet }` (§19.4) |
 | `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite |
 
+`metrics` is stored with `tokenHash` (hex SHA-256), which `GET` replaces by `tokenSet`; on `PUT`,
+`token` left out or `null` keeps it, `""` removes it, otherwise it needs 16 characters. `loki`
+takes `password` on `PUT` (left out, `null` or `""`: kept for the same `url` and `username`).
+`uwulock-server settings list|get|set <key> <json>` reads and writes the same object on the
+command line, with dotted keys (`policies.requireTwoFactor.enabled`) and the same checks.
+
 `sso` (§19.1), branding (§14.4), send domains (§14.1), off-site backups (§21.2) and notification
 channels (§21.3) have their own endpoints because of their secrets and actions.
 
@@ -2336,10 +2357,15 @@ files (token key, the secret of §13.2).
 - `POST /uwu/v1/admin/notifications` (new; secrets as `token` / `accessToken`),
   `PUT /uwu/v1/admin/notifications/{id}`, `DELETE /uwu/v1/admin/notifications/{id}`,
   `POST /uwu/v1/admin/notifications/{id}/test` → 200 or 502 `upstream` with the reason.
+- Every channel also has `status: { lastSuccess, lastError, lastErrorDate, queued }`; the test
+  answers `{ "object": "notificationTest", "ok": true }`. A new server has one `mail` channel.
 - Sending: admin-configured hosts may be private (an ntfy in the LAN); no redirects; 10 s timeout;
-  a failing channel is retried with backoff and shown on the overview. Messages name no account
-  data beyond counts. Each event at most once an hour per channel while it lasts, and once when it
-  is over.
+  a failing channel is retried with backoff (1, 2, 4 … 60 minutes, given up after a day) and shown
+  on the overview. Messages name no account data beyond counts. An event is sent when it starts —
+  at most once an hour per channel however often it comes and goes — and once when it is over.
+  ntfy gets the JSON publish (`POST <url>` with `topic`, `title`, `message`, `priority`, `tags`),
+  Gotify `POST <url>/message` with `X-Gotify-Key`, Matrix `PUT
+  <homeserver>/_matrix/client/v3/rooms/<room>/send/m.room.message/<txn>` with an `m.text`.
 
 ### 21.4 Admin networks
 
@@ -2370,7 +2396,9 @@ would shut out the IP making it is 400 `would_lock_out`. Escape hatch:
   ```
 
   `status`: `ok`, `warning`, `error`, `skipped`. Check ids: `certificate` (and each send domain's),
-  `clock` (offset from the `Date` of the push relay and GitHub's answers; warning over 30 s),
+  `clock` (offset from the `Date` of the push relay's and GitHub's answers — `UWULOCK_TIME_SOURCE`
+names others or `off`, GitHub only while the update check is on; warning over 30 s, error over
+2 min; `skipped` when none answers),
   `mail` (connect, EHLO, auth; nothing sent), `pushRelay`, `backup` (local and off-site age),
   `disk`, `proxy.clientIp` (a proxy peer without `X-Forwarded-For`, or `trust_forwarded` off
   behind a private peer; shows the IP it sees), `proxy.publicUrl` (the request's `Host`/`Origin`
@@ -2380,18 +2408,30 @@ would shut out the IP making it is 400 `would_lock_out`. Escape hatch:
   16 MiB by default, or the largest allowed file on the "test the full size" button; the server
   counts and discards it, no body limit but the file limit, answers `{ "bytes": … }`), then
   `POST /uwu/v1/admin/diagnosis/client` `{ "websocket": { "ok": true, "error": null }, "upload": { "ok": false, "status": 413, "bytes": 16777216 } }`
-  which is merged into the stored result.
+  which is merged into the stored result. `proxy.clientIp` and `proxy.publicUrl` come from the
+  admin's `POST`; in the run after an update they, like the browser checks, are `skipped` until
+  the portal runs it. Texts come in the admin's language. The upload answers 413 `too_large` past
+  the largest allowed file (plus 1 MiB). The WebSocket takes the token as `?access_token=`, like
+  the hub, since a browser cannot set a header on one.
 
 ### 21.6 Overview additions
 
 `GET /uwu/v1/admin/overview` gains `"alerts": [{ "kind": "backupStale", "severity": "warning", "since": "…", "detail": "…" }]`
-(the events of §21.3 that are going on) and `"storage": { "databaseBytes", "filesBytes": { "attachments", "sends", "fileRequests", "icons" } }`.
+(the events of §21.3 that are going on; `severity` `info`, `warning` or `error`; `detail` in the
+admin's language) and `"storage": { "databaseBytes", "filesBytes": { "attachments", "sends", "fileRequests", "icons" } }`
+(each kind once it exists). Also `"failingChannels": [{ "id", "name", "kind", "error" }]`,
+`"loki": { "enabled", "queued", "sent", "dropped", "lastSuccess", "error" }` and
+`"diagnosis": null | { "date", "errors", "warnings" }`.
 
 ### 21.7 Logs to Loki
 
 `loki` (§21.1): the same JSON lines as `log.format = json`, pushed to `<url>/loki/api/v1/push`
 with `labels` (never user data), `X-Scope-OrgID: <tenant>` when set, basic auth when set; batched
-(1 s or 1 MiB), dropped with a counter when Loki is away for long. `POST /uwu/v1/admin/settings/test-loki` → 200 or 502.
+(1 s or 1 MiB), dropped with a counter when Loki is away for long (10,000 lines wait). The line is
+tracing-subscriber's JSON format, `{ "timestamp", "level", "fields": { "message", … }, "target" }`,
+which `UWULOCK_LOG_FORMAT=json` writes too; the server adds the label `level` (lower case).
+`POST /uwu/v1/admin/settings/test-loki` — body: the `loki` object as typed, or none for the
+saved one — → 200 or 502.
 
 ### 21.8 Allowed UwUMail servers
 
@@ -2443,7 +2483,10 @@ addresses, names, hosts of icons, IPs or ids.
 | `uwulock_icon_fetches_total` | counter | `result` (`found`, `none`, `refused`, `error`) |
 | `uwulock_loki_dropped_total` | counter | – |
 
-Plus the process collector (`process_*`). `docs/metrics.md` ships example alert rules (backup
+Plus the process collector (`process_*`). What does not exist yet is left out rather than
+reported as 0: `kind` `file_requests`/`icons`, `channel` `realtime`, `target` `offsite`, the send
+domains' certificates and `uwulock_icon_fetches_total` come with their features. `route` is
+`other` for the web vault's files and unknown paths. `docs/metrics.md` ships example alert rules (backup
 older than 2 days, certificate under 14 days, error rate, failed logins spike).
 
 ---
