@@ -1,0 +1,168 @@
+// What Stufe 4b part B brought, in a real browser, against a running UwULock Server with the
+// account web.mjs made: a file request — made by its owner, filled in by somebody with nothing
+// but the link (in another browser), read and taken over into an item — the emergency sheet as a
+// PDF, and backups to a folder off-site from the admin portal, with the recovery key shown once.
+//
+//   node scripts/e2e/operations.mjs <origin> <email> <password> <backup folder> [screenshot directory]
+//
+// The backup folder must exist, be writable for the server, and lie outside its data directory.
+
+import { mkdirSync, readFileSync } from 'node:fs';
+import { chromium } from 'playwright';
+
+const [origin, email, password, folder, shots] = process.argv.slice(2);
+if (!origin || !email || !password || !folder) {
+  console.error('usage: operations.mjs <origin> <email> <password> <backup folder> [screenshot directory]');
+  process.exit(2);
+}
+if (shots) mkdirSync(shots, { recursive: true });
+
+const browser = await chromium.launch({
+  executablePath: process.env.CHROMIUM || undefined,
+  args: process.env.CHROMIUM_ARGS ? process.env.CHROMIUM_ARGS.split(' ') : [],
+});
+const problems = [];
+
+async function open(name) {
+  const context = await browser.newContext({
+    ignoreHTTPSErrors: true,
+    viewport: { width: 1280, height: 800 },
+    locale: 'de-DE',
+    permissions: ['clipboard-read', 'clipboard-write'],
+    acceptDownloads: true,
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (error) => problems.push(`${name}: page error: ${error.message}`));
+  page.on('console', (message) => {
+    if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) {
+      problems.push(`${name}: console: ${message.text()}`);
+    }
+  });
+  return page;
+}
+
+let shot = 0;
+const snap = async (page, name) => {
+  if (shots) await page.screenshot({ path: `${shots}/o${String(++shot).padStart(2, '0')}-${name}.png` });
+};
+const step = (text) => console.log(`== ${text}`);
+
+async function login(page) {
+  await page.goto(origin);
+  await page.getByRole('heading', { name: 'Anmelden' }).waitFor({ timeout: 30000 });
+  await page.getByLabel('E-Mail-Adresse').fill(email);
+  await page.locator('input[type=password]').first().fill(password);
+  await page.getByRole('button', { name: 'Anmelden', exact: true }).click();
+  await page.getByPlaceholder(/Tresor durchsuchen/).waitFor({ timeout: 30000 });
+}
+
+/** The text of a download. */
+async function downloaded(page, trigger) {
+  const [download] = await Promise.all([page.waitForEvent('download'), trigger()]);
+  return readFileSync(await download.path());
+}
+
+const owner = await open('owner');
+try {
+  step('log in');
+  await login(owner);
+
+  step('a file request, with a password');
+  await owner.locator('.sidebar').getByRole('button', { name: 'Datei-Anfragen' }).click();
+  await owner.getByRole('button', { name: 'Neu', exact: true }).click();
+  await owner.getByLabel('Name (nur für dich)').fill('Ausweis für die Bank');
+  await owner.getByLabel('Titel für den Absender').fill('Ausweis-Scan');
+  await owner.getByLabel('Hinweis für den Absender (freiwillig)').fill('Bitte beide Seiten.');
+  await owner.getByLabel('Passwort (freiwillig)').fill('katzen');
+  await owner.getByRole('button', { name: 'Anlegen' }).click();
+  await owner.getByRole('heading', { name: 'Ausweis für die Bank' }).waitFor();
+  const link = (await owner.locator('.send-link').first().innerText()).trim();
+  if (!link.startsWith(`${origin}/#/request/`)) throw new Error(`the link: ${link}`);
+  await snap(owner, 'request');
+
+  step('somebody without an account, with the link on a send domain’s path');
+  const [, accessId, secret] = link.match(/#\/request\/([^/]+)\/([^/]+)$/);
+  const uploader = await open('uploader');
+  await uploader.goto(`${origin}/r/${accessId}#${secret}`);
+  await uploader.getByRole('heading', { name: 'Passwort nötig' }).waitFor({ timeout: 30000 });
+  await uploader.locator('input[type=password]').fill('falsch');
+  await uploader.getByRole('button', { name: 'Öffnen' }).click();
+  await uploader.getByText('Das Passwort stimmt nicht.').waitFor();
+  await uploader.locator('input[type=password]').fill('katzen');
+  await uploader.getByRole('button', { name: 'Öffnen' }).click();
+  await uploader.getByRole('heading', { name: 'Ausweis-Scan' }).waitFor();
+  await uploader.getByText('Bitte beide Seiten.').waitFor();
+  await uploader.locator('input[type=file]').setInputFiles([
+    { name: 'vorne.txt', mimeType: 'text/plain', buffer: Buffer.from('die Vorderseite') },
+    { name: 'hinten.txt', mimeType: 'text/plain', buffer: Buffer.from('die Rückseite') },
+  ]);
+  await uploader.getByLabel('Nachricht (freiwillig)').fill('Hier, wie besprochen.');
+  await uploader.getByLabel('Dein Name (freiwillig)').fill('Mika');
+  await uploader.getByRole('button', { name: 'Verschlüsselt senden' }).click();
+  await uploader.getByRole('heading', { name: 'Angekommen ✧' }).waitFor({ timeout: 30000 });
+  await snap(uploader, 'uploaded');
+  await uploader.context().close();
+
+  step('the owner reads it, and takes it over into an item');
+  // A reload locks the vault: the keys never leave the page's memory.
+  await owner.reload();
+  await owner.locator('input[type=password]').first().fill(password);
+  await owner.keyboard.press('Enter');
+  await owner.getByPlaceholder(/Tresor durchsuchen/).waitFor({ timeout: 30000 });
+  await owner.locator('.sidebar').getByRole('button', { name: 'Datei-Anfragen' }).click();
+  await owner.getByText('Hier, wie besprochen.').waitFor({ timeout: 30000 });
+  await owner.getByText(/Absender \(nicht geprüft\): Mika/).first().waitFor();
+  const front = await downloaded(owner, () =>
+    owner.locator('.detail-row', { hasText: 'vorne.txt' }).getByRole('button', { name: 'Herunterladen' }).click(),
+  );
+  if (front.toString() !== 'die Vorderseite') throw new Error(`the file: ${front}`);
+  await snap(owner, 'arrived');
+  await owner.getByRole('button', { name: 'Als Eintrag übernehmen' }).click();
+  await owner.getByText('Noch nichts. Du bekommst eine Mail, wenn etwas ankommt.').waitFor({ timeout: 30000 });
+  await owner.locator('.sidebar').getByRole('button', { name: 'Alle Einträge' }).click();
+  await owner.getByText(/Ausweis-Scan – /).first().click();
+  await owner.getByText('hinten.txt').waitFor({ timeout: 30000 });
+  await snap(owner, 'taken-over');
+
+  step('the emergency sheet');
+  await owner.getByRole('button', { name: /Einstellungen/ }).first().click();
+  await owner.getByRole('button', { name: 'Notfallzugriff' }).click();
+  await owner.getByRole('button', { name: 'Notfallblatt erstellen' }).click();
+  await owner.locator('.modal input[type=password]').fill(password);
+  const pdf = await downloaded(owner, () => owner.getByRole('button', { name: 'PDF erstellen' }).click());
+  const text = pdf.toString('latin1');
+  if (!text.startsWith('%PDF-1.4') || !text.includes(`(${email})`)) throw new Error('the sheet is no PDF of this account');
+  await owner.keyboard.press('Escape');
+
+  step('off-site backups to a folder, from the admin portal');
+  await owner.goto(`${origin}/admin#/backups`);
+  const card = owner.locator('.offsite');
+  await card.waitFor({ timeout: 30000 });
+  await card.getByRole('radio', { name: 'Ordner' }).click();
+  await card.getByLabel('Ordner (eingehängt, außerhalb der Daten)').fill(folder);
+  await card.getByRole('switch', { name: 'Backups außer Haus an' }).click();
+  await card.getByRole('button', { name: 'Speichern' }).click();
+  const key = (await owner.locator('.recovery-key').innerText({ timeout: 30000 })).trim();
+  if (!/^[A-Z2-7]{4}(-[A-Z2-7]{1,4})+$/.test(key)) throw new Error(`the recovery key: ${key}`);
+  await snap(owner, 'recovery-key');
+  await owner.getByRole('button', { name: 'Ich habe ihn sicher aufgehoben' }).click();
+  await card.getByRole('button', { name: 'Verbindung testen' }).click();
+  await card.getByText(/Verbindung steht/).waitFor({ timeout: 30000 });
+  await card.getByRole('button', { name: 'Jetzt sichern' }).click();
+  await card.getByText(/Zuletzt gelungen/).waitFor({ timeout: 60000 });
+  await card.getByRole('button', { name: 'Stände am Ziel zeigen' }).click();
+  await card.getByRole('button', { name: 'Zurückspielen' }).first().waitFor({ timeout: 30000 });
+  await snap(owner, 'offsite');
+} catch (error) {
+  await snap(owner, 'failed').catch(() => undefined);
+  console.error(error);
+  problems.push(String(error));
+} finally {
+  await browser.close();
+}
+
+if (problems.length) {
+  console.error(problems.join('\n'));
+  process.exit(1);
+}
+console.log('ok');
