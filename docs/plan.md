@@ -203,6 +203,23 @@ den Tests auf echten Geräten.
     Adressen oder anderen Nutzerdaten als Labels. Dazu Beispiel-Alarmregeln.
   - Logs an Grafana Loki, wie bei UwUMail Server: im Admin-Portal einschaltbar, gleiches JSON
     wie `log.format = json`, damit dieselben Abfragen für beide Wege gehen.
+- Admin-Benachrichtigungen zusätzlich zur Mail über ntfy, Gotify und Matrix: Backup
+  fehlgeschlagen oder zu alt, Zertifikat läuft bald ab, Update verfügbar, viele Fehlversuche,
+  Platte fast voll, Push-Relay oder Mailversand gestört. Pro Kanal wählbar, welche Ereignisse, mit
+  Test-Knopf; Zugangsdaten bleiben auf dem Server.
+- Server-Richtlinien für alle Konten, im Admin-Portal (Stufe 5 bringt dazu die pro Organisation):
+  - 2FA-Pflicht, mit Frist: Danach lassen sich Konten ohne 2FA nur noch im Web-Tresor anmelden,
+    um 2FA einzurichten; die Apps bekommen eine Meldung, was zu tun ist
+  - Mindest-KDF: Der Server sieht die KDF-Werte und lehnt schwächere ab; Konten darunter, etwa
+    alte PBKDF2-Konten aus Vaultwarden, bekommen einen Sicherheitshinweis und im Web-Tresor
+    einen Knopf zum Umstellen
+  - Stärke des Master-Passworts: kann nur der Client prüfen (der Server sieht das Passwort
+    nie); der Web-Tresor tut es bei Registrierung und Änderung. Ob die offiziellen Clients eine
+    serverweite Regel beachten, ist zu prüfen — bei Bitwarden hängen Richtlinien an
+    Organisationen.
+- Admin-Portal nur aus bestimmten Netzen (Liste von CIDR, z. B. LAN und VPN), ausgewertet mit der
+  echten Client-IP (auch hinter einem Proxy); von anderswo antwortet `/admin` mit 404. Gilt auch
+  für die Anmeldung per UwUAuth. Tresor, Sends und Kommandozeile sind davon nicht betroffen.
 
 ### Stufe 4c — Tresor-Komfort (vor Stufe 5)
 
@@ -248,6 +265,19 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   oder an einem Datum). Der Server speichert nur Eintrags-ID und Datum und schickt dann eine Mail
   ohne Namen des Eintrags („Ein Eintrag in deinem Tresor ist fällig") mit Link in den
   Web-Tresor; dort und im UwULock-Client sind fällige Einträge markiert.
+- Bericht „2FA möglich, aber nicht eingerichtet" bei der Passwortprüfung: Einträge für Websites,
+  die laut [2fa.directory](https://2fa.directory/) 2FA anbieten, bei denen aber kein TOTP
+  hinterlegt ist, mit Link zur Anleitung der Website. Der Server spiegelt die Liste täglich
+  (Lizenz prüfen), verglichen wird im Browser — der Server erfährt nicht, welche Websites im
+  Tresor sind.
+- „Eintrag als Send teilen": Ein Knopf am Eintrag (Web-Tresor, UwULock-Client) macht daraus
+  einen Text-Send; man wählt, welche Felder hinein sollen (Benutzername, Passwort, Notiz, eigene
+  Felder, nie das TOTP-Geheimnis). Vorgaben: Ablauf nach einem Tag, einmal abrufbar, optional mit
+  Passwort. Ein ganz normaler Send, also auch in den offiziellen Clients sichtbar.
+- Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
+  Web-Tresor, Anmeldung, Send- und Datei-Anfrage-Seiten und Mails; wie bei UwUMail Server (dort
+  `docs/branding.md`). Die offiziellen Clients bleiben, wie sie sind. Mit den Send-Domains aus
+  Stufe 6 auch pro Domain.
 
 ### Stufe 5 — Firma
 
