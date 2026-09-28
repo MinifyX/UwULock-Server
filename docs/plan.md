@@ -9,7 +9,7 @@ Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit 
 Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind zusammen als
 0.4.0-beta.1 erschienen, nach einem Sicherheitsreview
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
-0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit) und 4c (Tresor-Komfort), dann Stufe 5.
+0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit), 4c (Tresor-Komfort) und 4d (Familie), dann Stufe 5.
 
 ## Leitlinien
 
@@ -107,7 +107,8 @@ Jede Stufe ist ein Release und für sich nutzbar.
       per Bitwardens CLI gefüllt) und eine daraus gewonnene Fixture.
 - [x] Organisationen mit Sammlungen, Gruppen, Richtlinien werden übernommen und im Sync
       mitgeliefert; Mitglieder mit Schreibrecht legen Einträge an, ändern, teilen, hängen Dateien
-      an. Verwalten (einladen, Sammlungen anlegen) kommt mit Stufe 5.
+      an. Verwalten (einladen, Sammlungen anlegen) kommt für Familien mit Stufe 4d, sonst mit
+      Stufe 5.
 - [x] Echtzeit: SignalR-Hub (`/notifications/hub`, MessagePack über WebSocket) und der anonyme
       Hub für „Mit Gerät anmelden"; der Web-Tresor hört ebenfalls zu.
 - [x] Push-Relay für die Handy-Apps (Bitwarden-Installation, US/EU), getestet gegen einen
@@ -217,6 +218,11 @@ den Tests auf echten Geräten.
     nie); der Web-Tresor tut es bei Registrierung und Änderung. Ob die offiziellen Clients eine
     serverweite Regel beachten, ist zu prüfen — bei Bitwarden hängen Richtlinien an
     Organisationen.
+- Diagnose-Seite im Admin-Portal, auf Knopfdruck und nach jedem Update: Zertifikat und dessen
+  Ablauf, Uhrzeit (2FA-Codes hängen daran), Mailversand, Push-Relay, Backup-Ziel, freier
+  Speicher, und der Reverse-Proxy — kommen WebSockets durch, reicht das Upload-Limit für die
+  größte erlaubte Datei, wird die echte Client-IP übergeben, stimmt die öffentliche Adresse. Pro
+  Punkt, was zu tun ist (mit Beispielen für Caddy und nginx).
 - Admin-Portal nur aus bestimmten Netzen (Liste von CIDR, z. B. LAN und VPN), ausgewertet mit der
   echten Client-IP (auch hinter einem Proxy); von anderswo antwortet `/admin` mit 404. Gilt auch
   für die Anmeldung per UwUAuth. Tresor, Sends und Kommandozeile sind davon nicht betroffen.
@@ -274,18 +280,53 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   einen Text-Send; man wählt, welche Felder hinein sollen (Benutzername, Passwort, Notiz, eigene
   Felder, nie das TOTP-Geheimnis). Vorgaben: Ablauf nach einem Tag, einmal abrufbar, optional mit
   Passwort. Ein ganz normaler Send, also auch in den offiziellen Clients sichtbar.
+- Sends nur für bestimmte E-Mail-Adressen, wie in den neueren Bitwarden-Clients: Wer den Link
+  öffnet, gibt seine Adresse an und bekommt einen Code per Mail; erst dann gibt der Server den
+  Send heraus (über den `send_access`-Weg, den es schon gibt). Der Server kennt dafür die
+  Adressen. Braucht Mail; ohne Mail im Admin-Portal ist die Option aus.
+- Umzug von Bitwarden (Cloud und selbst gehostet): Bitwardens Export lässt Anhänge und
+  Organisationen weg. Der UwULock-Client meldet sich an beiden Servern an und überträgt Einträge,
+  Ordner, Anhänge und Sends (entschlüsselt nur im Client, neu verschlüsselt für UwULock);
+  Organisationen, sobald sie hier angelegt werden können (Stufe 4d bzw. 5). Braucht ein
+  Client-Release.
+- Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
+  Kürzeln und einer Übersicht dazu), mit Screenreader nutzbar, ein Modus mit hohem Kontrast; Ziel
+  WCAG 2.2 AA, geprüft mit axe im bestehenden Browsertest, ohne ihn spürbar langsamer zu machen.
 - Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
   Web-Tresor, Anmeldung, Send- und Datei-Anfrage-Seiten und Mails; wie bei UwUMail Server (dort
   `docs/branding.md`). Die offiziellen Clients bleiben, wie sie sind. Mit den Send-Domains aus
   Stufe 6 auch pro Domain.
 
+### Stufe 4d — Familie (vor Stufe 5)
+
+Teilen in der Familie, ohne auf alles aus Stufe 5 zu warten: eine schlanke Organisation, wie
+Bitwardens „Families".
+
+- Eine Familie anlegen im Web-Tresor (der Admin legt fest, wer das darf und wie viele Mitglieder
+  eine Familie höchstens hat); Rollen nur Eigentümer und Mitglied.
+- Mitglieder einladen: Konten dieses Servers direkt, neue Leute über die bestehenden
+  Einladungsregeln; bestätigen mit dem Fingerabdruck-Satz, damit der Schlüssel der Familie beim
+  Richtigen landet.
+- Sammlungen anlegen, umbenennen, löschen, mit Lese- oder Schreibrecht pro Mitglied; Einträge
+  hinein verschieben aus Web-Tresor, UwULock-Client und den offiziellen Clients (die Verwaltung
+  selbst nur im Web-Tresor, wie bei Bitwarden).
+- Aus Vaultwarden übernommene Organisationen lassen sich damit verwalten, soweit sie nur
+  Eigentümer und Mitglieder brauchen.
+- Gruppen, Richtlinien, Account-Recovery, Ereignisprotokoll und alles Weitere bleiben in Stufe 5,
+  die darauf aufbaut.
+
 ### Stufe 5 — Firma
 
-- Organisationen, Sammlungen, Rollen, Einladungen
+- Organisationen, Sammlungen, Rollen, Einladungen (aufbauend auf Stufe 4d)
 - Gruppen, Richtlinien (2FA-Pflicht, Master-Passwort-Anforderungen, Account-Recovery)
 - Ereignisprotokoll / Audit (auf den Sicherheitshinweisen aus Stufe 4b)
 - PostgreSQL
 - SSO mit Entra ID (OIDC an sich kommt mit Stufe 4b), Bitwarden Directory Connector (LDAP, Entra)
+- Secrets Manager, kompatibel zu Bitwarden: Projekte, Secrets, Maschinen-Konten mit
+  Zugriffstokens, für `bws`, Bitwardens SDKs, die GitHub Action und den Kubernetes-Operator — damit
+  Docker Compose, CI oder Ansible ihre Zugangsdaten aus dem Tresor holen. Verschlüsselt wie bei
+  Bitwarden (der Schlüssel steckt im Token, der Server sieht keine Secrets); Verwaltung im
+  Web-Tresor. Vaultwarden kann das nicht. Hängt an Organisationen, darum hier.
 
 ### Stufe 6 — UwU-Extras (unter `/uwu/v1`, angekündigt unter `GET /uwu/v1/info`)
 
@@ -357,8 +398,8 @@ Docker-Images für amd64 und arm64 auf GHCR, dazu `install.sh`, `update.sh`, `co
 
 ## Festgelegt
 
-- Stufe 4b (Betrieb und Sicherheit) und 4c (Tresor-Komfort) vor Stufe 5 (Firma) vor Stufe 6
-  (UwU-Extras); 5 und 6 lassen sich tauschen.
+- Stufe 4b (Betrieb und Sicherheit), 4c (Tresor-Komfort) und 4d (Familie) vor Stufe 5 (Firma)
+  vor Stufe 6 (UwU-Extras); 5 und 6 lassen sich tauschen.
 - Web-Tresor und Admin-Portal schon in 0.1: der Web-Tresor an der Wurzel `/`, das Admin-Portal
   unter `/admin`, beide im Look der UwULock-App.
 - Keine Bestätigung neuer Geräte per Mail (Bitwardens „new device verification"): wer mehr
