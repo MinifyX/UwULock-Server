@@ -16,10 +16,10 @@ use uwulock_core::crypto::{self, EncString, Kdf, SymmetricKey};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KdfNumbers {
-    kdf_type: u32,
-    iterations: u32,
-    memory: Option<u32>,
-    parallelism: Option<u32>,
+    pub(crate) kdf_type: u32,
+    pub(crate) iterations: u32,
+    pub(crate) memory: Option<u32>,
+    pub(crate) parallelism: Option<u32>,
 }
 
 pub fn numbers(kdf: Kdf) -> KdfNumbers {
@@ -119,6 +119,16 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Ho
         .as_ref()
         .ok_or_else(|| Failure::new("invalid", "This account has no key pair to rotate."))?;
     let private = private.parse::<EncString>()?.decrypt(&unlocked.user_key)?;
+    // The public key the server has for the account has to be the half of the private key the
+    // user key opens: one swapped on the server would be made official by the new keys, and
+    // organisations and contacts would wrap keys for it from then on.
+    let (_, stated) = crate::keys::public_key(public_key)?;
+    if crypto::PrivateKey::from_der(&private)?.public() != stated {
+        return Err(Failure::new(
+            "refused",
+            "The server has another public key for this account than the one that belongs to it. The vault gets no new keys like this.",
+        ));
+    }
     let new_key = SymmetricKey::generate();
     let master = crypto::master_key(password, &unlocked.email, unlocked.kdf)?;
 

@@ -483,6 +483,11 @@ async fn takeover(State(state): State<AppState>, session: Session, Path(id): Pat
 struct NewPassword {
     new_master_password_hash: String,
     key: String,
+    /// UwULock's web vault sends a key derivation of its own when the grantor's is weaker than
+    /// today's defaults: a new password should not be cheap to guess. Bitwarden's apps keep the
+    /// grantor's.
+    #[serde(default, flatten)]
+    kdf: Option<crate::identity::KdfData>,
 }
 
 /// A new master password for the grantor, set by the contact. Two-step login goes, every
@@ -498,11 +503,15 @@ async fn password(
     if data.new_master_password_hash.is_empty() || data.key.is_empty() {
         return Err(ApiError::bad("Invalid request!"));
     }
+    let kdf = data.kdf.map(crate::identity::KdfData::check).transpose()?;
     let password_hash = auth::hash_password(state.config.hash_cost, &data.new_master_password_hash).await?;
     let key = data.key;
     state
         .store
         .update_user(&grantor.id, move |user| {
+            if let Some(kdf) = kdf {
+                user.kdf = kdf;
+            }
             user.password_hash = password_hash;
             user.user_key = key;
             user.password_hint = None;
@@ -570,6 +579,18 @@ pub async fn tend(state: &AppState) -> ApiResult<()> {
 #[cfg(test)]
 mod tests {
     use crate::test_support::*;
+
+    #[test]
+    fn bitwarden_s_apps_keep_the_grantor_s_key_derivation() {
+        let plain: super::NewPassword =
+            serde_json::from_value(json!({"newMasterPasswordHash": "h", "key": "k"})).unwrap();
+        assert!(plain.kdf.is_none());
+        let ours: super::NewPassword = serde_json::from_value(
+            json!({"newMasterPasswordHash": "h", "key": "k", "kdf": 0, "kdfIterations": 600000}),
+        )
+        .unwrap();
+        assert_eq!(ours.kdf.unwrap().kdf_iterations, 600_000);
+    }
     use axum::http::StatusCode;
     use serde_json::{Value, json};
 
@@ -687,12 +708,15 @@ mod tests {
         )
         .await;
         assert_eq!((takeover["kdf"].clone(), takeover["keyEncrypted"].clone()), (json!(0), json!("4.k")));
-        let body = json!({"newMasterPasswordHash": "new hash", "key": "2.newkey|a|b"});
+        let body = json!({"newMasterPasswordHash": "new hash", "key": "2.newkey|a|b",
+            "kdf": 1, "kdfIterations": 3, "kdfMemory": 64, "kdfParallelism": 4});
         let response =
             server.call("POST", &format!("/api/emergency-access/{id}/password"), Some(&friend.token), body).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(server.get_as(&nyu.token, "/api/sync").await.status(), StatusCode::UNAUTHORIZED, "logged out");
         server.login_with("nyu@example.com", "new hash", "device-9").await;
+        let kdf = server.state.store.user(&nyu.id).await.unwrap().unwrap().kdf;
+        assert_eq!((kdf.kind, kdf.memory), (1, Some(64)), "the stronger key derivation came along");
     }
 
     #[tokio::test]

@@ -57,7 +57,9 @@ the server can send mail, it goes out by mail as well. Everybody else an admin i
 admin portal at `/admin`, where the link is shown too, for passing on by hand. With *Users may
 invite* in the portal's settings, every account can invite people too — in the web vault under
 Settings → Invite, up to the number of people the settings allow (open invitations count), and
-never as an admin.
+never as an admin. They do not see the link while the server can send mail: whoever holds it can
+register the address. Without mail they get it to pass on, and could register the address
+themselves — so let users invite only when mail is set up, or when you trust them.
 
 Admins are ordinary accounts with the admin right. The portal shows accounts, devices, the event
 log (logins, refused logins, what admins did), the server's log, backups and whether there is an
@@ -125,6 +127,20 @@ vault.example.com {
 }
 ```
 
+When the site writes an access log, filter the clients' access token out of it (see below):
+
+```caddyfile
+    log {
+        format filter {
+            fields {
+                request>uri query {
+                    delete access_token
+                }
+            }
+        }
+    }
+```
+
 nginx:
 
 ```nginx
@@ -151,6 +167,11 @@ server {
 
 (`$connection_upgrade` is the usual `map $http_upgrade $connection_upgrade { default upgrade; '' close; }`
 in the `http` block.)
+
+The clients' live connection (`/notifications/hub?access_token=…`) carries their access token in
+its address, as with Bitwarden. It works for an hour; still, keep it out of access logs — in
+nginx with `access_log off;` in a `location /notifications/` block of its own (with the same
+lines as above), or a `log_format` that writes `$uri` instead of `$request`.
 
 ### A proxy in a container
 
@@ -259,8 +280,15 @@ proxy (or the DNS name) at UwULock instead of Vaultwarden. The old password stil
 hashed anew at each account's next login.
 
 What does not come over, and is named in the summary: accounts that were invited but never
-registered, Duo and YubiKey OTP (their owners set up another way), the event log, and "log in
-with a device" requests that were still waiting. A Vaultwarden on MySQL or PostgreSQL has to
+registered, Duo, YubiKey OTP and U2F (whoever is left without a second step gets a mail saying
+so, when mail is set up — otherwise the summary names them, to tell them yourself), the event
+log, and "log in with a device" requests that were still waiting. Organisation policies come
+along and the apps follow them, but the server does not enforce them before Stufe 5.
+
+Once everything works, destroy the old Vaultwarden data and its backups — or keep them only
+where nobody else gets at them: the refresh tokens of the devices that moved are in there, as
+they are. A device's old token is replaced here at its first use, so after that the old copy is
+worthless; a device that has not been used since the move stays reachable with it until then. A Vaultwarden on MySQL or PostgreSQL has to
 move to SQLite first. If the container cannot read the directory (`Permission denied`), copy it
 and `chmod -R a+rX` the copy.
 
@@ -290,12 +318,15 @@ sudo docker compose run --rm uwulock restore uwulock-2026-09-25-031000.db
 sudo docker compose up -d
 ```
 
-The database that was there is kept next to it as `uwulock.db.before-restore-<time>`.
+The database that was there is kept next to it as `uwulock.db.before-restore-<time>`. A restore
+ends every session — on every device, apps included, everybody logs in again: a backup carries
+the tokens of its day, and among them ones that were taken back since.
 
 The admin portal puts a backup back without stopping anything (Backups → Restore, with the
 master password): how things are right then is written as a backup first
 (`uwulock-<time>-before-restore.db`), so the step can be undone the same way. It only takes
-backups of this server; one of another server goes back on the command line as above.
+backups of this server; one of another server goes back on the command line as above. Here too,
+everybody logs in again afterwards, the admin who put it back included.
 
 Attachments and the files of Sends are not in the database: they are files next to it, in
 `/data/attachments` and `/data/sends`, encrypted by the clients. Copy those along with the

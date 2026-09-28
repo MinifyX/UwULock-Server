@@ -20,7 +20,11 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// How often the server pings: well inside any proxy's idle timeout, and the server's own.
+/// Every ping also checks the connection's session again.
+#[cfg(not(test))]
 const PING: Duration = Duration::from_secs(15);
+#[cfg(test)]
+const PING: Duration = Duration::from_millis(100);
 /// How long a new connection has for its handshake.
 const HANDSHAKE: Duration = Duration::from_secs(10);
 /// The most a client message may be. Clients send a handshake, pings and completions — a few
@@ -50,18 +54,48 @@ async fn hub(
         .or_else(|| header.rsplit_once("Bearer ").map(|(_, token)| token.to_string()))
         .ok_or_else(ApiError::unauthorized)?;
     let claims = state.tokens.verify(&token).ok_or_else(ApiError::unauthorized)?;
-    let Some(session) = state.store.session_user(&claims.sub).await? else { return Err(ApiError::unauthorized()) };
-    if session.user.disabled
-        || session.user.security_stamp != claims.sstamp
-        || !session.devices.contains(&claims.device)
-    {
+    let check = Recheck {
+        state: state.clone(),
+        user_id: claims.sub,
+        device: claims.device,
+        stamp: claims.sstamp,
+        expires: claims.exp,
+    };
+    if !check.still_valid().await {
         return Err(ApiError::unauthorized());
     }
     let listening = state
         .hub
-        .listen(&claims.sub)
+        .listen(&check.user_id)
         .ok_or_else(|| ApiError::too_many("This account has too many connections open."))?;
-    Ok(small(upgrade).on_upgrade(move |socket| serve(socket, listening)))
+    Ok(small(upgrade).on_upgrade(move |socket| serve(socket, listening, Some(check))))
+}
+
+/// What a connection was opened with, checked again at every ping: once the token runs out,
+/// the password changes, the device is logged out or the account is disabled, the connection
+/// ends — the clients open a new one with a fresh token, if they still may.
+struct Recheck {
+    state: AppState,
+    user_id: String,
+    device: String,
+    stamp: String,
+    expires: i64,
+}
+
+impl Recheck {
+    async fn still_valid(&self) -> bool {
+        if self.expires <= crate::auth::now_seconds() {
+            return false;
+        }
+        match self.state.store.session_user(&self.user_id).await {
+            Ok(Some(session)) => {
+                !session.user.disabled
+                    && session.user.security_stamp == self.stamp
+                    && session.devices.contains(&self.device)
+            }
+            _ => false,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -91,12 +125,12 @@ async fn anonymous_hub(
         .hub
         .listen_anonymous(&token, ip)
         .ok_or_else(|| ApiError::too_many("Too many connections from this address."))?;
-    Ok(small(upgrade).on_upgrade(move |socket| serve(socket, listening)))
+    Ok(small(upgrade).on_upgrade(move |socket| serve(socket, listening, None)))
 }
 
 /// One connection: answer the handshake, ping, pass on what the hub has for it, until either
 /// side is done.
-async fn serve(mut socket: WebSocket, mut listening: Listening) {
+async fn serve(mut socket: WebSocket, mut listening: Listening, recheck: Option<Recheck>) {
     let mut ping = tokio::time::interval(PING);
     ping.tick().await;
     // Whoever does not say hello in time is not waiting for anything.
@@ -133,6 +167,12 @@ async fn serve(mut socket: WebSocket, mut listening: Listening) {
                 None => break,
             },
             _ = ping.tick() => {
+                if let Some(recheck) = &recheck
+                    && !recheck.still_valid().await
+                {
+                    let _ = socket.send(Message::Close(None)).await;
+                    break;
+                }
                 if socket.send(Message::Binary(uwulock_notify::ping().into())).await.is_err() {
                     break;
                 }
@@ -255,6 +295,19 @@ mod tests {
         // Pings may still come; then the server closes the connection.
         while let Some(Ok(Message::Binary(_) | Message::Ping(_))) =
             tokio::time::timeout(Duration::from_secs(5), waiting.next()).await.unwrap()
+        {}
+    }
+
+    #[tokio::test]
+    async fn a_connection_ends_with_its_session() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let address = listen(&server).await;
+        let mut socket = connect(format!("ws://{address}/notifications/hub?access_token={}", nyu.token)).await;
+        server.state.store.update_user(&nyu.id, |user| user.security_stamp = "a new one".into()).await.unwrap();
+        // Pings may come until the next check; then the server closes the connection.
+        while let Some(Ok(Message::Binary(_) | Message::Ping(_))) =
+            tokio::time::timeout(Duration::from_secs(5), socket.next()).await.unwrap()
         {}
     }
 

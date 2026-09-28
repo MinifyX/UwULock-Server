@@ -74,11 +74,26 @@ pub fn emergency_view(unlocked: &Unlocked, key_encrypted: &str, ciphers: &str) -
 /// A new master password for the grantor: what `emergency-access/<id>/password` takes.
 pub fn takeover(unlocked: &Unlocked, key_encrypted: &str, email: &str, kdf: Kdf, password: &str) -> Result<Value> {
     let key = grantor_key(unlocked, key_encrypted)?;
-    let master = crypto::master_key(password, email, kdf)?;
-    Ok(json!({
+    // The key derivation comes from the server. Weaker than today's defaults, the new password
+    // gets those instead, and the server is told.
+    let today = match kdf {
+        Kdf::Pbkdf2 { .. } => Kdf::Pbkdf2 { iterations: 600_000 },
+        Kdf::Argon2id { .. } => Kdf::Argon2id { iterations: 3, memory_mib: 64, parallelism: 4 },
+    };
+    let stronger = kdf.is_weaker_than(&today).then_some(today);
+    let master = crypto::master_key(password, email, stronger.unwrap_or(kdf))?;
+    let mut body = json!({
         "newMasterPasswordHash": crypto::master_password_hash(&master, password),
         "key": EncString::encrypt(&key.to_bytes(), &SymmetricKey::stretch(&master)).to_string(),
-    }))
+    });
+    if let Some(kdf) = stronger {
+        let numbers = crate::account::numbers(kdf);
+        body["kdf"] = numbers.kdf_type.into();
+        body["kdfIterations"] = numbers.iterations.into();
+        body["kdfMemory"] = numbers.memory.into();
+        body["kdfParallelism"] = numbers.parallelism.into();
+    }
+    Ok(body)
 }
 
 // ── Logging in with another device, as the new one ────────

@@ -16,11 +16,15 @@ const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self' 'wa
      style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; \
      worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
 
-/// The WebAuthn connectors are framed by Bitwarden's browser extensions and desktop app, which
-/// is all they are for: framing is allowed for those, and nobody else. They hold no key.
+/// The WebAuthn connectors are framed by Bitwarden's browser extensions, which is all they are
+/// for: framing is allowed for those, and nobody else — not any extension, which could put a
+/// security key's prompt into a page of its own. Chrome and Edge give Bitwarden's extension a
+/// fixed id (as Vaultwarden allows it); Firefox and Safari give every installation a new one,
+/// so there only the kind of extension can be named. The apps open them as pages, not frames.
 const CONNECTOR_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
      img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; \
-     frame-ancestors 'self' chrome-extension: moz-extension: safari-web-extension: ms-browser-extension: file:";
+     frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb \
+     chrome-extension://jbkfoedolllekgbhcbcoahefnbanhhlh moz-extension: safari-web-extension:";
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/", get(app)).route("/admin", get(app)).route("/admin/", get(app))
@@ -112,7 +116,11 @@ mod tests {
             return;
         }
         let policy = page.headers()["content-security-policy"].to_str().unwrap().to_string();
-        assert!(policy.contains("frame-ancestors 'self' chrome-extension: moz-extension:"), "{policy}");
+        assert!(
+            policy.contains("frame-ancestors 'self' chrome-extension://nngceckbapebfimnlniiiahkandclblb"),
+            "{policy}"
+        );
+        assert!(!policy.contains("chrome-extension: ") && !policy.contains("file:"), "no extension at all, no file");
         let vault = server.get("/").await;
         assert!(vault.headers()["content-security-policy"].to_str().unwrap().contains("frame-ancestors 'none'"));
         assert_eq!(vault.headers()["x-frame-options"], "DENY");

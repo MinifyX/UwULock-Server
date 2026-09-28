@@ -159,7 +159,7 @@ GitHub release with the scripts.
 - [Plan](docs/plan.md) — where this is going, stage by stage (German)
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
 - [Performance](docs/performance.md) — how it is measured, and the numbers
-- [Security review, September 2026](docs/security-review-2026-09.md) — what was fixed for 0.4,
-  and what is still open
+- [Security review, September 2026](docs/security-review-2026-09.md) — what was found for 0.4,
+  and how it was fixed
 - [Changelog](CHANGELOG.md)
 - [Security](SECURITY.md) — how to report a vulnerability

@@ -202,9 +202,8 @@ try {
   await snap('admin-restored');
   await page.getByLabel('E-Mail-Adresse').fill(email);
   await unlockOrLogin();
-  await page.getByRole('heading', { name: 'Übersicht' }).waitFor({ timeout: 30000 });
-  await page.getByRole('navigation').getByRole('button', { name: 'Backups' }).click();
-  await page.getByText(/vor dem Zurückspielen/).first().waitFor();
+  // Back where it was, on the backups.
+  await page.getByText(/vor dem Zurückspielen/).first().waitFor({ timeout: 30000 });
   await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
   await page.locator('.admin-table').getByText('mika@example.com').waitFor();
   if (await page.locator('.admin-table').getByText('later@example.com').count())
