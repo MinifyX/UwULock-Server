@@ -32,14 +32,71 @@ enum SettingsAction {
 }
 
 #[derive(Subcommand)]
+enum BackupAction {
+    /// Back up to the other system now, with the settings of the admin portal.
+    Offsite,
+    /// The snapshots on the other system, with the settings of the admin portal.
+    List,
+    /// Put a snapshot from the other system into an empty data directory: for a new machine,
+    /// before its server starts the first time. The recovery key comes from
+    /// UWULOCK_BACKUP_KEY or is asked for; an SFTP password from UWULOCK_BACKUP_SFTP_PASSWORD;
+    /// S3 keys from UWULOCK_BACKUP_S3_ACCESS_KEY and UWULOCK_BACKUP_S3_SECRET_KEY.
+    Restore(Box<OffsiteRestore>),
+}
+
+#[derive(clap::Args)]
+struct OffsiteRestore {
+    /// An SFTP server: `user@host:path`.
+    #[arg(long, group = "target")]
+    sftp: Option<String>,
+    /// The SFTP server's port.
+    #[arg(long, default_value_t = 22)]
+    port: u16,
+    /// The SSH key to log in with (OpenSSH format); without it, the password from the
+    /// environment.
+    #[arg(long)]
+    ssh_key: Option<PathBuf>,
+    /// The SFTP server's host key as `SHA256:…`, to check it.
+    #[arg(long)]
+    host_key: Option<String>,
+    /// An S3 bucket: `s3://bucket/folder`.
+    #[arg(long, group = "target")]
+    s3: Option<String>,
+    /// The S3 address without the bucket, like https://s3.eu-central-1.amazonaws.com.
+    #[arg(long)]
+    endpoint: Option<String>,
+    #[arg(long, default_value = "us-east-1")]
+    region: String,
+    /// `https://server/bucket/…` instead of `https://bucket.server/…` (MinIO and the like).
+    #[arg(long)]
+    path_style: bool,
+    /// A folder on this machine, like a mounted disk.
+    #[arg(long, group = "target")]
+    folder: Option<PathBuf>,
+    /// The snapshot to put back; the newest without it.
+    #[arg(long)]
+    snapshot: Option<String>,
+    /// Only list the snapshots there.
+    #[arg(long)]
+    list: bool,
+    /// The data directory to restore into, empty; the server's own without it.
+    #[arg(long)]
+    into: Option<PathBuf>,
+}
+
+#[derive(Subcommand)]
 enum Command {
     /// Serve. The default.
     Serve,
-    /// Write a consistent copy of the database, while the server runs.
+    /// Write a consistent copy of the database, while the server runs. `backup offsite`,
+    /// `backup list` and `backup restore` are the backups on another system.
+    #[command(args_conflicts_with_subcommands = true)]
     Backup {
         /// Where to write it. The default is a dated file under `backups`.
         #[arg(long)]
         to: Option<PathBuf>,
+        #[command(subcommand)]
+        action: Option<BackupAction>,
     },
     /// Put a backup back. Without a name, list the backups there are. Only while the server is
     /// stopped: `docker compose stop && docker compose run --rm uwulock restore <name>`
@@ -131,12 +188,13 @@ fn main() -> Result<(), String> {
         Command::Health => health::probe(&config),
         // Opening the database would be using it, and a restore needs it unused.
         Command::Restore { backup } => restore(&config, backup),
-        Command::Backup { to } => runtime()?.block_on(async {
+        Command::Backup { to, action: None } => runtime()?.block_on(async {
             let store = uwulock_server::open_store(&config)?;
             let path = backups::write(&store, &config.backups(), to).await?;
             println!("Written to {}", path.display());
             Ok(())
         }),
+        Command::Backup { action: Some(action), .. } => runtime()?.block_on(offsite(config, action, logs)),
         Command::Invite { email, admin } => runtime()?.block_on(invite(config, email, admin, logs)),
         Command::Admin { email, remove } => runtime()?.block_on(async {
             let store = uwulock_server::open_store(&config)?;
@@ -266,6 +324,80 @@ async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins
         }
     }
     Ok(())
+}
+
+/// `uwulock-server backup offsite | list | restore …`.
+async fn offsite(
+    config: Config,
+    action: BackupAction,
+    logs: std::sync::Arc<uwulock_api::LogBuffer>,
+) -> Result<(), String> {
+    use uwulock_server::offsite as cli;
+    match action {
+        BackupAction::Offsite => {
+            let store = uwulock_server::open_store(&config)?;
+            let state = uwulock_server::app_state(&config, store, logs).await?;
+            let report = uwulock_api::offsite::run_now(&state).await.map_err(|error| error.to_string())?;
+            println!(
+                "Snapshot {}: {} of {} uploaded; {} old snapshots removed.",
+                report.snapshot,
+                cli::size(report.uploaded),
+                cli::size(report.total),
+                report.removed_snapshots
+            );
+            Ok(())
+        }
+        BackupAction::List => {
+            let store = uwulock_server::open_store(&config)?;
+            let state = uwulock_server::app_state(&config, store, logs).await?;
+            let snapshots = state.offsite.snapshots().await.map_err(|error| error.to_string())?;
+            cli::print_snapshots(&snapshots);
+            Ok(())
+        }
+        BackupAction::Restore(args) => {
+            let env = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+            let target = if let Some(spec) = args.sftp {
+                let private_key = match &args.ssh_key {
+                    Some(path) => {
+                        Some(std::fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?)
+                    }
+                    None => None,
+                };
+                cli::sftp_target(&spec, args.port, private_key, env("UWULOCK_BACKUP_SFTP_PASSWORD"), args.host_key)?
+            } else if let Some(spec) = args.s3 {
+                let endpoint = args.endpoint.ok_or("--s3 needs --endpoint, the S3 address without the bucket")?;
+                let access = env("UWULOCK_BACKUP_S3_ACCESS_KEY").ok_or("set UWULOCK_BACKUP_S3_ACCESS_KEY")?;
+                let secret = env("UWULOCK_BACKUP_S3_SECRET_KEY").ok_or("set UWULOCK_BACKUP_S3_SECRET_KEY")?;
+                cli::s3_target(&spec, &endpoint, &args.region, access, secret, args.path_style)?
+            } else if let Some(folder) = args.folder {
+                cli::folder_target(&folder)
+            } else {
+                return Err("Say where the backups are: --sftp, --s3 or --folder.".into());
+            };
+            let key = match env("UWULOCK_BACKUP_KEY") {
+                Some(key) => Some(key),
+                None => cli::ask("Recovery key (empty for backups without encryption): ")?,
+            };
+            if args.list {
+                let snapshots = cli::list(&target, key.as_deref()).await?;
+                cli::print_snapshots(&snapshots);
+                return Ok(());
+            }
+            let into = args.into.unwrap_or_else(|| config.data_dir.clone());
+            let manifest = cli::restore(&target, key.as_deref(), args.snapshot.as_deref(), &into).await?;
+            println!(
+                "Restored the snapshot {} of {} (UwULock Server {}) into {}.",
+                manifest.name,
+                manifest.hostname,
+                manifest.version,
+                into.display()
+            );
+            println!("Everybody logs in again. Backups to the other system are switched off on this machine:");
+            println!("turn them on in the admin portal once the target is the right one.");
+            println!("Start the server: docker compose up -d");
+            Ok(())
+        }
+    }
 }
 
 fn runtime() -> Result<tokio::runtime::Runtime, String> {

@@ -5,6 +5,7 @@ members = [
     "crates/uwulock-mail",
     "crates/uwulock-notify",
     "crates/uwulock-web",
+    "crates/uwulock-backup",
     "crates/uwulock-api",
     "crates/uwulock-server",
     "crates/uwulock-bench",
@@ -20,6 +21,7 @@ rust-version = "1.89"
 
 [workspace.dependencies]
 uwulock-api = { path = "crates/uwulock-api" }
+uwulock-backup = { path = "crates/uwulock-backup" }
 uwulock-mail = { path = "crates/uwulock-mail" }
 uwulock-notify = { path = "crates/uwulock-notify" }
 uwulock-server = { path = "crates/uwulock-server" }

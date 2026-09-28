@@ -729,7 +729,23 @@ async fn restore_backup(
     if theirs.is_none() || theirs != state.store.setting(auth::TOKEN_KEY).await? {
         return Err(ApiError::bad("This backup is of another server; it can only go back with the command line."));
     }
-    // Its own name, and never one that is there: a restore undone within the second is one too.
+    let before = backup_before_restore(&state).await?;
+    // The off-site backups stay as they are now: the backup's settings may be older than the
+    // recovery key of what is out there.
+    let (offsite, offsite_status) = (state.offsite.settings().await.ok(), state.offsite.status().await);
+    state.store.restore_online(&path).await.map_err(ApiError::bad)?;
+    if let Some(offsite) = offsite {
+        let _ = state.offsite.save_settings(&offsite).await;
+        state.offsite.save_status(&offsite_status).await;
+    }
+    after_restore(&state).await?;
+    record(&state, &admin, format!("restored the backup {name} (what was there before: {before})")).await;
+    Ok(Json(json!({ "restored": name, "before": before })))
+}
+
+/// A local backup of how the server is now, before a restore: its own name, and never one that
+/// is there — a restore undone within the second is one too. Answers its name.
+pub(crate) async fn backup_before_restore(state: &AppState) -> ApiResult<String> {
     let stamp = backups::stamp(backups::now_ms());
     let aside = (1..)
         .map(|n| match n {
@@ -740,9 +756,12 @@ async fn restore_backup(
         .find(|path| !path.exists())
         .expect("a free name");
     let before = backups::write(&state.store, &state.config.backups, Some(aside)).await.map_err(ApiError::bad)?;
-    let before = before.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-    state.store.restore_online(&path).await.map_err(ApiError::bad)?;
-    // The settings are the backup's now, and so is everything read from them.
+    Ok(before.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
+/// After a restore into the running server: the settings are the backup's now, and so is
+/// everything read from them.
+pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     let settings = Settings::load(&state.store, &state.config.start_settings).await.map_err(ApiError::internal)?;
     if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
         tracing::warn!(%error, "the mail server of the restored settings");
@@ -750,8 +769,7 @@ async fn restore_backup(
     state.relay.reset();
     state.apply_settings(settings);
     state.count_legacy_hashes().await;
-    record(&state, &admin, format!("restored the backup {name} (what was there before: {before})")).await;
-    Ok(Json(json!({ "restored": name, "before": before })))
+    Ok(())
 }
 
 #[cfg(test)]

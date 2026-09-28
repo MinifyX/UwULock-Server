@@ -43,6 +43,14 @@ pub fn setting_in(backup: &Path, key: &str) -> Result<Option<String>, String> {
         .map_err(|error| format!("{}: {error}", backup.display()))
 }
 
+/// The schema version of the database file at `path`, for an off-site backup's manifest.
+pub fn schema_of(path: &Path) -> Result<i64, String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    conn.pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|error| format!("{}: {error}", path.display()))
+}
+
 /// End every session in a database that was just put back: a backup carries the tokens and
 /// security stamps of its day, and among them ones that were taken back since — a device logged
 /// out, a password changed after a theft. Everybody logs in again instead.

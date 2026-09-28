@@ -92,6 +92,14 @@ impl Check {
         self.fix = Some(Fix { text, caddy: caddy.map(str::to_string), nginx: nginx.map(str::to_string) });
         self
     }
+
+    /// At least `status`: a check that was fine becomes a warning, one that failed stays failed.
+    fn worst(mut self, status: &str) -> Self {
+        if self.status == "ok" {
+            self.status = status.into();
+        }
+        self
+    }
 }
 
 /// A diagnosis as it is kept, in both languages.
@@ -353,7 +361,37 @@ async fn backup(state: &AppState) -> Check {
     if let Some(when) = offsite_text {
         result = result.detail(text(format!("Außer Haus: {when}"), format!("Off-site: {when}")));
     }
+    // The target out of the house: whether the last backup there worked.
+    let settings = state.offsite.settings().await.ok().filter(|settings| settings.enabled);
+    if let Some(settings) = settings {
+        let status = state.offsite.status().await;
+        if let Some(error) = &status.last_error {
+            result = offsite_fix(
+                result.detail(text(format!("Außer Haus: {error}"), format!("Off-site: {error}"))).worst("warning"),
+            );
+        } else if uwulock_backup::Offsite::stale_hours(&settings, &status, now).is_some() {
+            result = offsite_fix(
+                result
+                    .detail(text("Das Backup außer Haus ist zu alt", "The off-site backup is too old"))
+                    .worst("warning"),
+            );
+        }
+    }
     result
+}
+
+fn offsite_fix(check: Check) -> Check {
+    if check.fix.is_some() {
+        return check;
+    }
+    check.fix(
+        text(
+            "Unter Backups → Außer Haus die Verbindung testen: Ist das Ziel erreichbar, die Anmeldung gültig, genug Platz frei?",
+            "Test the connection under Backups → Off-site: is the target reachable, the login valid, enough space free?",
+        ),
+        None,
+        None,
+    )
 }
 
 fn disk(state: &AppState) -> Check {

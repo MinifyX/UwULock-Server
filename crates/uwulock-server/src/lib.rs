@@ -6,6 +6,7 @@
 
 pub mod config;
 pub mod health;
+pub mod offsite;
 pub mod tls;
 pub mod updates;
 pub mod vaultwarden;
@@ -70,6 +71,7 @@ pub async fn run(
 
     let state = app_state(&config, store, logs).await?;
     spawn_maintenance(config.clone(), state.clone());
+    uwulock_api::offsite::spawn(state.clone());
     updates::spawn(Arc::new(config.clone()), state.update.clone());
     state.logs.loki().spawn();
     uwulock_api::metrics::spawn_listener(state.clone());

@@ -182,6 +182,20 @@ pub async fn evaluate(state: &AppState) -> BTreeMap<String, (&'static str, Detai
         _ => {}
     }
 
+    // The off-site backups: the last one failed, or the last good one is too old. Beside a
+    // local problem of the same kind, both are said.
+    for (event, severity, detail) in crate::offsite::problems(state).await {
+        match found.get_mut(event) {
+            Some((_, known)) => {
+                known.de = format!("{} {}", known.de, detail.de);
+                known.en = format!("{} {}", known.en, detail.en);
+            }
+            None => {
+                found.insert(event.into(), (severity, detail));
+            }
+        }
+    }
+
     if let Some(expires) = state.certificate.read().as_ref().and_then(|seen| seen.expires) {
         let left = (expires - now as i64) / 86_400;
         if left < CERTIFICATE_DAYS {

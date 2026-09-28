@@ -12,6 +12,7 @@ rust-version.workspace = true
 doctest = false
 
 [dependencies]
+uwulock-backup.workspace = true
 uwulock-mail.workspace = true
 uwulock-notify.workspace = true
 uwulock-store.workspace = true

@@ -41,6 +41,7 @@ pub mod networks;
 pub mod notices;
 mod notifications;
 pub(crate) mod notify;
+pub mod offsite;
 mod organizations;
 pub(crate) mod outbound;
 mod passkeys;
@@ -159,6 +160,8 @@ pub struct AppState {
     pub settings_changed: Arc<tokio::sync::Notify>,
     /// When the admin networks were last read again from the database, as seconds since 1970.
     pub admin_reloaded: Arc<std::sync::atomic::AtomicI64>,
+    /// The backups to another system: SFTP, S3 or a mounted folder.
+    pub offsite: uwulock_backup::Offsite,
 }
 
 impl AppState {
@@ -176,6 +179,12 @@ impl AppState {
         let limits = Arc::new(Limits::with_login_attempts(config.login_attempts));
         let legacy_rounds = store.legacy_rounds().await.map_err(|error| error.to_string())?;
         logs.loki().configure(&settings.loki);
+        let host = config.public.split_once("://").map_or(config.public.as_str(), |(_, rest)| rest).to_string();
+        let offsite = uwulock_backup::Offsite::new(store.clone(), &config.data, &host, version);
+        let alerts = Arc::new(alerts::Alerts::default());
+        if let Some(success) = offsite.status().await.last_success {
+            alerts.offsite_succeeded(success.max(0) as u64);
+        }
         Ok(AppState {
             store,
             version,
@@ -196,10 +205,11 @@ impl AppState {
             hub: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
             metrics: Arc::default(),
-            alerts: Arc::default(),
+            alerts,
             certificate: Arc::default(),
             settings_changed: Arc::default(),
             admin_reloaded: Arc::default(),
+            offsite,
         })
     }
 
@@ -271,6 +281,7 @@ pub fn router(state: AppState) -> Router {
         .merge(admin::routes())
         .merge(alerts::routes())
         .merge(diagnosis::routes())
+        .merge(offsite::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())

@@ -1,0 +1,41 @@
+[package]
+name = "uwulock-backup"
+description = "Off-site backups of a UwULock server: deduplicated and encrypted, to SFTP, S3 or a folder"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+# No examples in the docs to run: rustdoc would only take time on every `cargo test`.
+[lib]
+doctest = false
+
+[dependencies]
+uwulock-store.workspace = true
+
+bytes = "1"
+data-encoding = "2"
+# Content-defined chunks: a database or file that changed in one place changes a few chunks.
+fastcdc = "5"
+flate2 = "1"
+reqwest.workspace = true
+ring.workspace = true
+# SFTP with `ring`, like everything else here: no second crypto library.
+russh = { version = "0.63", default-features = false, features = ["ring", "flate2"] }
+russh-sftp = "3"
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+webpki-roots.workspace = true
+url = "2"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+axum.workspace = true
