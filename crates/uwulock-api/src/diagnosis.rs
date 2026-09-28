@@ -425,7 +425,7 @@ fn client_ip_check(state: &AppState, parts: &Parts) -> Check {
                 "Let the proxy pass the client's address on and set UWULOCK_TRUST_FORWARDED=on. Otherwise everybody shares one address — and one rate limit.",
             ),
             Some("reverse_proxy uwulock:8443  # Caddy sets X-Forwarded-For by itself"),
-            Some("proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\nproxy_set_header X-Real-IP $remote_addr;"),
+            Some("proxy_set_header X-Forwarded-For $remote_addr;"),
         )
     };
     match (trust, forwarded, nearby(peer)) {

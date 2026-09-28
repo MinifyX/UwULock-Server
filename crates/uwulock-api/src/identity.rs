@@ -120,9 +120,14 @@ async fn password_login(
     };
     if !passed {
         log(state, "login-failed", user.as_ref(), username, ip, device_type, "wrong email or password").await;
-        if let Some(user) = &user {
-            let context = notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) };
-            notices::failed(state, user, "failedLogins", "login-failed", &context, None).await;
+        // Beside the answer, not before it: the time a refused login takes must not tell whether
+        // the address has an account.
+        if let Some(user) = user {
+            let (state, context) =
+                (state.clone(), notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) });
+            tokio::spawn(async move {
+                notices::failed(&state, &user, "failedLogins", "login-failed", &context, None).await;
+            });
         }
         return Err(ApiError::bad("Username or password is incorrect. Try again"));
     }

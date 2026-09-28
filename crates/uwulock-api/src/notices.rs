@@ -129,22 +129,13 @@ pub async fn record_mailed(state: &AppState, user: &User, kind: &str, context: &
 /// (`failedTwoFactor`, from `two-factor-failed`): from the third within a quarter of an hour, a
 /// notice that counts them for as long as the burst lasts.
 pub async fn failed(state: &AppState, user: &User, kind: &str, event: &str, context: &Context, provider: Option<i64>) {
-    let count = match state.store.recent_events(&user.id, event, BURST_SECONDS).await {
-        Ok(count) => count,
-        Err(error) => {
-            tracing::warn!(%error, "failed logins could not be counted");
-            return;
-        }
-    };
-    if count < BURST_TRIES {
-        return;
-    }
-    let mut detail = json!({ "count": count });
+    let mut detail = json!({});
     if let Some(provider) = provider {
         detail["provider"] = provider.into();
     }
     let mail = if mailed(state, kind) { MAIL_WAITING } else { MAIL_NONE };
-    if let Err(error) = state.store.burst_notice(notice(user, kind, context, detail, mail), BURST_SECONDS).await {
+    let notice = notice(user, kind, context, detail, mail);
+    if let Err(error) = state.store.burst_notice(notice, event, BURST_SECONDS, BURST_TRIES).await {
         tracing::warn!(%error, kind, "a security notice could not be written");
     }
 }
@@ -370,6 +361,14 @@ mod tests {
         for _ in 0..5 {
             let refused = server.form("/identity/connect/token", &wrong).await;
             assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+        }
+        // The notice is written beside the answer: wait for it to count all five.
+        for _ in 0..1000 {
+            let notices = server.state.store.notices(&account.id, None, 10).await.unwrap();
+            if notices.iter().any(|notice| notice.kind == "failedLogins" && notice.detail.contains("5")) {
+                break;
+            }
+            tokio::task::yield_now().await;
         }
         let listed = json(server.get_as(&account.token, "/uwu/v1/security/notices").await).await;
         let failed: Vec<&Value> =

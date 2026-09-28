@@ -106,12 +106,21 @@ impl Store {
         .await
     }
 
-    /// A burst of failed attempts of `kind` (`failedLogins`, `failedTwoFactor`): the notice of
-    /// the burst that is still going on (one within `window` seconds) gets the new `detail`,
-    /// otherwise there is a new one. Unseen again, either way. Whether it was new.
-    pub async fn burst_notice(&self, notice: Notice, window: i64) -> Result<bool> {
+    /// A burst of failed attempts: once the account has `threshold` events of `event` (like
+    /// `login-failed`) within `window` seconds, the notice of the burst that is going on (one of
+    /// its kind within the window) gets the count, or there is a new one; unseen again either way.
+    /// `notice.detail` is a JSON object the count goes into. The count, when there is a notice.
+    pub async fn burst_notice(&self, notice: Notice, event: &str, window: i64, threshold: i64) -> Result<Option<i64>> {
+        let event = event.to_string();
         self.sqlite_write(move |tx| {
             let since = clock::in_seconds(-window);
+            // Counted here, in the one writer: tries that come at once each see a higher count.
+            let count: i64 = tx
+                .prepare_cached("SELECT count(*) FROM events WHERE time > ?1 AND user_id = ?2 AND kind = ?3")?
+                .query_row(params![since, notice.user_id, event], |row| row.get(0))?;
+            if count < threshold {
+                return Ok(None);
+            }
             let going_on: Option<i64> = tx
                 .prepare_cached(
                     "SELECT id FROM security_notices WHERE user_id = ?1 AND kind = ?2 AND time > ?3 \
@@ -122,38 +131,30 @@ impl Store {
             if let Some(id) = going_on {
                 // Mailed already: what came since goes into the next bundle.
                 tx.execute(
-                    "UPDATE security_notices SET detail = ?2, time = ?3, ip = ?4, device_type = ?5, seen = 0, \
-                     mail = CASE WHEN mail = 2 AND ?6 = 1 THEN 1 ELSE mail END WHERE id = ?1",
-                    params![id, notice.detail, clock::now(), notice.ip, notice.device_type, notice.mail],
+                    "UPDATE security_notices SET detail = json_set(?2, '$.count', ?7), time = ?3, ip = ?4, \
+                     device_type = ?5, seen = 0, mail = CASE WHEN mail = 2 AND ?6 = 1 THEN 1 ELSE mail END \
+                     WHERE id = ?1",
+                    params![id, notice.detail, clock::now(), notice.ip, notice.device_type, notice.mail, count],
                 )?;
-                return Ok(false);
+            } else {
+                tx.execute(
+                    "INSERT INTO security_notices (user_id, kind, time, ip, device_type, device_name, app, detail, \
+                     mail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, json_set(?8, '$.count', ?10), ?9)",
+                    params![
+                        notice.user_id,
+                        notice.kind,
+                        clock::now(),
+                        notice.ip,
+                        notice.device_type,
+                        notice.device_name,
+                        notice.app,
+                        notice.detail,
+                        notice.mail,
+                        count
+                    ],
+                )?;
             }
-            tx.execute(
-                "INSERT INTO security_notices (user_id, kind, time, ip, device_type, device_name, app, detail, mail) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                params![
-                    notice.user_id,
-                    notice.kind,
-                    clock::now(),
-                    notice.ip,
-                    notice.device_type,
-                    notice.device_name,
-                    notice.app,
-                    notice.detail,
-                    notice.mail
-                ],
-            )?;
-            Ok(true)
-        })
-        .await
-    }
-
-    /// How many events of `kind` an account had in the last `seconds`: failed logins.
-    pub async fn recent_events(&self, user_id: &str, kind: &str, seconds: i64) -> Result<i64> {
-        let (user_id, kind) = (user_id.to_string(), kind.to_string());
-        self.sqlite_read(move |conn| {
-            conn.prepare_cached("SELECT count(*) FROM events WHERE time > ?1 AND user_id = ?2 AND kind = ?3")?
-                .query_row(params![clock::in_seconds(-seconds), user_id, kind], |row| row.get(0))
+            Ok(Some(count))
         })
         .await
     }
@@ -363,15 +364,23 @@ mod tests {
     async fn a_burst_is_one_notice_and_bundles_wait_their_turn() {
         let dir = tempfile::tempdir().unwrap();
         let (store, user) = store_with_user(&dir).await;
-        let failed = |count: i64| Notice {
+        let failed = Notice {
             user_id: user.clone(),
             kind: "failedLogins".into(),
-            detail: format!("{{\"count\":{count}}}"),
+            detail: "{}".into(),
             mail: MAIL_WAITING,
             ..Notice::default()
         };
-        assert!(store.burst_notice(failed(3), 900).await.unwrap());
-        assert!(!store.burst_notice(failed(4), 900).await.unwrap(), "the same burst");
+        let wrong = || async {
+            let event =
+                crate::Event { kind: "login-failed".into(), user_id: Some(user.clone()), ..crate::Event::default() };
+            store.log_event(event).await.unwrap();
+            store.burst_notice(failed.clone(), "login-failed", 900, 3).await.unwrap()
+        };
+        assert_eq!(wrong().await, None);
+        assert_eq!(wrong().await, None);
+        assert_eq!(wrong().await, Some(3));
+        assert_eq!(wrong().await, Some(4), "the same burst");
         let listed = store.notices(&user, None, 50).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].detail, "{\"count\":4}");
@@ -386,7 +395,7 @@ mod tests {
         assert!(store.notices_due(&later, 300, 900).await.unwrap().is_empty());
 
         // More of the burst after the mail: waits again, but not before the spacing is over.
-        store.burst_notice(failed(9), 900).await.unwrap();
+        assert_eq!(wrong().await, Some(5));
         let soon = clock::in_seconds(600);
         assert!(store.notices_due(&soon, 300, 900).await.unwrap().is_empty(), "the last mail was too recent");
         assert_eq!(store.notices_due(&clock::in_seconds(1300), 300, 900).await.unwrap(), vec![user.clone()]);
