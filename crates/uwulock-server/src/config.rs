@@ -10,6 +10,8 @@ use std::path::PathBuf;
 use uwulock_api::Settings;
 use uwulock_mail::{Language, Security, SmtpSettings};
 
+use crate::updates;
+
 /// Where the certificate comes from.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TlsMode {
@@ -73,6 +75,10 @@ pub struct Config {
     /// Mail server and default language a new server starts with, until an admin saves others
     /// in the portal.
     pub start_settings: Settings,
+    /// Servers whose `Date` header the diagnosis compares the clock with. GitHub, which the
+    /// update check asks anyway, unless the update check is off or `UWULOCK_TIME_SOURCE` says
+    /// otherwise (`off` for none).
+    pub time_sources: Vec<String>,
 }
 
 impl Default for Config {
@@ -87,6 +93,7 @@ impl Default for Config {
             login_attempts: 10,
             channel: None,
             start_settings: Settings::default(),
+            time_sources: Vec::new(),
         }
     }
 }
@@ -129,6 +136,22 @@ impl Config {
                 switch(&check).ok_or_else(|| format!("UWULOCK_UPDATE_CHECK must be on or off: {check}"))?;
         }
         config.channel = var("UWULOCK_CHANNEL");
+        config.time_sources = match var("UWULOCK_TIME_SOURCE") {
+            Some(off) if switch(&off) == Some(false) => Vec::new(),
+            Some(sources) => sources
+                .split([',', ' '])
+                .filter(|source| !source.is_empty())
+                .map(|source| {
+                    if source.starts_with("https://") || source.starts_with("http://") {
+                        Ok(source.trim_end_matches('/').to_string())
+                    } else {
+                        Err(format!("UWULOCK_TIME_SOURCE must be http(s) addresses or off: {source}"))
+                    }
+                })
+                .collect::<Result<_, _>>()?,
+            None if config.update_check => vec![updates::TIME_SOURCE.to_string()],
+            None => Vec::new(),
+        };
         if let Some(language) = var("UWULOCK_LANGUAGE") {
             config.start_settings.default_language = match language.to_ascii_lowercase().as_str() {
                 "de" => Language::De,
@@ -211,6 +234,25 @@ impl Config {
     /// ask for a new one — Let's Encrypt allows only a few per week.
     pub fn acme_cache(&self) -> PathBuf {
         self.data_dir.join("acme")
+    }
+
+    /// Where the diagnosis looks at the certificate clients get: this server's own listener with
+    /// its public name when it does TLS itself, the public address when a proxy does. None for an
+    /// http address.
+    pub fn certificate_probe(&self) -> Option<uwulock_api::certificate::Probe> {
+        let public = self.public.as_deref()?;
+        let host_port = public.strip_prefix("https://")?;
+        let (host, port) = match host_port.rsplit_once(':') {
+            Some((host, port)) if !host.ends_with(':') && port.chars().all(|c| c.is_ascii_digit()) => (host, port),
+            _ => (host_port, "443"),
+        };
+        let name = host.trim_start_matches('[').trim_end_matches(']').to_string();
+        let connect = match self.tls {
+            TlsMode::Off => format!("{host}:{port}"),
+            _ if self.listen.ip().is_unspecified() => format!("127.0.0.1:{}", self.listen.port()),
+            _ => self.listen.to_string(),
+        };
+        Some(uwulock_api::certificate::Probe { connect, name })
     }
 
     /// How a client writes this server down.
@@ -407,5 +449,31 @@ mod tests {
         assert!(config(&[("UWULOCK_LOGIN_ATTEMPTS", "0")]).is_err());
         assert_eq!(config(&[("UWULOCK_LOGIN_ATTEMPTS", "50")]).unwrap().login_attempts, 50);
         assert!(config(&[("UWULOCK_TRUST_FORWARDED", "sometimes")]).is_err());
+    }
+
+    #[test]
+    fn the_clock_is_compared_with_github_unless_told_otherwise() {
+        assert_eq!(config(&[]).unwrap().time_sources, vec![updates::TIME_SOURCE.to_string()]);
+        assert!(config(&[("UWULOCK_UPDATE_CHECK", "off")]).unwrap().time_sources.is_empty());
+        assert!(config(&[("UWULOCK_TIME_SOURCE", "off")]).unwrap().time_sources.is_empty());
+        let own = config(&[("UWULOCK_TIME_SOURCE", "https://time.example.com/, http://192.0.2.1")]).unwrap();
+        assert_eq!(own.time_sources, vec!["https://time.example.com", "http://192.0.2.1"]);
+        assert!(config(&[("UWULOCK_TIME_SOURCE", "ntp.example.com")]).is_err());
+    }
+
+    #[test]
+    fn the_certificate_is_looked_at_where_clients_get_it() {
+        let proxy = config(&[("UWULOCK_PUBLIC", "https://lock.example.com")]).unwrap().certificate_probe().unwrap();
+        assert_eq!((proxy.connect.as_str(), proxy.name.as_str()), ("lock.example.com:443", "lock.example.com"));
+        let own = config(&[
+            ("UWULOCK_PUBLIC", "https://lock.example.com:8443"),
+            ("UWULOCK_TLS", "files"),
+            ("UWULOCK_LISTEN", "0.0.0.0:8443"),
+        ])
+        .unwrap()
+        .certificate_probe()
+        .unwrap();
+        assert_eq!((own.connect.as_str(), own.name.as_str()), ("127.0.0.1:8443", "lock.example.com"));
+        assert!(config(&[("UWULOCK_PUBLIC", "http://192.0.2.1:8080")]).unwrap().certificate_probe().is_none());
     }
 }

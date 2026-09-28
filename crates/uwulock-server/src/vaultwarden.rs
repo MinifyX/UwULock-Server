@@ -1188,6 +1188,8 @@ mod tests {
             hibp_url: "http://127.0.0.1:9".into(),
             login_attempts: 10,
             start_settings: uwulock_api::Settings::default(),
+            certificate_probe: None,
+            time_sources: Vec::new(),
         };
         let mut state =
             uwulock_api::AppState::new(store.clone(), config, "0.0.0-test", uwulock_api::LogBuffer::new(10))
