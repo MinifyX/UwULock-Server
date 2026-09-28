@@ -350,6 +350,9 @@ pub fn request_options(party: &Party, challenge: &[u8], allow: &[Vec<u8>]) -> Va
 
 // ── Challenges waiting for their answer ───────────────────
 
+/// The most challenges waiting at once.
+const MOST_CHALLENGES: usize = 10_000;
+
 /// Challenges by what they are for, in memory: an answer comes within minutes or not at all.
 #[derive(Default)]
 pub struct Challenges {
@@ -360,10 +363,23 @@ impl Challenges {
     pub fn put(&self, key: String, challenge: Vec<u8>) {
         let mut waiting = self.waiting.lock();
         let now = Instant::now();
-        if waiting.len() > 10_000 {
+        if waiting.len() >= MOST_CHALLENGES {
             waiting.retain(|_, (_, at)| now.duration_since(*at) < Duration::from_secs(CHALLENGE_SECONDS));
         }
+        // Still full — somebody asks for many from many addresses: the oldest tenth goes, so the
+        // table never grows past its size and everybody else still gets one.
+        if waiting.len() >= MOST_CHALLENGES {
+            let mut times: Vec<Instant> = waiting.values().map(|(_, at)| *at).collect();
+            let (_, oldest, _) = times.select_nth_unstable(MOST_CHALLENGES / 10);
+            let oldest = *oldest;
+            waiting.retain(|_, (_, at)| *at > oldest);
+        }
         waiting.insert(key, (challenge, now));
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.waiting.lock().len()
     }
 
     /// The challenge for `key`, once: whatever the answer, it is gone afterwards.
@@ -565,5 +581,15 @@ pub(crate) mod tests {
         challenges.put("a".into(), vec![1]);
         assert_eq!(challenges.take("a"), Some(vec![1]));
         assert_eq!(challenges.take("a"), None);
+    }
+
+    #[test]
+    fn waiting_challenges_never_pass_their_limit() {
+        let challenges = Challenges::default();
+        for n in 0..MOST_CHALLENGES + 50 {
+            challenges.put(n.to_string(), vec![1]);
+        }
+        assert!(challenges.len() <= MOST_CHALLENGES);
+        assert!(challenges.take(&(MOST_CHALLENGES + 49).to_string()).is_some(), "the newest is kept");
     }
 }

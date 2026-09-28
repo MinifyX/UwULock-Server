@@ -102,7 +102,7 @@ export function HealthReport({ onOpen }: Props) {
           <p className="dialog-lead">
             {hibp
               ? t(
-                  'Findet schwache und doppelte Passwörter, Logins ohne https – und Passwörter aus bekannten Datenlecks. Dafür fragt dein Server Have I Been Pwned nach den ersten fünf Zeichen des Hashs jedes Passworts; das Passwort selbst verlässt diesen Browser nie.',
+                  'Findet schwache und doppelte Passwörter, Logins ohne https – und Passwörter aus bekannten Datenlecks. Dafür fragt dein Server Have I Been Pwned nach den ersten fünf Zeichen des Hashs jedes Passworts; das Passwort selbst verlässt diesen Browser nie. Dein Server sieht diese fünf Zeichen dabei, schreibt sie aber nirgends auf.',
                 )
               : t(
                   'Findet schwache und doppelte Passwörter und Logins ohne https. Den Abgleich mit Datenlecks hat die Verwaltung dieses Servers ausgeschaltet.',

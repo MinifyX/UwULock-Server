@@ -4,7 +4,12 @@
 //! server asks HIBP for every hash that starts with them (with padding, so the size of the
 //! answer tells nothing either) and hands the list back. The browser looks for the rest of its
 //! hash in it. Neither this server nor HIBP learns the password, and the browser never talks to
-//! anybody but its own server. Answers are kept for a day: breaches do not change by the minute.
+//! anybody but its own server. This server does see the five digits for as long as it answers;
+//! it writes them nowhere, not into a log nor next to the account.
+//!
+//! Answers are kept for a day, per account: breaches do not change by the minute, and a cache
+//! shared by everybody would let one person see, by how fast it answers, which prefixes somebody
+//! else checked.
 
 use crate::AppState;
 use crate::auth::Session;
@@ -30,7 +35,7 @@ pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/uwu/v1/hibp/{prefix}", get(range))
 }
 
-/// Answers from HIBP by prefix, with when they came.
+/// Answers from HIBP by account and prefix, with when they came.
 #[derive(Default)]
 pub struct Cache {
     ranges: Mutex<HashMap<String, (Arc<str>, Instant)>>,
@@ -103,7 +108,8 @@ async fn range(State(state): State<AppState>, session: Session, Path(prefix): Pa
     if prefix.len() != 5 || !prefix.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(ApiError::bad("A prefix is five hex digits."));
     }
-    let range = match state.hibp.get(&prefix) {
+    let key = format!("{}:{prefix}", session.user.id);
+    let range = match state.hibp.get(&key) {
         Some(range) => range,
         None => {
             if !state.limits.hibp.take(session.user.id.clone()) {
@@ -119,7 +125,7 @@ async fn range(State(state): State<AppState>, session: Session, Path(prefix): Pa
                     )
                 })?
                 .into();
-            state.hibp.put(prefix, range.clone());
+            state.hibp.put(key, range.clone());
             range
         }
     };
@@ -168,6 +174,10 @@ mod tests {
         assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1, "the second came from memory");
         assert_eq!(server.get_as(&account.token, "/uwu/v1/hibp/xyz").await.status(), StatusCode::BAD_REQUEST);
         assert_eq!(server.get("/uwu/v1/hibp/21BD1").await.status(), StatusCode::UNAUTHORIZED);
+        // Somebody else's check of the same prefix is asked anew: nobody sees what others checked.
+        let other = server.account("mio@example.com").await;
+        server.get_as(&other.token, "/uwu/v1/hibp/21BD1").await;
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

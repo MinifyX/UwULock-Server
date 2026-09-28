@@ -124,6 +124,11 @@ pub struct AppState {
     pub challenges: Arc<webauthn::Challenges>,
     /// What Have I Been Pwned answered lately.
     pub hibp: Arc<hibp::Cache>,
+    /// The most PBKDF2 rounds of the password hashes from Vaultwarden still waiting for a login,
+    /// or 0: see [`auth::verify_login`].
+    pub legacy_rounds: Arc<std::sync::atomic::AtomicU32>,
+    /// Uploads running, per account.
+    pub uploads: Arc<files::Uploads>,
     /// "Log in with a device" requests for addresses without an account.
     pub unanswerable: Arc<auth_requests::Unanswerable>,
     /// Who listens for live updates.
@@ -145,6 +150,7 @@ impl AppState {
         let tokens = Tokens::load(&store, &config.public).await?;
         let party = webauthn::Party::from_public(&config.public);
         let limits = Arc::new(Limits::with_login_attempts(config.login_attempts));
+        let legacy_rounds = store.legacy_rounds().await.map_err(|error| error.to_string())?;
         Ok(AppState {
             store,
             version,
@@ -160,9 +166,20 @@ impl AppState {
             challenges: Arc::default(),
             hibp: Arc::default(),
             unanswerable: Arc::default(),
+            uploads: Arc::default(),
+            legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
             hub: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
         })
+    }
+
+    /// Look again at how many hashes from Vaultwarden are left, after one was replaced or the
+    /// database changed under the server.
+    pub async fn count_legacy_hashes(&self) {
+        match self.store.legacy_rounds().await {
+            Ok(rounds) => self.legacy_rounds.store(rounds, std::sync::atomic::Ordering::Relaxed),
+            Err(error) => tracing::warn!(%error, "the hashes from Vaultwarden could not be counted"),
+        }
     }
 
     pub fn settings(&self) -> Settings {

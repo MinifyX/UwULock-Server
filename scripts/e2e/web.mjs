@@ -196,8 +196,14 @@ try {
   await page.getByRole('button', { name: 'Zurückspielen' }).first().click();
   await page.locator('.modal input[type=password]').fill(password);
   await page.locator('.modal').getByRole('button', { name: 'Zurückspielen' }).click();
-  await page.getByText(/vor dem Zurückspielen/).first().waitFor({ timeout: 30000 });
+  // Every session ends with it, this one too: the sessions in the backup may have been taken
+  // back since.
+  await page.getByRole('heading', { name: 'Anmelden' }).waitFor({ timeout: 30000 });
   await snap('admin-restored');
+  await page.getByLabel('E-Mail-Adresse').fill(email);
+  await unlockOrLogin();
+  // Back where it was, on the backups.
+  await page.getByText(/vor dem Zurückspielen/).first().waitFor({ timeout: 30000 });
   await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
   await page.locator('.admin-table').getByText('mika@example.com').waitFor();
   if (await page.locator('.admin-table').getByText('later@example.com').count())

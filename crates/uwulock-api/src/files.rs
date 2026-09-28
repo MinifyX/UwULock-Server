@@ -58,6 +58,59 @@ pub struct Uploaded {
     pub file_name: Option<String>,
     /// Text fields that came along, like the key of a legacy attachment upload.
     pub fields: Vec<(String, String)>,
+    /// Where it waits until it is kept: a name of its own, so two uploads for the same file at
+    /// once never write into each other.
+    partial: PathBuf,
+}
+
+/// How long an upload may go without a byte before it is given up.
+const STALLED: std::time::Duration = std::time::Duration::from_secs(60);
+/// How many uploads one account may have running at once.
+const UPLOADS_PER_USER: usize = 4;
+
+/// Uploads running, per account: a few at once, so nobody holds the server's files open by the
+/// hundred.
+#[derive(Default)]
+pub struct Uploads {
+    running: parking_lot::Mutex<std::collections::HashMap<String, usize>>,
+}
+
+/// One running upload; it ends when this is dropped.
+pub struct Uploading {
+    uploads: std::sync::Arc<Uploads>,
+    user_id: String,
+}
+
+impl Uploads {
+    pub fn start(self: &std::sync::Arc<Self>, user_id: &str) -> ApiResult<Uploading> {
+        let mut running = self.running.lock();
+        let count = running.entry(user_id.to_string()).or_default();
+        if *count >= UPLOADS_PER_USER {
+            return Err(ApiError::too_many("Too many uploads at once. Wait for the others to finish."));
+        }
+        *count += 1;
+        Ok(Uploading { uploads: self.clone(), user_id: user_id.to_string() })
+    }
+}
+
+impl Drop for Uploading {
+    fn drop(&mut self) {
+        let mut running = self.uploads.running.lock();
+        if let Some(count) = running.get_mut(&self.user_id) {
+            *count -= 1;
+            if *count == 0 {
+                running.remove(&self.user_id);
+            }
+        }
+    }
+}
+
+/// The next piece of an upload, or an error when none comes in time.
+async fn in_time<T, E>(next: impl std::future::Future<Output = Result<T, E>>) -> ApiResult<T> {
+    match tokio::time::timeout(STALLED, next).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(_)) | Err(_) => Err(ApiError::bad("The upload is not complete.")),
+    }
 }
 
 /// The most parts an upload may have, and the most a part that is not the file may hold: the
@@ -74,12 +127,13 @@ pub async fn receive(mut form: Multipart, path: &Path, limit: u64) -> ApiResult<
     if !uwulock_store::backups::has_room(folder, limit) {
         return Err(ApiError::bad("There is not enough room on the server for this file."));
     }
-    let partial = folder.join(format!(".{}.part", path.file_name().and_then(|name| name.to_str()).unwrap_or("upload")));
+    let name = path.file_name().and_then(|name| name.to_str()).unwrap_or("upload");
+    let partial = folder.join(format!(".{name}.{}.part", new_file_id()));
     let mut fields = Vec::new();
     let mut received: Option<(i64, Option<String>)> = None;
     let mut parts = 0;
     let result: ApiResult<()> = async {
-        while let Some(mut field) = form.next_field().await.map_err(|_| ApiError::bad("The upload is not complete."))? {
+        while let Some(mut field) = in_time(form.next_field()).await? {
             parts += 1;
             if parts > MOST_PARTS {
                 return Err(ApiError::bad("The upload has too many parts."));
@@ -89,7 +143,7 @@ pub async fn receive(mut form: Multipart, path: &Path, limit: u64) -> ApiResult<
                 // Read a piece at a time and stop at the limit: the body has no limit of its own
                 // here, so reading a whole part first would take whatever somebody sends.
                 let mut text = Vec::new();
-                while let Some(chunk) = field.chunk().await.map_err(|_| ApiError::bad("The upload is not complete."))? {
+                while let Some(chunk) = in_time(field.chunk()).await? {
                     if text.len() + chunk.len() > MOST_FIELD {
                         return Err(ApiError::bad("A part of the upload is too large."));
                     }
@@ -105,7 +159,7 @@ pub async fn receive(mut form: Multipart, path: &Path, limit: u64) -> ApiResult<
             let file_name = field.file_name().map(str::to_string);
             let mut file = tokio::fs::File::create(&partial).await.map_err(ApiError::internal)?;
             let mut size: u64 = 0;
-            while let Some(chunk) = field.chunk().await.map_err(|_| ApiError::bad("The upload is not complete."))? {
+            while let Some(chunk) = in_time(field.chunk()).await? {
                 size += chunk.len() as u64;
                 if size > limit {
                     return Err(too_large(limit));
@@ -122,24 +176,30 @@ pub async fn receive(mut form: Multipart, path: &Path, limit: u64) -> ApiResult<
         let _ = tokio::fs::remove_file(&partial).await;
         return Err(error);
     }
-    let Some((size, file_name)) = received else { return Err(ApiError::bad("No file was uploaded.")) };
-    Ok(Uploaded { size, file_name, fields })
+    let Some((size, file_name)) = received else {
+        let _ = tokio::fs::remove_file(&partial).await;
+        return Err(ApiError::bad("No file was uploaded."));
+    };
+    Ok(Uploaded { size, file_name, fields, partial })
 }
 
-/// Put a received upload in its place.
-pub async fn keep(path: &Path) -> ApiResult<()> {
-    let folder = path.parent().ok_or_else(|| ApiError::internal("a file path without a folder"))?;
-    let partial = folder.join(format!(".{}.part", path.file_name().and_then(|name| name.to_str()).unwrap_or("upload")));
-    tokio::fs::rename(&partial, path).await.map_err(ApiError::internal)
+/// Put a received upload in its place — unless another one got there first: a file that is
+/// there stays as it is.
+pub async fn keep(uploaded: &Uploaded, path: &Path) -> ApiResult<()> {
+    let linked = tokio::fs::hard_link(&uploaded.partial, path).await;
+    let _ = tokio::fs::remove_file(&uploaded.partial).await;
+    match linked {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(ApiError::bad("The file is uploaded already."))
+        }
+        Err(error) => Err(ApiError::internal(error)),
+    }
 }
 
 /// Throw a received upload away, when what it was for said no.
-pub async fn discard(path: &Path) {
-    if let Some(folder) = path.parent() {
-        let partial =
-            folder.join(format!(".{}.part", path.file_name().and_then(|name| name.to_str()).unwrap_or("upload")));
-        let _ = tokio::fs::remove_file(partial).await;
-    }
+pub async fn discard(uploaded: &Uploaded) {
+    let _ = tokio::fs::remove_file(&uploaded.partial).await;
 }
 
 pub fn too_large(limit: u64) -> ApiError {
@@ -234,6 +294,31 @@ mod tests {
         assert_eq!(size_name(2048), "2 KB");
         assert_eq!(size_name(1_572_864), "1.50 MB");
         assert_eq!(size_name(500 * 1024 * 1024), "500 MB");
+    }
+
+    #[tokio::test]
+    async fn a_kept_upload_never_writes_over_one_that_is_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file");
+        let upload = |bytes: &'static [u8], name: &str| {
+            let partial = dir.path().join(name);
+            std::fs::write(&partial, bytes).unwrap();
+            Uploaded { size: bytes.len() as i64, file_name: None, fields: Vec::new(), partial }
+        };
+        keep(&upload(b"first", ".file.a.part"), &path).await.unwrap();
+        assert!(keep(&upload(b"second", ".file.b.part"), &path).await.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "no partial file left behind");
+    }
+
+    #[test]
+    fn an_account_runs_a_few_uploads_at_once() {
+        let uploads = std::sync::Arc::new(Uploads::default());
+        let running: Vec<_> = (0..UPLOADS_PER_USER).map(|_| uploads.start("nyu").unwrap()).collect();
+        assert!(uploads.start("nyu").is_err());
+        assert!(uploads.start("mio").is_ok(), "somebody else still can");
+        drop(running);
+        assert!(uploads.start("nyu").is_ok());
     }
 
     #[tokio::test]

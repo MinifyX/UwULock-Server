@@ -389,12 +389,19 @@ struct PasskeyUnlockData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RecoveryUnlockData {
+    organization_id: String,
+    reset_password_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AccountUnlockData {
     master_password_unlock_data: MasterPasswordUnlockData,
     #[serde(default)]
     emergency_access_unlock_data: Vec<EmergencyUnlockData>,
     #[serde(default)]
-    organization_account_recovery_unlock_data: Vec<Value>,
+    organization_account_recovery_unlock_data: Vec<RecoveryUnlockData>,
     #[serde(default)]
     passkey_unlock_data: Vec<PasskeyUnlockData>,
 }
@@ -451,9 +458,6 @@ async fn rotate_keys(
     if Some(&data.account_keys.account_public_key) != user.public_key.as_ref() {
         return Err(ApiError::bad("Changing the asymmetric keypair is not possible during key rotation"));
     }
-    if !data.account_unlock_data.organization_account_recovery_unlock_data.is_empty() {
-        return Err(ApiError::bad("This server has no organisations to rotate."));
-    }
     crate::ciphers::validate_batch(&data.account_data.ciphers)?;
 
     let existing: HashMap<String, uwulock_store::Cipher> =
@@ -506,6 +510,12 @@ async fn rotate_keys(
             .passkey_unlock_data
             .into_iter()
             .map(|passkey| (passkey.id, passkey.encrypted_user_key, passkey.encrypted_public_key))
+            .collect(),
+        recovery: data
+            .account_unlock_data
+            .organization_account_recovery_unlock_data
+            .into_iter()
+            .map(|enrolment| (enrolment.organization_id, enrolment.reset_password_key))
             .collect(),
     };
     if !state.store.rotate_keys(rotation).await? {

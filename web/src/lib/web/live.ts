@@ -137,14 +137,19 @@ export function updates(frame: Uint8Array): Update[] {
   // The handshake's answer is JSON: `{}` and a record separator.
   if (frame[0] === 0x7b) return out;
   while (at < frame.length) {
+    // At most five bytes of length, counted without bit operations, which would turn negative
+    // past 31 bits; a length past the end of the frame ends it.
     let length = 0;
-    let shift = 0;
+    let scale = 1;
     let byte: number;
+    let bytes = 0;
     do {
       byte = frame[at++] ?? 0;
-      length |= (byte & 0x7f) << shift;
-      shift += 7;
-    } while (byte & 0x80 && at < frame.length);
+      length += (byte & 0x7f) * scale;
+      scale *= 128;
+      bytes++;
+    } while (byte & 0x80 && at < frame.length && bytes < 5);
+    if (byte & 0x80 || length > frame.length - at) break;
     const message = frame.subarray(at, at + length);
     at += length;
     try {

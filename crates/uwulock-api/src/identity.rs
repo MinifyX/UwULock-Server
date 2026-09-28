@@ -105,7 +105,8 @@ async fn password_login(
         (Some(_), None) => false,
         (None, _) => {
             let known = user.as_ref().map(|user| user.password_hash.as_str());
-            auth::verify_password(state.config.hash_cost, known, password).await
+            let legacy_rounds = state.legacy_rounds.load(std::sync::atomic::Ordering::Relaxed);
+            auth::verify_login(state.config.hash_cost, known, password, legacy_rounds).await
         }
     };
     if !passed {
@@ -123,6 +124,7 @@ async fn password_login(
         let rehashed = auth::hash_password(state.config.hash_cost, password).await?;
         state.store.update_user(&user.id, move |user| user.password_hash = rehashed).await?;
         tracing::info!(user = %user.id, "a password hash from Vaultwarden was replaced");
+        state.count_legacy_hashes().await;
     }
 
     let known_device = state.store.device(&user.id, device_id).await?;
@@ -140,7 +142,14 @@ async fn password_login(
             }
         }
     };
-    let login = Login { device_id, device_name, device_type, known: known_device.is_some(), remember };
+    let login = Login {
+        device_id,
+        device_name,
+        device_type,
+        known: known_device.is_some(),
+        remember,
+        by_request: by_request.is_some(),
+    };
     let body = finish_login(state, &user, ip, form, login).await?;
     Ok(Json(body).into_response())
 }
@@ -154,6 +163,9 @@ pub(crate) struct Login<'a> {
     pub known: bool,
     /// A new token that skips the second step on this device.
     pub remember: Option<String>,
+    /// Let in by another device: the mail goes out whatever the device and the setting, since
+    /// an approval is all it took — the approving device's session may be a stolen one.
+    pub by_request: bool,
 }
 
 /// Everything after the credentials were checked: the device logged in, the event written, a
@@ -165,7 +177,7 @@ pub(crate) async fn finish_login(
     form: &TokenForm,
     login: Login<'_>,
 ) -> ApiResult<Value> {
-    let Login { device_id, device_name, device_type, known, remember } = login;
+    let Login { device_id, device_name, device_type, known, remember, by_request } = login;
     let refresh_token = auth::random_token(64);
     let first_device = !known && state.store.devices(&user.id).await?.is_empty();
     let new = state
@@ -184,7 +196,8 @@ pub(crate) async fn finish_login(
         })
         .await?;
     log(state, "login", Some(user), &user.email, ip, device_type, device_name).await;
-    if new && !first_device && state.settings().new_device_mail && state.mailer.enabled() {
+    let wanted = by_request || (new && !first_device && state.settings().new_device_mail);
+    if wanted && state.mailer.enabled() {
         let mail = Mail::NewDevice {
             device: format!("{device_name} ({})", auth::device_type_name(device_type)),
             ip: ip.to_string(),
@@ -238,7 +251,7 @@ async fn api_key_login(state: &AppState, ip: std::net::IpAddr, form: &TokenForm)
         return Err(ApiError::bad("This account has been disabled."));
     }
     let known = state.store.device(&user.id, device_id).await?.is_some();
-    let login = Login { device_id, device_name, device_type, known, remember: None };
+    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false };
     let mut body = finish_login(state, &user, ip, form, login).await?;
     // Like Bitwarden: the CLI logs in with its key again rather than refreshing.
     if let Some(body) = body.as_object_mut() {
@@ -304,18 +317,18 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
     let token = token.trim();
     // A device that moved over from Vaultwarden holds its refresh token: a JWT around the token
     // Vaultwarden kept for the device.
-    let legacy = crate::vaultwarden::device_token(state, token).await;
-    let presented = legacy.as_deref().unwrap_or(token);
-    let device = state
-        .store
-        .refresh_device(
-            auth::sha256(presented.as_bytes()),
-            |kind| clock::in_seconds(refresh_days(kind) * 86_400),
-            Some(ip.to_string()),
-        )
-        .await?
-        .ok_or_else(invalid_grant)?;
-    let token = if legacy.is_some() {
+    let signed = crate::vaultwarden::device_token(state, token).await;
+    let presented = signed.as_deref().unwrap_or(token);
+    let find = |hash: Vec<u8>| {
+        state.store.refresh_device(hash, |kind| clock::in_seconds(refresh_days(kind) * 86_400), Some(ip.to_string()))
+    };
+    // This server's own first; then one that came over from Vaultwarden, which is replaced now.
+    // (Imports of 0.4.0-beta.1 hashed a signed one like this server's own.)
+    let (device, moved) = match find(auth::sha256(presented.as_bytes())).await? {
+        Some(device) => (device, signed.is_some()),
+        None => (find(crate::vaultwarden::moved_token_hash(presented)).await?.ok_or_else(invalid_grant)?, true),
+    };
+    let token = if moved {
         let fresh = auth::random_token(64);
         state.store.replace_refresh(&device.user_id, &device.id, auth::sha256(fresh.as_bytes())).await?;
         fresh

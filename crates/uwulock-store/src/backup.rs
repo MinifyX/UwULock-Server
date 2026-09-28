@@ -43,6 +43,25 @@ pub fn setting_in(backup: &Path, key: &str) -> Result<Option<String>, String> {
         .map_err(|error| format!("{}: {error}", backup.display()))
 }
 
+/// End every session in a database that was just put back: a backup carries the tokens and
+/// security stamps of its day, and among them ones that were taken back since — a device logged
+/// out, a password changed after a theft. Everybody logs in again instead.
+pub(crate) fn end_sessions(conn: &Connection) -> rusqlite::Result<()> {
+    let has_accounts: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'devices')",
+        [],
+        |row| row.get(0),
+    )?;
+    if has_accounts {
+        conn.execute_batch(
+            "UPDATE users SET security_stamp = lower(hex(randomblob(16))); \
+             UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL, remember_hash = NULL, \
+             remember_expires = NULL;",
+        )?;
+    }
+    Ok(())
+}
+
 /// Put `backup` in place of the database at `database`, keeping what was there at `aside`.
 ///
 /// The backup is checked first: an intact SQLite file, with this server's tables, at a schema
@@ -76,7 +95,8 @@ pub fn restore(backup: &Path, database: &Path, aside: &Path) -> Result<(), Strin
     let incoming = with_suffix(database, "-restoring");
     let _ = std::fs::remove_file(&incoming);
     let prepared = Connection::open_with_flags(backup, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .and_then(|conn| conn.execute("VACUUM INTO ?1", [incoming.to_string_lossy().as_ref()]).map(drop));
+        .and_then(|conn| conn.execute("VACUUM INTO ?1", [incoming.to_string_lossy().as_ref()]).map(drop))
+        .and_then(|()| end_sessions(&Connection::open(&incoming)?));
     if let Err(error) = prepared {
         let _ = std::fs::remove_file(&incoming);
         return Err(format!("the backup could not be made ready: {error}"));
@@ -115,6 +135,38 @@ mod tests {
         store
     }
 
+    /// A user logged in on one device: their security stamp, and whether the device still has
+    /// a refresh token.
+    async fn session(store: &Store) -> (String, bool) {
+        store
+            .sqlite_read(|conn| {
+                conn.query_row(
+                    "SELECT u.security_stamp, d.refresh_hash IS NOT NULL FROM users u JOIN devices d ON d.user_id = u.id",
+                    [],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+            })
+            .await
+            .unwrap()
+    }
+
+    async fn log_in(store: &Store) {
+        let user = store.create_user(crate::accounts::tests::new_user("nyu@example.com")).await.unwrap();
+        store
+            .log_in_device(crate::DeviceLogin {
+                user_id: user.id,
+                id: "d".into(),
+                name: "d".into(),
+                kind: 9,
+                ip: None,
+                refresh_hash: vec![1; 32],
+                refresh_expires: "2999-01-01T00:00:00.000000Z".into(),
+                remember: None,
+            })
+            .await
+            .unwrap();
+    }
+
     async fn marker(store: &Store) -> String {
         store
             .sqlite_read(|conn| conn.query_row("SELECT value FROM server WHERE key = 'marker'", [], |row| row.get(0)))
@@ -126,6 +178,8 @@ mod tests {
     async fn a_backup_goes_back_and_what_was_there_is_kept() {
         let dir = tempfile::tempdir().unwrap();
         let store = store_with(dir.path(), "before").await;
+        log_in(&store).await;
+        let (stamp, _) = session(&store).await;
         let backup = dir.path().join("backups/uwulock-1.db");
         store.backup_to(&backup).await.unwrap();
         store
@@ -140,6 +194,8 @@ mod tests {
 
         let store = Store::open_sqlite(&database, &Options { readers: 1 }).unwrap();
         assert_eq!(marker(&store).await, "before");
+        let (after, logged_in) = session(&store).await;
+        assert!(after != stamp && !logged_in, "everybody logs in again");
         let kept = Store::open_sqlite(&aside, &Options { readers: 1 }).unwrap();
         assert_eq!(marker(&kept).await, "after");
     }
@@ -172,6 +228,8 @@ mod tests {
     async fn a_backup_goes_back_under_a_running_server() {
         let dir = tempfile::tempdir().unwrap();
         let store = store_with(dir.path(), "before").await;
+        log_in(&store).await;
+        let (stamp, _) = session(&store).await;
         let backup = dir.path().join("backups/uwulock-1.db");
         store.backup_to(&backup).await.unwrap();
         store
@@ -181,6 +239,8 @@ mod tests {
         assert_eq!(marker(&store).await, "after");
         store.restore_online(&backup).await.unwrap();
         assert_eq!(marker(&store).await, "before", "the readers see it at once");
+        let (after, logged_in) = session(&store).await;
+        assert!(after != stamp && !logged_in, "everybody logs in again");
         store
             .sqlite_write(|tx| tx.execute("UPDATE server SET value = 'later' WHERE key = 'marker'", []))
             .await

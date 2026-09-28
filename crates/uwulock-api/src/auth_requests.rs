@@ -229,6 +229,15 @@ async fn answer(
         .await?
         .ok_or_else(|| ApiError::bad("This request was answered already, or it is too old."))?;
     crate::notify::auth_response(&state, &session, &request.id);
+    let event = Event {
+        kind: if request.approved == Some(true) { "auth-request-approved" } else { "auth-request-denied" }.into(),
+        user_id: Some(session.user.id.clone()),
+        email: Some(session.user.email.clone()),
+        ip: Some(request.ip.clone()),
+        device_type: Some(request.device_type),
+        ..Event::default()
+    };
+    let _ = state.store.log_event(event).await;
     Ok(Json(render(&state, &request)))
 }
 
@@ -310,7 +319,9 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_device_is_let_in_by_one_that_is_logged_in() {
-        let server = TestServer::new().await;
+        // Mails for new devices are off; the one for a device let in by another goes out anyway.
+        let server =
+            TestServer::with_settings(crate::Settings { new_device_mail: false, ..crate::Settings::default() }).await;
         let account = server.account("nyu@example.com").await;
         server.state.store.set_two_factor(&account.id, 0, "JBSWY3DPEHPK3PXP".into(), "RECOVER".into()).await.unwrap();
         let asked = ask(&server, "nyu@example.com", "new-device").await;
@@ -342,6 +353,7 @@ mod tests {
         let response = server.form("/identity/connect/token", &form).await;
         assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
         assert!(json(response).await["access_token"].is_string(), "no second step: the approval is one");
+        server.wait_for_mail(|mail| mail.to == "nyu@example.com" && mail.subject.contains("Neue Anmeldung")).await;
         assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::BAD_REQUEST, "once");
     }
 

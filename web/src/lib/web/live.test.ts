@@ -57,4 +57,10 @@ describe('the hub', () => {
     expect(updates(new TextEncoder().encode('{}\u001e'))).toEqual([]);
     expect(updates(frame([0x95, 0x01, 0xc1]))).toEqual([]);
   });
+
+  it('stops at a length that does not fit, at once', () => {
+    expect(updates(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x08, 0x91, 0x06]))).toEqual([]);
+    expect(updates(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]))).toEqual([]);
+    expect(updates(new Uint8Array([0x10, 0x91]))).toEqual([]);
+  });
 });

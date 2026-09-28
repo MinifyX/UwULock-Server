@@ -166,7 +166,13 @@ impl Store {
                 return Ok(None);
             };
             let code_ok = crate::accounts::constant_time_eq(&request.access_code_hash, &access_code_hash);
-            if !code_ok || request.device_id != device_id || request.approved != Some(true) || request.used.is_some() {
+            // Only a request to log in logs in; one to unlock (type 1) does not.
+            if !code_ok
+                || request.kind != 0
+                || request.device_id != device_id
+                || request.approved != Some(true)
+                || request.used.is_some()
+            {
                 return Ok(None);
             }
             if !request.responded.as_deref().is_some_and(|at| at > clock::in_seconds(-AUTH_REQUEST_SECONDS).as_str()) {
@@ -249,5 +255,13 @@ mod tests {
         store.add_auth_request(old.clone()).await.unwrap();
         assert!(store.answer_auth_request(&user.id, &old.id, true, None, None, "d").await.unwrap().is_none());
         assert_eq!(store.auth_requests(&user.id).await.unwrap().len(), 1, "the old one is not listed");
+
+        let unlock = AuthRequest { kind: 1, ..request(&user.id) };
+        store.add_auth_request(unlock.clone()).await.unwrap();
+        store.answer_auth_request(&user.id, &unlock.id, true, Some("4.k".into()), None, "d").await.unwrap().unwrap();
+        assert!(
+            store.use_auth_request(&unlock.id, "new-device", vec![5; 32]).await.unwrap().is_none(),
+            "a request to unlock does not log in"
+        );
     }
 }

@@ -351,7 +351,7 @@ async fn upload(
     Path((id, file)): Path<(String, String)>,
     form: Multipart,
 ) -> ApiResult<StatusCode> {
-    let mut send = own(&state, &session, &id).await?;
+    let send = own(&state, &session, &id).await?;
     let Some((expected, size)) = file_of(&send).filter(|_| send.kind == FILE) else {
         return Err(ApiError::bad("Send is not a file type send."));
     };
@@ -362,14 +362,18 @@ async fn upload(
         return Err(ApiError::bad("The file of this Send is uploaded already."));
     }
     let path = files::send_path(&state, &id, &file)?;
+    let _uploading = state.uploads.start(&session.user.id)?;
     let uploaded = files::receive(form, &path, size.max(0) as u64).await?;
     if uploaded.size != size {
-        files::discard(&path).await;
+        files::discard(&uploaded).await;
         return Err(ApiError::bad("Send file size does not match."));
     }
-    files::keep(&path).await?;
-    send.uploaded = true;
-    let send = save(&state, send).await?;
+    files::keep(&uploaded, &path).await?;
+    let send = state
+        .store
+        .send_file_uploaded(&session.user.id, &id)
+        .await?
+        .ok_or_else(|| ApiError::bad("The file of this Send is uploaded already."))?;
     notify::send(&state, &session.user.id, Some(&session), Kind::SendCreate, &send.id, &send.revision);
     Ok(StatusCode::OK)
 }
@@ -486,6 +490,11 @@ async fn access_file_legacy(
     file_download(&state, &send, &file).await
 }
 
+/// What a download link's token is for: a Send's file, never an attachment of the same ids.
+fn file_subject(send_id: &str, file: &str) -> String {
+    format!("send:{send_id}/{file}")
+}
+
 /// The file's download link, and one more opening counted.
 async fn file_download(state: &AppState, send: &Send, file: &str) -> ApiResult<Json<Value>> {
     if send.kind != FILE || file_of(send).is_none_or(|(expected, _)| expected != file) {
@@ -495,7 +504,7 @@ async fn file_download(state: &AppState, send: &Send, file: &str) -> ApiResult<J
         return Err(ApiError::not_found(GONE));
     }
     opened(state, send);
-    let token = state.tokens.file_token(&format!("{}/{file}", send.id), LINK_SECONDS);
+    let token = state.tokens.file_token(&file_subject(&send.id, file), LINK_SECONDS);
     Ok(Json(json!({
         "id": file,
         "url": format!("{}/api/sends/{}/{file}?t={token}", state.config.public, send.id),
@@ -513,11 +522,12 @@ async fn by_token(state: &AppState, headers: &HeaderMap) -> ApiResult<Send> {
     let header = headers.get("authorization").and_then(|value| value.to_str().ok()).unwrap_or_default();
     let token = header.rsplit_once("Bearer ").map_or(header, |(_, token)| token);
     let id = state.tokens.check_send_token(token).ok_or_else(ApiError::unauthorized)?;
-    state.store.send_by_id(&id).await?.filter(Send::accessible).ok_or_else(|| ApiError::not_found(GONE))
+    // Its opening was counted when the token was given, so the count does not shut it here.
+    state.store.send_by_id(&id).await?.filter(Send::open).ok_or_else(|| ApiError::not_found(GONE))
 }
 
-/// Open a Send the new way, with the token the identity endpoint gave for it. That counted the
-/// opening already.
+/// Open a Send the new way, with the token the identity endpoint gave for it. For a text, that
+/// counted the opening already; a file counts each download link, as the old way does.
 async fn access(State(state): State<AppState>, headers: HeaderMap) -> ApiResult<Json<Value>> {
     let send = by_token(&state, &headers).await?;
     Ok(Json(render_access(&state, &send).await?))
@@ -529,15 +539,7 @@ async fn access_file(
     Path(file): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let send = by_token(&state, &headers).await?;
-    if send.kind != FILE || file_of(&send).is_none_or(|(expected, _)| expected != file) {
-        return Err(ApiError::not_found(GONE));
-    }
-    let token = state.tokens.file_token(&format!("{}/{file}", send.id), LINK_SECONDS);
-    Ok(Json(json!({
-        "id": file,
-        "url": format!("{}/api/sends/{}/{file}?t={token}", state.config.public, send.id),
-        "object": "send-fileDownload",
-    })))
+    file_download(&state, &send, &file).await
 }
 
 /// The identity endpoint's `send_access` grant: a token for one Send, after its password.
@@ -580,10 +582,13 @@ pub(crate) async fn grant(
             return Err(ApiError::too_many("Too many wrong passwords. Wait a few minutes and try again."));
         }
     }
-    if !state.store.register_send_access(&send.id).await? {
-        return Err(invalid("send_id_invalid"));
+    // A text is opened now; a file is counted when its download link is asked for.
+    if send.kind == TEXT {
+        if !state.store.register_send_access(&send.id).await? {
+            return Err(invalid("send_id_invalid"));
+        }
+        opened(state, &send);
     }
-    opened(state, &send);
     let (token, expires_in) = state.tokens.send_token(&send.id);
     Ok(Json(json!({
         "access_token": token,
@@ -605,10 +610,11 @@ async fn download(
     Path((id, file)): Path<(String, String)>,
     Query(query): Query<DownloadQuery>,
 ) -> ApiResult<Response> {
-    if !state.tokens.check_file_token(&query.t, &format!("{id}/{file}")) {
+    if !state.tokens.check_file_token(&query.t, &file_subject(&id, &file)) {
         return Err(ApiError::unauthorized());
     }
-    if !state.store.send_exists(&id).await? {
+    // A link from before the Send was disabled or ran out opens nothing any more.
+    if !state.store.send_by_id(&id).await?.is_some_and(|send| send.open()) {
         return Err(ApiError::not_found(GONE));
     }
     files::serve(&files::send_path(&state, &id, &file)?).await
@@ -702,6 +708,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_send_opened_once_opens_once_for_the_newest_clients_too() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let mut send = text_send();
+        send["maxAccessCount"] = json!(1);
+        let created = json(server.call("POST", "/api/sends", Some(&account.token), send).await).await;
+        let access_id = created["accessId"].as_str().unwrap().to_string();
+        let form = [("grant_type", "send_access"), ("client_id", "send"), ("send_id", access_id.as_str())];
+        let grant = || server.form("/identity/connect/token", &form);
+        let response = grant().await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let token = json(response).await["access_token"].as_str().unwrap().to_string();
+        let request = Request::post("/api/sends/access")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(server.send(request).await.status(), StatusCode::OK, "the one opening it may have");
+        assert_eq!(grant().await.status(), StatusCode::NOT_FOUND, "and no second");
+    }
+
+    #[tokio::test]
     async fn a_file_send_is_announced_uploaded_and_downloaded() {
         let server = TestServer::new().await;
         let account = server.account("nyu@example.com").await;
@@ -728,7 +755,7 @@ mod tests {
         let upload = Request::post(format!("/api{url}"))
             .header("authorization", format!("Bearer {}", account.token))
             .header("content-type", format!("multipart/form-data; boundary={boundary}"))
-            .body(Body::from(body))
+            .body(Body::from(body.clone()))
             .unwrap();
         let response = server.send(upload).await;
         assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
@@ -741,6 +768,19 @@ mod tests {
         let response = server.get(&path).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap().as_ref(), b"abcd");
+
+        // A second upload for the same file finds it there, and the link dies with the Send's
+        // being disabled.
+        let upload = Request::post(format!("/api{url}"))
+            .header("authorization", format!("Bearer {}", account.token))
+            .header("content-type", format!("multipart/form-data; boundary={boundary}"))
+            .body(Body::from(body.replace("abcd", "efgh")))
+            .unwrap();
+        assert_eq!(server.send(upload).await.status(), StatusCode::BAD_REQUEST);
+        let mut stored = server.state.store.send_by_id(&id).await.unwrap().unwrap();
+        stored.disabled = true;
+        server.state.store.save_send(stored).await.unwrap();
+        assert_eq!(server.get(&path).await.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

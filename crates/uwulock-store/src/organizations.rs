@@ -5,7 +5,9 @@
 //! Who sees what, the way Bitwarden has it: a confirmed member sees the items of the collections
 //! they are given, directly or by a group; owners, admins and members with `access_all` see every
 //! collection and every item, also those in none. A collection can be read-only for somebody, or
-//! hide its passwords from them, and `manage` lets them delete.
+//! hide its passwords from them. Whoever may edit an item may also delete it, as in Vaultwarden
+//! with "limit item deletion" off; `manage` is kept for the clients and matters once
+//! organisations are managed here.
 
 use crate::accounts::bump_revision;
 use crate::vault::{CIPHER_COLUMNS, cipher_from, write_cipher};

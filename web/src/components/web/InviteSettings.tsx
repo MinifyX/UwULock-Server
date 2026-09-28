@@ -14,14 +14,17 @@ import { Icon } from '../Icon';
 
 /**
  * Inviting people to this server, when an admin lets everybody: up to a quota, and never as an
- * admin. The link is shown either way, to pass on by hand.
+ * admin. The link comes back only when the server cannot mail it (or to an admin): whoever
+ * holds it can register the address.
  */
 export function InviteSettings() {
   useLanguage();
   const [mine, setMine] = useState<MyInvitations | null>(null);
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
-  const [made, setMade] = useState<{ email: string; link: string; mailed: boolean } | null>(null);
+  const [made, setMade] = useState<{ email: string; link: string | null; mailed: boolean } | null>(
+    null,
+  );
   const load = useCallback(() => {
     myInvitations().then(setMine, (e) => toast(errorText(e), 'error'));
   }, []);
@@ -82,25 +85,29 @@ export function InviteSettings() {
         <div className="notice invite-made" role="status">
           <Icon name={made.mailed ? 'check' : 'sparkles'} size={16} />
           <span>
-            {made.mailed
-              ? t(
-                  'Die Einladung an {email} ist per Mail unterwegs. Der Link, falls sie nicht ankommt:',
-                  { email: made.email },
-                )
-              : t('Gib {email} diesen Link – er ist der einzige Weg zur Registrierung:', {
-                  email: made.email,
-                })}
-            <code className="invite-link">{made.link}</code>
+            {!made.link
+              ? t('Die Einladung an {email} ist per Mail unterwegs.', { email: made.email })
+              : made.mailed
+                ? t(
+                    'Die Einladung an {email} ist per Mail unterwegs. Der Link, falls sie nicht ankommt:',
+                    { email: made.email },
+                  )
+                : t('Gib {email} diesen Link – er ist der einzige Weg zur Registrierung:', {
+                    email: made.email,
+                  })}
+            {made.link && <code className="invite-link">{made.link}</code>}
           </span>
-          <button
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(made.link)
-                .then(() => toast(t('Kopiert ✧'), 'info'));
-            }}
-          >
-            {t('Kopieren')}
-          </button>
+          {made.link && (
+            <button
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(made.link ?? '')
+                  .then(() => toast(t('Kopiert ✧'), 'info'));
+              }}
+            >
+              {t('Kopieren')}
+            </button>
+          )}
         </div>
       )}
       <h3 className="settings-heading">{t('Meine offenen Einladungen')}</h3>

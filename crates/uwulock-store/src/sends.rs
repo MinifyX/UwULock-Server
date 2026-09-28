@@ -64,11 +64,15 @@ impl Send {
     /// Whether the link opens it now: not disabled, not expired, not past its deletion date,
     /// not opened as often as it may be, and for a file, with its file there.
     pub fn accessible(&self) -> bool {
+        self.open() && self.max_access_count.is_none_or(|max| self.access_count < max)
+    }
+
+    /// Like [`Send::accessible`], but for somebody whose opening was counted already.
+    pub fn open(&self) -> bool {
         let now = clock::now();
         !self.disabled
             && self.expiration.as_ref().is_none_or(|expiration| *expiration > now)
             && self.deletion > now
-            && self.max_access_count.is_none_or(|max| self.access_count < max)
             && (self.kind != FILE || self.uploaded)
     }
 }
@@ -123,6 +127,29 @@ impl Store {
                 .optional()
         })
         .await
+    }
+
+    /// Mark that the file of `user_id`'s Send `id` arrived — only that, so whatever changed on
+    /// the Send while the file was on its way stays. The Send afterwards; nothing when it is not
+    /// theirs or its file was there already.
+    pub async fn send_file_uploaded(&self, user_id: &str, id: &str) -> Result<Option<Send>> {
+        let (user_id, id) = (user_id.to_string(), id.to_string());
+        let owner = user_id.clone();
+        let saved = self
+            .sqlite_write(move |tx| {
+                let marked = tx.execute(
+                    "UPDATE sends SET uploaded = 1, revision = ?3 WHERE id = ?1 AND user_id = ?2 AND uploaded = 0",
+                    params![id, user_id, clock::now()],
+                )? > 0;
+                if !marked {
+                    return Ok(None);
+                }
+                bump_revision(tx, &user_id)?;
+                tx.query_row(&format!("SELECT {COLUMNS} FROM sends WHERE id = ?1"), [&id], send_from).optional()
+            })
+            .await?;
+        self.forget_session_of(&owner);
+        Ok(saved)
     }
 
     /// A Send by its id alone, for somebody with the link.

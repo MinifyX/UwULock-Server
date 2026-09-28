@@ -389,6 +389,20 @@ impl Store {
         Ok(user)
     }
 
+    /// The most PBKDF2 rounds among the password hashes that came over from Vaultwarden and are
+    /// still waiting for their account's next login; 0 when none is left.
+    pub async fn legacy_rounds(&self) -> Result<u32> {
+        self.sqlite_read(|conn| {
+            // `vw-pbkdf2$<rounds>$<salt>$<hash>`, as the import writes them.
+            let hashes: Vec<String> = conn
+                .prepare_cached("SELECT password_hash FROM users WHERE password_hash LIKE 'vw-pbkdf2$%'")?
+                .query_map([], |row| row.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            Ok(hashes.iter().filter_map(|hash| hash.split('$').nth(1)?.parse::<u32>().ok()).max().unwrap_or(0))
+        })
+        .await
+    }
+
     /// Mark that something the clients sync changed.
     pub async fn touch_revision(&self, user_id: &str) -> Result<()> {
         let owned = user_id.to_string();
@@ -670,6 +684,49 @@ impl Store {
                 [&email],
                 invitation_from,
             )
+        })
+        .await
+    }
+
+    /// Like [`Store::invite`], by a user who may invite up to `quota` people: counted and
+    /// written in one step, so invitations sent at once cannot pass the quota. Their own
+    /// invitation of the same address again does not count twice. Nothing when the quota is
+    /// used up.
+    pub async fn invite_within(
+        &self,
+        email: &str,
+        token_hash: Vec<u8>,
+        invited_by: &str,
+        language: &str,
+        expires: String,
+        quota: i64,
+    ) -> Result<Option<Invitation>> {
+        let (email, invited_by, language) = (normalize_email(email), invited_by.to_string(), language.to_string());
+        self.sqlite_write(move |tx| {
+            let now = clock::now();
+            let used: i64 = tx.query_row(
+                "SELECT (SELECT count(*) FROM users WHERE invited_by = ?1) + \
+                 (SELECT count(*) FROM invitations WHERE invited_by = ?1 AND expires > ?2 AND email <> ?3)",
+                params![invited_by, now, email],
+                |row| row.get(0),
+            )?;
+            if used >= quota {
+                return Ok(None);
+            }
+            tx.execute(
+                "INSERT INTO invitations (email, token_hash, admin, invited_by, language, created, expires) \
+                 VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6) \
+                 ON CONFLICT (email) DO UPDATE SET token_hash = excluded.token_hash, admin = 0, \
+                 invited_by = excluded.invited_by, language = excluded.language, created = excluded.created, \
+                 expires = excluded.expires",
+                params![email, token_hash, invited_by, language, now, expires],
+            )?;
+            tx.query_row(
+                "SELECT email, admin, invited_by, language, created, expires FROM invitations WHERE email = ?1",
+                [&email],
+                invitation_from,
+            )
+            .map(Some)
         })
         .await
     }
@@ -1049,5 +1106,39 @@ pub(crate) mod tests {
         store.remove_two_factor(&user.id, Some(0)).await.unwrap();
         assert!(store.two_factors(&user.id).await.unwrap().is_empty());
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().recovery_code, None, "no recovery without 2FA");
+    }
+
+    #[tokio::test]
+    async fn invitations_sent_at_once_stay_within_the_quota() {
+        let (store, _dir) = store();
+        let user = store.create_user(new_user("nyu@example.com")).await.unwrap();
+        let tries = (0..8).map(|n| {
+            let (store, id) = (store.clone(), user.id.clone());
+            tokio::spawn(async move {
+                store
+                    .invite_within(&format!("p{n}@example.com"), vec![n; 32], &id, "de", clock::in_seconds(60), 2)
+                    .await
+                    .unwrap()
+                    .is_some()
+            })
+        });
+        let mut made = 0;
+        for task in tries {
+            made += usize::from(task.await.unwrap());
+        }
+        assert_eq!(made, 2);
+        assert!(
+            store
+                .invite_within("p0@example.com", vec![9; 32], &user.id, "de", clock::in_seconds(60), 2)
+                .await
+                .unwrap()
+                .is_some()
+                || store
+                    .invite_within("p1@example.com", vec![9; 32], &user.id, "de", clock::in_seconds(60), 2)
+                    .await
+                    .unwrap()
+                    .is_some(),
+            "one's own again does not count twice"
+        );
     }
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { errorText } from '../../lib/errors';
 import {
   EMERGENCY_STATUS,
+  acceptContact,
   answerRecovery,
   askForAccess,
   confirmContact,
@@ -146,6 +147,14 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
               label={who(contact)}
               description={`${t(STATUS[contact.status] ?? '')} · ${kind(contact)} · ${t('{n} Tage Wartezeit', { n: contact.waitTimeDays })}`}
             >
+              {contact.status === EMERGENCY_STATUS.invited && (
+                <button
+                  className="primary"
+                  onClick={() => void act(() => acceptContact(contact.id, ''), t('Angenommen ✧'))}
+                >
+                  {t('Annehmen')}
+                </button>
+              )}
               {contact.status === EMERGENCY_STATUS.confirmed && (
                 <button
                   onClick={() =>

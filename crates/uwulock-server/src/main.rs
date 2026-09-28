@@ -178,8 +178,22 @@ async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins
     print!("{summary}");
     if dry_run {
         println!("Nothing was imported (--dry-run).");
-    } else {
-        println!("Imported. Point the clients at this server; they stay logged in.");
+        return Ok(());
+    }
+    println!("Imported. Point the clients at this server; they stay logged in.");
+    // Whoever lost their only second step hears it from the server, not by surprise.
+    if !summary.lost_two_factor.is_empty() {
+        let mailer = uwulock_mail::Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
+        for (email, language, method) in &summary.lost_two_factor {
+            let mail = uwulock_mail::Mail::TwoFactorNotMoved { method: method.clone() };
+            match mailer.send(email, &mail, uwulock_mail::Language::from_code(language)).await {
+                Ok(()) => println!("Told {email} by mail that two-step login with {method} did not come over."),
+                Err(_) if !mailer.enabled() => {
+                    println!("Tell {email}: two-step login with {method} did not come over (no mail server set up).");
+                }
+                Err(error) => println!("Could not tell {email} by mail ({error}): tell them yourself."),
+            }
+        }
     }
     Ok(())
 }

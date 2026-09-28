@@ -2,7 +2,7 @@
 //! may, when an admin allows it, up to the quota the settings give — and never as an admin.
 
 use crate::AppState;
-use crate::admin::invite;
+use crate::admin::{invite, invite_as_user};
 use crate::auth::Session;
 use crate::errors::{ApiError, ApiResult};
 use axum::extract::{Path, State};
@@ -63,28 +63,28 @@ async fn create(
     session: Session,
     Json(data): Json<NewInvitation>,
 ) -> ApiResult<Json<Value>> {
-    let (allowed, quota, used) = allowance(&state, &session).await?;
+    let (allowed, quota, _) = allowance(&state, &session).await?;
     if !allowed {
         return Err(ApiError::forbidden("Only admins invite people to this server."));
     }
     let email = normalize_email(&data.email);
     // Somebody else's invitation stays theirs; one's own goes out again, with a new link.
-    let again = match state.store.invitation(&email).await? {
-        Some(invitation) if invitation.invited_by.as_deref() != Some(session.user.id.as_str()) => {
-            return Err(ApiError::bad("There is an invitation for this address already."));
-        }
-        Some(invitation) => invitation.expires > clock::now(),
-        None => false,
-    };
-    if !session.user.admin && !again && used >= quota {
-        return Err(ApiError::bad(format!("You have invited as many people as you may ({quota}).")));
+    if let Some(invitation) = state.store.invitation(&email).await?
+        && invitation.invited_by.as_deref() != Some(session.user.id.as_str())
+    {
+        return Err(ApiError::bad("There is an invitation for this address already."));
     }
     crate::identity::mail_allowed(&state, &email, Some(&session.user.id))?;
-    let invited = invite(&state, &email, false, Some(session.user.id.clone())).await?;
+    let invited = if session.user.admin {
+        invite(&state, &email, false, Some(session.user.id.clone())).await?
+    } else {
+        invite_as_user(&state, &email, &session.user, quota).await?
+    };
     tracing::info!(email = %invited.email, by = %session.user.email, "invited");
     Ok(Json(json!({
         "email": invited.email,
-        "link": invited.link,
+        // Only when the server cannot mail it: whoever holds it can register the address.
+        "link": Some(invited.link).filter(|link| !link.is_empty()),
         "mailed": invited.mailed,
         "expires": invited.expires,
     })))
@@ -129,8 +129,9 @@ mod tests {
         for email in ["a@example.com", "b@example.com"] {
             let response = server.call("POST", "/uwu/v1/invitations", Some(&nyu.token), json!({"email": email})).await;
             assert_eq!(response.status(), StatusCode::OK);
-            let link = json(response).await["link"].as_str().unwrap().to_string();
-            assert!(link.contains("finish-signup?token="));
+            assert!(json(response).await["link"].is_null(), "the server mails it; the inviter never holds it");
+            let mail = server.wait_for_mail(|mail| mail.to == email).await;
+            assert!(mail.text.contains("finish-signup?token="));
         }
         let response =
             server.call("POST", "/uwu/v1/invitations", Some(&nyu.token), json!({"email": "c@example.com"})).await;
@@ -175,8 +176,9 @@ mod tests {
         let nyu = server.account("nyu@example.com").await;
         let response =
             server.call("POST", "/uwu/v1/invitations", Some(&nyu.token), json!({"email": "a@example.com"})).await;
-        let link = json(response).await["link"].as_str().unwrap().to_string();
-        let token = link.split("token=").nth(1).unwrap().split('&').next().unwrap().to_string();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mail = server.wait_for_mail(|mail| mail.to == "a@example.com").await;
+        let token = mail.text.split("token=").nth(1).unwrap().split('&').next().unwrap().to_string();
         let response = server
             .call("POST", "/identity/accounts/register/finish", None, register_body("a@example.com", &token))
             .await;
@@ -184,5 +186,37 @@ mod tests {
         let mine = json(server.get_as(&nyu.token, "/uwu/v1/invitations").await).await;
         assert_eq!(mine["used"], 1, "the account they brought in");
         assert!(mine["invitations"].as_array().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_invitation_says_nothing_about_accounts() {
+        let server = TestServer::with_settings(open(5)).await;
+        let nyu = server.account("nyu@example.com").await;
+        server.account("mio@example.com").await;
+        let to_mio = || server.mails().iter().filter(|mail| mail.to == "mio@example.com").count();
+        let before = to_mio();
+        let mut answers = Vec::new();
+        for email in ["mio@example.com", "new@example.com"] {
+            let response = server.call("POST", "/uwu/v1/invitations", Some(&nyu.token), json!({"email": email})).await;
+            assert_eq!(response.status(), StatusCode::OK, "{email}");
+            let mut answer = json(response).await;
+            answer["email"] = json!(null);
+            answer["expires"] = json!(null);
+            answers.push(answer);
+        }
+        assert_eq!(answers[0], answers[1]);
+        server.wait_for_mail(|mail| mail.to == "new@example.com").await;
+        assert_eq!(to_mio(), before, "no mail to an account");
+    }
+
+    #[tokio::test]
+    async fn without_mail_the_inviter_gets_the_link() {
+        let mut server = TestServer::with_settings(open(5)).await;
+        server.state.mailer = uwulock_mail::Mailer::new(None).unwrap();
+        server = server.with_limits(crate::Limits::generous());
+        let nyu = server.account("nyu@example.com").await;
+        let response =
+            server.call("POST", "/uwu/v1/invitations", Some(&nyu.token), json!({"email": "a@example.com"})).await;
+        assert!(json(response).await["link"].as_str().unwrap().contains("finish-signup?token="));
     }
 }
