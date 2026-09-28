@@ -179,6 +179,28 @@ mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf 
   - TLS für die zusätzlichen Domains: Let's Encrypt über den Server selbst, oder nur hinter
     einem Proxy (Caddy)?
   - Eigene Optik der Send-Seite pro Domain (Name, Logo)?
+- Masken-Adressen von UwUMail: UwULock Server legt für ein Konto Masken-Adressen bei UwUMail
+  Server an (dessen JMAP `MaskedEmail`, siehe `docs/jmap-masked-email.md` dort).
+  - Verbinden: Der Admin trägt im Admin-Portal die erlaubten UwUMail-Server ein; nur an diese
+    schickt der Lock-Server Anfragen. Der Nutzer klickt im Web-Tresor „Mit UwUMail verbinden",
+    meldet sich per OAuth (PKCE, dynamische Registrierung, beides hat UwUMail schon) bei
+    UwUMail an und stimmt zu; die Verbindung steht dann in UwUMail unter *Sicherheit* und lässt
+    sich dort und im Tresor trennen.
+  - Das Refresh-Token liegt verschlüsselt auf dem Lock-Server (nicht im Tresor), damit auch die
+    offiziellen Clients Adressen anlegen können. Braucht in UwUMail einen eigenen OAuth-Scope
+    nur für Masken-Adressen — `mail` öffnet heute das ganze Postfach.
+  - Anlegen im Web-Tresor (Generator und neben dem Benutzernamen im Eintrag), im UwULock-Client
+    (über `/uwu/v1`, Client-Release nötig) und in den offiziellen Bitwarden-Clients: Der
+    Lock-Server bietet eine addy.io- oder SimpleLogin-kompatible Schnittstelle, die man im
+    Generator unter „Weitergeleitete E-Mail-Adresse" als selbst gehosteten Dienst einträgt, mit
+    einem eigenen API-Key aus dem Web-Tresor (Fastmail geht nicht, dort ist die Adresse fest).
+  - Domain: UwUMails Standard; in Web-Tresor und UwULock-Client aus den erlaubten Domains
+    wählbar, die offiziellen Clients bekommen den Standard (bei addy.io vielleicht auch das
+    Domain-Feld). `forDomain` ist die Seite des Eintrags, `url` der Link zum Eintrag.
+  - Verwalten: eigene Seite im Web-Tresor mit Status, letzter Mail und zugehörigem Eintrag;
+    an, aus, löschen. Am Eintrag ein Hinweis auf seine Masken-Adresse.
+  - Wird ein Eintrag gelöscht, fragt der Web-Tresor, ob die Adresse abgeschaltet werden soll
+    (Standard: ja, `disabled` — nicht gelöscht).
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
