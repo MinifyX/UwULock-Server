@@ -67,6 +67,7 @@ pub fn emergency_view(unlocked: &Unlocked, key_encrypted: &str, ciphers: &str) -
         attachments: Default::default(),
         sends: Vec::new(),
         report: Vec::new(),
+        extras: None,
     };
     crate::transfer::export(&grantor, "json")
 }

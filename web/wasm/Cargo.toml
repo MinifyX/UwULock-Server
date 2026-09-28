@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # UwULock's crypto and vault, the same the desktop app uses, at the commit uwulock-e2e tests.
-uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "bd3d7945c27bfff04ff74b0d9584e6499e79edf8" }
+uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "c95008cbeb554e99c45f9e260f00058cf83f4243" }
 base64 = "0.22"
 # Randomness in the browser, for access codes: the same getrandom uwulock-core takes it from.
 getrandom = { version = "0.2", features = ["js"] }
@@ -37,3 +37,10 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+# The tests make RSA keys, which unoptimised takes seconds each.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3

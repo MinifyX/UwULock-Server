@@ -113,6 +113,13 @@ opt-level = 1
 [profile.dev.package.uwulock-core]
 opt-level = 3
 
+# RSA key pairs, which the end-to-end tests make: unoptimised, seconds each.
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
+
+[profile.dev.package.rsa]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 # No `panic = "abort"`: a bug in one request should fail that request, not the whole server.

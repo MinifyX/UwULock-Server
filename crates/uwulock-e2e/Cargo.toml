@@ -20,7 +20,10 @@ uwulock-api.workspace = true
 uwulock-server.workspace = true
 uwulock-store.workspace = true
 # UwULock's client, at a fixed commit: what the desktop app uses to log in, sync and save.
-uwulock-bitwarden = { git = "https://github.com/MinifyX/UwULock-Client", rev = "bd3d7945c27bfff04ff74b0d9584e6499e79edf8" }
+uwulock-bitwarden = { git = "https://github.com/MinifyX/UwULock-Client", rev = "c95008cbeb554e99c45f9e260f00058cf83f4243" }
+# Its crypto for what only UwULock does: the extras key, file requests.
+uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "c95008cbeb554e99c45f9e260f00058cf83f4243" }
+base64.workspace = true
 reqwest.workspace = true
 rustls.workspace = true
 serde_json.workspace = true

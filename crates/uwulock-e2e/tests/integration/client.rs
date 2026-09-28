@@ -10,12 +10,12 @@ use uwulock_bitwarden::vault::{Item, ItemKind};
 use uwulock_bitwarden::{Client, Device, Kdf, Server, Vault};
 use zeroize::Zeroizing;
 
-const EMAIL: &str = "nyu@example.com";
-const PASSWORD: &str = "correct horse battery staple";
-const KDF: Kdf = Kdf::Pbkdf2 { iterations: 100_000 };
+pub(crate) const EMAIL: &str = "nyu@example.com";
+pub(crate) const PASSWORD: &str = "correct horse battery staple";
+pub(crate) const KDF: Kdf = Kdf::Pbkdf2 { iterations: 100_000 };
 
-struct Running {
-    url: String,
+pub(crate) struct Running {
+    pub(crate) url: String,
     stop: Option<oneshot::Sender<()>>,
     _dir: tempfile::TempDir,
 }
@@ -29,7 +29,7 @@ impl Drop for Running {
 }
 
 /// A server on a free port, and an invitation for [`EMAIL`]: the token of its link.
-async fn start() -> (Running, String) {
+pub(crate) async fn start() -> (Running, String) {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let dir = tempfile::tempdir().unwrap();
     let mut config = uwulock_server::Config { data_dir: dir.path().to_path_buf(), ..Default::default() };
@@ -63,7 +63,7 @@ async fn start() -> (Running, String) {
 }
 
 /// Register the way a client does: a user key, wrapped under the master key.
-async fn register(url: &str, token: &str) -> SymmetricKey {
+pub(crate) async fn register(url: &str, token: &str) -> SymmetricKey {
     let master = crypto::master_key(PASSWORD, EMAIL, KDF).unwrap();
     let user_key = SymmetricKey::generate();
     let protected = EncString::encrypt(&user_key.to_bytes(), &SymmetricKey::stretch(&master));
@@ -86,11 +86,11 @@ async fn register(url: &str, token: &str) -> SymmetricKey {
     user_key
 }
 
-fn client(url: &str, device: &str) -> Client {
+pub(crate) fn client(url: &str, device: &str) -> Client {
     Client::new(Server::self_hosted(url).unwrap(), Device::this_system(device.into())).unwrap()
 }
 
-async fn hash(client: &Client) -> (Zeroizing<[u8; 32]>, String) {
+pub(crate) async fn hash(client: &Client) -> (Zeroizing<[u8; 32]>, String) {
     let kdf = client.prelogin(EMAIL).await.unwrap();
     assert_eq!(kdf, KDF, "the prelogin says how the key was made");
     let master = crypto::master_key(PASSWORD, EMAIL, kdf).unwrap();
@@ -98,7 +98,7 @@ async fn hash(client: &Client) -> (Zeroizing<[u8; 32]>, String) {
     (master, hash)
 }
 
-fn login(hash: &str) -> PasswordLogin<'_> {
+pub(crate) fn login(hash: &str) -> PasswordLogin<'_> {
     PasswordLogin { email: EMAIL, password_hash: hash, two_factor: None, remember_token: None, new_device_code: None }
 }
 
