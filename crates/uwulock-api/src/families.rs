@@ -25,7 +25,6 @@ use uwulock_store::{NewOrganization, OrgRefusal};
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/organizations", post(create))
-        .route("/api/organizations/create-without-payment", post(create))
         .route("/api/organizations/{id}", get(one).put(rename).post(rename).delete(remove))
         .route("/api/organizations/{id}/delete", post(remove))
         .route("/api/organizations/{id}/leave", post(leave))
