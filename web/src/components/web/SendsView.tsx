@@ -5,8 +5,10 @@ import {
   deleteSend,
   removeSendAuth,
   saveSend,
+  sendDomainChoices,
   sendLink,
   sendsList,
+  setSendDomain,
   type Send,
   type SendDraft,
   type SendKind,
@@ -14,12 +16,14 @@ import {
 import { useFeature } from '../../lib/branding';
 import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
+import { domainOf, type SendDomain } from '../../lib/links';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { listbox } from '../listbox';
 import { BackToList, Panes } from '../panes';
 import { PasswordInput } from '../PasswordInput';
+import { SendDomainField, useDefaultSendDomain, useSendDomains } from './SendDomainSelect';
 
 /**
  * Sends: a text or a file behind a link, for somebody without an account. The link carries the
@@ -31,11 +35,16 @@ export function SendsView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ send: Send | null; kind: SendKind } | null>(null);
   const [deleting, setDeleting] = useState<Send | null>(null);
+  /** Which send domain each Send chose, when the server has any. */
+  const [choices, setChoices] = useState<Record<string, string | null>>({});
   const { showDetail } = useContext(Panes);
+  const domains = useSendDomains();
+  const withDomains = domains.length > 0;
 
   const reload = useCallback(() => {
     sendsList().then(setSends, (e) => toast(errorText(e), 'error'));
-  }, []);
+    if (withDomains) sendDomainChoices().then(setChoices, () => undefined);
+  }, [withDomains]);
 
   useEffect(() => {
     reload();
@@ -60,8 +69,10 @@ export function SendsView() {
     },
   });
 
+  const linkOf = (send: Send) => sendLink(send, domainOf(domains, choices[send.id]));
+
   const copyLink = async (send: Send) => {
-    await navigator.clipboard.writeText(sendLink(send));
+    await navigator.clipboard.writeText(linkOf(send));
     toast(t('Link kopiert ✧'));
   };
 
@@ -164,7 +175,7 @@ export function SendsView() {
               <div className="detail-row">
                 <div className="detail-text">
                   <span className="detail-label">{t('Link')}</span>
-                  <span className="detail-value mono send-link">{sendLink(current)}</span>
+                  <span className="detail-value mono send-link">{linkOf(current)}</span>
                 </div>
               </div>
               {current.kind === 0 ? (
@@ -244,6 +255,8 @@ export function SendsView() {
         <SendEditor
           send={editing.send}
           kind={editing.kind}
+          domains={domains}
+          domainId={editing.send ? (choices[editing.send.id] ?? null) : null}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -309,11 +322,17 @@ function daysUntil(iso: string | null): number {
 function SendEditor({
   send,
   kind,
+  domains,
+  domainId,
   onClose,
   onSaved,
 }: {
   send: Send | null;
   kind: SendKind;
+  /** The server's send domains; none: the field is not shown. */
+  domains: SendDomain[];
+  /** The domain the Send chose so far. */
+  domainId: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -339,9 +358,14 @@ function SendEditor({
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const mailOk = useFeature('send-emails');
+  // A new Send starts on the account's default domain, which the server gives it anyway.
+  const fallback = useDefaultSendDomain(!send && domains.length > 0);
+  const [domain, setDomain] = useState<string | null | undefined>(send ? domainId : undefined);
+  const chosenDomain = domain === undefined ? fallback.value : domain;
 
   const addresses = splitAddresses(emails);
   const ready =
+    fallback.ready &&
     name.trim() &&
     (kind === 0 ? text.trim() : send || file) &&
     (access !== 0 || addresses.length > 0) &&
@@ -368,7 +392,12 @@ function SendEditor({
       hideEmail,
     };
     try {
-      await saveSend(send?.id ?? null, draft, file ?? undefined);
+      const saved = await saveSend(send?.id ?? null, draft, file ?? undefined);
+      const before = send ? domainId : fallback.value;
+      if (domains.length > 0 && saved && chosenDomain !== before) {
+        // The Send is saved either way; only its link would stay on the old address.
+        await setSendDomain(saved, chosenDomain).catch((e) => toast(errorText(e), 'error'));
+      }
       toast(send ? t('Gespeichert ✧') : t('Send angelegt – kopier jetzt den Link ✧'));
       onSaved();
     } catch (e) {
@@ -487,6 +516,18 @@ function SendEditor({
             onChange={(e) => setMaxAccess(e.target.value)}
           />
         </label>
+        {domains.length > 0 && (
+          <SendDomainField
+            label={t('Adresse des Links')}
+            value={chosenDomain}
+            onChange={setDomain}
+            domains={domains}
+            disabled={!fallback.ready}
+            hint={t(
+              'Der Send öffnet sich unter jeder dieser Adressen; diese steht im Link, den du kopierst.',
+            )}
+          />
+        )}
         <SendAccess
           value={access}
           onChange={setAccess}

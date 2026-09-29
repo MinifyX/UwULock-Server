@@ -24,6 +24,7 @@ import { listbox } from '../listbox';
 import { BackToList, Panes } from '../panes';
 import { PasswordInput } from '../PasswordInput';
 import { PasswordPrompt, save } from './controls';
+import { SendDomainField, useDefaultSendDomain, useSendDomains } from './SendDomainSelect';
 
 /**
  * File requests: a link somebody without an account uploads files and a message to —
@@ -39,6 +40,7 @@ export function FileRequestsView({ open }: { open?: string | null }) {
   const [deleting, setDeleting] = useState<FileRequest | null>(null);
   const [resetting, setResetting] = useState(false);
   const { showDetail } = useContext(Panes);
+  const domains = useSendDomains();
 
   const reload = useCallback(() => {
     fileRequests().then(
@@ -81,7 +83,7 @@ export function FileRequestsView({ open }: { open?: string | null }) {
   });
 
   const copyLink = async (request: FileRequest) => {
-    const link = requestLink(request);
+    const link = requestLink(request, domains);
     if (!link) return;
     await navigator.clipboard.writeText(link);
     toast(t('Link kopiert ✧'));
@@ -283,7 +285,7 @@ function RequestDetail({
   useLanguage();
   const [arrived, setArrived] = useState<Arrived[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const link = requestLink(request);
+  const link = requestLink(request, useSendDomains());
 
   const load = useCallback(() => {
     submissions(request.id).then(setArrived, (e) => toast(errorText(e), 'error'));
@@ -505,8 +507,15 @@ function RequestEditor({
   const [newLink, setNewLink] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const domains = useSendDomains();
+  // A new request starts on the account's default send domain.
+  const fallback = useDefaultSendDomain(!request && domains.length > 0);
+  const [domain, setDomain] = useState<string | null | undefined>(
+    request ? request.sendDomainId : undefined,
+  );
+  const chosenDomain = domain === undefined ? fallback.value : domain;
 
-  const ready = name.trim() && title.trim() && (maxFiles > 0 || textAllowed);
+  const ready = fallback.ready && name.trim() && title.trim() && (maxFiles > 0 || textAllowed);
   // Without its old secret the page cannot keep a link: saving makes a new one.
   const linkLost = Boolean(request && !request.secret);
 
@@ -528,6 +537,7 @@ function RequestEditor({
       textAllowed,
       disabled,
       newLink,
+      sendDomainId: chosenDomain,
     };
     try {
       const saved = await saveFileRequest(request, draft);
@@ -646,6 +656,18 @@ function RequestEditor({
           />
           <span>{t('Eine Nachricht erlauben')}</span>
         </label>
+        {domains.length > 0 && (
+          <SendDomainField
+            label={t('Adresse des Links')}
+            value={chosenDomain}
+            onChange={setDomain}
+            domains={domains}
+            disabled={!fallback.ready}
+            hint={t(
+              'Die Anfrage nimmt unter jeder dieser Adressen etwas an; diese steht im Link, den du kopierst.',
+            )}
+          />
+        )}
         <label className="field">
           <span>
             {request?.passwordSet
