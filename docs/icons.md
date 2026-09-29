@@ -16,7 +16,9 @@ The Bitwarden apps and extensions ask a self-hosted server for icons at
 website's icon itself: the page's `<link rel="icon">` and `apple-touch-icon`, then `/favicon.ico`.
 It takes the one nearest to 64 pixels (at least 32), makes a PNG of at most 64 × 64 of it — from
 ICO, PNG, JPEG, GIF, WebP or SVG — and keeps it for 30 days. A site without an icon is asked again
-after 3 days. The website sees the server's address, never yours.
+after 3 days. The website sees the server's address, never yours. The cache holds at most 256 MiB
+(100,000 sites); past that the oldest go, older entries are deleted once a day, and nothing is
+kept while the disk is nearly full.
 
 The admin switches it off under *Settings → Icons* in the admin portal (then every icon is
 "none", and the apps show their symbol), sees how much is kept, and empties the cache. The files

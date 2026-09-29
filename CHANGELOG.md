@@ -227,6 +227,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - SVG icons are parsed as XML before they are drawn, and refused when they would grow once drawn:
   a `use` with a namespace prefix (`<s:use>`) slipped past the old text check, so a 1 KB icon
   from any website cost a second of CPU and 150 MB. At most two icons are decoded at a time.
+- The cache of website icons has a ceiling (256 MiB, 100,000 files; the oldest go past it),
+  forgets old entries once a day, keeps nothing while the disk is nearly full, and the admin
+  portal shows the ceiling. Anybody could have filled the disk by asking for icons of made-up
+  hosts.
 
 ## 0.4.0-beta.2
 

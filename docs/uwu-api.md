@@ -802,8 +802,10 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   32 px wins, else the largest. ICO, PNG, JPEG, GIF, WebP, SVG (rasterized) are read; the result is
   PNG. At most 8 fetches at a time server-wide, one per host.
 - Cache: on disk under the data directory, keyed by SHA-256 of the host, 30 days for an icon,
-  3 days for "none" (a site that could not be reached counts as "none"). The admin portal switches
-  the feature and empties the cache (§21.10).
+  3 days for "none" (a site that could not be reached counts as "none"). Entries past that are
+  deleted once a day. At most 256 MiB and 100,000 files: past either, the oldest go until 80 %
+  are left; nothing is kept while the disk is nearly full (less than a twentieth, or 256 MiB, free
+  after it). The admin portal switches the feature and empties the cache (§21.10).
 - Redirects go only to `http`/`https` on the usual ports (80, 443), never to a name that
   normalizes to nothing (local names) or an address refused above; a page's `<link>` may point to
   another host (a CDN), checked the same way. `data:` URLs in a `<link>` are read in place. A
@@ -2735,8 +2737,8 @@ saved one — → 200 or 502.
 ### 21.10 Icons
 
 `DELETE /uwu/v1/admin/icons/cache` (automatic icons), `POST /uwu/v1/admin/icons/library/refresh`
-→ 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "ownBytes",
-"libraryUpdated", "libraryIcons" }` for the portal (added).
+→ 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "cacheMaxBytes",
+"cacheMaxFiles", "ownBytes", "libraryUpdated", "libraryIcons" }` for the portal (added).
 
 ### 21.11 Families and organizations
 

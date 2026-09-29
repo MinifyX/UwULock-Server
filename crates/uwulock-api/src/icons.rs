@@ -44,6 +44,19 @@ const AT_ONCE: usize = 8;
 const INDEX_BYTES: usize = 8 * 1024 * 1024;
 /// Own icons asked for at once.
 const MOST_AT_ONCE: usize = 500;
+/// The cache of website icons, at most: anybody can have the server fetch any host, so without a
+/// ceiling it grows until the disk (and the database on it) is full. Past it, the oldest go, down
+/// to [`CACHE_AFTER_EVICTION`] percent. A typical icon is a few KiB.
+pub const CACHE_MAX_BYTES: u64 = 256 * 1024 * 1024;
+pub const CACHE_MAX_FILES: u64 = 100_000;
+const CACHE_AFTER_EVICTION: u64 = 80;
+
+/// What the cache of website icons holds, counted as it changes: files ("none"s included) and
+/// bytes. `None` until first counted on disk.
+#[derive(Default)]
+struct CacheBook {
+    counted: Option<(u64, u64)>,
+}
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -76,6 +89,11 @@ pub struct Icons {
     hosts: parking_lot::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     library: parking_lot::RwLock<Option<Arc<Library>>>,
     refreshing: tokio::sync::Mutex<()>,
+    book: parking_lot::Mutex<CacheBook>,
+    /// Held while the oldest icons are removed: one eviction at a time.
+    evicting: tokio::sync::Mutex<()>,
+    /// The ceilings, lower in tests.
+    limits: (u64, u64),
 }
 
 impl Icons {
@@ -90,7 +108,17 @@ impl Icons {
             hosts: parking_lot::Mutex::default(),
             library: parking_lot::RwLock::default(),
             refreshing: tokio::sync::Mutex::default(),
+            book: parking_lot::Mutex::default(),
+            evicting: tokio::sync::Mutex::default(),
+            limits: (CACHE_MAX_FILES, CACHE_MAX_BYTES),
         }
+    }
+
+    /// The same, with other ceilings for the cache (files, bytes): for tests.
+    #[cfg(test)]
+    pub(crate) fn with_limits(mut self, files: u64, bytes: u64) -> Self {
+        self.limits = (files, bytes);
+        self
     }
 
     /// The HTTP client with its checks, and where it may go: for other lists the server mirrors.
@@ -146,7 +174,17 @@ impl Icons {
 
     async fn keep(&self, host: &str, icon: Option<&[u8]>) {
         let (icon_path, none_path) = self.cached(host);
-        let _ = tokio::fs::create_dir_all(self.auto_dir()).await;
+        let adding = icon.map_or(0, <[u8]>::len) as u64;
+        // What fills the disk takes the database down with it: then the icon is shown, not kept.
+        let dir = self.auto_dir();
+        let _ = tokio::fs::create_dir_all(&dir).await;
+        if !uwulock_store::backups::has_room(&dir, adding.max(4096)) {
+            tracing::warn!("the disk is nearly full; website icons are not kept");
+            return;
+        }
+        self.counted().await;
+        let size = |path: PathBuf| async move { tokio::fs::metadata(&path).await.ok().map(|meta| meta.len()) };
+        let before = [size(icon_path.clone()).await, size(none_path.clone()).await];
         let written = match icon {
             Some(bytes) => {
                 let _ = tokio::fs::remove_file(&none_path).await;
@@ -159,6 +197,47 @@ impl Icons {
         };
         if let Err(error) = written {
             tracing::warn!(%error, "an icon could not be kept");
+        }
+        let over = {
+            let mut book = self.book.lock();
+            if let Some((files, bytes)) = book.counted.as_mut() {
+                for gone in before.into_iter().flatten() {
+                    *files = files.saturating_sub(1);
+                    *bytes = bytes.saturating_sub(gone);
+                }
+                *files += 1;
+                *bytes += adding;
+            }
+            book.counted.is_some_and(|(files, bytes)| files > self.limits.0 || bytes > self.limits.1)
+        };
+        if over {
+            self.evict(false).await;
+        }
+    }
+
+    /// The cache's files and bytes, counted on disk the first time.
+    async fn counted(&self) -> (u64, u64) {
+        if let Some(counted) = self.book.lock().counted {
+            return counted;
+        }
+        let counted = self.cache_size().await;
+        *self.book.lock().counted.get_or_insert(counted)
+    }
+
+    /// Makes room in the cache: with `expired`, what is too old to be used (icons after
+    /// [`ICON_DAYS`], "none"s after [`NONE_DAYS`]); always, past the ceiling, the oldest until it
+    /// is well below it. Counts the cache anew.
+    async fn evict(&self, expired: bool) {
+        let Ok(_one) = self.evicting.try_lock() else { return };
+        let dir = self.auto_dir();
+        let (max_files, max_bytes) = self.limits;
+        let target = (max_files * CACHE_AFTER_EVICTION / 100, max_bytes * CACHE_AFTER_EVICTION / 100);
+        let result = tokio::task::spawn_blocking(move || prune(&dir, expired, target)).await;
+        if let Ok((files, bytes, removed)) = result {
+            self.book.lock().counted = Some((files, bytes));
+            if removed > 0 {
+                tracing::info!(removed, files, bytes, "website icons removed from the cache");
+            }
         }
     }
 
@@ -251,10 +330,12 @@ impl Icons {
 
     /// Everything fetched so far, gone.
     pub async fn clear(&self) -> std::io::Result<()> {
-        match tokio::fs::remove_dir_all(self.auto_dir()).await {
+        let result = match tokio::fs::remove_dir_all(self.auto_dir()).await {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
             _ => Ok(()),
-        }
+        };
+        self.book.lock().counted = None;
+        result
     }
 
     /// How many icons (and "none"s) are kept, and their bytes.
@@ -272,7 +353,8 @@ impl Icons {
         (count, bytes)
     }
 
-    /// The bytes of every icon file the server keeps, for the metrics.
+    /// The bytes of every icon file the server keeps, for the metrics: the cache as counted,
+    /// the library's files (a few thousand at most) walked.
     pub async fn bytes(&self) -> u64 {
         fn walk(dir: &FilePath) -> u64 {
             std::fs::read_dir(dir).map_or(0, |entries| {
@@ -286,8 +368,9 @@ impl Icons {
                     .sum()
             })
         }
-        let dir = self.dir.clone();
-        tokio::task::spawn_blocking(move || walk(&dir)).await.unwrap_or(0)
+        let dir = self.library_dir();
+        let library = tokio::task::spawn_blocking(move || walk(&dir)).await.unwrap_or(0);
+        library + self.counted().await.1
     }
 
     // ── The library ────────────────────────────────────────
@@ -377,6 +460,51 @@ impl Icons {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Removes from the cache of website icons what is too old to be used when `expired`, and the
+/// oldest files while there are more than `target` (files, bytes). Answers what is left, and how
+/// many went.
+fn prune(dir: &FilePath, expired: bool, target: (u64, u64)) -> (u64, u64, usize) {
+    let now = SystemTime::now();
+    let age = |modified: SystemTime| now.duration_since(modified).unwrap_or_default();
+    let mut kept = Vec::new();
+    let mut removed = 0;
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified = meta.modified().unwrap_or(now);
+        let path = entry.path();
+        let days = if path.extension().is_some_and(|extension| extension == "none") { NONE_DAYS } else { ICON_DAYS };
+        // Also what a write left behind: `.tmp-…` files older than a day.
+        let stale = age(modified) > Duration::from_secs(days * 86_400)
+            || (path.extension().is_some_and(|extension| extension.to_string_lossy().starts_with("tmp-"))
+                && age(modified) > Duration::from_secs(86_400));
+        if expired && stale {
+            if std::fs::remove_file(&path).is_ok() {
+                removed += 1;
+            }
+            continue;
+        }
+        kept.push((modified, meta.len(), path));
+    }
+    let (mut files, mut bytes) = (kept.len() as u64, kept.iter().map(|(_, len, _)| len).sum::<u64>());
+    if files > target.0 || bytes > target.1 {
+        kept.sort_by_key(|(modified, ..)| *modified);
+        for (_, len, path) in kept {
+            if files <= target.0 && bytes <= target.1 {
+                break;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                files -= 1;
+                bytes -= len;
+                removed += 1;
+            }
+        }
+    }
+    (files, bytes, removed)
 }
 
 async fn fresh(path: &FilePath, days: u64) -> bool {
@@ -698,13 +826,15 @@ async fn icon_changed(state: &AppState, session: &Session, cipher: &str) {
 // ── Admin ─────────────────────────────────────────────────
 
 async fn admin_status(State(state): State<AppState>, _admin: Admin) -> ApiResult<Json<Value>> {
-    let (count, bytes) = state.icons.cache_size().await;
+    let (count, bytes) = state.icons.counted().await;
     let library = state.icons.library.read().clone();
     let own = state.store.own_icon_bytes().await?;
     Ok(Json(json!({
         "object": "iconStatus",
         "cached": count,
         "cacheBytes": bytes,
+        "cacheMaxBytes": state.icons.limits.1,
+        "cacheMaxFiles": state.icons.limits.0,
         "ownBytes": own,
         "libraryUpdated": library.as_ref().map(|library| library.updated.clone()),
         "libraryIcons": library.as_ref().map_or(0, |library| library.icons.len()),
@@ -728,8 +858,10 @@ async fn admin_refresh(State(state): State<AppState>, admin: Admin) -> ApiResult
     Ok(StatusCode::ACCEPTED)
 }
 
-/// Once a day: the libraries' indexes again, if the library is on.
+/// Once a day: website icons too old to be used go (and the oldest, past the ceiling), and the
+/// libraries' indexes are fetched again, if the library is on.
 pub async fn daily(state: &AppState) {
+    state.icons.evict(true).await;
     let settings = state.settings();
     if settings.icons.library
         && !settings.icons.sources.is_empty()

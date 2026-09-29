@@ -102,11 +102,15 @@ export function ComfortSettings({ draft, setDraft }: Props) {
       </Row>
       {status && (
         <p className="field-hint">
-          {t('{n} Websites im Cache ({size}), eigene Icons {own}.', {
-            n: status.cached,
-            size: bytes(status.cacheBytes),
-            own: bytes(status.ownBytes),
-          })}{' '}
+          {t(
+            '{n} Websites im Cache ({size}, höchstens {max}; darüber gehen die ältesten), eigene Icons {own}.',
+            {
+              n: status.cached,
+              size: bytes(status.cacheBytes),
+              max: bytes(status.cacheMaxBytes),
+              own: bytes(status.ownBytes),
+            },
+          )}{' '}
           {status.libraryUpdated
             ? t('Bibliothek: {n} Icons, Stand {when}.', {
                 n: status.libraryIcons,

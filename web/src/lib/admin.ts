@@ -234,6 +234,9 @@ export type AdminOrganization = {
 export type IconStatus = {
   cached: number;
   cacheBytes: number;
+  /** The ceiling of the cache: past it, the oldest icons go. */
+  cacheMaxBytes: number;
+  cacheMaxFiles: number;
   ownBytes: number;
   libraryUpdated: string | null;
   libraryIcons: number;
