@@ -4,6 +4,7 @@
 #
 #   scripts/e2e/local.sh web operations     # web.mjs with its invitation, then operations.mjs
 #   scripts/e2e/local.sh operations         # an account registered without a browser first
+#   scripts/e2e/local.sh family             # a family in the browser, then with Bitwarden's CLI
 #
 # Plain http on localhost, which browsers count as secure: the tests that need WebAuthn
 # (features.mjs) need the test certificate of CI instead. Screenshots go to target/e2e-shots.
@@ -57,6 +58,11 @@ for test in "$@"; do
       case $test in
         operations) node_ scripts/e2e/operations.mjs "$origin" "$email" "$password" "$work/offsite" target/e2e-shots ;;
         sso) node_ scripts/e2e/sso.mjs "$origin" "$email" "$password" target/e2e-shots ;;
+        family)
+          node_ scripts/e2e/family.mjs "$origin" "$email" "$password" target/e2e-shots
+          PATH=$PWD/scripts/e2e/node_modules/.bin:$PATH \
+            scripts/e2e/bw-family.sh "$origin" "$email" "$password" mio@example.com 'mio horse battery staple'
+          ;;
         *) node_ "scripts/e2e/$test.mjs" "$origin" "$email" "$password" ;;
       esac
       ;;

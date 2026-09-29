@@ -345,6 +345,12 @@ jobs:
         run: |
           node scripts/e2e/sharing.mjs https://localhost:8443 nyu@example.com \
             'correct horse battery staple' "$RUNNER_TEMP/shots"
+      - name: A family, in a browser and with Bitwarden's CLI
+        run: |
+          node scripts/e2e/family.mjs https://localhost:8443 nyu@example.com \
+            'correct horse battery staple' "$RUNNER_TEMP/shots"
+          scripts/e2e/bw-family.sh https://localhost:8443 nyu@example.com 'correct horse battery staple' \
+            mio@example.com 'mio horse battery staple'
       - name: Versions, icons, reminders, travel mode and new keys, in a browser
         run: |
           node scripts/e2e/comfort.mjs https://localhost:8443 nyu@example.com \
