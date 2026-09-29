@@ -62,7 +62,7 @@ keep that key for a new tab.
 | `?`        | The shortcut overview (single key)                                 |
 | `Ctrl`+`,` | Appearance (language, theme, contrast, animations)                 |
 | `Esc`      | Close a dialog                                                     |
-| `1` … `9`  | The first nine pages of the sidebar, Overview to Backups (single)  |
+| `1` … `9`  | The first nine pages of the sidebar, from the top (single)         |
 | `J`, `K`   | Next, previous page (single keys)                                  |
 
 ## High contrast

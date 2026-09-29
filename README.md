@@ -58,7 +58,8 @@ teams and SSO.
 - **An admin portal** at `/admin`: users with their files, invitations and who may send them,
   mail, push and other settings, numbers over time, the event log, the server's log, backups —
   here and on another system, put back while the server runs — and the update notice. Admins are ordinary accounts with the
-  admin right.
+  admin right. Every extra below is a **feature switch** there: a new server starts with only
+  the vault and icons, and what is off is gone from sight but not deleted ([docs/features.md](docs/features.md)).
 - **Registration by invitation**: by mail, or as a link to pass on by hand; users may
   invite a few people too, if the admin allows it.
 
@@ -210,6 +211,7 @@ GitHub release with the scripts.
 
 - [Plan](docs/plan.md) — where this is going, stage by stage (German)
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
+- [Feature switches](docs/features.md) — which extras this server offers, and what "off" means
 - [Backups](docs/backups.md) — on another system: SFTP, S3 or a folder, and back onto a new machine
 - [File requests](docs/file-requests.md) — links through which people without an account send you files
 - [Icons](docs/icons.md) — website icons fetched by the server, own icons and the icon library

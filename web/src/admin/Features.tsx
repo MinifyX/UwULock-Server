@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Modal } from '../components/Modal';
-import { ResultLine, Row, Toggle, type Result } from '../components/web/controls';
+import { Button, Modal, Section, SettingRow, Toggle } from '../components/ui';
+import { ResultLine, type Result } from '../components/web/controls';
 import { loadServerInfo } from '../lib/branding';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
@@ -65,10 +65,7 @@ export function Features() {
         const states = list.filter((state) => state.group === group.id);
         if (!states.length) return null;
         return (
-          <section key={group.id} aria-labelledby={`features-${group.id}`}>
-            <h2 className="settings-heading" id={`features-${group.id}`}>
-              {t(group.label)}
-            </h2>
+          <Section key={group.id} heading={t(group.label)}>
             {states.map((state) => {
               const text = SWITCH_TEXTS[state.id];
               const needs = state.requires ? byId.get(state.requires) : null;
@@ -81,17 +78,14 @@ export function Features() {
                 state.inUse ? t('Wird benutzt oder ist eingerichtet.') : null,
               ].filter(Boolean);
               return (
-                <Row
+                <SettingRow
                   key={state.id}
                   label={t(text.label)}
                   description={
                     <>
                       {t(text.description)}
                       {notes.length > 0 && (
-                        <span className="feature-note" data-feature-note={state.id}>
-                          {' '}
-                          {notes.join(' ')}
-                        </span>
+                        <span data-feature-note={state.id}> {notes.join(' ')}</span>
                       )}
                     </>
                   }
@@ -104,25 +98,25 @@ export function Features() {
                       !on && state.inUse ? setAsking(state) : void change(state.id, on)
                     }
                   />
-                </Row>
+                </SettingRow>
               );
             })}
-          </section>
+          </Section>
         );
       })}
       {asking && (
         <Modal
           title={t('„{name}“ ausschalten?', { name: t(SWITCH_TEXTS[asking.id].label) })}
+          tone="warning"
           onCancel={() => setAsking(null)}
           footer={
             <>
               <span className="spacer" />
-              <button data-autofocus onClick={() => setAsking(null)}>
+              <Button data-autofocus data-secondary onClick={() => setAsking(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="primary"
-                data-secondary
+              </Button>
+              <Button
+                variant="primary"
                 onClick={() => {
                   const id = asking.id;
                   setAsking(null);
@@ -130,7 +124,7 @@ export function Features() {
                 }}
               >
                 {t('Ausschalten')}
-              </button>
+              </Button>
             </>
           }
         >

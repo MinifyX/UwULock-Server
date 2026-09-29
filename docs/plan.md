@@ -450,6 +450,14 @@ Bitwardens „Families".
     an, aus, löschen. Am Eintrag ein Hinweis auf seine Masken-Adresse.
   - Wird ein Eintrag gelöscht, fragt der Web-Tresor, ob die Adresse abgeschaltet werden soll
     (Standard: ja, `disabled` — nicht gelöscht).
+- [x] Funktionsschalter (0.6.0-beta.2, `docs/features.md`): Jedes Extra ist im Admin-Portal unter
+  „Funktionen" an- und abschaltbar, gruppiert (Teilen, Im Tresor, Anmeldung, Betrieb, UwU-Apps),
+  16 Schalter. Aus heißt: 404 `feature_off`, Hintergrundjobs ruhen, Web-Tresor und Admin-Portal
+  blenden es aus, `/uwu/v1/info` meldet es unter `switches`; gelöscht wird nichts. Der Tresor
+  und alles, was die Bitwarden-Apps nutzen, bleibt immer an; Website-Icons und HIBP behalten
+  ihre eigenen Einstellungen. Neue Server starten nur mit Tresor und Icons
+  (`UWULOCK_FEATURES`), aktualisierte behalten an, was benutzt wird (Migration 0021).
+  Admin-API `GET|PUT /uwu/v1/admin/features`, auf der Kommandozeile `uwulock-server features`.
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
@@ -485,3 +493,5 @@ Docker-Images für amd64 und arm64 auf GHCR, dazu `install.sh`, `update.sh`, `co
   Admin-Portal abschaltbar.
 - Anhänge auf der Platte; S3-artiger Speicher erst, wenn die Firma ihn braucht.
 - AGPL-3.0, Registrierung nur per Einladung, Deutsch und Englisch.
+- Extras sind abschaltbar, der Bitwarden-Standard nicht: Ein neuer Server bietet nur den Tresor
+  und Icons, der Admin schaltet dazu, was er braucht. Abschalten löscht nie Daten.

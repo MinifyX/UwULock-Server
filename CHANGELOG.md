@@ -39,6 +39,27 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   fields, selects, check boxes, toggles, form rows, field groups, cards, sections, tabs, badges,
   callouts, tables and the dialog ([docs/ui.md](docs/ui.md)). No behaviour changed.
 
+**Feature switches: the admin decides which extras this server offers.**
+
+- *Admin portal → Features* has a switch for each UwULock extra, grouped and with one line each:
+  families, file requests, send domains, masked addresses, versions, reminders, travel mode, the
+  emergency sheet, own icons, the icon library, 2FA hints, SSO, SCIM, off-site backups,
+  notifications through ntfy/Gotify/Matrix and the suite vault ([docs/features.md](docs/features.md)).
+  The vault and everything the Bitwarden apps use are always there.
+- Off means: its endpoints answer 404 `feature_off`, its jobs stop, and the web vault and the admin
+  portal hide it; a link that leads there says "Not on this server". Nothing is deleted, and
+  switched on again, everything is back. SSO off makes a server without SSO (master passwords
+  work again); travel mode cannot be switched off while someone travels.
+- **A new server starts with only the vault and icons.** An updated server keeps on what it uses
+  (data or a setup), everything else is off. `UWULOCK_FEATURES` sets what a new server starts
+  with, `uwulock-server features [list|on|off]` changes them on the command line, and moving in
+  from Vaultwarden switches families on when organisations come along.
+- `/uwu/v1/info` lists every switch under `switches`; the admin API is
+  `GET|PUT /uwu/v1/admin/features`, and every change is in the event log
+  ([docs/uwu-api.md](docs/uwu-api.md) §2, §21.12).
+- The on/off settings of file requests and the suite vault moved into the switches
+  (`fileRequests.enabled` and `suite.enabled` are gone from the settings).
+
 ## 0.6.0-beta.1
 
 **Families, the UwU extras, and a server that looks after itself.** Stages 4b, 4c, 4d and 6 of

@@ -1,5 +1,6 @@
 import { t, useLanguage } from '../../lib/i18n';
 import { NyuScene } from '../nyu/scenes';
+import { Button, ButtonRow } from '../ui';
 
 /**
  * Where a link led to something this server has switched off (docs/features.md): said plainly,
@@ -22,12 +23,11 @@ export function Unavailable({ vault = true }: { vault?: boolean }) {
               )}
         </p>
         {vault && (
-          <div className="form-actions">
-            <span className="spacer" />
-            <button className="primary" onClick={() => (location.hash = '')}>
+          <ButtonRow end>
+            <Button variant="primary" onClick={() => (location.hash = '')}>
               {t('Zum Tresor')}
-            </button>
-          </div>
+            </Button>
+          </ButtonRow>
         )}
       </div>
     </div>
