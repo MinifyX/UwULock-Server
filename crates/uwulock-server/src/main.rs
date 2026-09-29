@@ -160,6 +160,46 @@ enum Command {
         #[arg(long = "admin", value_name = "EMAIL")]
         admins: Vec<String>,
     },
+    /// Make the icon databases that come with the server from their upstream repositories,
+    /// checked out under `--upstream/<id>` at the commits in `--out/sources.json`. Run by
+    /// scripts/icons/update.mjs, which fetches them.
+    #[command(hide = true)]
+    IconDatabases {
+        #[arg(long)]
+        upstream: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
+}
+
+/// The icon databases, compiled into the binary (crates/uwulock-server/icon-databases, made by
+/// scripts/icons/update.mjs): only the server's binary carries them, the tests do not.
+fn bundle_icon_databases() {
+    uwulock_api::icon_db::bundle(vec![
+        &include_bytes!("../icon-databases/2fa-directory.pack")[..],
+        &include_bytes!("../icon-databases/simple-icons.pack")[..],
+        &include_bytes!("../icon-databases/dashboard-icons.pack")[..],
+    ]);
+}
+
+/// `uwulock-server icon-databases`: every pack, written next to `sources.json`.
+fn build_icon_databases(upstream: &std::path::Path, out: &std::path::Path) -> Result<(), String> {
+    let sources = std::fs::read(out.join("sources.json")).map_err(|error| format!("sources.json: {error}"))?;
+    let sources = serde_json::from_slice(&sources).map_err(|error| format!("sources.json: {error}"))?;
+    for built in uwulock_api::icon_db::build::build_all(upstream, &sources)? {
+        let path = out.join(format!("{}.pack", built.id));
+        std::fs::write(&path, &built.pack).map_err(|error| format!("{}: {error}", path.display()))?;
+        println!(
+            "{}: {} icons, {} domains, {} names, {} left out, {} KiB",
+            built.id,
+            built.icons,
+            built.domains,
+            built.names,
+            built.skipped,
+            built.pack.len() / 1024
+        );
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), String> {
@@ -199,6 +239,10 @@ fn main() -> Result<(), String> {
     let _ = rustls::crypto::ring::default_provider().install_default();
 
     let cli = Cli::parse();
+    if let Some(Command::IconDatabases { upstream, out }) = &cli.command {
+        return build_icon_databases(upstream, out);
+    }
+    bundle_icon_databases();
     let config = Config::from_env()?;
     match cli.command.unwrap_or(Command::Serve) {
         // Asked every half minute, so it touches nothing but the network — not even the database.
@@ -241,6 +285,7 @@ fn main() -> Result<(), String> {
             runtime()?.block_on(import_vaultwarden(config, path, dry_run, admins))
         }
         Command::Serve => runtime()?.block_on(serve(config, logs)),
+        Command::IconDatabases { .. } => Ok(()),
     }
 }
 

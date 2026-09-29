@@ -95,6 +95,18 @@ impl TestServer {
         self
     }
 
+    /// With these icon databases instead of none, fetching icons from `upstream`.
+    pub(crate) fn with_icon_databases(
+        mut self,
+        upstream: crate::icon_fetch::Upstream,
+        databases: crate::icon_db::Databases,
+    ) -> Self {
+        let icons = crate::icons::Icons::new(&self.state.config.data, upstream).with_databases(databases);
+        self.state.icons = Arc::new(icons);
+        self.router = router(self.state.clone());
+        self
+    }
+
     /// Behind a proxy it trusts: `X-Forwarded-For` says where a request comes from.
     pub(crate) fn behind_proxy(mut self) -> Self {
         let mut config = (*self.state.config).clone();

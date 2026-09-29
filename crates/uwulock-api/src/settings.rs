@@ -222,11 +222,20 @@ pub struct IconSettings {
     pub library: bool,
     /// The libraries mirrored: only `selfhst` today.
     pub sources: Vec<String>,
+    /// The icon databases that come with the server and are used (`crate::icon_db::ALL`): a
+    /// website without an icon gets one of theirs, a device in the home network one by its name,
+    /// and Dashboard Icons is part of the library.
+    pub databases: Vec<String>,
 }
 
 impl Default for IconSettings {
     fn default() -> Self {
-        IconSettings { automatic: true, library: true, sources: vec!["selfhst".into()] }
+        IconSettings {
+            automatic: true,
+            library: true,
+            sources: vec!["selfhst".into()],
+            databases: crate::icon_db::ALL.iter().map(|id| id.to_string()).collect(),
+        }
     }
 }
 
@@ -463,6 +472,11 @@ impl Settings {
             self.icons.sources.iter().find(|source| !crate::icons::LIBRARY_SOURCES.contains(&source.as_str()))
         {
             return Err(format!("{source} is no icon library this server knows."));
+        }
+        if let Some(database) =
+            self.icons.databases.iter().find(|database| !crate::icon_db::ALL.contains(&database.as_str()))
+        {
+            return Err(format!("{database} is no icon database this server knows."));
         }
         if self.storage_per_user_mb == Some(0) {
             return Err("The storage per account is at least 1 MB, or no limit.".into());

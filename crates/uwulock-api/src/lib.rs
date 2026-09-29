@@ -33,6 +33,7 @@ pub mod files;
 mod folders;
 mod health;
 mod hibp;
+pub mod icon_db;
 pub mod icon_fetch;
 pub mod icons;
 mod identity;

@@ -3,8 +3,12 @@
 Every item can have an icon. In this order:
 
 1. **Its own icon** — a picture you chose, stored encrypted.
-2. **The website's icon** — fetched by this server, for logins with an address.
-3. **The default symbol** — the first letter of a login, or what kind of item it is.
+2. **The website's icon** — fetched by this server, for logins with an address: the address's
+   own, else its domain's.
+3. **An icon from the databases** that come with the server — for a website without an icon of
+   its own: [2FA Directory](#icon-databases)'s by its domain, else Simple Icons'. For a device in
+   your home network: Dashboard Icons' by its name.
+4. **The default symbol** — the first letter of a login, or what kind of item it is.
 
 Browsers and apps only ever talk to *your* server. Neither the web vault nor the Bitwarden apps
 ask a website, Google or a CDN for an icon.
@@ -68,11 +72,17 @@ turned against its own network:
 
 ### Devices in your home network
 
-The router, the NAS, the printer: the server never asks them. In the web vault, open the item and
-choose *Icon → Fetch from the device*: your browser loads the icon from the device and keeps it as
-the item's own icon. Browsers often refuse that — an https vault may not load from an http
-device, and the device has to allow it (CORS). Then UwULock's desktop app does it, or upload a
-screenshot of the logo.
+The router, the NAS, the printer: the server never asks them. A device named like an app —
+`jellyfin.local`, `nextcloud.home.arpa`, `home-assistant` — gets that app's icon from
+[Dashboard Icons](#icon-databases), by the first part of its name (also without dashes, and by
+the aliases Dashboard Icons lists); the server only looks the name up in its own copy. IP
+addresses name no app and get nothing.
+
+In the web vault, open the item: under *Icon* it suggests icons from the library that fit the
+device's name and the item's name, or choose *Icon → Fetch from the device*: your browser loads the
+icon from the device and keeps it as the item's own icon. Browsers often refuse that — an https
+vault may not load from an http device, and the device has to allow it (CORS). Then UwULock's
+desktop app does it, or upload a screenshot of the logo.
 
 ## Own icons
 
@@ -95,4 +105,65 @@ search runs in your browser. The icon you pick is fetched by the server from the
 host, kept, and handed to your browser, which stores it in the item like an uploaded one —
 encrypted, so the server does not learn which icon belongs to which item.
 
+[Dashboard Icons](#icon-databases) is part of the library too, from the server's own copy:
+nothing is fetched for it, and it is there when selfh.st is not.
+
 The admin switches the library off under *Settings → Icons*.
+
+## Icon databases
+
+Three open icon databases come with the server, inside its binary. A lookup is a few reads in
+memory — no request leaves the server for them, and the browser and the apps still only talk to
+your server.
+
+| Database | What it has | Used for | Licence |
+|---|---|---|---|
+| [2FA Directory](https://2fa.directory/) ([source](https://github.com/2factorauth/twofactorauth)) | about 2,500 logos for 3,300 domains | a website without an icon, by its domain or a domain above it | [MIT](https://github.com/2factorauth/twofactorauth/blob/master/LICENSE.md), © 2014–2020 Josh Davis, © 2021 2factorauth and contributors |
+| [Simple Icons](https://simpleicons.org/) ([source](https://github.com/simple-icons/simple-icons)) | about 2,500 brand glyphs and colours, 1,600 domains | the same, after 2FA Directory | [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) |
+| [Dashboard Icons](https://dashboardicons.com/) ([source](https://github.com/homarr-labs/dashboard-icons)) | about 3,300 logos of self-hosted apps | devices in the home network, by name; the icon library | [Apache-2.0](https://www.apache.org/licenses/LICENSE-2.0), © 2024 Bjorn Lammers, Meier Lukas, Thomas Camlong and Homarr Labs |
+
+The order for a website is: its own icon, its domain's (see above), then 2FA Directory by the
+host and the domains above it down to the registrable one (`console.aws.example.com`, then
+`aws.example.com`, then `example.com`), then Simple Icons the same way, then nothing. The icon is
+drawn as a PNG of 64 × 64 pixels and kept in the cache of website icons like a fetched one — it
+counts toward the same ceiling. Each database has its own switch under *Settings → Icons* in the
+admin portal (all on by default), with its licence and the commit it was taken from; automatic
+icons switched off switch them off too.
+
+**Simple Icons**: icons whose entry has a licence of its own or brand guidelines are left out —
+those brands ask for more than CC0 does. The glyph is put on a rounded tile in the brand's colour,
+white or dark, whichever reads better, with a thin edge on very light and very dark tiles, so it
+looks like an app icon in light and dark mode. Simple Icons has no domains; the server's copy
+gets them where that is unambiguous:
+
+1. a 2FA Directory entry whose name gives the icon's slug or one of its aliases (`Amazon Web
+   Services` → `amazonwebservices`) gives the icon all of its domains — a strong claim;
+2. a registrable domain whose name is the slug — the host of the icon's `source` address
+   (`brand.example.com` → `example.com` for `example`) or one of 2FA Directory's domains — a
+   weak claim.
+
+A domain goes to the one icon that claims it strongly; without a strong claim to the one that
+claims it weakly; claimed by two icons alike, to none.
+
+**Dashboard Icons**: an SVG of at most 16 KiB is kept as it is, every other icon as a PNG of at
+most 64 pixels, whichever is smaller; the light and dark variants are left out.
+
+### Updating the databases
+
+They are taken from fixed upstream commits (`crates/uwulock-server/icon-databases/sources.json`),
+made into one pack each by `uwulock-server icon-databases`, and committed with their checksums
+(`SHA256SUMS`); an update of the server brings new ones. To take the newest upstream commits:
+
+```sh
+node scripts/icons/update.mjs --bump   # fetches, builds, writes the packs, sources.json, SHA256SUMS
+node scripts/icons/update.mjs          # the pinned commits again: fails unless the packs come out the same
+```
+
+It needs git, cargo and the network; only the paths that are used are fetched. The same commits
+make the same packs, byte for byte, and the tests check the committed packs against `SHA256SUMS`.
+
+### Licences
+
+The full licence texts and notices are in [`THIRD-PARTY-NOTICES.txt`](../THIRD-PARTY-NOTICES.txt),
+which is also in the container image at `/usr/share/doc/uwulock-server/THIRD-PARTY-NOTICES.txt`.
+All logos are trademarks of their owners; showing one does not mean its owner endorses UwULock.

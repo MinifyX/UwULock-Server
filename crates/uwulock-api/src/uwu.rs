@@ -90,7 +90,7 @@ async fn info(
     if settings.icons.automatic {
         features.push("icons");
     }
-    let library = switches.on(Feature::IconLibrary) && settings.icons.library && !settings.icons.sources.is_empty();
+    let library = switches.on(Feature::IconLibrary) && crate::icons::library_available(&state);
     if library {
         features.push("icon-library");
     }

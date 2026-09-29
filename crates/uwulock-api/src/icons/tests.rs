@@ -408,3 +408,104 @@ async fn the_cache_of_an_older_version_is_not_used() {
     icons.clear().await.unwrap();
     assert!(!old.exists());
 }
+
+fn color_at_centre(png: &[u8]) -> [u8; 3] {
+    let image = image::load_from_memory(png).unwrap().to_rgba8();
+    let pixel = image.get_pixel(image.width() / 2, image.height() / 2);
+    [pixel[0], pixel[1], pixel[2]]
+}
+
+/// A site without an icon — nor its base domain — gets one of the databases', 2FA Directory's
+/// first; a device in the home network is never asked, but gets Dashboard Icons' by its name.
+/// Each database has its own switch.
+#[tokio::test]
+async fn a_site_without_an_icon_gets_one_from_the_databases() {
+    let (port, hits) = fake_web().await;
+    let server = TestServer::new().await.with_icon_databases(upstream(port, true), crate::icon_db::tests::fixture());
+
+    // It sends to a refused address, and example.org has no icon: 2FA Directory knows example.org.
+    let (status, cache, bytes) = icon(&server, "away.example.org").await;
+    assert_eq!((status, cache.as_str()), (StatusCode::OK, "public, max-age=604800"));
+    assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 64);
+    assert_eq!(color_at_centre(&bytes), [0x11, 0x22, 0x33]);
+    // A site with an icon of its own keeps it.
+    let (_, _, bytes) = icon(&server, "shop.example.com").await;
+    assert_eq!(color_at_centre(&bytes), [10, 200, 120]);
+
+    // The home network: nothing is fetched, the name is looked up.
+    let asked = hits.load(Ordering::SeqCst);
+    let (status, _, bytes) = icon(&server, "jellyfin.local").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(color_at_centre(&bytes), [0xaa, 0xbb, 0xcc]);
+    assert_eq!(icon(&server, "JF.home.arpa").await.0, StatusCode::OK, "by an alias");
+    for unknown in ["nas.local", "192.168.1.1", "printer", "localhost"] {
+        assert_eq!(icon(&server, unknown).await.0, StatusCode::NOT_FOUND, "{unknown}");
+    }
+    assert_eq!(hits.load(Ordering::SeqCst), asked, "the home network is never asked");
+
+    // Only Simple Icons on: example.org is none of its, the home network gets nothing.
+    let mut settings = server.state.settings();
+    settings.icons.databases = vec![crate::icon_db::SIMPLE.into()];
+    server.state.apply_settings(settings);
+    assert_eq!(icon(&server, "away.example.org").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(icon(&server, "jellyfin.local").await.0, StatusCode::NOT_FOUND);
+}
+
+/// Dashboard Icons is part of the icon library, with selfh.st's mirror or without it, and its
+/// icons come from the server's own copy. The admin sees each database and its licence.
+#[tokio::test]
+async fn dashboard_icons_are_part_of_the_library() {
+    let (port, _) = fake_web().await;
+    let server = TestServer::new().await.with_icon_databases(upstream(port, true), crate::icon_db::tests::fixture());
+    let account = server.account("nyu@example.com").await;
+    let library = json(server.get_as(&account.token, "/uwu/v1/icons/library").await).await;
+    let sources: Vec<&str> = library["sources"].as_array().unwrap().iter().map(|s| s["id"].as_str().unwrap()).collect();
+    assert_eq!(sources, ["selfhst", "dashboard-icons"]);
+    assert_eq!(library["icons"].as_array().unwrap().len(), 3, "selfh.st's one and Dashboard Icons' two");
+
+    let response = server.get_as(&account.token, "/uwu/v1/icons/library/dashboard-icons/jellyfin.png").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 128, "an SVG, drawn as large as the library's");
+    let response = server.get_as(&account.token, "/uwu/v1/icons/library/dashboard-icons/home-assistant.png").await;
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 64);
+    for missing in [
+        "/uwu/v1/icons/library/dashboard-icons/unknown.png",
+        "/uwu/v1/icons/library/dashboard-icons/jellyfin.png?variant=dark",
+        "/uwu/v1/icons/library/dashboard-icons/..%2Fjellyfin.png",
+    ] {
+        assert_eq!(server.get_as(&account.token, missing).await.status(), StatusCode::NOT_FOUND, "{missing}");
+    }
+
+    // selfh.st off: the library is Dashboard Icons alone, and nothing is fetched for it.
+    let mut settings = server.state.settings();
+    settings.icons.sources.clear();
+    server.state.apply_settings(settings.clone());
+    let library = json(server.get_as(&account.token, "/uwu/v1/icons/library").await).await;
+    assert_eq!(library["sources"][0]["license"], "MIT", "the fixture's");
+    assert_eq!(library["icons"].as_array().unwrap().len(), 2);
+    let info = json(server.get("/uwu/v1/info").await).await;
+    assert!(info["features"].as_array().unwrap().contains(&json!("icon-library")));
+
+    let admin = server.account("admin@example.com").await;
+    server.state.store.update_user(&admin.id, |user| user.admin = true).await.unwrap();
+    let status = json(server.get_as(&admin.token, "/uwu/v1/admin/icons").await).await;
+    let databases = status["databases"].as_array().unwrap();
+    assert_eq!(databases.len(), 3);
+    assert_eq!((databases[0]["id"].as_str(), databases[0]["on"].as_bool()), (Some("2fa-directory"), Some(true)));
+    assert_eq!(databases[0]["domains"], 2);
+    assert!(databases[2]["attribution"].is_string() && databases[2]["commit"].is_string());
+
+    // Dashboard Icons off too: no library at all.
+    settings.icons.databases.retain(|id| id != crate::icon_db::DASHBOARD);
+    server.state.apply_settings(settings.clone());
+    let response = server.get_as(&account.token, "/uwu/v1/icons/library").await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    assert_eq!(json(response).await["code"], "feature_off");
+    let info = json(server.get("/uwu/v1/info").await).await;
+    assert!(!info["features"].as_array().unwrap().contains(&json!("icon-library")));
+
+    settings.icons.databases.push("somewhere-else".into());
+    assert!(settings.check().is_err(), "no database this server knows");
+}
