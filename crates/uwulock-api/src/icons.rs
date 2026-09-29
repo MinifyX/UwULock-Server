@@ -64,16 +64,27 @@ struct CacheBook {
     counted: Option<(u64, u64)>,
 }
 
+/// Automatic icons, with their own switch in the settings.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/icons/{host}/icon.png", get(automatic))
-        .route("/uwu/v1/icons/library", get(library))
-        .route("/uwu/v1/icons/library/{source}/{file}", get(library_icon))
+        .route("/uwu/v1/admin/icons", get(admin_status))
+        .route("/uwu/v1/admin/icons/cache", delete(admin_clear))
+}
+
+/// Own icons: the `own-icons` switch.
+pub(crate) fn own_routes() -> Router<AppState> {
+    Router::new()
         .route("/uwu/v1/icons/own", get(own_list))
         .route("/uwu/v1/icons/own/get", post(own_many))
         .route("/uwu/v1/icons/own/{cipher}", get(own_one).put(own_put).delete(own_delete))
-        .route("/uwu/v1/admin/icons", get(admin_status))
-        .route("/uwu/v1/admin/icons/cache", delete(admin_clear))
+}
+
+/// The icon library: the `icon-library` switch.
+pub(crate) fn library_routes() -> Router<AppState> {
+    Router::new()
+        .route("/uwu/v1/icons/library", get(library))
+        .route("/uwu/v1/icons/library/{source}/{file}", get(library_icon))
         .route("/uwu/v1/admin/icons/library/refresh", post(admin_refresh))
 }
 
@@ -917,12 +928,14 @@ async fn admin_refresh(State(state): State<AppState>, admin: Admin) -> ApiResult
 }
 
 /// Once a day: older versions' caches go, website icons too old to be used go (and the oldest,
-/// past the ceiling), and the libraries' indexes are fetched again, if the library is on.
+/// past the ceiling), and the libraries' indexes are fetched again, if the library is on (its
+/// switch and its setting).
 pub async fn daily(state: &AppState) {
     state.icons.drop_old_caches().await;
     state.icons.evict(true).await;
     let settings = state.settings();
-    if settings.icons.library
+    if state.feature(crate::Feature::IconLibrary)
+        && settings.icons.library
         && !settings.icons.sources.is_empty()
         && let Err(error) = state.icons.refresh_library().await
     {

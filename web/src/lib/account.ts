@@ -76,6 +76,8 @@ export type Branding = {
 export type ServerInfo = {
   /** What the server has and has switched on: `send-emails`, `twofa-directory`, … */
   features?: string[];
+  /** Every feature switch (docs/features.md) and whether it works: see `lib/switches.ts`. */
+  switches?: Record<string, boolean>;
   mail?: boolean;
   branding?: Branding;
   policies?: { masterPassword?: PasswordRules };

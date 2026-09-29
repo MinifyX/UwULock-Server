@@ -63,7 +63,7 @@ fn feature_off() -> ApiError {
 }
 
 fn enabled(state: &AppState) -> ApiResult<()> {
-    if state.settings().file_requests.enabled { Ok(()) } else { Err(feature_off()) }
+    if state.feature(crate::Feature::FileRequests) { Ok(()) } else { Err(feature_off()) }
 }
 
 fn not_found() -> ApiError {
@@ -726,6 +726,10 @@ async fn complete(
 /// Requests past their deletion date go with everything in them, and submissions nobody
 /// completed within a day; then files on disk nothing claims any more.
 pub async fn sweep(state: &AppState) {
+    // Switched off, everything stays as it is until it is on again.
+    if !state.feature(crate::Feature::FileRequests) {
+        return;
+    }
     match state.store.sweep_file_requests().await {
         Ok((requests, submissions)) => {
             for id in &requests {
@@ -1068,9 +1072,8 @@ mod tests {
 
     #[tokio::test]
     async fn switched_off_it_is_not_there() {
-        let mut settings = crate::Settings::default();
-        settings.file_requests.enabled = false;
-        let server = TestServer::with_settings(settings).await;
+        let server = TestServer::new().await;
+        server.switch(crate::Feature::FileRequests, false);
         let owner = server.account("nyu@example.com").await;
         let response = server.get_as(&owner.token, "/uwu/v1/file-requests").await;
         assert_eq!(json(response).await["code"], "feature_off");

@@ -71,7 +71,7 @@ export const ADMIN_SHORTCUTS: ShortcutGroup[] = [
     shortcuts: [
       {
         keys: [['1'], ['…'], ['9']],
-        label: N_('Die ersten neun Seiten der Leiste, von Übersicht bis Backups'),
+        label: N_('Die ersten neun Seiten der Leiste, von oben'),
         single: true,
       },
       { keys: [['J'], ['K']], label: N_('Nächste, vorige Seite'), single: true },

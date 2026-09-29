@@ -488,6 +488,9 @@ async fn recovery_key(
 /// What is wrong with the off-site backups right now, for the alerts: the last one failed, or
 /// the last good one is too old.
 pub async fn problems(state: &AppState) -> Vec<(&'static str, &'static str, Detail)> {
+    if !state.feature(crate::Feature::OffsiteBackups) {
+        return Vec::new();
+    }
     let Ok(settings) = state.offsite.settings().await else { return Vec::new() };
     if !settings.enabled {
         return Vec::new();
@@ -525,11 +528,15 @@ pub async fn problems(state: &AppState) -> Vec<(&'static str, &'static str, Deta
     found
 }
 
-/// Once a minute: the nightly off-site backup when it is due, or one asked for.
+/// Once a minute: the nightly off-site backup when it is due, or one asked for. Nothing while
+/// the feature is switched off.
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         loop {
             let asked = state.offsite.asked(std::time::Duration::from_secs(60)).await;
+            if !state.feature(crate::Feature::OffsiteBackups) {
+                continue;
+            }
             let due = match state.offsite.settings().await {
                 Ok(settings) => Offsite::due(&settings, &state.offsite.status().await, crate::auth::now_seconds()),
                 Err(error) => {

@@ -24,9 +24,11 @@ import {
   type LibraryIcon,
   type OpenedVersion,
 } from '../../lib/comfort';
+import { useFeature } from '../../lib/branding';
 import { errorText } from '../../lib/errors';
 import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
+import { useSwitch } from '../../lib/switches';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { ItemTile } from '../ItemTile';
@@ -35,7 +37,8 @@ import { radioArrows } from './controls';
 
 /**
  * What the web vault adds to an item: its icon, a reminder to renew its password, and its
- * earlier versions. Each in a card of its own below the item's fields.
+ * earlier versions. Each in a card of its own below the item's fields, where the server has
+ * the feature switched on.
  */
 export function ItemComfort({
   summary,
@@ -47,12 +50,16 @@ export function ItemComfort({
 }) {
   useLanguage();
   useComfort();
+  const ownIcons = useSwitch('own-icons');
+  const reminders = useSwitch('reminders');
+  // Versions also need the admin to keep some (more than 0 per item).
+  const versions = useFeature('versions');
   if (summary.deleted) return null;
   return (
     <>
-      <IconCard summary={summary} />
-      <ReminderCard summary={summary} passwordDate={passwordDate} />
-      <VersionsCard summary={summary} />
+      {ownIcons && <IconCard summary={summary} />}
+      {reminders && <ReminderCard summary={summary} passwordDate={passwordDate} />}
+      {versions && <VersionsCard summary={summary} />}
     </>
   );
 }
@@ -62,6 +69,7 @@ export function ItemComfort({
 function IconCard({ summary }: { summary: ItemSummary }) {
   const [busy, setBusy] = useState(false);
   const [library, setLibrary] = useState(false);
+  const libraryOn = useFeature('icon-library');
   const input = useRef<HTMLInputElement>(null);
   const own = hasOwnIcon(summary.id);
   const local = summary.host && isLocalHost(summary.host) ? summary.host : null;
@@ -123,10 +131,12 @@ function IconCard({ summary }: { summary: ItemSummary }) {
           <Icon name="upload" size={15} />
           {t('Hochladen …')}
         </button>
-        <button className="quiet" disabled={busy} onClick={() => setLibrary(true)}>
-          <Icon name="grid" size={15} />
-          {t('Aus der Bibliothek …')}
-        </button>
+        {libraryOn && (
+          <button className="quiet" disabled={busy} onClick={() => setLibrary(true)}>
+            <Icon name="grid" size={15} />
+            {t('Aus der Bibliothek …')}
+          </button>
+        )}
         {local && (
           <button
             className="quiet"

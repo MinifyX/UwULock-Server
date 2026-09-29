@@ -39,8 +39,12 @@ const REPORT_BYTES: usize = 1024 * 1024;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/uwu/v1/twofa-directory", get(directory))
         .route("/uwu/v1/reports/health", get(health_report).put(set_health_report).delete(delete_health_report))
+}
+
+/// 2FA Directory's list: the `twofa-directory` switch.
+pub(crate) fn directory_routes() -> Router<AppState> {
+    Router::new().route("/uwu/v1/twofa-directory", get(directory))
 }
 
 // ── The health report ─────────────────────────────────────
@@ -233,7 +237,8 @@ async fn directory(State(state): State<AppState>, _session: Session, headers: He
 
 /// Once a day: the list again, if anybody uses it.
 pub async fn daily(state: &AppState) {
-    if state.twofa.in_use(&state.icons).await
+    if state.feature(crate::Feature::TwofaDirectory)
+        && state.twofa.in_use(&state.icons).await
         && let Err(error) = state.twofa.refresh(&state.icons).await
     {
         tracing::warn!(%error, "2FA Directory's list could not be fetched");

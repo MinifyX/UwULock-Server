@@ -199,7 +199,8 @@ export type Settings = {
   adminNetworks: string[];
   metrics: Metrics;
   loki: Loki;
-  fileRequests: { enabled: boolean; perUser: number; maxDays: number; maxFiles: number };
+  /** Whether file requests are there at all is a feature switch (`lib/switches.ts`). */
+  fileRequests: { perUser: number; maxDays: number; maxFiles: number };
   /** How much an account may keep in files; null: no limit. */
   storagePerUserMb: number | null;
   /** Earlier states of items: how many per item (0: none), how many days (0: no limit). */
@@ -208,8 +209,9 @@ export type Settings = {
   icons: { automatic: boolean; library: boolean; sources: string[] };
   /** Families (§16.4): who may make one, its size, how many one account may own. */
   families: OrgRules;
-  /** The suite vault of UwUSSH and UwURDP (§6): on/off, and what one account may keep. */
-  suite: { enabled: boolean; maxRecords: number; maxMb: number };
+  /** The suite vault of UwUSSH and UwURDP (§6): what one account may keep. On or off is a
+   * feature switch. */
+  suite: { maxRecords: number; maxMb: number };
   /** The UwUMail servers accounts may connect for masked addresses (§21.8). */
   masked?: { servers: { url: string; name: string }[] };
 };

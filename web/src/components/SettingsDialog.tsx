@@ -2,9 +2,10 @@ import { useState } from 'react';
 import pkg from '../../package.json';
 import { lock, openProjectPage, type ProjectPage, type Status } from '../lib/api';
 import { type AccountInfo } from '../lib/account';
-import { useFeature } from '../lib/branding';
+import { useFeature, useServerInfo } from '../lib/branding';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { updateSettings, useSettings, type AutoLock, type ClipboardClear } from '../lib/settings';
+import { switchedOff, useSwitch } from '../lib/switches';
 import { Modal } from './Modal';
 import { Nyu } from './nyu/Nyu';
 import { AccountSettings } from './web/AccountSettings';
@@ -256,13 +257,19 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   const [section, setSection] = useState<SettingsSection>(initial);
   const loggedIn = status.state === 'unlocked';
   const masked = useFeature('masked-addresses');
+  // Switched off on the server, masked addresses are not shown at all, a connection left over
+  // or not.
+  const maskedOff = switchedOff(useServerInfo(), 'masked-addresses');
+  const travel = useSwitch('travel-mode');
   const sections = SECTIONS.filter(
     (s) =>
       (loggedIn || !s.needsLogin) &&
       (s.id !== 'invite' || info?.mayInvite) &&
+      (s.id !== 'travel' || travel || info?.travel?.enabled) &&
       // When an admin allowed a UwUMail server, or a connection is left from before, or the
       // apps' link asks for it (it then says what is missing).
-      (s.id !== 'masked' || masked || info?.maskedConnected || initial === 'masked'),
+      (s.id !== 'masked' ||
+        (!maskedOff && (masked || info?.maskedConnected || initial === 'masked'))),
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (

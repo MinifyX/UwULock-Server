@@ -118,6 +118,11 @@ async fn remove(State(state): State<AppState>, session: Session, Path(cipher): P
 /// a realtime `reminderDue` notice to the account's devices. Without a mail server only the
 /// notice. Hidden ones (travel mode) wait.
 pub async fn tend(state: &AppState) {
+    // Switched off, nothing is mailed; the reminders wait, and the ones due by then come when
+    // it is on again.
+    if !state.feature(crate::Feature::Reminders) {
+        return;
+    }
     let today = day(today());
     let due = match state.store.reminders_to_mail(&today).await {
         Ok(due) => due,

@@ -782,12 +782,15 @@ pub(crate) async fn backup_before_restore(state: &AppState) -> ApiResult<String>
 /// everything read from them.
 pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     let settings = Settings::load(&state.store, &state.config.start_settings).await.map_err(ApiError::internal)?;
+    let features =
+        crate::Features::load(&state.store, &state.config.start_features).await.map_err(ApiError::internal)?;
     if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
         tracing::warn!(%error, "the mail server of the restored settings");
     }
     state.relay.reset();
     state.secret.forget();
     state.oidc.forget();
+    state.apply_features(features);
     state.apply_settings(settings);
     state.count_legacy_hashes().await;
     crate::send_domains::reload(state).await;

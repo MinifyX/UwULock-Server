@@ -15,6 +15,7 @@ import {
   type MissingTwoFactor,
   type TwofaDirectory,
 } from '../../lib/twofa';
+import { useSwitch } from '../../lib/switches';
 import { t, useLanguage } from '../../lib/i18n';
 import { Icon } from '../Icon';
 
@@ -51,17 +52,22 @@ export function HealthReport({ onOpen }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   // The list of sites with two-step login, beside the report; without it the rest still counts.
-  const checkDirectory = useCallback(
-    () =>
-      Promise.all([twofaDirectory(), vaultItems()]).then(
-        ([list, items]) => {
-          setTwofa({ missing: missingTwoFactor(items, list.entries), source: list.source });
-          setTwofaError(false);
-        },
-        () => setTwofaError(true),
-      ),
-    [],
-  );
+  // Switched off on the server, that part is left out without a word.
+  const directoryOn = useSwitch('twofa-directory');
+  const checkDirectory = useCallback((): Promise<void> => {
+    if (!directoryOn) {
+      setTwofa(null);
+      setTwofaError(false);
+      return Promise.resolve();
+    }
+    return Promise.all([twofaDirectory(), vaultItems()]).then(
+      ([list, items]) => {
+        setTwofa({ missing: missingTwoFactor(items, list.entries), source: list.source });
+        setTwofaError(false);
+      },
+      () => setTwofaError(true),
+    );
+  }, [directoryOn]);
 
   // The last check's report, if one was saved: shown until the next check.
   useEffect(() => {

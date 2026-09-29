@@ -13,6 +13,7 @@ import { RegisterScreen } from './components/web/RegisterScreen';
 import { SetPasswordScreen, SsoForward } from './components/web/SetPasswordScreen';
 import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
+import { Unavailable } from './components/web/Unavailable';
 import { connectFailureText } from './components/web/MaskedSettings';
 import { errorText } from './lib/errors';
 import { publicLinkOf } from './lib/links';
@@ -25,6 +26,8 @@ import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
+import { useServerInfo } from './lib/branding';
+import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
 import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
 
@@ -140,6 +143,11 @@ export function App() {
     joining?.get('orgUserHasExistingUser') === 'False' && status?.state === 'logged-out';
   // Bitwarden's extension, desktop app and CLI start their SSO login here.
   const ssoForward = route.path === '/sso' && route.query.get('clientId') ? route.query : null;
+  // A link to something the server has switched off: said so, instead of a page that fails.
+  const serverInfo = useServerInfo();
+  const needs =
+    byPath?.kind === 'request' ? 'file-requests' : switchOfLink(route.path, route.query);
+  const unavailable = needs !== null && switchedOff(serverInfo, needs);
 
   // The link from an emergency access invitation: accepted once the vault is open.
   useEffect(() => {
@@ -158,7 +166,7 @@ export function App() {
 
   // The link from a family's invitation: accepted once the vault is open.
   useEffect(() => {
-    if (route.path !== '/accept-organization' || !unlocked) return;
+    if (route.path !== '/accept-organization' || !unlocked || unavailable) return;
     const orgId = route.query.get('organizationId') ?? '';
     const memberId = route.query.get('organizationUserId') ?? '';
     const token = route.query.get('token') ?? '';
@@ -167,13 +175,13 @@ export function App() {
       () => toast(t('Angenommen ✧ Sobald dich jemand bestätigt, siehst du, was geteilt ist.')),
       (e) => toast(errorText(e), 'error'),
     );
-  }, [route, unlocked]);
+  }, [route, unlocked, unavailable]);
 
   // Links into the settings — a security notice's mail, the desktop app's travel mode button —
   // once the vault is open.
   useEffect(() => {
     const section = route.path.match(/^\/settings(?:\/([a-z-]+))?$/);
-    if (!section || !unlocked) return;
+    if (!section || !unlocked || unavailable) return;
     // The way back from UwUMail (§13.2): read before the address is cleared.
     const connected = section[1] === 'masked' ? connectResultOf(route.query) : null;
     location.hash = '';
@@ -194,7 +202,7 @@ export function App() {
     ];
     const wanted = (section[1] ?? 'appearance') as SettingsSection;
     setSettingsOpen(known.includes(wanted) ? wanted : 'appearance');
-  }, [route, unlocked]);
+  }, [route, unlocked, unavailable]);
 
   const unseen = unlocked ? (info?.securityNoticesUnseen ?? 0) : 0;
   // Two-step login is required, the date has passed, and there is none: only its setup shows.
@@ -247,6 +255,8 @@ export function App() {
         <main className="stage" id="main" tabIndex={-1}>
           {ssoForward ? (
             <SsoForward query={ssoForward} />
+          ) : unavailable ? (
+            <Unavailable vault={!requestLink} />
           ) : sendLink ? (
             <SendPage accessId={sendLink[1]!} urlKey={sendLink[2]!} />
           ) : requestLink ? (

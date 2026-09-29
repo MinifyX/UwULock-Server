@@ -81,7 +81,7 @@ fn feature_off() -> ApiError {
 }
 
 pub(crate) fn enabled(state: &AppState) -> ApiResult<()> {
-    if state.settings().suite.enabled { Ok(()) } else { Err(feature_off()) }
+    if state.feature(crate::Feature::Suite) { Ok(()) } else { Err(feature_off()) }
 }
 
 /// The space of the path, if the session may touch it: any for an account's own token, only

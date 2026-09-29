@@ -44,7 +44,8 @@ pub struct Settings {
     pub metrics: crate::metrics::MetricsSettings,
     /// The log to Grafana Loki.
     pub loki: crate::loki::LokiSettings,
-    /// File requests: links people without an account upload files to.
+    /// File requests: links people without an account upload files to. Whether they are there
+    /// at all is a feature switch (docs/features.md).
     pub file_requests: FileRequestSettings,
     /// How much an account may keep in files (attachments, Send files, file requests), versions
     /// and own icons, in MiB; none for no limit.
@@ -61,7 +62,8 @@ pub struct Settings {
     /// Families (Stufe 4d): who may make one, how many members one has at most, how many one
     /// account may own.
     pub families: OrgSettings,
-    /// The suite vault of UwUSSH, UwURDP and the other UwU apps (docs/uwu-api.md §6).
+    /// The suite vault of UwUSSH, UwURDP and the other UwU apps (docs/uwu-api.md §6); whether
+    /// it is there at all is a feature switch.
     pub suite: SuiteSettings,
     /// Masked addresses: the UwUMail servers this server may talk to for them (§13, §21.8).
     pub masked: MaskedSettings,
@@ -70,7 +72,6 @@ pub struct Settings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SuiteSettings {
-    pub enabled: bool,
     /// Records one account may keep in all its spaces together.
     pub max_records: u32,
     /// And how many MiB they may take.
@@ -79,7 +80,7 @@ pub struct SuiteSettings {
 
 impl Default for SuiteSettings {
     fn default() -> Self {
-        SuiteSettings { enabled: true, max_records: 50_000, max_mb: 256 }
+        SuiteSettings { max_records: 50_000, max_mb: 256 }
     }
 }
 
@@ -192,8 +193,9 @@ impl Default for VersionSettings {
 }
 
 impl VersionSettings {
-    pub fn rule(&self) -> uwulock_store::VersionRule {
-        uwulock_store::VersionRule { per_item: self.per_item, days: self.days }
+    /// The rule the store keeps versions by; `on` is the feature switch.
+    pub fn rule(&self, on: bool) -> uwulock_store::VersionRule {
+        uwulock_store::VersionRule { per_item: self.per_item, days: self.days, paused: !on }
     }
 }
 
@@ -217,7 +219,6 @@ impl Default for IconSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct FileRequestSettings {
-    pub enabled: bool,
     /// Requests one account may have.
     pub per_user: u32,
     /// How far ahead a request may run out.
@@ -228,7 +229,7 @@ pub struct FileRequestSettings {
 
 impl Default for FileRequestSettings {
     fn default() -> Self {
-        FileRequestSettings { enabled: true, per_user: 50, max_days: 90, max_files: 20 }
+        FileRequestSettings { per_user: 50, max_days: 90, max_files: 20 }
     }
 }
 

@@ -16,6 +16,8 @@ import {
 import { errorText } from '../lib/errors';
 import { ApiError } from '../lib/web/http';
 import { t, useLanguage } from '../lib/i18n';
+import { useServerInfo } from '../lib/branding';
+import { switchedOff, type SwitchId } from '../lib/switches';
 import {
   LokiSettings,
   MetricsSettings,
@@ -49,6 +51,9 @@ export function AdminSettings({ me }: { me: string }) {
   const [testTo, setTestTo] = useState(me);
   /** Counts saves and discards: the text boxes that keep their own text start again then. */
   const [generation, setGeneration] = useState(0);
+  // The settings of a switched-off feature are not shown (they are kept for when it is on).
+  const serverInfo = useServerInfo();
+  const on = (id: SwitchId) => !switchedOff(serverInfo, id);
 
   useEffect(() => {
     load().then(
@@ -340,115 +345,100 @@ export function AdminSettings({ me }: { me: string }) {
         />
       </Row>
 
-      <h2 className="settings-heading">{t('Datei-Anfragen')}</h2>
-      <Row
-        label={t('Datei-Anfragen')}
-        description={t(
-          'Links, über die jemand ohne Konto Dateien und Text hochlädt, verschlüsselt für den, der den Link gemacht hat.',
-        )}
-      >
-        <Toggle
-          label={t('Datei-Anfragen')}
-          checked={draft.fileRequests.enabled}
-          onChange={(enabled) =>
-            setDraft({ ...draft, fileRequests: { ...draft.fileRequests, enabled } })
-          }
-        />
-      </Row>
-      <Row label={t('Anfragen pro Konto')}>
-        <input
-          type="number"
-          min={1}
-          max={1000}
-          className="narrow-number"
-          aria-label={t('Anfragen pro Konto')}
-          value={draft.fileRequests.perUser}
-          onChange={(e) =>
-            setDraft({
-              ...draft,
-              fileRequests: { ...draft.fileRequests, perUser: Number(e.target.value) },
-            })
-          }
-        />
-      </Row>
-      <Row label={t('Längste Laufzeit in Tagen')}>
-        <input
-          type="number"
-          min={1}
-          max={365}
-          className="narrow-number"
-          aria-label={t('Längste Laufzeit in Tagen')}
-          value={draft.fileRequests.maxDays}
-          onChange={(e) =>
-            setDraft({
-              ...draft,
-              fileRequests: { ...draft.fileRequests, maxDays: Number(e.target.value) },
-            })
-          }
-        />
-      </Row>
-      <Row label={t('Dateien pro Einsendung')}>
-        <input
-          type="number"
-          min={1}
-          max={100}
-          className="narrow-number"
-          aria-label={t('Dateien pro Einsendung')}
-          value={draft.fileRequests.maxFiles}
-          onChange={(e) =>
-            setDraft({
-              ...draft,
-              fileRequests: { ...draft.fileRequests, maxFiles: Number(e.target.value) },
-            })
-          }
-        />
-      </Row>
+      {on('file-requests') && (
+        <>
+          <h2 className="settings-heading">{t('Datei-Anfragen')}</h2>
+          <Row label={t('Anfragen pro Konto')}>
+            <input
+              type="number"
+              min={1}
+              max={1000}
+              className="narrow-number"
+              aria-label={t('Anfragen pro Konto')}
+              value={draft.fileRequests.perUser}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  fileRequests: { ...draft.fileRequests, perUser: Number(e.target.value) },
+                })
+              }
+            />
+          </Row>
+          <Row label={t('Längste Laufzeit in Tagen')}>
+            <input
+              type="number"
+              min={1}
+              max={365}
+              className="narrow-number"
+              aria-label={t('Längste Laufzeit in Tagen')}
+              value={draft.fileRequests.maxDays}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  fileRequests: { ...draft.fileRequests, maxDays: Number(e.target.value) },
+                })
+              }
+            />
+          </Row>
+          <Row label={t('Dateien pro Einsendung')}>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              className="narrow-number"
+              aria-label={t('Dateien pro Einsendung')}
+              value={draft.fileRequests.maxFiles}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  fileRequests: { ...draft.fileRequests, maxFiles: Number(e.target.value) },
+                })
+              }
+            />
+          </Row>
+        </>
+      )}
 
-      <h2 className="settings-heading">{t('Suite-Tresor')}</h2>
-      <Row
-        label={t('Suite-Tresor')}
-        description={t(
-          'UwUSSH und UwURDP speichern ihre Hosts, Schlüssel und Verbindungen verschlüsselt hier, mit demselben Konto. Ausgeschaltet werden ihre Anmeldungen abgelehnt; die Daten bleiben.',
-        )}
-      >
-        <Toggle
-          label={t('Suite-Tresor')}
-          checked={draft.suite.enabled}
-          onChange={(enabled) => setDraft({ ...draft, suite: { ...draft.suite, enabled } })}
-        />
-      </Row>
-      <Row label={t('Einträge pro Konto')}>
-        <input
-          type="number"
-          min={1}
-          max={1000000}
-          className="narrow-number"
-          aria-label={t('Einträge pro Konto')}
-          value={draft.suite.maxRecords}
-          onChange={(e) =>
-            setDraft({ ...draft, suite: { ...draft.suite, maxRecords: Number(e.target.value) } })
-          }
-        />
-      </Row>
-      <Row label={t('Speicher pro Konto in MB')}>
-        <input
-          type="number"
-          min={1}
-          max={65536}
-          className="narrow-number"
-          aria-label={t('Speicher pro Konto in MB')}
-          value={draft.suite.maxMb}
-          onChange={(e) =>
-            setDraft({ ...draft, suite: { ...draft.suite, maxMb: Number(e.target.value) } })
-          }
-        />
-      </Row>
+      {on('suite') && (
+        <>
+          <h2 className="settings-heading">{t('Suite-Tresor')}</h2>
+          <Row label={t('Einträge pro Konto')}>
+            <input
+              type="number"
+              min={1}
+              max={1000000}
+              className="narrow-number"
+              aria-label={t('Einträge pro Konto')}
+              value={draft.suite.maxRecords}
+              onChange={(e) =>
+                setDraft({
+                  ...draft,
+                  suite: { ...draft.suite, maxRecords: Number(e.target.value) },
+                })
+              }
+            />
+          </Row>
+          <Row label={t('Speicher pro Konto in MB')}>
+            <input
+              type="number"
+              min={1}
+              max={65536}
+              className="narrow-number"
+              aria-label={t('Speicher pro Konto in MB')}
+              value={draft.suite.maxMb}
+              onChange={(e) =>
+                setDraft({ ...draft, suite: { ...draft.suite, maxMb: Number(e.target.value) } })
+              }
+            />
+          </Row>
+        </>
+      )}
 
       <ComfortSettings draft={draft} setDraft={setDraft} />
 
-      <FamilySettings draft={draft} setDraft={setDraft} />
+      {on('families') && <FamilySettings draft={draft} setDraft={setDraft} />}
 
-      <MaskedServerSettings draft={draft} setDraft={setDraft} />
+      {on('masked-addresses') && <MaskedServerSettings draft={draft} setDraft={setDraft} />}
 
       <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
       <p className="settings-lead">

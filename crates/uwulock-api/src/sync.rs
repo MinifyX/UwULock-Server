@@ -206,7 +206,7 @@ async fn sync(
     Query(query): Query<SyncQuery>,
 ) -> ApiResult<Response> {
     let mut areas = Areas::parse(query.include.as_deref(), session.space)?;
-    if areas.suite && !state.settings().suite.enabled {
+    if areas.suite && !state.feature(crate::Feature::Suite) {
         if session.is_suite() {
             crate::suite::enabled(&state)?;
         }

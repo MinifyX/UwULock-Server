@@ -22,14 +22,21 @@ use uwulock_notify::Kind;
 use uwulock_store::organizations::{CONFIRMED, FAMILY, INVITED, Member, ORGANIZATION, OWNER, Organization, USER};
 use uwulock_store::{NewOrganization, OrgRefusal};
 
+/// What an organisation there is answers to, whether or not families are switched on: an
+/// organisation moved in from Vaultwarden is one too, and Bitwarden's clients keep using it.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/api/organizations", post(create))
         .route("/api/organizations/{id}", get(one).put(rename).post(rename).delete(remove))
         .route("/api/organizations/{id}/delete", post(remove))
         .route("/api/organizations/{id}/leave", post(leave))
         .route("/api/organizations/{id}/keys", get(keys).post(keys))
         .route("/api/organizations/{id}/public-key", get(public_key))
+}
+
+/// Making a family, the invitations to one, and the admin's list: the `families` switch.
+pub(crate) fn family_routes() -> Router<AppState> {
+    Router::new()
+        .route("/api/organizations", post(create))
         .route("/uwu/v1/organizations/invitations", get(invitations))
         .route("/uwu/v1/organizations/invitations/{id}", delete(decline))
         .route("/uwu/v1/admin/organizations", get(admin_list))
@@ -507,7 +514,9 @@ pub(crate) async fn account_info(state: &AppState, session: &Session) -> ApiResu
     let settings = state.settings().families;
     let owned = state.store.owned_organizations(&session.user.id, FAMILY).await?;
     Ok(json!({
-        "mayCreate": settings.may_create(session.user.admin) && owned < i64::from(settings.per_user),
+        "mayCreate": state.feature(crate::Feature::Families)
+            && settings.may_create(session.user.admin)
+            && owned < i64::from(settings.per_user),
         "maxMembers": settings.max_members,
         "owned": owned,
         "perUser": settings.per_user,

@@ -1,7 +1,8 @@
 // What Stufe 4b part B brought, in a real browser, against a running UwULock Server with the
 // account web.mjs made: a file request — made by its owner, filled in by somebody with nothing
 // but the link (in another browser), read and taken over into an item — the emergency sheet as a
-// PDF, and backups to a folder off-site from the admin portal, with the recovery key shown once.
+// PDF, backups to a folder off-site from the admin portal, with the recovery key shown once, and
+// file requests switched off in the Features tab (gone from the vault, 404 for the link) and on again.
 //
 //   node scripts/e2e/operations.mjs <origin> <email> <password> <backup folder> [screenshot directory]
 //
@@ -160,6 +161,38 @@ try {
   await card.getByRole('button', { name: 'Stände am Ziel zeigen' }).click();
   await card.getByRole('button', { name: 'Zurückspielen' }).first().waitFor({ timeout: 30000 });
   await snap(owner, 'offsite');
+
+  step('file requests switched off in the Features tab, and on again');
+  await owner.goto(`${origin}/admin#/features`);
+  const requests = owner.getByRole('switch', { name: 'Datei-Anfragen' });
+  await requests.waitFor({ timeout: 30000 });
+  await checkA11y(owner, 'features tab');
+  await requests.click();
+  // It is in use: the portal asks first.
+  await owner.locator('.modal').getByRole('button', { name: 'Ausschalten' }).click();
+  await owner.getByText('„Datei-Anfragen“ ist aus. Nichts wurde gelöscht.').waitFor({ timeout: 30000 });
+  await snap(owner, 'features-off');
+  const off = await fetch(`${origin}/uwu/v1/public/file-requests/${accessId}`);
+  const body = await off.json().catch(() => ({}));
+  if (off.status !== 404 || body.code !== 'feature_off') throw new Error(`switched off: ${off.status} ${JSON.stringify(body)}`);
+  const info = await (await fetch(`${origin}/uwu/v1/info`)).json();
+  if (info.switches?.['file-requests'] !== false) throw new Error(`info: ${JSON.stringify(info.switches)}`);
+  const stranger = await open('stranger');
+  await stranger.goto(link);
+  await stranger.getByRole('heading', { name: 'Nicht auf diesem Server' }).waitFor({ timeout: 30000 });
+  await stranger.context().close();
+  await owner.goto(origin);
+  await owner.locator('input[type=password]').first().fill(password);
+  await owner.keyboard.press('Enter');
+  await owner.getByPlaceholder(/Tresor durchsuchen/).waitFor({ timeout: 30000 });
+  if (await owner.locator('.sidebar').getByRole('button', { name: 'Datei-Anfragen' }).count()) {
+    throw new Error('the vault still shows file requests');
+  }
+  await owner.goto(`${origin}/admin#/features`);
+  await owner.getByRole('switch', { name: 'Datei-Anfragen' }).click();
+  await owner.getByText('„Datei-Anfragen“ ist an ✧').waitFor({ timeout: 30000 });
+  const on = await fetch(`${origin}/uwu/v1/public/file-requests/${accessId}`);
+  if (on.status === 404 && (await on.json().catch(() => ({}))).code === 'feature_off') throw new Error('still off');
 } catch (error) {
   await snap(owner, 'failed').catch(() => undefined);
   console.error(error);

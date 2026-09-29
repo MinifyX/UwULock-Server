@@ -346,7 +346,8 @@ async fn backup(state: &AppState) -> Check {
         )
     };
     // Off-site backups (Stufe 4b, part B) add their age here too.
-    let offsite = state.alerts.offsite_success();
+    let offsite_on = state.feature(crate::Feature::OffsiteBackups);
+    let offsite = state.alerts.offsite_success().filter(|_| offsite_on);
     let offsite_text = offsite.map(|when| date_of(when as i64));
     let local = uwulock_store::backups::newest(&state.config.backups);
     let mut result = match local {
@@ -367,7 +368,7 @@ async fn backup(state: &AppState) -> Check {
         result = result.detail(text(format!("Außer Haus: {when}"), format!("Off-site: {when}")));
     }
     // The target out of the house: whether the last backup there worked.
-    let settings = state.offsite.settings().await.ok().filter(|settings| settings.enabled);
+    let settings = state.offsite.settings().await.ok().filter(|settings| offsite_on && settings.enabled);
     if let Some(settings) = settings {
         let status = state.offsite.status().await;
         if let Some(error) = &status.last_error {

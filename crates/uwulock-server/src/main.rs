@@ -32,6 +32,16 @@ enum SettingsAction {
 }
 
 #[derive(Subcommand)]
+enum FeaturesAction {
+    /// Every switch, and whether it is on.
+    List,
+    /// Switch these on, like `families file-requests` (or `all`).
+    On { names: Vec<String> },
+    /// Switch these off. Nothing of them is deleted; switched on again, everything is back.
+    Off { names: Vec<String> },
+}
+
+#[derive(Subcommand)]
 enum BackupAction {
     /// Back up to the other system now, with the settings of the admin portal.
     Offsite,
@@ -130,6 +140,12 @@ enum Command {
         #[command(subcommand)]
         action: SettingsAction,
     },
+    /// Show the feature switches, or switch extras on or off (docs/features.md). A running server
+    /// takes them over when it starts again; the admin portal does it at once.
+    Features {
+        #[command(subcommand)]
+        action: Option<FeaturesAction>,
+    },
     /// Move in from Vaultwarden: accounts, vaults, devices, two-step login, attachments, Sends,
     /// emergency access and organisations, from its data directory (`db.sqlite3` and the files
     /// next to it). Stop Vaultwarden first. A backup of this server's database is written before.
@@ -219,6 +235,7 @@ fn main() -> Result<(), String> {
             Ok(())
         }),
         Command::Settings { action } => runtime()?.block_on(settings(config, action)),
+        Command::Features { action } => runtime()?.block_on(features(config, action.unwrap_or(FeaturesAction::List))),
         Command::ImportVaultwarden { path, dry_run, admins } => {
             runtime()?.block_on(import_vaultwarden(config, path, dry_run, admins))
         }
@@ -286,6 +303,35 @@ async fn settings(config: Config, action: SettingsAction) -> Result<(), String> 
     Ok(())
 }
 
+/// `uwulock-server features [list | on <name>… | off <name>…]`.
+async fn features(config: Config, action: FeaturesAction) -> Result<(), String> {
+    use uwulock_api::{Feature, Features};
+    let store = uwulock_server::open_store(&config)?;
+    let mut current = Features::load(&store, &config.start_features).await?;
+    let (names, on) = match action {
+        FeaturesAction::List => {
+            for feature in Feature::ALL {
+                let state = if current.on(feature) { "on" } else { "off" };
+                println!("{:<20} {state}", feature.id());
+            }
+            return Ok(());
+        }
+        FeaturesAction::On { names } => (names, true),
+        FeaturesAction::Off { names } => (names, false),
+    };
+    if names.is_empty() {
+        return Err(format!("Which? {}", Feature::ALL.map(Feature::id).join(", ")));
+    }
+    let named = Features::parse_list(&names.join(","))?;
+    for feature in Feature::ALL.into_iter().filter(|feature| named.switched_on(*feature)) {
+        current.set(feature, on);
+    }
+    current.save(&store).await.map_err(|error| error.to_string())?;
+    println!("On now: {}", current.names().join(", "));
+    println!("A running server takes it over when it starts again: docker compose restart uwulock");
+    Ok(())
+}
+
 /// `uwulock-server import-vaultwarden <path> [--dry-run] [--admin <email>]…`.
 async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins: Vec<String>) -> Result<(), String> {
     let store = uwulock_server::open_store(&config)?;
@@ -309,6 +355,15 @@ async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins
         return Ok(());
     }
     println!("Imported. Point the clients at this server; they stay logged in.");
+    // Organisations are managed with what families bring: that switch has to be on for them.
+    if summary.organizations > 0 {
+        let mut features = uwulock_api::Features::load(&store, &config.start_features).await?;
+        if !features.switched_on(uwulock_api::Feature::Families) {
+            features.set(uwulock_api::Feature::Families, true);
+            features.save(&store).await.map_err(|error| error.to_string())?;
+            println!("Families are switched on, for the organisations that came over.");
+        }
+    }
     // Whoever lost their only second step hears it from the server, not by surprise.
     if !summary.lost_two_factor.is_empty() {
         let mailer = uwulock_mail::Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;

@@ -29,7 +29,7 @@ mkdir -p "$work/data" "$work/offsite" target/e2e-shots
 spki=$(scripts/e2e/test-ca.sh "$work/tls")
 export UWULOCK_DATA=$work/data UWULOCK_LISTEN=127.0.0.1:$port UWULOCK_PUBLIC=https://localhost:$port
 export UWULOCK_TLS=files UWULOCK_TLS_CERT=$work/tls/cert.pem UWULOCK_TLS_KEY=$work/tls/key.pem
-export UWULOCK_UPDATE_CHECK=off UWULOCK_LOGIN_ATTEMPTS=200
+export UWULOCK_UPDATE_CHECK=off UWULOCK_LOGIN_ATTEMPTS=200 UWULOCK_FEATURES=all
 export NODE_EXTRA_CA_CERTS=$work/tls/ca.pem CHROMIUM_ARGS=--ignore-certificate-errors-spki-list=$spki
 origin=$UWULOCK_PUBLIC email=nyu@example.com password='correct horse battery staple'
 

@@ -18,11 +18,14 @@ pub struct VersionRule {
     pub per_item: u32,
     /// Days; 0 for no limit.
     pub days: u32,
+    /// The feature is switched off: no version is made and none is swept up, the ones there are
+    /// stay as they are until it is on again.
+    pub paused: bool,
 }
 
 impl Default for VersionRule {
     fn default() -> Self {
-        VersionRule { per_item: 20, days: 365 }
+        VersionRule { per_item: 20, days: 365, paused: false }
     }
 }
 
@@ -119,7 +122,7 @@ pub(crate) fn changed(
 ) -> rusqlite::Result<()> {
     let Some(before) = before else { return Ok(()) };
     crate::reminders::password_changed(tx, before, after)?;
-    if rule.per_item == 0 || same_content(before, after) {
+    if rule.paused || rule.per_item == 0 || same_content(before, after) {
         return Ok(());
     }
     let content = content_of(before);
@@ -141,6 +144,9 @@ pub(crate) fn changed(
 
 /// Versions past the rule go: of one item, or of all.
 fn prune(tx: &Transaction<'_>, rule: VersionRule, cipher_id: Option<&str>) -> rusqlite::Result<()> {
+    if rule.paused {
+        return Ok(());
+    }
     if rule.days > 0 {
         let oldest = clock::in_seconds(-i64::from(rule.days) * 86_400);
         match cipher_id {
@@ -342,7 +348,7 @@ mod tests {
     async fn the_rule_says_how_many_and_how_long() {
         let (store, _dir) = store();
         let user = store.create_user(new_user("nyu@example.com")).await.unwrap();
-        store.set_version_rule(VersionRule { per_item: 2, days: 0 });
+        store.set_version_rule(VersionRule { per_item: 2, days: 0, paused: false });
         let mut item = store.save_cipher(cipher(&user.id, "c", None)).await.unwrap().unwrap();
         for name in ["2.a|a|a", "2.b|b|b", "2.c|c|c", "2.d|d|d"] {
             item.name = name.into();
@@ -356,7 +362,13 @@ mod tests {
             .map(|version| serde_json::from_str::<Value>(&version.content).unwrap()["name"].clone())
             .collect();
         assert_eq!(names, [json!("2.c|c|c"), json!("2.b|b|b")], "the newest two");
-        store.set_version_rule(VersionRule { per_item: 0, days: 0 });
+        // The feature switched off: nothing new, nothing swept, even with a rule that would.
+        store.set_version_rule(VersionRule { per_item: 1, days: 0, paused: true });
+        item.name = "2.p|p|p".into();
+        item = store.save_cipher(item).await.unwrap().unwrap();
+        store.prune_versions().await.unwrap();
+        assert_eq!(store.versions("c").await.unwrap().len(), 2, "paused keeps what is there");
+        store.set_version_rule(VersionRule { per_item: 0, days: 0, paused: false });
         item.name = "2.e|e|e".into();
         store.save_cipher(item).await.unwrap().unwrap();
         store.prune_versions().await.unwrap();

@@ -159,8 +159,14 @@ impl Registry {
     }
 }
 
-/// Read the send domains again, after a change or a restore.
+/// Read the send domains again, after a change, a restore or a switch: from the database, or
+/// none while the feature is switched off. Then no domain answers, gets a certificate or shows
+/// up in a link, and all come back when it is on.
 pub async fn reload(state: &AppState) {
+    if !state.feature(crate::Feature::SendDomains) {
+        state.send_domains.replace(Vec::new());
+        return;
+    }
     match state.store.send_domains().await {
         Ok(domains) => state.send_domains.replace(domains),
         Err(error) => tracing::warn!(%error, "the send domains could not be read"),

@@ -291,6 +291,10 @@ pub async fn tick(state: &AppState) {
             return;
         }
     };
+    // With the feature switched off, only the admins' mail goes out; ntfy, Gotify and Matrix
+    // hear nothing, and nothing waits for them, until it is on again.
+    let others = state.feature(crate::Feature::AdminNotifications);
+    let heard = |channel: &Channel| channel.enabled && (others || channel.kind == "mail");
     let (started, ended) = {
         let mut active = state.alerts.active.lock();
         let started: Vec<(String, Detail)> = found
@@ -326,8 +330,8 @@ pub async fn tick(state: &AppState) {
     {
         let now = Instant::now();
         let mut states = state.alerts.channels.lock();
-        states.retain(|id, _| channels.iter().any(|channel| &channel.id == id));
-        for channel in channels.iter().filter(|channel| channel.enabled) {
+        states.retain(|id, _| channels.iter().any(|channel| &channel.id == id && heard(channel)));
+        for channel in channels.iter().filter(|channel| heard(channel)) {
             let wanted = events_of(channel);
             let entry = states.entry(channel.id.clone()).or_default();
             for (event, detail) in &started {
@@ -359,7 +363,7 @@ pub async fn tick(state: &AppState) {
             entry.queue.retain(|outgoing| now.duration_since(outgoing.made) < GIVE_UP);
         }
     }
-    for channel in channels.iter().filter(|channel| channel.enabled) {
+    for channel in channels.iter().filter(|channel| heard(channel)) {
         deliver(state, channel).await;
     }
 }
