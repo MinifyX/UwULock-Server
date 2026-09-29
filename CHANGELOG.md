@@ -31,6 +31,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   the web vault, the login, Send and file-request pages and the mails. Pictures, SVG included,
   are drawn again as PNG by the server, so nothing but pixels survives
   ([docs/branding.md](docs/branding.md)).
+- **Accessibility** in the web vault and the admin portal: everything by keyboard, with
+  shortcuts and an overview of them (`?`), lists that move with the arrow keys, a skip link,
+  messages that screen readers announce, errors tied to their fields, and a high-contrast mode
+  (or the system's). Aiming at WCAG 2.2 AA; axe-core checks each main page in the browser tests
+  ([docs/accessibility.md](docs/accessibility.md)).
 - `#/settings/masked`, where the UwULock app links for masked addresses, answers with a friendly
   "coming soon" until they arrive.
 - **Icons for items**: `/icons/<host>/icon.png`, where the Bitwarden apps and extensions ask, now

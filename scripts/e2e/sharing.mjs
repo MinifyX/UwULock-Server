@@ -12,6 +12,7 @@ import net from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { checkA11y } from './axe.mjs';
 
 const [origin, email, password, shots] = process.argv.slice(2);
 if (!origin || !email || !password) {
@@ -199,6 +200,7 @@ try {
   await nyu.getByRole('heading', { name: 'Import prüfen' }).waitFor({ timeout: 30000 });
   await nyu.locator('.import-list').getByText('Mail', { exact: true }).waitFor();
   await snap(nyu, 'import-keepass');
+  await checkA11y(nyu, 'import preview');
   await nyu.locator('.modal').last().getByRole('button', { name: 'Abbrechen' }).click();
 
   step('Apple Passwords, imported');
@@ -222,6 +224,7 @@ try {
   await share.getByRole('radio', { name: 'Nur bestimmte Adressen' }).click();
   await share.getByLabel('E-Mail-Adressen').fill('friend@example.com');
   await snap(nyu, 'share');
+  await checkA11y(nyu, 'share as Send');
   await share.getByRole('button', { name: 'Send anlegen' }).click();
   const link = await nyu.getByLabel('Link', { exact: true }).inputValue();
   if (!link.includes('/#/send/')) throw new Error(`the link is ${link}`);
@@ -235,6 +238,7 @@ try {
   await friend.getByLabel('E-Mail-Adresse').fill('Friend@Example.com');
   await friend.getByRole('button', { name: 'Code schicken' }).click();
   await friend.getByRole('heading', { name: 'Code aus der Mail' }).waitFor();
+  await checkA11y(friend, 'Send page asking for the code');
   const sent = await smtp.mailTo('friend@example.com');
   const code = subject(sent.text).match(/(\d{6})\s*$/)?.[1];
   if (!code) throw new Error(`no code in “${subject(sent.text)}”`);

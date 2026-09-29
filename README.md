@@ -205,6 +205,7 @@ GitHub release with the scripts.
 - [Import](docs/import.md) — moving in from KeePass, 1Password, browsers, Proton Pass and LastPass
 - [Sharing](docs/sharing.md) — an item as a Send, Sends only for given addresses, the 2FA report
 - [Branding](docs/branding.md) — the server's own name, colour, logos and favicon
+- [Accessibility](docs/accessibility.md) — keyboard shortcuts, high contrast, screen readers, what axe checks
 - [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing
 - [Metrics](docs/metrics.md) and [notifications](docs/notifications.md) — Prometheus, Loki, and alerts to the admins
 - [Performance](docs/performance.md) — how it is measured, and the numbers

@@ -242,7 +242,7 @@ den Tests auf echten Geräten.
       für die Anmeldung per UwUAuth (mit ihr). Tresor, Sends und Kommandozeile sind davon nicht
       betroffen; `uwulock-server settings set adminNetworks '[]'` ist der Weg zurück.
 
-### Stufe 4c — Tresor-Komfort (vor Stufe 5; fertig bis auf den Umzug von Bitwarden, kommt mit 0.6)
+### Stufe 4c — Tresor-Komfort (vor Stufe 5; fertig bis auf den Umzug von Bitwarden im Client, kommt mit 0.6)
 
 Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach Stufe 4b.
 
@@ -325,9 +325,13 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   Ordner, Anhänge und Sends (entschlüsselt nur im Client, neu verschlüsselt für UwULock);
   Organisationen, sobald sie hier angelegt werden können (Stufe 4d bzw. 5). Braucht ein
   Client-Release.
-- [ ] Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
+- [x] Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
   Kürzeln und einer Übersicht dazu), mit Screenreader nutzbar, ein Modus mit hohem Kontrast; Ziel
   WCAG 2.2 AA, geprüft mit axe im bestehenden Browsertest, ohne ihn spürbar langsamer zu machen.
+  (Fertig: Übersicht der Kürzel mit `?`, Listen mit Pfeiltasten, Sprung zum Inhalt, Live-Regionen
+  für Meldungen, Kontrast „Hoch" (oder wie das System), axe-core 4.13 einmal pro Hauptseite in
+  den Browsertests, schwere Funde lassen sie scheitern — zusammen etwa 3 s.
+  `docs/accessibility.md`; mit einem echten Screenreader noch nicht ausprobiert.)
 - [x] Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
   Web-Tresor, Anmeldung, Send- und Datei-Anfrage-Seiten und Mails; wie bei UwUMail Server (dort
   `docs/branding.md`). Die offiziellen Clients bleiben, wie sie sind. Mit den Send-Domains aus
