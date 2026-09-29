@@ -115,6 +115,7 @@ export type SsoSettings = {
   trustUnverifiedEmail: boolean;
   groupsClaim: string;
   rolesClaim: string | null;
+  extensionIds?: string[];
   paired: { url: string; appId: string; manageUrl: string | null; date: string } | null;
   redirectUri?: string;
   scimUrl?: string;

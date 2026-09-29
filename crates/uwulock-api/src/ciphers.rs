@@ -342,7 +342,15 @@ async fn sync(
     let exclude_domains = query
         .exclude_domains
         .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"));
-    let parts = vault_parts(&state, &session.user, &headers, exclude_domains).await?;
+    let mut parts = vault_parts(&state, &session.user, &headers, exclude_domains).await?;
+    if session.setup_only {
+        // Only what unlocking needs, while two-step login has to be set up first (§20).
+        for part in
+            [&mut parts.folders, &mut parts.collections, &mut parts.policies, &mut parts.sends, &mut parts.ciphers]
+        {
+            *part = "[]".into();
+        }
+    }
     let mut body = String::with_capacity(4096 + parts.ciphers.len());
     body.push_str("{\"object\":\"sync\",\"profile\":");
     body.push_str(&parts.profile);

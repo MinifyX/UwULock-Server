@@ -13,7 +13,7 @@
 
 use crate::AppState;
 use crate::alerts::Detail;
-use crate::auth::{Admin, Session, client_ip};
+use crate::auth::{Admin, client_ip};
 use crate::errors::{ApiError, ApiResult};
 use axum::body::Body;
 use axum::extract::ws::{Message, WebSocketUpgrade};
@@ -722,6 +722,7 @@ pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/uwu/v1/admin/diagnosis", get(last).post(start))
         .route("/uwu/v1/admin/diagnosis/websocket", get(websocket))
+        .route("/uwu/v1/admin/diagnosis/websocket-ticket", post(ticket))
         .route("/uwu/v1/admin/diagnosis/client", post(client))
 }
 
@@ -748,22 +749,59 @@ async fn start(State(state): State<AppState>, admin: Admin, parts: Parts) -> Api
     Ok(Json(diagnosis.render(language(&admin))))
 }
 
+/// One-time tickets for the WebSocket check: the browser cannot set a header on a WebSocket, and
+/// the admin's access token in an address would end up in a proxy's log. A ticket is made by
+/// an admin request (so with every rule of the portal), is good for 30 seconds, and once.
+#[derive(Default)]
+pub struct SocketTickets(parking_lot::Mutex<std::collections::HashMap<Vec<u8>, (String, i64)>>);
+
+/// How long a ticket is good for, in seconds.
+const TICKET_SECONDS: i64 = 30;
+
+impl SocketTickets {
+    fn issue(&self, user_id: &str) -> String {
+        let ticket = crate::auth::random_token(32);
+        let now = crate::auth::now_seconds();
+        let mut tickets = self.0.lock();
+        tickets.retain(|_, (_, expires)| *expires > now);
+        // Admins only, 30 seconds each: a handful at most, unless something is wrong.
+        if tickets.len() >= 64 {
+            tickets.clear();
+        }
+        tickets.insert(crate::auth::sha256(ticket.as_bytes()), (user_id.to_string(), now + TICKET_SECONDS));
+        ticket
+    }
+
+    fn take(&self, ticket: &str) -> Option<String> {
+        let (user_id, expires) = self.0.lock().remove(&crate::auth::sha256(ticket.as_bytes()))?;
+        (expires > crate::auth::now_seconds()).then_some(user_id)
+    }
+}
+
+async fn ticket(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+    Ok(Json(json!({ "ticket": state.socket_tickets.issue(&admin.0.user.id), "expiresIn": TICKET_SECONDS })))
+}
+
 #[derive(Deserialize)]
 struct SocketQuery {
     #[serde(default)]
-    access_token: Option<String>,
+    ticket: Option<String>,
 }
 
-/// A WebSocket that echoes one message: whether they get through the proxy. The browser cannot
-/// set a header on a WebSocket, so the token comes in the query, as for the live-update hub.
+/// A WebSocket that echoes one message: whether they get through the proxy. It is opened with a
+/// one-time ticket from [`ticket`] in the query, never the access token.
 async fn websocket(
     State(state): State<AppState>,
     Query(query): Query<SocketQuery>,
     upgrade: WebSocketUpgrade,
 ) -> ApiResult<Response> {
-    let session = Session::from_token(&state, query.access_token.as_deref().unwrap_or_default()).await?;
-    if !session.user.admin {
-        return Err(ApiError::forbidden("Only admins can do this."));
+    let user_id = query.ticket.as_deref().and_then(|ticket| state.socket_tickets.take(ticket));
+    let user = match user_id {
+        Some(id) => state.store.user(&id).await?,
+        None => None,
+    };
+    if !user.is_some_and(|user| user.admin && !user.disabled) {
+        return Err(ApiError::unauthorized());
     }
     Ok(upgrade.max_message_size(1024).on_upgrade(|mut socket| async move {
         let echo = tokio::time::timeout(Duration::from_secs(10), socket.recv()).await;
@@ -917,6 +955,22 @@ mod tests {
             Some(time::macros::datetime!(2026-09-28 12:00 UTC).unix_timestamp())
         );
         assert_eq!(http_date("yesterday"), None);
+    }
+
+    #[tokio::test]
+    async fn the_websocket_check_takes_a_one_time_ticket_from_an_admin() {
+        let server = TestServer::new().await;
+        let admin = admin(&server).await;
+        let user = server.account("nyu@example.com").await;
+        let path = "/uwu/v1/admin/diagnosis/websocket-ticket";
+        let refused = server.call("POST", path, Some(&user.token), json!({})).await;
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+        let made = json(server.call("POST", path, Some(&admin.token), json!({})).await).await;
+        let ticket = made["ticket"].as_str().unwrap();
+        assert_eq!(made["expiresIn"], TICKET_SECONDS);
+        assert_eq!(server.state.socket_tickets.take(ticket), Some(admin.id.clone()));
+        assert_eq!(server.state.socket_tickets.take(ticket), None, "once");
+        assert_eq!(server.state.socket_tickets.take(&admin.token), None, "the access token is no ticket");
     }
 
     #[tokio::test]

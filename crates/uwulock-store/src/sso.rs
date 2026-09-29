@@ -407,6 +407,28 @@ impl Store {
         Ok(())
     }
 
+    /// Mark an account as disabled by SCIM, so that SCIM may enable it again. Enabling the
+    /// account in any way forgets the mark (a trigger).
+    pub async fn mark_scim_disabled(&self, user_id: &str) -> Result<()> {
+        let user_id = user_id.to_string();
+        self.sqlite_write(move |tx| {
+            tx.execute("INSERT OR IGNORE INTO scim_disabled (user_id) VALUES (?1)", [user_id])?;
+            Ok(())
+        })
+        .await
+    }
+
+    /// Whether SCIM disabled the account (and nobody enabled it since).
+    pub async fn scim_disabled(&self, user_id: &str) -> Result<bool> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.query_row("SELECT EXISTS (SELECT 1 FROM scim_disabled WHERE user_id = ?1)", [user_id], |row| {
+                row.get(0)
+            })
+        })
+        .await
+    }
+
     pub async fn delete_scim_user(&self, id: &str) -> Result<bool> {
         let id = id.to_string();
         self.sqlite_write(move |tx| Ok(tx.execute("DELETE FROM scim_provisioned WHERE id = ?1", [id])? > 0)).await

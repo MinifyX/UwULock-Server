@@ -438,6 +438,13 @@ async fn addy_io_and_simplelogin_as_bitwarden_s_generators_call_them() {
     // Not a login, anywhere else.
     assert_eq!(server.get_as(&key, "/api/sync").await.status(), StatusCode::UNAUTHORIZED);
 
+    // A disabled account's key stops working, and works again once the account is back (SV-L1).
+    server.state.store.update_user(&account.id, |user| user.disabled = true).await.unwrap();
+    let (status, _) =
+        post_with(&server, "/uwu/v1/masked/addy/api/v1/aliases", ("authorization", &bearer), json!({})).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED, "a disabled account's key");
+    server.state.store.update_user(&account.id, |user| user.disabled = false).await.unwrap();
+
     let keys = json(server.get_as(&account.token, "/uwu/v1/masked/api-keys").await).await;
     let listed = &keys["data"][0];
     assert!(listed["lastUsedDate"].is_string() && listed.get("key").is_none());

@@ -392,7 +392,9 @@ impl Store {
         let id = id.to_string();
         self.sqlite_read(move |conn| {
             conn.query_row(
-                "SELECT id, user_id, name, hash, hint, created, last_used FROM masked_api_keys WHERE id = ?1",
+                // A disabled account's keys are no keys, whoever disabled it.
+                "SELECT k.id, k.user_id, k.name, k.hash, k.hint, k.created, k.last_used FROM masked_api_keys k \
+                 JOIN users u ON u.id = k.user_id WHERE k.id = ?1 AND NOT u.disabled",
                 [id],
                 key_from,
             )

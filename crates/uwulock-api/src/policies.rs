@@ -266,9 +266,40 @@ mod tests {
         web[4].1 = "web";
         let response = server.form("/identity/connect/token", &web).await;
         assert_eq!(response.status(), StatusCode::OK, "the web vault, to set it up");
-        let token = json(response).await["access_token"].as_str().unwrap().to_string();
+        let web_login = json(response).await;
+        let token = web_login["access_token"].as_str().unwrap().to_string();
         let me = json(server.get_as(&token, "/uwu/v1/account").await).await;
         assert_eq!(me["policy"]["twoFactorEnforced"], true);
+
+        // The web vault's token opens the setup and the profile, nothing else (SV-L4).
+        let folder =
+            server.call("POST", "/api/folders", Some(&account.token), serde_json::json!({ "name": "2.x|y|z" })).await;
+        assert_eq!(folder.status(), StatusCode::OK, "a token from before the deadline is a full one");
+        let sync = json(server.get_as(&token, "/api/sync").await).await;
+        assert!(sync["profile"]["key"].is_string());
+        assert_eq!(sync["folders"], serde_json::json!([]), "no vault in a setup-only sync");
+        let refused = server.get_as(&token, "/api/folders").await;
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+        assert_eq!(json(refused).await["code"], "two_factor_required");
+        assert_eq!(server.get_as(&token, "/uwu/v1/sync").await.status(), StatusCode::FORBIDDEN);
+        assert_eq!(server.get_as(&token, "/api/two-factor").await.status(), StatusCode::OK);
+
+        // Another client's refresh token cannot pass as the web vault's.
+        let as_web =
+            [("grant_type", "refresh_token"), ("client_id", "web"), ("refresh_token", account.refresh.as_str())];
+        let response = server.form("/identity/connect/token", &as_web).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the device logged in as the browser");
+
+        // With a second step, the same token opens everything.
+        let secret = serde_json::json!({ "key": "JBSWY3DPEHPK3PXP" }).to_string();
+        server.state.store.set_two_factor(&account.id, 0, secret, "RECOVERY".into()).await.unwrap();
+        assert_eq!(server.get_as(&token, "/api/folders").await.status(), StatusCode::OK);
+        let sync = json(server.get_as(&token, "/api/sync").await).await;
+        assert_eq!(sync["folders"].as_array().unwrap().len(), 1);
+        let web_refresh = web_login["refresh_token"].as_str().unwrap();
+        let refresh = [("grant_type", "refresh_token"), ("client_id", "web"), ("refresh_token", web_refresh)];
+        let refreshed = json(server.form("/identity/connect/token", &refresh).await).await;
+        assert_eq!(refreshed["scope"], "api offline_access");
     }
 
     #[tokio::test]

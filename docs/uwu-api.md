@@ -2339,8 +2339,10 @@ Bitwarden's; how the server does it mirrors Vaultwarden 1.34+ (`src/sso.rs`, `sr
      `client_id=desktop` and uses loopback, since `bitwarden://` belongs to Bitwarden's app);
      `cli`, `uwussh`, `uwurdp`, `uwumail`, `uwusuite`: `http://localhost:<port>/…`
      or `http://127.0.0.1:<port>/…`; `uwulock-extension`: `https://<32 letters a–p>.chromiumapp.org/…`
-     or `https://<40 hex>.extensions.allizom.org/…` (the extensions' `identity` redirect URLs).
-     Anything else: 400.
+     or `https://<40 hex>.extensions.allizom.org/…` (the extensions' `identity` redirect URLs),
+     only for the released extension (Firefox: `e2a48da4…`, the SHA-1 of `uwulock@minifyx.de`) and
+     the ids the admin lists in `extensionIds` of the SSO settings (self-built or unpacked builds;
+     since 0.6.0-beta.2). Anything else: 400.
    - stores `{ sha256(state) → client_id, redirect_uri, client state, client code_challenge,
      nonce, own PKCE verifier, sha256(binding), expires in 10 minutes }`, sets
      `__Host-uwu-sso=<binding>; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`, and answers
@@ -2568,7 +2570,14 @@ policies (Stufe 5) are Bitwarden's and separate.
 without an enabled provider:
 
 - gets a token only for `client_id=web` (UwULock's web vault), which then shows nothing but the
-  two-step setup until one is enabled;
+  two-step setup until one is enabled. The token has the scope `uwu.twofactor-setup` (since
+  0.6.0-beta.2): it reaches `/api/two-factor/…`, `/uwu/v1/devices…`, `/uwu/v1/security/notices…`,
+  `PUT /uwu/v1/account/language` and `GET` of `/api/sync` (the profile only, every list empty),
+  `/api/accounts/profile`, `/api/accounts/revision-date` and `/uwu/v1/account`; anything else
+  answers 403 `two_factor_required`. Once a provider is enabled, the same token opens everything;
+  its refresh gives `api offline_access` again;
+- keeps the client it logged in with at a refresh: another client's refresh token cannot be
+  refreshed as `web` (400 `invalid_grant` as below);
 - from every other client (official or ours), `POST /identity/connect/token` — every grant that
   logs in an account: password, `refresh_token`, `client_credentials`, `webauthn` — answers 400
   `{ "error": "invalid_grant", "error_description": "two_factor_required", "ErrorModel": { "Message": "This server requires two-step login. Set it up in the web vault at https://lock.example.com, then log in again.", "Object": "error" } }`
@@ -2754,8 +2763,11 @@ names others or `off`, GitHub only while the update check is on; warning over 30
   which is merged into the stored result. `proxy.clientIp` and `proxy.publicUrl` come from the
   admin's `POST`; in the run after an update they, like the browser checks, are `skipped` until
   the portal runs it. Texts come in the admin's language. The upload answers 413 `too_large` past
-  the largest allowed file (plus 1 MiB). The WebSocket takes the token as `?access_token=`, like
-  the hub, since a browser cannot set a header on one.
+  the largest allowed file (plus 1 MiB). A browser cannot set a header on a WebSocket, so the
+  page first gets a one-time ticket, `POST /uwu/v1/admin/diagnosis/websocket-ticket` →
+  `{ "ticket": "…", "expiresIn": 30 }` (an admin request with every rule of the portal), and
+  opens the socket with `?ticket=`; the access token never goes into an address (since
+  0.6.0-beta.2; before, `?access_token=`). A ticket works once, for 30 seconds; 401 otherwise.
 
 ### 21.6 Overview additions
 

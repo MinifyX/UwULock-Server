@@ -184,6 +184,43 @@ async fn an_account_is_found_by_address_disabled_and_enabled() {
 }
 
 #[tokio::test]
+async fn scim_enables_only_what_it_disabled() {
+    let server = server().await;
+    let mia = server.account("mia@example.com").await;
+    let path = format!("/scim/v2/Users/{}", mia.id);
+    let disabled = || async { server.state.store.user(&mia.id).await.unwrap().unwrap().disabled };
+
+    // An admin disabled the account: the provider cannot turn it on, neither by PATCH nor PUT.
+    server.state.store.update_user(&mia.id, |user| user.disabled = true).await.unwrap();
+    assert_eq!(call(&server, "PATCH", &path, Some(replace("active", json!(true)))).await.0, StatusCode::OK);
+    assert!(disabled().await, "an admin's disable stays");
+    assert_eq!(call(&server, "PUT", &path, Some(user("mia@example.com"))).await.0, StatusCode::OK);
+    assert!(disabled().await, "also with a PUT");
+
+    // The admin enables it; a PUT without `active` leaves it as it is.
+    server.state.store.update_user(&mia.id, |user| user.disabled = false).await.unwrap();
+    let mut without = user("mia@example.com");
+    without.as_object_mut().unwrap().remove("active");
+    assert_eq!(call(&server, "PUT", &path, Some(without.clone())).await.0, StatusCode::OK);
+    assert!(!disabled().await);
+
+    // What SCIM disabled, SCIM enables; a PUT without `active` does not.
+    call(&server, "PATCH", &path, Some(replace("active", json!(false)))).await;
+    assert!(disabled().await);
+    assert_eq!(call(&server, "PUT", &path, Some(without)).await.0, StatusCode::OK);
+    assert!(disabled().await, "no `active`, no change");
+    call(&server, "PATCH", &path, Some(replace("active", json!(true)))).await;
+    assert!(!disabled().await);
+
+    // Enabled by an admin in between, then disabled by the admin: SCIM's old mark is gone.
+    call(&server, "PATCH", &path, Some(replace("active", json!(false)))).await;
+    server.state.store.update_user(&mia.id, |user| user.disabled = false).await.unwrap();
+    server.state.store.update_user(&mia.id, |user| user.disabled = true).await.unwrap();
+    call(&server, "PATCH", &path, Some(replace("active", json!(true)))).await;
+    assert!(disabled().await, "the admin's disable came last");
+}
+
+#[tokio::test]
 async fn deleting_disables_or_deletes_as_the_admin_chose() {
     let server = server().await;
     let mia = server.account("mia@example.com").await;

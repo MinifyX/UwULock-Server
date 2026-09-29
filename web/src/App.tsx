@@ -21,7 +21,7 @@ import { connectResultOf, reloadMaskedConnection } from './lib/masked';
 import { acceptContact } from './lib/features';
 import { acceptInvitation } from './lib/families';
 import { toast } from './lib/toast';
-import { lock, setSecurity, touch, vaultStatus, type Status } from './lib/api';
+import { lock, setSecurity, syncNow, touch, vaultStatus, type Status } from './lib/api';
 import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
@@ -207,6 +207,12 @@ export function App() {
   const unseen = unlocked ? (info?.securityNoticesUnseen ?? 0) : 0;
   // Two-step login is required, the date has passed, and there is none: only its setup shows.
   const mustSetUp = unlocked && info && lacksTwoFactor(info) && info.policy?.twoFactorEnforced;
+  // Until then the server hands out no vault; once it is set up, fetch it.
+  const wasSetUp = useRef(false);
+  useEffect(() => {
+    if (wasSetUp.current && !mustSetUp && unlocked) void syncNow().then(setStatus, () => undefined);
+    wasSetUp.current = Boolean(mustSetUp);
+  }, [mustSetUp, unlocked]);
 
   return (
     <div className="shell">

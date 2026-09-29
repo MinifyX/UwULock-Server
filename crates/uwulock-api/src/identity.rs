@@ -241,7 +241,7 @@ pub(crate) async fn finish_login(
 ) -> ApiResult<Value> {
     let Login { device_id, device_name, device_type, known, remember, by_request, sso } = login;
     let client_id = form.get("clientid").unwrap_or("undefined");
-    two_factor_policy(state, user, client_id).await?;
+    let setup_only = two_factor_policy(state, user, client_id).await?;
     let refresh_token = auth::random_token(64);
     let first_device = !known && state.store.devices(&user.id).await?.is_empty();
     let new = state
@@ -299,7 +299,8 @@ pub(crate) async fn finish_login(
     }
     notices::kdf_below_minimum(state, user, &context).await;
 
-    let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id, sso);
+    let (access_token, expires_in) =
+        state.tokens.access_token_for(user, device_id, device_type, client_id, sso, setup_only);
     let mut body = login_response(user, access_token, expires_in);
     if suite.is_some() {
         body["scope"] = format!("{} offline_access", crate::suite::SCOPE).into();
@@ -313,13 +314,21 @@ pub(crate) async fn finish_login(
 }
 
 /// While two-step login is required, an account without it gets a token only for the web
-/// vault, which shows nothing but the setup until there is a second step (docs/uwu-api.md §20).
-async fn two_factor_policy(state: &AppState, user: &User, client_id: &str) -> ApiResult<()> {
-    if client_id == policies::WEB_VAULT || !state.settings().policies.two_factor_enforced() {
-        return Ok(());
+/// vault, and one that opens nothing but the setup until there is a second step (docs/uwu-api.md
+/// §20): `true` then.
+async fn two_factor_policy(state: &AppState, user: &User, client_id: &str) -> ApiResult<bool> {
+    if !must_set_up_two_factor(state, user).await? {
+        return Ok(false);
     }
-    let has = state.store.two_factors(&user.id).await?.iter().any(|factor| factor.enabled);
-    if has { Ok(()) } else { Err(policies::two_factor_required(&state.config.public)) }
+    if client_id == policies::WEB_VAULT { Ok(true) } else { Err(policies::two_factor_required(&state.config.public)) }
+}
+
+/// Whether two-step login is required by now and the account has none enabled.
+pub(crate) async fn must_set_up_two_factor(state: &AppState, user: &User) -> ApiResult<bool> {
+    if !state.settings().policies.two_factor_enforced() {
+        return Ok(false);
+    }
+    Ok(!state.store.two_factors(&user.id).await?.iter().any(|factor| factor.enabled))
 }
 
 /// The CLI's login with the API key: `client_id` is `user.<id>`, `client_secret` the key. Like
@@ -452,14 +461,16 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
         Some(stored) if stored == asked => stored,
         Some(_) => return Err(invalid_grant()),
         None if crate::suite::space_of_client(asked).is_some() => return Err(invalid_grant()),
-        None => asked,
+        // Every device keeps the client it logged in with: another client's refresh token
+        // cannot pass as the web vault's (which the two-step login rule lets through).
+        None => device.client_id.as_deref().unwrap_or(asked),
     };
     if stored_suite.is_some() && !state.feature(crate::Feature::Suite) {
         return Err(invalid_grant());
     }
-    two_factor_policy(state, &session.user, client_id).await?;
+    let setup_only = two_factor_policy(state, &session.user, client_id).await?;
     let (access_token, expires_in) =
-        state.tokens.access_token(&session.user, &device.id, device.kind, client_id, device.sso);
+        state.tokens.access_token_for(&session.user, &device.id, device.kind, client_id, device.sso, setup_only);
     let scope = if stored_suite.is_some() { "uwu.suite offline_access" } else { "api offline_access" };
     Ok(Json(json!({
         "access_token": access_token,

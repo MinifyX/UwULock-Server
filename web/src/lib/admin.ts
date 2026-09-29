@@ -596,12 +596,18 @@ export const clientDiagnosis = (results: { websocket?: SocketResult; upload?: Up
 
 /**
  * Whether a WebSocket gets through to this server: one opens, sends "ping", and has to get it
- * back within five seconds. The token goes in the query — a browser cannot set headers on one.
+ * back within five seconds. A browser cannot set headers on one, so a one-time ticket goes in the
+ * query, never the access token (which a proxy's log would keep).
  */
 export async function checkWebSocket(): Promise<SocketResult> {
-  const token = (await freshToken()) ?? '';
+  let ticket: string;
+  try {
+    ticket = (await request<{ ticket: string }>(`${base}/diagnosis/websocket-ticket`, { body: {} })).ticket;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  const url = `${scheme}://${location.host}${base}/diagnosis/websocket?access_token=${encodeURIComponent(token)}`;
+  const url = `${scheme}://${location.host}${base}/diagnosis/websocket?ticket=${encodeURIComponent(ticket)}`;
   return new Promise((resolve) => {
     let socket: WebSocket | null = null;
     let done = false;
