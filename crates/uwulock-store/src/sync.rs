@@ -362,22 +362,11 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
     }
     if request.uwu && until > since {
         delta.extras_key = conn
-            .prepare_cached(
-                "SELECT e.user_key_wrapped, e.public_key_wrapped, e.public_key, e.revision, \
-                 coalesce(u.public_key, '') != e.public_key \
-                 FROM extras_keys e JOIN users u ON u.id = e.user_id WHERE e.user_id = ?1 AND e.seq > ?2 AND e.seq <= ?3",
-            )?
-            .query_row(params![user, since, until], |row| {
-                Ok((
-                    ExtrasKey {
-                        user_key_wrapped: row.get(0)?,
-                        public_key_wrapped: row.get(1)?,
-                        public_key: row.get(2)?,
-                        revision: row.get(3)?,
-                    },
-                    row.get(4)?,
-                ))
-            })
+            .prepare_cached(&format!(
+                "{} WHERE e.user_id = ?1 AND e.seq > ?2 AND e.seq <= ?3",
+                crate::file_requests::EXTRAS_KEY_SELECT
+            ))?
+            .query_row(params![user, since, until], crate::file_requests::extras_key_row)
             .optional()?;
         delta.reminders = conn
             .prepare_cached(

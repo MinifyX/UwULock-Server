@@ -94,7 +94,7 @@ async fn a_suite_app_logs_in_with_its_own_scope_and_reaches_only_its_space() {
     assert_eq!((status, body["code"].as_str()), (StatusCode::FORBIDDEN, Some("scope")));
 
     // What it may: the keys, its space, its sync.
-    let keys = json!({ "userKeyWrapped": type2(), "publicKeyWrapped": type4() });
+    let keys = json!({ "userKeyWrapped": type2(), "privateKeyWrapped": type2() });
     let response = server.call("POST", "/uwu/v1/keys", Some(&token), keys).await;
     assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
     let space = make_space(&server, &token, "ssh", SPACE_ID).await;

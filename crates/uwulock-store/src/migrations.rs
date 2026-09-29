@@ -23,6 +23,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0013_suite.sql"),
     include_str!("../migrations/sqlite/0014_send_domains.sql"),
     include_str!("../migrations/sqlite/0015_masked.sql"),
+    include_str!("../migrations/sqlite/0016_extras_private_wrap.sql"),
 ];
 
 /// The schema this build writes.
@@ -98,5 +99,34 @@ mod tests {
         conn.execute("DELETE FROM ciphers WHERE id = 'c'", []).unwrap();
         let left: i64 = conn.query_row("SELECT count(*) FROM attachments", [], |row| row.get(0)).unwrap();
         assert_eq!(left, 0, "and the attachment still goes with its item");
+    }
+
+    /// Extras keys from before `privateKeyWrapped`: the old RSA wrap goes; one that still has
+    /// its wrap under the user key keeps working, one that had only the old wrap left is lost.
+    #[tokio::test]
+    async fn extras_keys_with_only_the_rsa_wrap_are_lost() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            for step in &STEPS[..15] {
+                conn.execute_batch(step).unwrap();
+            }
+            conn.execute_batch(
+                "INSERT INTO users (id, email, password_hash, user_key, public_key, kdf_type, kdf_iterations, \
+                 security_stamp, language, created, updated, revision) VALUES \
+                 ('u1', 'nyu@example.com', 'h', 'k', 'pub1', 0, 600000, 's', 'de', 't', 't', 't'), \
+                 ('u2', 'mika@example.com', 'h', 'k', 'pub2', 0, 600000, 's', 'de', 't', 't', 't');
+                 INSERT INTO extras_keys (user_id, user_key_wrapped, public_key_wrapped, public_key, revision) VALUES \
+                 ('u1', '2.a', '4.x', 'pub1', 't'), ('u2', NULL, '4.y', 'pub2', 't');",
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 15).unwrap();
+        }
+        let store = crate::Store::open_sqlite(&path, &crate::Options { readers: 1 }).unwrap();
+        let (kept, lost) = store.extras_key("u1").await.unwrap().unwrap();
+        assert_eq!((kept.user_key_wrapped.as_deref(), kept.private_key_wrapped, lost), (Some("2.a"), None, false));
+        let (gone, lost) = store.extras_key("u2").await.unwrap().unwrap();
+        assert_eq!((gone.user_key_wrapped, gone.private_key_wrapped, lost), (None, None, true));
     }
 }

@@ -60,7 +60,10 @@ sender's browser encrypts for that key — taken from the link, not from the ser
 cannot swap in one of its own. Each submission has its own key, wrapped for the account's public
 key; each file has its own key under that, so taking a file into an item only wraps its key again.
 The label and the link's secret are kept for the owner under the account's extras key, which
-survives a key rotation by any client. The details are in [uwu-api.md](uwu-api.md) §11.
+survives a key rotation by any client and which the server can't swap for one of its own. Before
+showing or copying a link, the web vault checks that its details name the account's own public
+key; a request whose details name another key gets no link and needs a new one (*Edit*). The
+details are in [uwu-api.md](uwu-api.md) §11.
 
 ## On a send domain
 

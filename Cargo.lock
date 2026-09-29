@@ -4411,8 +4411,12 @@ checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
@@ -4590,6 +4594,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
+ "rustls",
+ "rustls-pki-types",
  "sha1 0.10.7",
  "thiserror 2.0.21",
 ]
@@ -4760,21 +4766,31 @@ dependencies = [
 [[package]]
 name = "uwulock-bitwarden"
 version = "0.2.0-beta.3"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=c95008cbeb554e99c45f9e260f00058cf83f4243#c95008cbeb554e99c45f9e260f00058cf83f4243"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=44078ce82916ae4d7baa84dc2a87deafa71dd38c#44078ce82916ae4d7baa84dc2a87deafa71dd38c"
 dependencies = [
  "base64 0.22.1",
+ "futures-util",
+ "image",
+ "rand 0.8.8",
  "reqwest 0.12.28",
+ "rustls",
+ "rustls-native-certs",
  "serde",
  "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-tungstenite",
+ "tracing",
  "url",
  "uwulock-core",
+ "webpki-roots 1.0.9",
  "zeroize",
 ]
 
 [[package]]
 name = "uwulock-core"
 version = "0.2.0-beta.3"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=c95008cbeb554e99c45f9e260f00058cf83f4243#c95008cbeb554e99c45f9e260f00058cf83f4243"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=44078ce82916ae4d7baa84dc2a87deafa71dd38c#44078ce82916ae4d7baa84dc2a87deafa71dd38c"
 dependencies = [
  "aes 0.8.4",
  "argon2 0.5.3",

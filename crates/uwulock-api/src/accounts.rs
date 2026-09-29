@@ -463,7 +463,7 @@ async fn rotate_keys(
 #[serde(rename_all = "camelCase")]
 struct ExtrasWraps {
     user_key_wrapped: String,
-    public_key_wrapped: String,
+    private_key_wrapped: String,
 }
 
 #[derive(Deserialize)]
@@ -495,12 +495,9 @@ async fn rotate_keys_uwu(
 ) -> ApiResult<StatusCode> {
     let extras_key = match data.extras_key {
         Some(wraps) => {
-            if !crate::keys::enc_string(&wraps.user_key_wrapped, 2, 1000)
-                || !crate::keys::enc_string(&wraps.public_key_wrapped, 4, 2000)
-            {
-                return Err(ApiError::bad("The extras key is not wrapped the way it should be.").code("invalid"));
-            }
-            Some((wraps.user_key_wrapped, wraps.public_key_wrapped))
+            crate::keys::wrap_ok(&wraps.user_key_wrapped)?;
+            crate::keys::wrap_ok(&wraps.private_key_wrapped)?;
+            Some((wraps.user_key_wrapped, wraps.private_key_wrapped))
         }
         None => None,
     };
@@ -652,7 +649,8 @@ async fn finish_rotation(
     }
     let context = notices::Context::of(state, session, ip).await;
     notices::record(state, user, "keysRotated", &context, json!({})).await;
-    // A new key pair without the extras key wrapped for it: nothing under it opens any more.
+    // A key from before the private key's wrap, rotated by an official client: nothing under it
+    // opens any more.
     if extras_before && state.store.extras_key(&user.id).await?.is_some_and(|(_, lost)| lost) {
         notices::record(state, user, "extrasKeyLost", &context, json!({})).await;
     }

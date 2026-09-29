@@ -14,9 +14,10 @@ use rusqlite::{OptionalExtension, Row, params};
 pub struct ExtrasKey {
     /// Under the user key; none after an official client rotated it.
     pub user_key_wrapped: Option<String>,
-    /// For the account's public key.
-    pub public_key_wrapped: String,
-    /// The account's public key it was wrapped for.
+    /// Under a key derived from the account's private key; none for a key from before this wrap
+    /// existed, until a client adds it.
+    pub private_key_wrapped: Option<String>,
+    /// The account's public key when it was made: its key pair.
     pub public_key: String,
     pub revision: String,
 }
@@ -166,34 +167,46 @@ fn submission_from(row: &Row<'_>) -> rusqlite::Result<Submission> {
     })
 }
 
+/// Whether the extras key `e` is lost: the account has another key pair now, or nothing is left
+/// that opens it (a key from before `private_key_wrapped` whose user key was rotated).
+macro_rules! lost {
+    () => {
+        "((SELECT coalesce(public_key, '') FROM users WHERE id = e.user_id) != e.public_key \
+         OR (e.user_key_wrapped IS NULL AND e.private_key_wrapped IS NULL))"
+    };
+}
+const LOST: &str = lost!();
+
+/// An extras key and whether it is lost, from `extras_keys e`, for [`extras_key_row`].
+pub(crate) const EXTRAS_KEY_SELECT: &str = concat!(
+    "SELECT e.user_key_wrapped, e.private_key_wrapped, e.public_key, e.revision, ",
+    lost!(),
+    " FROM extras_keys e"
+);
+
+pub(crate) fn extras_key_row(row: &Row<'_>) -> rusqlite::Result<(ExtrasKey, bool)> {
+    Ok((
+        ExtrasKey {
+            user_key_wrapped: row.get(0)?,
+            private_key_wrapped: row.get(1)?,
+            public_key: row.get(2)?,
+            revision: row.get(3)?,
+        },
+        row.get(4)?,
+    ))
+}
+
 const SUBMISSION_COLUMNS: &str = "id, request_id, wrapped_key, sender, text, created, completed, seen";
 
 impl Store {
     // ── The extras key ─────────────────────────────────────
 
-    /// The account's extras key, and whether it is lost: the account's public key is not the
-    /// one it was wrapped for any more.
+    /// The account's extras key, and whether it is lost: the account's key pair is not the one
+    /// it was made for any more, or no wrap is left.
     pub async fn extras_key(&self, user_id: &str) -> Result<Option<(ExtrasKey, bool)>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
-            conn.query_row(
-                "SELECT e.user_key_wrapped, e.public_key_wrapped, e.public_key, e.revision, \
-                 coalesce(u.public_key, '') != e.public_key \
-                 FROM extras_keys e JOIN users u ON u.id = e.user_id WHERE e.user_id = ?1",
-                [user_id],
-                |row| {
-                    Ok((
-                        ExtrasKey {
-                            user_key_wrapped: row.get(0)?,
-                            public_key_wrapped: row.get(1)?,
-                            public_key: row.get(2)?,
-                            revision: row.get(3)?,
-                        },
-                        row.get(4)?,
-                    ))
-                },
-            )
-            .optional()
+            conn.query_row(&format!("{EXTRAS_KEY_SELECT} WHERE e.user_id = ?1"), [user_id], extras_key_row).optional()
         })
         .await
     }
@@ -204,28 +217,45 @@ impl Store {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {
             // A lost one makes way: its wraps open nothing any more.
-            tx.execute(
-                "DELETE FROM extras_keys WHERE user_id = ?1 AND public_key != \
-                 (SELECT coalesce(public_key, '') FROM users WHERE id = ?1)",
-                [&user_id],
-            )?;
+            tx.execute(&format!("DELETE FROM extras_keys AS e WHERE user_id = ?1 AND {LOST}"), [&user_id])?;
             Ok(tx.execute(
-                "INSERT INTO extras_keys (user_id, user_key_wrapped, public_key_wrapped, public_key, revision) \
+                "INSERT INTO extras_keys (user_id, user_key_wrapped, private_key_wrapped, public_key, revision) \
                  VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (user_id) DO NOTHING",
-                params![user_id, key.user_key_wrapped, key.public_key_wrapped, key.public_key, key.revision],
+                params![user_id, key.user_key_wrapped, key.private_key_wrapped, key.public_key, key.revision],
             )? == 1)
         })
         .await
     }
 
-    /// The wrap under the user key again, after an official rotation dropped it. False when
-    /// there is one.
+    /// The wrap under the user key again, after an official rotation dropped it: made from the
+    /// private key's wrap, so only while that one is there. False when there is none to add it to,
+    /// or it is there already.
     pub async fn set_extras_user_wrap(&self, user_id: &str, wrapped: &str) -> Result<bool> {
         let (user_id, wrapped) = (user_id.to_string(), wrapped.to_string());
         self.sqlite_write(move |tx| {
             Ok(tx.execute(
-                "UPDATE extras_keys SET user_key_wrapped = ?2, revision = ?3 \
-                 WHERE user_id = ?1 AND user_key_wrapped IS NULL",
+                &format!(
+                    "UPDATE extras_keys AS e SET user_key_wrapped = ?2, revision = ?3 \
+                     WHERE user_id = ?1 AND user_key_wrapped IS NULL AND NOT {LOST}"
+                ),
+                params![user_id, wrapped, clock::now()],
+            )? == 1)
+        })
+        .await
+    }
+
+    /// The wrap under the private key's derived key, for a key made before it existed: made from
+    /// the user key's wrap, so only while that one is there. False when there is none to add it
+    /// to, or it is there already.
+    pub async fn set_extras_private_wrap(&self, user_id: &str, wrapped: &str) -> Result<bool> {
+        let (user_id, wrapped) = (user_id.to_string(), wrapped.to_string());
+        self.sqlite_write(move |tx| {
+            Ok(tx.execute(
+                &format!(
+                    "UPDATE extras_keys AS e SET private_key_wrapped = ?2, revision = ?3 \
+                     WHERE user_id = ?1 AND private_key_wrapped IS NULL AND user_key_wrapped IS NOT NULL \
+                     AND NOT {LOST}"
+                ),
                 params![user_id, wrapped, clock::now()],
             )? == 1)
         })
@@ -812,7 +842,7 @@ mod tests {
         let public = store.user(&user).await.unwrap().unwrap().public_key.unwrap_or_default();
         let key = |wrapped: &str| ExtrasKey {
             user_key_wrapped: Some(wrapped.into()),
-            public_key_wrapped: "4.x".into(),
+            private_key_wrapped: None,
             public_key: public.clone(),
             revision: clock::now(),
         };
@@ -820,12 +850,31 @@ mod tests {
         assert!(!store.create_extras_key(&user, key("2.b")).await.unwrap(), "the second client loses");
         assert!(!store.set_extras_user_wrap(&user, "2.c").await.unwrap(), "there is one");
         let (found, lost) = store.extras_key(&user).await.unwrap().unwrap();
-        assert_eq!((found.user_key_wrapped.as_deref(), lost), (Some("2.a"), false));
+        assert_eq!((found.user_key_wrapped.as_deref(), found.private_key_wrapped, lost), (Some("2.a"), None, false));
+
+        // A key from before the private key's wrap gets it once.
+        assert!(store.set_extras_private_wrap(&user, "2.p").await.unwrap());
+        assert!(!store.set_extras_private_wrap(&user, "2.q").await.unwrap(), "there is one");
+        store.drop_extras_user_wrap(&user).await.unwrap();
+        assert!(!store.extras_key(&user).await.unwrap().unwrap().1, "the private key's wrap is left");
+        assert!(!store.set_extras_private_wrap(&user, "2.q").await.unwrap());
+        assert!(store.set_extras_user_wrap(&user, "2.c").await.unwrap());
+        let (found, _) = store.extras_key(&user).await.unwrap().unwrap();
+        assert_eq!(
+            (found.user_key_wrapped.as_deref(), found.private_key_wrapped.as_deref()),
+            (Some("2.c"), Some("2.p"))
+        );
 
         store.update_user(&user, |user| user.public_key = Some("another key".into())).await.unwrap();
         assert!(store.extras_key(&user).await.unwrap().unwrap().1, "lost");
-        assert!(
-            store.create_extras_key(&user, ExtrasKey { public_key: "another key".into(), ..key("2.d") }).await.unwrap()
-        );
+        assert!(!store.set_extras_private_wrap(&user, "2.q").await.unwrap(), "not for a lost one");
+        let another = || ExtrasKey { public_key: "another key".into(), ..key("2.d") };
+        assert!(store.create_extras_key(&user, another()).await.unwrap());
+
+        // A key without the private key's wrap whose user key was rotated: nothing opens it.
+        store.drop_extras_user_wrap(&user).await.unwrap();
+        assert!(store.extras_key(&user).await.unwrap().unwrap().1, "lost");
+        assert!(!store.set_extras_user_wrap(&user, "2.e").await.unwrap(), "nothing to wrap again");
+        assert!(store.create_extras_key(&user, another()).await.unwrap(), "a new one makes way");
     }
 }

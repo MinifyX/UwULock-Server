@@ -150,7 +150,7 @@ pub enum RotationExtras {
     /// under the old user key.
     #[default]
     Official,
-    /// UwULock's own: the extras key wrapped again (`userKeyWrapped`, `publicKeyWrapped`; none
+    /// UwULock's own: the extras key wrapped again (`userKeyWrapped`, `privateKeyWrapped`; none
     /// when the account has none), and the personal versions re-encrypted — every one of them,
     /// by id, with its new content — or (none) dropped.
     Own { extras_key: Option<(String, String)>, versions: Option<Vec<(String, String)>> },
@@ -564,15 +564,16 @@ impl Store {
                 tx.execute("UPDATE org_members SET reset_password_key = NULL WHERE user_id = ?1", [&user.id])?;
                 match &extras {
                     // The extras key's wrap under the old user key opens nothing any more; the
-                    // one for the key pair stays, and the next UwULock client wraps it again.
+                    // private key's stays (the key pair does), and the next UwULock client wraps
+                    // it again.
                     RotationExtras::Official | RotationExtras::Own { extras_key: None, .. } => {
                         tx.execute("UPDATE extras_keys SET user_key_wrapped = NULL WHERE user_id = ?1", [&user.id])?;
                     }
-                    RotationExtras::Own { extras_key: Some((user_wrapped, public_wrapped)), .. } => {
+                    RotationExtras::Own { extras_key: Some((user_wrapped, private_wrapped)), .. } => {
                         tx.execute(
-                            "UPDATE extras_keys SET user_key_wrapped = ?2, public_key_wrapped = ?3, revision = ?4 \
+                            "UPDATE extras_keys SET user_key_wrapped = ?2, private_key_wrapped = ?3, revision = ?4 \
                              WHERE user_id = ?1",
-                            params![user.id, user_wrapped, public_wrapped, now],
+                            params![user.id, user_wrapped, private_wrapped, now],
                         )?;
                     }
                 }

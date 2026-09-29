@@ -968,7 +968,7 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 [[package]]
 name = "uwulock-core"
 version = "0.2.0-beta.3"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=326d59de9f05d96cc4d9d8dd6051f437fe69a9eb#326d59de9f05d96cc4d9d8dd6051f437fe69a9eb"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=44078ce82916ae4d7baa84dc2a87deafa71dd38c#44078ce82916ae4d7baa84dc2a87deafa71dd38c"
 dependencies = [
  "aes",
  "argon2",

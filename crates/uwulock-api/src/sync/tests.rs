@@ -280,7 +280,7 @@ async fn uwulocks_own_things_come_beside_the_vault() {
     let full = sync(&server, &nyu.token, "include=uwu").await;
     assert!(full["vault"].is_null() && full["uwu"].is_object());
 
-    let keys = json!({ "userKeyWrapped": type2(), "publicKeyWrapped": type4() });
+    let keys = json!({ "userKeyWrapped": type2(), "privateKeyWrapped": type2() });
     assert_eq!(server.call("POST", "/uwu/v1/keys", Some(&nyu.token), keys).await.status(), StatusCode::OK);
     let reminder = json!({ "due": "2027-01-15" });
     let path = format!("/uwu/v1/reminders/{item}");
