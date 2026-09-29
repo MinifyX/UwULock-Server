@@ -213,8 +213,8 @@ try {
   }
 
   step('the admin portal by keyboard, and in high contrast');
-  // "6" is the sixth page of the bar: Aussehen, the branding.
-  await page.keyboard.press('6');
+  // "7" is the seventh page of the bar: Aussehen, the branding.
+  await page.keyboard.press('7');
   await page.getByRole('heading', { name: 'Aussehen', exact: true }).waitFor();
   if (!page.url().endsWith('#/branding')) throw new Error(`6 led to ${page.url()}`);
   await page.getByRole('button', { name: 'Darstellung' }).click();
@@ -226,8 +226,10 @@ try {
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radiogroup', { name: 'Kontrast' }).getByRole('radio', { name: 'System' }).click();
   await page.keyboard.press('Escape');
-  // Back to the backups: the ninth page.
+  // Back to the backups: the tenth page, one after the ninth.
   await page.keyboard.press('9');
+  await page.getByRole('heading', { name: 'Log', exact: true }).waitFor();
+  await page.keyboard.press('j');
   await page.getByRole('heading', { name: 'Backups', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Jetzt ein Backup schreiben' }).click();
   await page.getByRole('button', { name: 'Herunterladen' }).first().click();
