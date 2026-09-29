@@ -1074,8 +1074,11 @@ async fn set_password(
             user.user_key = key;
             user.kdf = kdf;
             user.password_hint = hint;
-            user.private_key = private_key;
-            user.public_key = public_key;
+            // Keys the client put there before (`/api/accounts/keys`) stay, unless new ones come.
+            if private_key.is_some() {
+                user.private_key = private_key;
+                user.public_key = public_key;
+            }
             user.revision = clock::now();
         })
         .await?
