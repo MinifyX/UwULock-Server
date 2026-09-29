@@ -88,6 +88,14 @@ Coming with the next release (on `main` already):
 - **Families**: share items with a few people in collections, read or write per member, like
   Bitwarden's Families and seen by the official apps too; members are confirmed with a
   fingerprint phrase ([docs/families.md](docs/families.md)).
+- **For UwULock's own apps**: a delta sync that sends only what changed (a millisecond for a
+  5,000-item vault) and a lean realtime channel instead of polling ([docs/sync.md](docs/sync.md));
+  the **suite vault**, where UwUSSH and UwURDP keep their hosts and connections end-to-end
+  encrypted instead of in UwUSync ([docs/suite.md](docs/suite.md)).
+- **Send domains**: short Send and file-request links on names of their own, like
+  `send.example.com`, with their own certificate and look ([docs/send-domains.md](docs/send-domains.md)).
+- **Masked addresses** from UwUMail, a mail address of its own for every website — in the web
+  vault and in the Bitwarden apps' generator ([docs/masked-addresses.md](docs/masked-addresses.md)).
 
 ## What it will and won't do
 
@@ -209,6 +217,10 @@ GitHub release with the scripts.
 - [Import](docs/import.md) — moving in from KeePass, 1Password, browsers, Proton Pass and LastPass
 - [Sharing](docs/sharing.md) — an item as a Send, Sends only for given addresses, the 2FA report
 - [Branding](docs/branding.md) — the server's own name, colour, logos and favicon
+- [Delta sync and realtime](docs/sync.md) — what UwULock's own apps sync, and how they hear of changes
+- [Suite vault](docs/suite.md) — UwUSSH and UwURDP syncing through this server, and moving over from UwUSync
+- [Send domains](docs/send-domains.md) — names of their own for Sends and file requests, their certificates and look
+- [Masked addresses](docs/masked-addresses.md) — addresses from UwUMail per website, also for the Bitwarden apps
 - [Accessibility](docs/accessibility.md) — keyboard shortcuts, high contrast, screen readers, what axe checks
 - [Families](docs/families.md) — sharing with a few people: invitations, the fingerprint phrase, collections, the admin's settings
 - [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing

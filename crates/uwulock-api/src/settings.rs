@@ -61,6 +61,80 @@ pub struct Settings {
     /// Families (Stufe 4d): who may make one, how many members one has at most, how many one
     /// account may own.
     pub families: OrgSettings,
+    /// The suite vault of UwUSSH, UwURDP and the other UwU apps (docs/uwu-api.md §6).
+    pub suite: SuiteSettings,
+    /// Masked addresses: the UwUMail servers this server may talk to for them (§13, §21.8).
+    pub masked: MaskedSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SuiteSettings {
+    pub enabled: bool,
+    /// Records one account may keep in all its spaces together.
+    pub max_records: u32,
+    /// And how many MiB they may take.
+    pub max_mb: u32,
+}
+
+impl Default for SuiteSettings {
+    fn default() -> Self {
+        SuiteSettings { enabled: true, max_records: 50_000, max_mb: 256 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MaskedSettings {
+    /// The only servers the Lock server sends anything to for masked addresses.
+    pub servers: Vec<MaskedServer>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct MaskedServer {
+    /// `https://mail.example.com`, without a trailing slash.
+    pub url: String,
+    /// What the web vault calls it.
+    pub name: String,
+}
+
+impl MaskedSettings {
+    /// The listed server `url` names, whatever slash it ends with.
+    pub fn server(&self, url: &str) -> Option<&MaskedServer> {
+        let url = url.trim().trim_end_matches('/');
+        self.servers.iter().find(|server| server.url.eq_ignore_ascii_case(url))
+    }
+
+    /// Checked, and written the way it is kept: addresses without a trailing slash, a name for
+    /// each.
+    pub fn normalize(&mut self) -> Result<(), String> {
+        if self.servers.len() > 20 {
+            return Err("At most 20 UwUMail servers can be listed.".into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for server in &mut self.servers {
+            server.url = crate::outbound::checked_url(&server.url, "UwUMail server")?;
+            let parsed = reqwest::Url::parse(&server.url).map_err(|error| error.to_string())?;
+            if parsed.path() != "/" || parsed.query().is_some() {
+                return Err(format!(
+                    "UwUMail server: {} has to be the server's address alone, without a path.",
+                    server.url
+                ));
+            }
+            server.name = server.name.trim().to_string();
+            if server.name.is_empty() {
+                server.name = parsed.host_str().unwrap_or_default().to_string();
+            }
+            if server.name.chars().count() > 60 || server.name.chars().any(char::is_control) {
+                return Err("UwUMail server: a name has at most 60 characters.".into());
+            }
+            if !seen.insert(server.url.to_ascii_lowercase()) {
+                return Err(format!("UwUMail server: {} is listed twice.", server.url));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Who may make an organisation of one kind.
@@ -185,12 +259,14 @@ impl Default for Settings {
             metrics: crate::metrics::MetricsSettings::default(),
             loki: crate::loki::LokiSettings::default(),
             file_requests: FileRequestSettings::default(),
+            suite: SuiteSettings::default(),
             storage_per_user_mb: None,
             sso: crate::sso::SsoSettings::default(),
             scim: crate::scim::ScimSettings::default(),
             versions: VersionSettings::default(),
             icons: IconSettings::default(),
             families: OrgSettings::default(),
+            masked: MaskedSettings::default(),
         }
     }
 }
@@ -327,7 +403,14 @@ impl Settings {
         if self.families.per_user > 10 {
             return Err("One account may own at most 10 families (0 for none).".into());
         }
+        if !(1..=1_000_000).contains(&self.suite.max_records) {
+            return Err("An account may keep from 1 to 1000000 suite records.".into());
+        }
+        if !(1..=65_536).contains(&self.suite.max_mb) {
+            return Err("The suite vault of an account may take from 1 to 65536 MB.".into());
+        }
         self.sso.check()?;
+        self.masked.clone().normalize()?;
         Ok(())
     }
 }

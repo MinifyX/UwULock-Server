@@ -272,6 +272,7 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
     out.head("uwulock_live_connections", "gauge", "Open live-update connections.");
     out.sample("uwulock_live_connections", &[("channel", "signalr")], signalr);
     out.sample("uwulock_live_connections", &[("channel", "anonymous")], anonymous);
+    out.sample("uwulock_live_connections", &[("channel", "realtime")], state.realtime.connections());
 
     let relay = state.relay.health();
     out.head("uwulock_push_relay_errors_total", "counter", "Requests the push relay did not take.");
@@ -320,6 +321,9 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
     out.head("uwulock_certificate_expiry_timestamp_seconds", "gauge", "When the certificate clients see expires.");
     if let Some(seen) = state.certificate.read().as_ref().and_then(|seen| seen.expires) {
         out.sample("uwulock_certificate_expiry_timestamp_seconds", &[("domain", "main")], seen);
+    }
+    for (domain, expires) in state.send_domains.expiries() {
+        out.sample("uwulock_certificate_expiry_timestamp_seconds", &[("domain", domain.as_str())], expires);
     }
 
     let loki = state.logs.loki().status();

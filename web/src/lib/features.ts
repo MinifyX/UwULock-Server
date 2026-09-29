@@ -5,6 +5,8 @@
  */
 
 import { currentProfile, sync } from './api';
+import { openExtras } from './requests';
+import { sendUrl, type SendDomain } from './links';
 import { call, callJson } from './web/core';
 import { deviceId, fetchBytes, request, upload } from './web/http';
 import * as webauthn from './web/webauthn';
@@ -98,15 +100,25 @@ export type SendDraft = {
 
 export const sendsList = () => callJson<Send[]>((core) => core.sends());
 
-export const sendLink = (send: Pick<Send, 'accessId' | 'urlKey'>) =>
-  `${location.origin}/#/send/${send.accessId}/${send.urlKey}`;
+/** A Send's link: on the send domain it chose, or on this server's address. */
+export const sendLink = (
+  send: Pick<Send, 'accessId' | 'urlKey'>,
+  domain: SendDomain | null = null,
+) => sendUrl(send.accessId, send.urlKey, domain);
 
-/** Save a Send; a new file Send uploads its file too. The link of a new one comes back. */
+/** Which send domain each of the account's Sends chose (§14.2), by Send id; null: the main host. */
+export const sendDomainChoices = () =>
+  request<Record<string, string | null>>('/uwu/v1/sends/domains');
+
+export const setSendDomain = (sendId: string, sendDomainId: string | null) =>
+  request(`/uwu/v1/sends/${id(sendId)}/domain`, { method: 'PUT', body: { sendDomainId } });
+
+/** Save a Send; a new file Send uploads its file too. Its id comes back. */
 export async function saveSend(
   sendId: string | null,
   draft: SendDraft,
   file?: File,
-): Promise<void> {
+): Promise<string> {
   const bytes = file ? new Uint8Array(await file.arrayBuffer()) : undefined;
   const sealed = await call((core) =>
     core.sealSend(
@@ -118,16 +130,22 @@ export async function saveSend(
   const body = JSON.parse(sealed.meta) as Record<string, unknown>;
   const data = sealed.takeData();
   sealed.free();
+  let saved = sendId ?? '';
   if (sendId) {
     await request(`/api/sends/${id(sendId)}`, { method: 'PUT', body });
   } else if (draft.kind === 1) {
-    const answer = await request<{ url: string }>('/api/sends/file/v2', { body });
+    const answer = await request<{ url: string; sendResponse?: { id?: string } }>(
+      '/api/sends/file/v2',
+      { body },
+    );
     const name = (body.file as { fileName: string }).fileName;
     await upload(`/api${answer.url}`, data, name);
+    saved = answer.sendResponse?.id ?? '';
   } else {
-    await request('/api/sends', { body });
+    saved = (await request<{ id: string }>('/api/sends', { body })).id;
   }
   await sync();
+  return saved;
 }
 
 export async function deleteSend(sendId: string): Promise<void> {
@@ -161,14 +179,18 @@ export type ShareDraft = {
   hideEmail: boolean;
 };
 
-/** A text Send of an item's chosen values; its link. An ordinary Send, in every client. */
-export async function shareItem(draft: ShareDraft): Promise<string> {
+/** A text Send of an item's chosen values. An ordinary Send, in every client. */
+export async function shareItem(
+  draft: ShareDraft,
+): Promise<{ id: string; accessId: string; urlKey: string }> {
   const sealed = await callJson<{ request: Record<string, unknown>; urlKey: string }>((core) =>
     core.shareItem(JSON.stringify(draft)),
   );
-  const created = await request<{ accessId: string }>('/api/sends', { body: sealed.request });
+  const created = await request<{ id: string; accessId: string }>('/api/sends', {
+    body: sealed.request,
+  });
   await sync();
-  return sendLink({ accessId: created.accessId, urlKey: sealed.urlKey });
+  return { id: created.id, accessId: created.accessId, urlKey: sealed.urlKey };
 }
 
 export type OpenedSend = {
@@ -555,4 +577,37 @@ export async function passwordReport(
     breachesChecked: breaches,
     breachesIncomplete: incomplete,
   };
+}
+
+/** The last report, as this account's clients saved it on the server. */
+export type SavedReport = { report: Report; date: string };
+
+type StoredReport = { object: 'healthReport'; data: string | null; revisionDate: string | null };
+
+/**
+ * The report the last check saved (docs/uwu-api.md §15), opened with the extras key; `null` when
+ * there is none, or when it does not open any more (the extras key started over).
+ */
+export async function savedReport(): Promise<SavedReport | null> {
+  await openExtras();
+  const stored = await request<StoredReport>('/uwu/v1/reports/health');
+  if (!stored.data || !stored.revisionDate) return null;
+  const data = stored.data;
+  try {
+    const report = await callJson<Report>((core) => core.openReport(data));
+    return Array.isArray(report.findings) ? { report, date: stored.revisionDate } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep `report` on the server, encrypted under the extras key: the server cannot read it. */
+export async function saveReport(report: Report): Promise<string> {
+  await openExtras();
+  const data = await call((core) => core.sealReport(JSON.stringify(report)));
+  const stored = await request<StoredReport>('/uwu/v1/reports/health', {
+    method: 'PUT',
+    body: { data },
+  });
+  return stored.revisionDate ?? new Date().toISOString();
 }

@@ -79,6 +79,9 @@ pub struct Config {
     /// update check asks anyway, unless the update check is off or `UWULOCK_TIME_SOURCE` says
     /// otherwise (`off` for none).
     pub time_sources: Vec<String>,
+    /// The ACME CA and contact for send domains' certificates (docs/uwu-api.md §14.1), without a
+    /// name: each domain brings its own.
+    pub send_domain_acme: Acme,
 }
 
 impl Default for Config {
@@ -94,6 +97,12 @@ impl Default for Config {
             channel: None,
             start_settings: Settings::default(),
             time_sources: Vec::new(),
+            send_domain_acme: Acme {
+                domain: String::new(),
+                email: None,
+                directory: LETS_ENCRYPT.to_string(),
+                directory_ca: None,
+            },
         }
     }
 }
@@ -187,6 +196,24 @@ impl Config {
             });
         }
 
+        // The CA for the main host with UWULOCK_TLS=acme, and for send domains that get their
+        // certificate from the server whenever it does TLS itself (files or acme).
+        let directory = match var("UWULOCK_ACME_DIRECTORY").as_deref() {
+            None | Some("letsencrypt") => LETS_ENCRYPT.to_string(),
+            Some("staging") => LETS_ENCRYPT_STAGING.to_string(),
+            Some(url) if url.starts_with("https://") => url.to_string(),
+            Some(other) => {
+                return Err(format!(
+                    "UWULOCK_ACME_DIRECTORY must be letsencrypt, staging or an https:// address: {other}"
+                ));
+            }
+        };
+        config.send_domain_acme = Acme {
+            domain: String::new(),
+            email: var("UWULOCK_ACME_EMAIL"),
+            directory,
+            directory_ca: var("UWULOCK_ACME_DIRECTORY_CA").map(PathBuf::from),
+        };
         config.tls = match var("UWULOCK_TLS").as_deref().map(str::to_ascii_lowercase).as_deref() {
             None | Some("off" | "proxy") => TlsMode::Off,
             Some("files") => TlsMode::Files {
@@ -198,23 +225,7 @@ impl Config {
                     .public
                     .as_deref()
                     .ok_or("UWULOCK_TLS=acme needs UWULOCK_PUBLIC: the name the certificate is for")?;
-                let domain = acme_domain(public)?;
-                let directory = match var("UWULOCK_ACME_DIRECTORY").as_deref() {
-                    None | Some("letsencrypt") => LETS_ENCRYPT.to_string(),
-                    Some("staging") => LETS_ENCRYPT_STAGING.to_string(),
-                    Some(url) if url.starts_with("https://") => url.to_string(),
-                    Some(other) => {
-                        return Err(format!(
-                            "UWULOCK_ACME_DIRECTORY must be letsencrypt, staging or an https:// address: {other}"
-                        ));
-                    }
-                };
-                TlsMode::Acme(Acme {
-                    domain,
-                    email: var("UWULOCK_ACME_EMAIL"),
-                    directory,
-                    directory_ca: var("UWULOCK_ACME_DIRECTORY_CA").map(PathBuf::from),
-                })
+                TlsMode::Acme(Acme { domain: acme_domain(public)?, ..config.send_domain_acme.clone() })
             }
             Some(other) => return Err(format!("UWULOCK_TLS must be acme, files or off: {other}")),
         };

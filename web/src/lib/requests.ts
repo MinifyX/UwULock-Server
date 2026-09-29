@@ -8,6 +8,7 @@
 import { saveItem, sync } from './api';
 import { Upload } from '../wasm/pkg/core.js';
 import { call, callJson, load } from './web/core';
+import { domainOf, requestUrl, type SendDomain } from './links';
 import { ApiError, download, request } from './web/http';
 
 const id = encodeURIComponent;
@@ -107,10 +108,17 @@ export async function fileRequests(): Promise<FileRequest[]> {
   return Promise.all(list.data.map(opened));
 }
 
-/** The link to hand out, on this server's address. */
-export function requestLink(fileRequest: FileRequest): string | null {
+/** The link to hand out: on the send domain the request chose, or on this server's address. */
+export function requestLink(
+  fileRequest: FileRequest,
+  domains: readonly SendDomain[] = [],
+): string | null {
   if (!fileRequest.secret) return null;
-  return `${location.origin}/#/request/${fileRequest.accessId}/${fileRequest.secret}`;
+  return requestUrl(
+    fileRequest.accessId,
+    fileRequest.secret,
+    domainOf(domains, fileRequest.sendDomainId),
+  );
 }
 
 export type RequestDraft = {
@@ -129,6 +137,8 @@ export type RequestDraft = {
   disabled: boolean;
   /** A new link: the old one stops working. */
   newLink: boolean;
+  /** The send domain its link uses (§14); null: the main host. */
+  sendDomainId: string | null;
 };
 
 export async function saveFileRequest(
@@ -168,6 +178,7 @@ export async function saveFileRequest(
     maxFileBytes: draft.maxFileBytes,
     textAllowed: draft.textAllowed,
     disabled: draft.disabled,
+    sendDomainId: draft.sendDomainId,
     removePassword: draft.removePassword || (!keepsPassword && !sealed.passwordHash),
   };
   if (!keepsPassword) body.passwordHash = sealed.passwordHash;

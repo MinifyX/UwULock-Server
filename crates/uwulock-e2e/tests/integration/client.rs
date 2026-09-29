@@ -16,6 +16,8 @@ pub(crate) const KDF: Kdf = Kdf::Pbkdf2 { iterations: 100_000 };
 
 pub(crate) struct Running {
     pub(crate) url: String,
+    /// The server's database, for what a test does behind the server's back.
+    pub(crate) store: uwulock_store::Store,
     stop: Option<oneshot::Sender<()>>,
     _dir: tempfile::TempDir,
 }
@@ -62,13 +64,13 @@ pub(crate) async fn start_for(emails: &[&str]) -> (Running, Vec<String>) {
     let url = format!("http://{addr}");
 
     config.public = Some(url.clone());
-    let state = uwulock_server::app_state(&config, store, logs).await.unwrap();
+    let state = uwulock_server::app_state(&config, store.clone(), logs).await.unwrap();
     let mut tokens = Vec::new();
     for email in emails {
         let invited = uwulock_api::invite(&state, email, true, None).await.unwrap();
         tokens.push(invited.link.split("token=").nth(1).unwrap().split('&').next().unwrap().to_string());
     }
-    (Running { url, stop: Some(stop), _dir: dir }, tokens)
+    (Running { url, store, stop: Some(stop), _dir: dir }, tokens)
 }
 
 /// Register the way a client does: a user key, wrapped under the master key.

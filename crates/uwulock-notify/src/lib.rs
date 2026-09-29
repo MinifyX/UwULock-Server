@@ -12,6 +12,7 @@
 //! change.
 
 pub mod msgpack;
+pub mod realtime;
 pub mod relay;
 
 use msgpack::Value;

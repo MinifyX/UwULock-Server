@@ -244,6 +244,12 @@ pub(crate) async fn grant(state: &AppState, ip: std::net::IpAddr, form: &TokenFo
     if device_name.len() > 256 || device_id.len() > 256 {
         return Err(ApiError::bad("The device is not valid."));
     }
+    // A suite app logs in with its password or SSO only; a passkey is for Bitwarden's clients.
+    if crate::suite::space_of_client(form.get("clientid").unwrap_or_default()).is_some() {
+        return Err(ApiError::json(
+            serde_json::json!({ "error": "invalid_client", "error_description": "invalid_client" }),
+        ));
+    }
     if !state.limits.login.check(ip) {
         return Err(ApiError::too_many("Too many login requests. Wait a minute and try again."));
     }

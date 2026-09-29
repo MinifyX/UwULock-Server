@@ -4,3 +4,4 @@
 mod client;
 mod family;
 mod file_requests;
+mod suite;

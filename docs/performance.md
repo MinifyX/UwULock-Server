@@ -37,3 +37,26 @@ two runs each:
 This is the floor, not the point: `/alive` does nothing either server could do much better. The
 difference that matters is in the requests clients send all the time — sync, revision date,
 login — and those come with 0.1, together with their scenarios here.
+
+### Stufe 6 — delta sync
+
+A vault of 5,000 items (one account, in-process through the router: no network, one request at a
+time), measured with the ignored test `sync_speed` in `crates/uwulock-api/src/sync/tests.rs`:
+
+```bash
+cargo test -p uwulock-api --release --lib -- --ignored --nocapture sync_speed
+```
+
+On the same shared 8-core machine, release build without LTO, the answer built and serialised:
+
+| Request | Release | Debug |
+| --- | ---: | ---: |
+| `/api/sync` (Bitwarden's, for comparison) | 67 ms | ≈ 250 ms |
+| `/uwu/v1/sync`, full | 89 ms | ≈ 280 ms |
+| `/uwu/v1/sync`, delta, nothing changed | 1.0 ms | 1.7 ms |
+| `/uwu/v1/sync`, delta, one item changed | 1.1 ms | 3.0 ms |
+| `/uwu/v1/sync`, delta, 500 items moved to a folder | 6.8 ms | ≈ 30 ms |
+
+The full `/uwu/v1/sync` holds everything `/api/sync` does plus UwULock's own (extras key, own
+icons, reminders, travel mode, unseen counts); what a client does all day is the delta, which does
+not grow with the vault: it reads the changes by their numbers, not the vault.

@@ -5,6 +5,54 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**The UwU extras (Stufe 6).**
+
+- **Delta sync** (`GET /uwu/v1/sync`) for UwULock's own clients: a first full sync with
+  UwULock's own data (extras key, own icons, reminders, travel mode, each Send's domain, the
+  masked addresses' links, unseen counts, the suite vault), then only what changed, deletions included, paged by change numbers. Every change is
+  counted by database triggers, per account and per family; tombstones are kept 90 days. Key
+  rotations, membership changes, travel mode, large imports and a restored backup make the next
+  sync a full one (`reset`). A delta of a 5,000-item vault takes about a millisecond
+  ([docs/performance.md](docs/performance.md), [docs/sync.md](docs/sync.md)).
+- **Realtime channel** (`/uwu/v1/realtime`, subprotocol `uwu.realtime.v1`): the token in the first
+  message and renewed on the same connection, heartbeat with a session check, `changed`,
+  `logout`, `notice` (security notices, file-request submissions, due reminders) and `info`
+  (also when a send domain or a UwUMail server is added or removed); fed from the same place as
+  the SignalR hub. 20 connections per account.
+- **Suite vault** for UwUSSH and UwURDP (`docs/uwu-api.md` §6, [docs/suite.md](docs/suite.md)):
+  the apps log in with `client_id=uwussh|uwurdp` and `scope=uwu.suite offline_access`, two-step
+  login and remembered devices included, and get a token that opens their own space only. Spaces
+  keep UwUSync's record model (numeric cursor, conflicts, 500 records / 8 MiB per push), their
+  keys under the extras key; rekeying gives a space a new id. Quotas per account
+  (`suite.maxRecords`, `suite.maxMb`, counted in the storage limit), a switch in the admin portal,
+  and the spaces with their size under *Settings → Devices* in the web vault, deletable with the
+  master password. The apps' own scenarios, the move from UwUSync included, run in `uwulock-e2e`.
+- **Security notices** for the extras key (created, wrapped again, lost in a rotation), for
+  every login of a UwU app and for masked addresses; travel mode's notices are named in the mail
+  too.
+- **Password health**: the web vault keeps its report, encrypted under the extras key, and shows
+  it again with its date.
+- New metrics: `uwulock_sync_duration_seconds{kind="full"|"delta"}` and
+  `uwulock_live_connections{channel="realtime"}`.
+- Proxies: `/uwu/v1/realtime` is a WebSocket; the nginx example passes it.
+- **Send domains**: extra names like `send.example.com` that serve only Sends and file requests —
+  no web vault, no login, no admin portal — with short links
+  (`https://send.example.com/<id>#<key>`; the old `/#/send/…` links keep working). The admin adds
+  several; each gets its certificate from Let's Encrypt through the server itself (TLS-ALPN-01,
+  one certificate per name, chosen by SNI) or from a proxy in front, and can have a look of its
+  own (name, colour, logos, favicon), which the page and the mail with a Send's code follow.
+  Every Send opens under every address; the account's default and a choice per Send or file
+  request only decide which link is shown. The admin portal checks DNS, HTTPS and routing per
+  domain; the diagnosis and `/metrics` watch each certificate ([docs/send-domains.md](docs/send-domains.md)).
+- **Masked addresses from UwUMail**: connect your UwUMail mailbox once (OAuth with PKCE, a scope
+  that can only make masked addresses) and make a mail address of its own for each website — in
+  the web vault's settings, its generator and next to an item's username. Switch them off, on or
+  delete them; deleting an item offers to switch its address off. The official Bitwarden apps
+  make them too, through addy.io- and SimpleLogin-compatible endpoints with keys from the web
+  vault. The admin lists which UwUMail servers the server may talk to; tokens are kept encrypted
+  with the server secret, and connecting, disconnecting and new keys are security notices
+  ([docs/masked-addresses.md](docs/masked-addresses.md)).
+
 **Families (Stufe 4d).**
 
 - **Share with your family**: make a family in the web vault, invite people by address, and

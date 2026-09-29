@@ -123,6 +123,18 @@ pub struct NoticeLine {
     pub about: Option<String>,
 }
 
+/// A suite app's `client_id` as people know it.
+fn app_name(client_id: &str, de: bool) -> String {
+    match client_id {
+        "uwussh" => "UwUSSH".into(),
+        "uwurdp" => "UwURDP".into(),
+        "uwumail" => "UwUMail".into(),
+        "uwusuite" if de => "Eine UwU-App".into(),
+        "uwusuite" => "An UwU app".into(),
+        other => other.to_string(),
+    }
+}
+
 impl NoticeLine {
     /// What happened, in a few words.
     fn what(&self, de: bool) -> String {
@@ -165,8 +177,34 @@ impl NoticeLine {
             ("organizationRoleChanged", false) => format!("Your role in “{about}” was changed"),
             ("extrasKeyReset", true) => "UwULock-Extras neu angefangen (Schlüssel zurückgesetzt)".into(),
             ("extrasKeyReset", false) => "UwULock extras started over (key reset)".into(),
+            ("extrasKeyCreated", true) => "UwULock-Extras-Schlüssel angelegt".into(),
+            ("extrasKeyCreated", false) => "UwULock extras key created".into(),
+            ("extrasKeyLost", true) => {
+                "UwULock-Extras-Schlüssel verloren: Die Schlüssel des Kontos wurden ohne ihn erneuert".into()
+            }
+            ("extrasKeyLost", false) => "UwULock extras key lost: the account's keys were replaced without it".into(),
+            ("extrasKeyRewrapped", true) => "UwULock-Extras-Schlüssel für den neuen Kontoschlüssel eingepackt".into(),
+            ("extrasKeyRewrapped", false) => "UwULock extras key wrapped for the new account key".into(),
+            ("suiteLogin", true) => {
+                format!("{} hat sich angemeldet (Zugriff auf seine Daten im Suite-Tresor)", app_name(&about, true))
+            }
+            ("suiteLogin", false) => {
+                format!("{} logged in (access to its data in the suite vault)", app_name(&about, false))
+            }
             ("ssoLinked", true) => format!("Anmeldung über {about} mit dem Konto verknüpft"),
             ("ssoLinked", false) => format!("Login through {about} linked to the account"),
+            ("maskedConnected", true) => format!("Mit UwUMail verbunden ({about}) für maskierte Adressen"),
+            ("maskedConnected", false) => format!("Connected to UwUMail ({about}) for masked addresses"),
+            ("maskedDisconnected", true) => format!("Verbindung zu UwUMail ({about}) getrennt"),
+            ("maskedDisconnected", false) => format!("Disconnected from UwUMail ({about})"),
+            ("maskedApiKeyCreated", true) => format!("API-Key für maskierte Adressen erzeugt: {about}"),
+            ("maskedApiKeyCreated", false) => format!("API key for masked addresses created: {about}"),
+            ("travelModeEnabled", true) => "Reisemodus eingeschaltet".into(),
+            ("travelModeEnabled", false) => "Travel mode switched on".into(),
+            ("travelModeDisabled", true) => "Reisemodus ausgeschaltet".into(),
+            ("travelModeDisabled", false) => "Travel mode switched off".into(),
+            ("travelDisableFailed", true) => "Ein Versuch, den Reisemodus auszuschalten, ist gescheitert".into(),
+            ("travelDisableFailed", false) => "A try to switch travel mode off failed".into(),
             ("vaultExported", true) => "Tresor exportiert".into(),
             ("vaultExported", false) => "Vault exported".into(),
             ("kdfBelowMinimum", true) => {

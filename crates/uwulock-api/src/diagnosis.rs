@@ -167,6 +167,11 @@ async fn certificate(state: &AppState) -> Check {
     };
     let seen = crate::certificate::look(&probe).await;
     *state.certificate.write() = Some(seen.clone());
+    judge("certificate", &probe, seen)
+}
+
+/// What `seen` at `probe` means for clients, as check `id`.
+fn judge(id: &str, probe: &crate::certificate::Probe, seen: crate::certificate::Seen) -> Check {
     let fix = |check: Check| {
         check.fix(
             text(
@@ -180,7 +185,7 @@ async fn certificate(state: &AppState) -> Check {
     let Some(expires) = seen.expires else {
         let problem = seen.problem.unwrap_or_default();
         return fix(check(
-            "certificate",
+            id,
             "error",
             text(
                 format!("Kein Zertifikat von {}: {problem}", probe.connect),
@@ -192,7 +197,7 @@ async fn certificate(state: &AppState) -> Check {
     let until = date_of(expires);
     if let Some(problem) = seen.problem {
         return fix(check(
-            "certificate",
+            id,
             "error",
             text(
                 format!("Clients trauen dem Zertifikat nicht: {problem}"),
@@ -210,7 +215,7 @@ async fn certificate(state: &AppState) -> Check {
     };
     let summary =
         text(format!("Gültig bis {until} (noch {left} Tage)"), format!("Valid until {until} ({left} days left)"));
-    if status == "ok" { check("certificate", status, summary) } else { fix(check("certificate", status, summary)) }
+    if status == "ok" { check(id, status, summary) } else { fix(check(id, status, summary)) }
 }
 
 /// An HTTP date: `Mon, 28 Sep 2026 12:00:00 GMT`.
@@ -571,6 +576,54 @@ fn public_url_check(state: &AppState, parts: &Parts) -> Check {
     )
 }
 
+/// Each send domain: does its name lead somewhere, and is the certificate there one clients
+/// trust? Its own ACME certificate is looked at on this server's listener, one from a proxy
+/// where the name leads.
+async fn send_domains(state: &AppState) -> Vec<Check> {
+    let domains = state.send_domains.all();
+    let tasks: Vec<_> =
+        domains.iter().cloned().map(|domain| tokio::spawn(send_domain(state.clone(), domain))).collect();
+    let mut checks = Vec::with_capacity(tasks.len());
+    for task in tasks {
+        if let Ok(check) = task.await {
+            checks.push(check);
+        }
+    }
+    checks
+}
+
+async fn send_domain(state: AppState, domain: uwulock_store::send_domains::SendDomain) -> Check {
+    {
+        let id = format!("certificate.{}", domain.host);
+        if let Err(error) = tokio::net::lookup_host((domain.host.as_str(), 443)).await {
+            return check(
+                &id,
+                "error",
+                text(
+                    format!("{} führt nirgendwohin: {error}", domain.host),
+                    format!("{} leads nowhere: {error}", domain.host),
+                ),
+            )
+            .fix(
+                text(
+                    format!("Leg im DNS einen A- oder AAAA-Eintrag für {} an, der auf diesen Server zeigt (oder auf den Proxy davor).", domain.host),
+                    format!("Add an A or AAAA record for {} in DNS that points to this server (or to the proxy in front of it).", domain.host),
+                ),
+                None,
+                None,
+            );
+        }
+        let own = domain.tls == "acme" && state.send_domains.own_tls();
+        let connect = match state.config.certificate_probe.as_ref() {
+            Some(main) if own => main.connect.clone(),
+            _ => format!("{}:443", domain.host),
+        };
+        let probe = crate::certificate::Probe { connect, name: domain.host.clone() };
+        let seen = crate::certificate::look(&probe).await;
+        judge(&id, &probe, seen)
+    }
+}
+
 fn browser_pending(id: &str) -> Check {
     check(id, "skipped", text("Prüft der Browser im Admin-Portal", "Checked by the browser in the admin portal"))
 }
@@ -581,12 +634,13 @@ async fn within<T>(check: impl std::future::Future<Output = T>) -> Option<T> {
 
 /// Everything the server checks itself; the proxy checks from `parts`, the admin's request.
 async fn run(state: &AppState, parts: Option<&Parts>) -> Stored {
-    let (certificate, clock, mail, relay, backup) = tokio::join!(
+    let (certificate, clock, mail, relay, backup, domains) = tokio::join!(
         within(certificate(state)),
         within(clock_check(state)),
         within(mail(state)),
         within(push_relay(state)),
         within(backup(state)),
+        within(send_domains(state)),
     );
     let late =
         |id: &str| check(id, "error", text("Keine Antwort innerhalb von 25 Sekunden", "No answer within 25 seconds"));
@@ -598,6 +652,12 @@ async fn run(state: &AppState, parts: Option<&Parts>) -> Stored {
         backup.unwrap_or_else(|| late("backup")),
         disk(state),
     ];
+    match domains {
+        Some(domains) => checks.extend(domains),
+        None => {
+            checks.extend(state.send_domains.all().iter().map(|domain| late(&format!("certificate.{}", domain.host))))
+        }
+    }
     match parts {
         Some(parts) => {
             checks.push(client_ip_check(state, parts));

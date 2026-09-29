@@ -71,8 +71,8 @@ few minutes is plenty. Answers are never cached.
 | `uwulock_http_requests_total` | counter | `route`, `method`, `status` | Requests answered. `route` is the route's template, like `/api/ciphers/{id}`; the web vault's files and unknown paths are `other` |
 | `uwulock_http_request_duration_seconds` | histogram | `route`, `method` | How long they took to answer |
 | `uwulock_logins_total` | counter | `grant`: `password`, `refresh_token`, `client_credentials`, `webauthn`, `send_access`; `result`: `success`, `failure`, `two_factor` | Logins. `two_factor` is the answer that asks for the second step |
-| `uwulock_sync_duration_seconds` | histogram | `kind`: `bitwarden` | How long a sync of the official clients took |
-| `uwulock_live_connections` | gauge | `channel`: `signalr`, `anonymous` | Open live-update connections: of logged-in devices, and of devices that wait for a "log in with a device" answer |
+| `uwulock_sync_duration_seconds` | histogram | `kind`: `bitwarden`, `full`, `delta` | How long a sync took: of the official clients (`/api/sync`), and of UwULock's own clients, whole or as a delta ([sync.md](sync.md)) |
+| `uwulock_live_connections` | gauge | `channel`: `signalr`, `anonymous`, `realtime` | Open live-update connections: of logged-in devices, of devices that wait for a "log in with a device" answer, and on UwULock's realtime channel |
 | `uwulock_push_relay_errors_total` | counter | | Requests Bitwarden's push relay did not take |
 | `uwulock_mail_sent_total`, `uwulock_mail_errors_total` | counter | | Mails that went out, and those the mail server did not take |
 | `uwulock_database_bytes` | gauge | | The database, with its write-ahead log |
@@ -84,7 +84,7 @@ few minutes is plenty. Answers are never cached.
 | `process_*` | | | The usual: CPU seconds, resident and virtual memory, open and allowed file descriptors, start time |
 
 Counters start at 0 with every start of the server, which `rate()` and `increase()` understand.
-Later versions add the send domains' certificates, the realtime channel and the icon fetches.
+Later versions add the send domains' certificates and the icon fetches.
 
 ## Alert rules to start with
 

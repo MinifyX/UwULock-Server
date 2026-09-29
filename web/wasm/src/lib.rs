@@ -586,6 +586,19 @@ pub fn password_report() -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&health::report(unlocked)))?)
 }
 
+/// The report of the password check, sealed under the extras key for
+/// `PUT /uwu/v1/reports/health`.
+#[wasm_bindgen(js_name = sealReport)]
+pub fn seal_report(report: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| health::seal(unlocked, report))?)
+}
+
+/// A report the server kept, opened: its JSON.
+#[wasm_bindgen(js_name = openReport)]
+pub fn open_report(data: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| health::open(unlocked, data))?)
+}
+
 // ── File requests ─────────────────────────────────────────
 
 /// What to do with the answer of `GET /uwu/v1/keys`; the extras key is kept from here on.

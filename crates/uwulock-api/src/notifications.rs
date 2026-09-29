@@ -54,6 +54,10 @@ async fn hub(
         .or_else(|| header.rsplit_once("Bearer ").map(|(_, token)| token.to_string()))
         .ok_or_else(ApiError::unauthorized)?;
     let claims = state.tokens.verify(&token).ok_or_else(ApiError::unauthorized)?;
+    // A suite app's token is for its space and the realtime channel, not for the hub.
+    if !claims.scope.iter().any(|scope| scope == "api") {
+        return Err(crate::suite::scope_error());
+    }
     let check = Recheck {
         state: state.clone(),
         user_id: claims.sub,

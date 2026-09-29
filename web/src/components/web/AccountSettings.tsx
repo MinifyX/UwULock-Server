@@ -18,6 +18,7 @@ import {
   rotationContacts,
   saveName,
   serverInfo,
+  setDefaultSendDomain,
   setLanguage,
   strength,
   type AccountInfo,
@@ -32,6 +33,7 @@ import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
 import { PasswordPrompt, radioArrows, ResultLine, Row, Segmented, type Result } from './controls';
+import { rememberDefaultSendDomain, SendDomainField, useSendDomains } from './SendDomainSelect';
 
 type Props = {
   status: Status;
@@ -63,6 +65,7 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
+  const domains = useSendDomains();
 
   useEffect(() => {
     if (status.email) void prelogin(status.email).then((text) => setKdf(kdfOf(text)));
@@ -130,6 +133,31 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
               { value: 'de', label: 'Deutsch' },
               { value: 'en', label: 'English' },
             ]}
+          />
+        </Row>
+      )}
+      {info && domains.length > 0 && (
+        <Row
+          label={t('Adresse für Sends')}
+          description={t(
+            'Neue Sends und Datei-Anfragen bekommen Links unter dieser Adresse; im Send lässt sie sich ändern. Auch Sends aus den Bitwarden-Apps bekommen sie, deren Links zeigen aber die Hauptadresse.',
+          )}
+        >
+          <SendDomainField
+            label={t('Adresse für Sends')}
+            value={info.sendDomainId ?? null}
+            domains={domains}
+            bare
+            onChange={async (sendDomainId) => {
+              try {
+                await setDefaultSendDomain(sendDomainId);
+                rememberDefaultSendDomain(sendDomainId);
+                onInfo({ ...info, sendDomainId });
+                setResult({ tone: 'info', text: t('Gespeichert ✧') });
+              } catch (e) {
+                setResult({ tone: 'error', text: errorText(e) });
+              }
+            }}
           />
         </Row>
       )}

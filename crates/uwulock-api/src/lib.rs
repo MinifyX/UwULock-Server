@@ -41,6 +41,7 @@ mod keys;
 mod limits;
 mod logs;
 pub mod loki;
+mod masked;
 mod meta;
 pub mod metrics;
 pub mod networks;
@@ -56,15 +57,19 @@ pub(crate) mod outbound;
 mod palette;
 mod passkeys;
 pub mod policies;
+mod realtime;
 pub mod reminders;
 pub mod reports;
 pub mod scim;
 pub mod secret;
 mod send_codes;
+pub mod send_domains;
 pub mod send_hosts;
 mod sends;
 mod settings;
 pub mod sso;
+mod suite;
+mod sync;
 mod totp;
 mod travel;
 mod two_factor;
@@ -167,6 +172,8 @@ pub struct AppState {
     pub unanswerable: Arc<auth_requests::Unanswerable>,
     /// Who listens for live updates.
     pub hub: Arc<uwulock_notify::Hub>,
+    /// Who listens on UwULock's own realtime channel.
+    pub realtime: Arc<uwulock_notify::realtime::Realtime>,
     /// Bitwarden's push relay, for the phone apps.
     pub relay: uwulock_notify::relay::Relay,
     /// What `/metrics` counts.
@@ -193,6 +200,10 @@ pub struct AppState {
     pub send_codes: Arc<send_codes::SendCodes>,
     /// 2FA Directory's list, mirrored for the password check.
     pub twofa: Arc<reports::Directory>,
+    /// The send domains, and what the TLS side says about their certificates.
+    pub send_domains: Arc<send_domains::Registry>,
+    /// Masked addresses: connects waiting for UwUMail's answer, the refresh locks.
+    pub masked: Arc<masked::Masked>,
 }
 
 impl AppState {
@@ -237,6 +248,7 @@ impl AppState {
             uploads: Arc::default(),
             legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
             hub: Arc::default(),
+            realtime: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
             metrics: Arc::default(),
             alerts,
@@ -250,7 +262,10 @@ impl AppState {
             branding: Arc::default(),
             send_codes: Arc::default(),
             twofa: Arc::default(),
+            send_domains: Arc::default(),
+            masked: Arc::default(),
         };
+        send_domains::reload(&state).await;
         branding::reload(&state).await;
         Ok(state)
     }
@@ -261,6 +276,8 @@ impl AppState {
         self.store.set_version_rule(settings.versions.rule());
         *self.settings.write() = settings;
         self.settings_changed.notify_one();
+        // `/uwu/v1/info` says something else now.
+        self.realtime.broadcast(uwulock_notify::realtime::Live::Info);
     }
 
     /// Look again at how many hashes from Vaultwarden are left, after one was replaced or the
@@ -300,7 +317,10 @@ pub fn router(state: AppState) -> Router {
     let whole_vault = Router::new()
         .merge(ciphers::vault_routes())
         .merge(accounts::vault_routes())
+        .merge(suite::rekey_routes())
         .layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT));
+    // A suite push brings up to 500 records with 8 MiB of sealed data, which is more in base64.
+    let suite_push = suite::push_routes().layer(DefaultBodyLimit::max(suite::MAX_PUSH_BODY));
     // Almost everything: small bodies, and an answer within a minute.
     let quick = Router::new()
         .merge(health::routes())
@@ -338,8 +358,14 @@ pub fn router(state: AppState) -> Router {
         .merge(reminders::routes())
         .merge(branding::routes())
         .merge(reports::routes())
+        .merge(sync::routes())
+        .merge(realtime::routes())
+        .merge(suite::routes())
+        .merge(send_domains::routes())
+        .merge(masked::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
+        .merge(suite_push)
         .merge(web::routes())
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(TimeoutLayer::with_status_code(axum::http::StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT));
@@ -356,6 +382,7 @@ pub fn router(state: AppState) -> Router {
         .merge(uploads)
         .fallback(web::fallback)
         .layer(axum::middleware::from_fn_with_state(state.clone(), cors::cors))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), send_hosts::guard))
         .layer(axum::middleware::from_fn_with_state(state.clone(), networks::guard))
         .layer(axum::middleware::from_fn_with_state(state.clone(), metrics::track))
         .with_state(state)

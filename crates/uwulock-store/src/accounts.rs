@@ -162,10 +162,12 @@ pub struct Device {
     pub push_token: Option<String>,
     /// The device's login came through SSO.
     pub sso: bool,
+    /// The client it logged in as: `uwussh`, `uwurdp`, … for a suite app (docs/uwu-api.md §6.5).
+    pub client_id: Option<String>,
 }
 
 const DEVICE_COLUMNS: &str = "user_id, id, name, type, created, last_seen, last_ip, refresh_hash IS NOT NULL, \
-     refresh_expires, remember_hash, remember_expires, push_token, sso";
+     refresh_expires, remember_hash, remember_expires, push_token, sso, client_id";
 
 fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
     Ok(Device {
@@ -182,6 +184,7 @@ fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
         remember_expires: row.get(10)?,
         push_token: row.get(11)?,
         sso: row.get(12)?,
+        client_id: row.get(13)?,
     })
 }
 
@@ -199,6 +202,8 @@ pub struct DeviceLogin {
     pub remember: Option<(Vec<u8>, String)>,
     /// The login came through SSO.
     pub sso: bool,
+    /// The client it logs in as.
+    pub client_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -499,10 +504,10 @@ impl Store {
                 )?;
                 tx.execute(
                     "INSERT INTO devices (user_id, id, name, type, created, last_seen, last_ip, refresh_hash, \
-                     refresh_expires, sso) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9) \
+                     refresh_expires, sso, client_id) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9, ?10) \
                      ON CONFLICT (user_id, id) DO UPDATE SET name = excluded.name, type = excluded.type, \
                      last_seen = excluded.last_seen, last_ip = excluded.last_ip, refresh_hash = excluded.refresh_hash, \
-                     refresh_expires = excluded.refresh_expires, sso = excluded.sso",
+                     refresh_expires = excluded.refresh_expires, sso = excluded.sso, client_id = excluded.client_id",
                     params![
                         login.user_id,
                         login.id,
@@ -512,7 +517,8 @@ impl Store {
                         login.ip,
                         login.refresh_hash,
                         login.refresh_expires,
-                        login.sso
+                        login.sso,
+                        login.client_id,
                     ],
                 )?;
                 if let Some((hash, expires)) = login.remember {
@@ -1020,6 +1026,7 @@ pub(crate) mod tests {
             refresh_expires: clock::in_seconds(3600),
             remember: None,
             sso: false,
+            client_id: None,
         }
     }
 

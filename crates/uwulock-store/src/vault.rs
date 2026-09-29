@@ -111,6 +111,9 @@ pub(crate) fn write_cipher(tx: &Transaction<'_>, cipher: &Cipher) -> rusqlite::R
     Ok(())
 }
 
+/// An import of more items than this is taken by a full sync rather than a delta (§4.3).
+const LARGE_IMPORT: usize = 1000;
+
 /// A whole vault, as a sync hands it out.
 #[derive(Debug, Default)]
 pub struct VaultContents {
@@ -372,6 +375,9 @@ impl Store {
                 cipher.user_id = owned.clone();
                 write_cipher(tx, &cipher)?;
             }
+            if ciphers.len() > LARGE_IMPORT {
+                tx.execute("UPDATE users SET sync_epoch = sync_epoch + 1 WHERE id = ?1", [&owned])?;
+            }
             bump_revision(tx, &owned)
         })
         .await?;
@@ -455,6 +461,8 @@ impl Store {
         self.sqlite_write(move |tx| {
             tx.execute("DELETE FROM ciphers WHERE user_id = ?1", [&owned])?;
             tx.execute("DELETE FROM folders WHERE user_id = ?1", [&owned])?;
+            // A delta of every item gone would be the whole vault again: everything anew instead.
+            tx.execute("UPDATE users SET sync_epoch = sync_epoch + 1 WHERE id = ?1", [&owned])?;
             bump_revision(tx, &owned)
         })
         .await?;

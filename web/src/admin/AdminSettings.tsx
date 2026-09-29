@@ -1,5 +1,6 @@
 import { ComfortSettings } from './ComfortSettings';
 import { FamilySettings } from './FamilySettings';
+import { MaskedServerSettings } from './MaskedServerSettings';
 import { useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import { ResultLine, Row, Segmented, Toggle, type Result } from '../components/web/controls';
@@ -71,6 +72,16 @@ export function AdminSettings({ me }: { me: string }) {
     setResult(null);
     try {
       const body: Settings = { ...draft, smtp: draft.smtp?.host.trim() ? draft.smtp : null };
+      // Rows left empty are not servers.
+      if (draft.masked)
+        body.masked = {
+          servers: draft.masked.servers
+            .filter((server) => server.url.trim())
+            .map((server) => ({
+              url: server.url.trim().replace(/\/+$/, ''),
+              name: server.name.trim(),
+            })),
+        };
       const saved = await saveSettings(body);
       setCurrent(saved);
       setDraft(saved);
@@ -393,9 +404,51 @@ export function AdminSettings({ me }: { me: string }) {
         />
       </Row>
 
+      <h2 className="settings-heading">{t('Suite-Tresor')}</h2>
+      <Row
+        label={t('Suite-Tresor')}
+        description={t(
+          'UwUSSH und UwURDP speichern ihre Hosts, Schlüssel und Verbindungen verschlüsselt hier, mit demselben Konto. Ausgeschaltet werden ihre Anmeldungen abgelehnt; die Daten bleiben.',
+        )}
+      >
+        <Toggle
+          label={t('Suite-Tresor')}
+          checked={draft.suite.enabled}
+          onChange={(enabled) => setDraft({ ...draft, suite: { ...draft.suite, enabled } })}
+        />
+      </Row>
+      <Row label={t('Einträge pro Konto')}>
+        <input
+          type="number"
+          min={1}
+          max={1000000}
+          className="narrow-number"
+          aria-label={t('Einträge pro Konto')}
+          value={draft.suite.maxRecords}
+          onChange={(e) =>
+            setDraft({ ...draft, suite: { ...draft.suite, maxRecords: Number(e.target.value) } })
+          }
+        />
+      </Row>
+      <Row label={t('Speicher pro Konto in MB')}>
+        <input
+          type="number"
+          min={1}
+          max={65536}
+          className="narrow-number"
+          aria-label={t('Speicher pro Konto in MB')}
+          value={draft.suite.maxMb}
+          onChange={(e) =>
+            setDraft({ ...draft, suite: { ...draft.suite, maxMb: Number(e.target.value) } })
+          }
+        />
+      </Row>
+
       <ComfortSettings draft={draft} setDraft={setDraft} />
 
       <FamilySettings draft={draft} setDraft={setDraft} />
+
+      <MaskedServerSettings draft={draft} setDraft={setDraft} />
 
       <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
       <p className="settings-lead">

@@ -226,8 +226,10 @@ try {
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radiogroup', { name: 'Kontrast' }).getByRole('radio', { name: 'System' }).click();
   await page.keyboard.press('Escape');
-  // Back to the backups: the tenth page, one after the ninth.
+  // Back to the backups: the eleventh page, two after the ninth.
   await page.keyboard.press('9');
+  await page.getByRole('heading', { name: 'Ereignisse', exact: true }).waitFor();
+  await page.keyboard.press('j');
   await page.getByRole('heading', { name: 'Log', exact: true }).waitFor();
   await page.keyboard.press('j');
   await page.getByRole('heading', { name: 'Backups', exact: true }).waitFor();

@@ -10,11 +10,14 @@ import editing from './editing.json';
 import families from './families.json';
 import features from './features.json';
 import importing from './import.json';
+import masked from './masked.json';
 import operations from './operations.json';
 import requests from './requests.json';
+import senddomains from './senddomains.json';
 import settings from './settings.json';
 import sharing from './sharing.json';
 import sso from './sso.json';
+import suite from './suite.json';
 import vault from './vault.json';
 import web from './web.json';
 
@@ -26,11 +29,14 @@ export const EN: Readonly<Record<string, string>> = {
   ...families,
   ...features,
   ...importing,
+  ...masked,
   ...operations,
   ...requests,
+  ...senddomains,
   ...settings,
   ...sharing,
   ...sso,
+  ...suite,
   ...vault,
   ...web,
 };

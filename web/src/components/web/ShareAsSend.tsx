@@ -1,12 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useFeature } from '../../lib/branding';
 import { errorText } from '../../lib/errors';
-import { shareableFields, shareItem, type ShareableField } from '../../lib/features';
+import {
+  sendLink,
+  setSendDomain,
+  shareableFields,
+  shareItem,
+  type ShareableField,
+} from '../../lib/features';
 import { t, useLanguage } from '../../lib/i18n';
 import { IDENTITY_LABEL } from '../../lib/items';
+import { domainOf } from '../../lib/links';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
+import { SendDomainField, useDefaultSendDomain, useSendDomains } from './SendDomainSelect';
 import { SendAccess, splitAddresses } from './SendsView';
 
 /** What each value is called in the Send's text, in the sender's language. */
@@ -70,6 +78,10 @@ export function ShareAsSend({
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const mailOk = useFeature('send-emails');
+  const domains = useSendDomains();
+  const fallback = useDefaultSendDomain(domains.length > 0);
+  const [domain, setDomain] = useState<string | null | undefined>(undefined);
+  const chosenDomain = domain === undefined ? fallback.value : domain;
 
   useEffect(() => {
     shareableFields(itemId).then(
@@ -83,6 +95,7 @@ export function ShareAsSend({
 
   const addresses = splitAddresses(emails);
   const ready =
+    fallback.ready &&
     chosen.size > 0 &&
     name.trim() &&
     (access !== 1 || password) &&
@@ -108,7 +121,10 @@ export function ShareAsSend({
         emails: access === 0 ? addresses : [],
         hideEmail: false,
       });
-      setLink(made);
+      // New Sends start on the account's default domain; another one is set afterwards.
+      if (domains.length > 0 && chosenDomain !== fallback.value)
+        await setSendDomain(made.id, chosenDomain).catch((e) => toast(errorText(e), 'error'));
+      setLink(sendLink(made, domainOf(domains, chosenDomain)));
     } catch (e) {
       setError(errorText(e));
     } finally {
@@ -235,6 +251,15 @@ export function ShareAsSend({
             />
           </label>
         </div>
+        {domains.length > 0 && (
+          <SendDomainField
+            label={t('Adresse des Links')}
+            value={chosenDomain}
+            onChange={setDomain}
+            domains={domains}
+            disabled={!fallback.ready}
+          />
+        )}
         <SendAccess
           value={access}
           onChange={setAccess}

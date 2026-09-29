@@ -208,6 +208,10 @@ export type Settings = {
   icons: { automatic: boolean; library: boolean; sources: string[] };
   /** Families (§16.4): who may make one, its size, how many one account may own. */
   families: OrgRules;
+  /** The suite vault of UwUSSH and UwURDP (§6): on/off, and what one account may keep. */
+  suite: { enabled: boolean; maxRecords: number; maxMb: number };
+  /** The UwUMail servers accounts may connect for masked addresses (§21.8). */
+  masked?: { servers: { url: string; name: string }[] };
 };
 
 export type OrgRules = {
@@ -283,15 +287,77 @@ export type BrandingPreview = {
 
 export type BrandingImage = 'logo/light' | 'logo/dark' | 'favicon';
 
-export const branding = () => request<BrandingAdmin>(`${base}/branding`);
-export const saveBranding = (name: string | null, color: string | null) =>
-  request<BrandingAdmin>(`${base}/branding`, { method: 'PUT', body: { name, color } });
-export const brandingPreview = (color: string) =>
-  request<BrandingPreview>(`${base}/branding/preview?color=${encodeURIComponent(color)}`);
-export const uploadBrandingImage = (image: BrandingImage, file: Blob) =>
-  request<BrandingAdmin>(`${base}/branding/${image}`, { method: 'PUT', raw: file });
-export const removeBrandingImage = (image: BrandingImage) =>
-  request<BrandingAdmin>(`${base}/branding/${image}`, { method: 'DELETE' });
+/** Where a branding lives: the server's own, or one send domain's (§14.4). */
+export const SERVER_BRANDING = `${base}/branding`;
+export const domainBranding = (domainId: string) =>
+  `${base}/send-domains/${encodeURIComponent(domainId)}/branding`;
+
+export const branding = (path = SERVER_BRANDING) => request<BrandingAdmin>(path);
+export const saveBranding = (name: string | null, color: string | null, path = SERVER_BRANDING) =>
+  request<BrandingAdmin>(path, { method: 'PUT', body: { name, color } });
+export const brandingPreview = (color: string, path = SERVER_BRANDING) =>
+  request<BrandingPreview>(`${path}/preview?color=${encodeURIComponent(color)}`);
+export const uploadBrandingImage = (image: BrandingImage, file: Blob, path = SERVER_BRANDING) =>
+  request<BrandingAdmin>(`${path}/${image}`, { method: 'PUT', raw: file });
+export const removeBrandingImage = (image: BrandingImage, path = SERVER_BRANDING) =>
+  request<BrandingAdmin>(`${path}/${image}`, { method: 'DELETE' });
+/** A send domain back to the server's look. */
+export const resetDomainBranding = (domainId: string) =>
+  request(domainBranding(domainId), { method: 'DELETE' });
+
+// ── Send domains (§14.1) ──────────────────────────────────
+
+export type SendDomainTls = 'acme' | 'proxy';
+
+export type AdminSendDomain = {
+  id: string;
+  host: string;
+  tls: SendDomainTls;
+  certificate: {
+    status: 'ok' | 'pending' | 'failed' | 'proxy';
+    expires: string | null;
+    error: string | null;
+  };
+  /** Its own look, or null for the server's. */
+  branding: Branding | null;
+  creationDate: string;
+};
+
+export type SendDomainCheck = {
+  dns: { ok: boolean; addresses: string[] };
+  https: { ok: boolean; error: string | null };
+  routing: { ok: boolean };
+};
+
+const domains = `${base}/send-domains`;
+
+export const sendDomains = async () => {
+  const answer = await request<AdminSendDomain[] | { data: AdminSendDomain[] }>(domains);
+  return Array.isArray(answer) ? answer : answer.data;
+};
+export const addSendDomain = (host: string, tls: SendDomainTls) =>
+  request<AdminSendDomain>(domains, { body: { host, tls } });
+export const setSendDomainTls = (id: string, tls: SendDomainTls) =>
+  request<AdminSendDomain>(`${domains}/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: { tls },
+  });
+export const deleteSendDomain = (id: string) =>
+  request(`${domains}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const checkSendDomain = (id: string) =>
+  request<SendDomainCheck>(`${domains}/${encodeURIComponent(id)}/check`, { body: {} });
+
+// ── Allowed UwUMail servers (§21.8) ───────────────────────
+
+export type MaskedServerCheck = {
+  discovery: boolean;
+  maskedScope: boolean;
+  registration: boolean;
+  error: string | null;
+};
+
+export const checkMaskedServer = (url: string) =>
+  request<MaskedServerCheck>(`${base}/masked/check`, { body: { url } });
 
 export const overview = () => request<Overview>(`${base}/overview`);
 export const users = () => request<User[]>(`${base}/users`);

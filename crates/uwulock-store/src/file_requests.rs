@@ -126,7 +126,8 @@ const USER_BYTES: &str = "SELECT \
         JOIN file_requests r ON r.id = s.request_id WHERE r.user_id = ?1) \
      + (SELECT coalesce(sum(size), 0) FROM cipher_versions WHERE user_id = ?1) \
      + (SELECT coalesce(sum(length(i.data)), 0) FROM own_icons i JOIN ciphers c ON c.id = i.cipher_id \
-        WHERE c.user_id = ?1)";
+        WHERE c.user_id = ?1) \
+     + (SELECT coalesce(sum(length(blob) + length(nonce)), 0) FROM suite_records WHERE user_id = ?1)";
 
 fn files_of(conn: &rusqlite::Connection, submission_id: &str) -> rusqlite::Result<Vec<RequestFile>> {
     conn.prepare_cached(
@@ -246,6 +247,8 @@ impl Store {
                 [&user_id],
             )?;
             tx.execute("DELETE FROM health_reports WHERE user_id = ?1", [&user_id])?;
+            tx.execute("DELETE FROM suite_records WHERE user_id = ?1", [&user_id])?;
+            tx.execute("DELETE FROM suite_spaces WHERE user_id = ?1", [&user_id])?;
             tx.execute(
                 "UPDATE file_requests SET name = NULL, link_secret = NULL, revision = ?2 WHERE user_id = ?1",
                 params![user_id, clock::now()],
@@ -497,6 +500,19 @@ impl Store {
             self.forget_session_of(user);
         }
         Ok(Some(cipher))
+    }
+
+    /// Submissions to the account's requests that arrived and were not looked at yet.
+    pub async fn unseen_submissions(&self, user_id: &str) -> Result<i64> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached(
+                "SELECT count(*) FROM file_request_submissions s JOIN file_requests r ON r.id = s.request_id \
+                 WHERE r.user_id = ?1 AND s.completed IS NOT NULL AND NOT s.seen",
+            )?
+            .query_row([user_id], |row| row.get(0))
+        })
+        .await
     }
 
     /// Bytes the account's attachments, Send files, file requests, versions and own icons take

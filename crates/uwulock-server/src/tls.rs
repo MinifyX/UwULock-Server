@@ -7,11 +7,14 @@
 use crate::config::{Acme, Config, TlsMode};
 use axum::Router;
 use axum_server::Handle;
-use axum_server::tls_rustls::RustlsConfig;
+use parking_lot::RwLock;
 use rustls::ServerConfig;
 use rustls::crypto::ring;
-use rustls_acme::AcmeConfig;
+use rustls::server::{ClientHello, ResolvesServerCert};
+use rustls::sign::CertifiedKey;
 use rustls_acme::caches::DirCache;
+use rustls_acme::{AcmeConfig, EventOk, ResolvesServerCertAcme};
+use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
@@ -22,6 +25,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, SystemTime};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio_stream::StreamExt;
+use uwulock_api::send_domains::{Certificate, Registry};
 
 /// HTTP/2 first, like every browser and app wants it; 1.1 for everybody else.
 fn alpn() -> Vec<Vec<u8>> {
@@ -32,13 +36,17 @@ fn provider() -> Arc<rustls::crypto::CryptoProvider> {
     Arc::new(ring::default_provider())
 }
 
-/// Serve `app` on `listener` until `handle` says stop.
+/// Serve `app` on `listener` until `handle` says stop. With TLS of its own, the send domains in
+/// `send_domains` that want it get their certificates from the ACME CA too, each its own, chosen
+/// by the name the client asks for (SNI).
 pub async fn serve(
     listener: std::net::TcpListener,
     app: Router,
     config: &Config,
     handle: Handle<SocketAddr>,
+    send_domains: Arc<Registry>,
 ) -> Result<(), String> {
+    let local = listener.local_addr().map_err(|error| error.to_string())?;
     let service = app.into_make_service_with_connect_info::<SocketAddr>();
     let mut server = axum_server::from_tcp(listener).map_err(|error| error.to_string())?.handle(handle);
     // A client gets 20 seconds to send the head of its request: a connection that trickles it
@@ -52,19 +60,196 @@ pub async fn serve(
         .keep_alive_interval(Some(Duration::from_secs(60)))
         .keep_alive_timeout(Duration::from_secs(20))
         .max_concurrent_streams(256);
-    match &config.tls {
-        TlsMode::Off => server.acceptor(Deadline(axum_server::accept::DefaultAcceptor)).serve(service).await,
-        TlsMode::Files { cert, key } => {
-            let tls = RustlsConfig::from_config(from_files(cert, key)?);
-            watch_files(tls.clone(), cert.clone(), key.clone());
-            server.acceptor(Deadline(axum_server::tls_rustls::RustlsAcceptor::new(tls))).serve(service).await
+    let main: Arc<dyn ResolvesServerCert> = match &config.tls {
+        TlsMode::Off => {
+            return server
+                .acceptor(Deadline(axum_server::accept::DefaultAcceptor))
+                .serve(service)
+                .await
+                .map_err(|error| error.to_string());
         }
-        TlsMode::Acme(acme) => {
-            let acceptor = acme_acceptor(acme, &config.acme_cache())?;
-            server.acceptor(Deadline(acceptor)).serve(service).await
+        TlsMode::Files { cert, key } => {
+            let certified = Arc::new(FileCert(RwLock::new(certified_from_files(cert, key)?)));
+            watch_files(certified.clone(), cert.clone(), key.clone());
+            certified
+        }
+        TlsMode::Acme(acme) => acme_resolver(acme, &config.acme_cache())?,
+    };
+    let sni = Arc::new(Sni { main, extra: RwLock::default() });
+    send_domains.serving_tls();
+    let own = SendDomainCertificates {
+        acme: config.send_domain_acme.clone(),
+        cache: config.acme_cache(),
+        sni: sni.clone(),
+        registry: send_domains,
+        connect: if local.ip().is_unspecified() { format!("127.0.0.1:{}", local.port()) } else { local.to_string() },
+    };
+    tokio::spawn(own.run());
+    server.acceptor(Deadline(SniAcceptor::new(sni)?)).serve(service).await.map_err(|error| error.to_string())
+}
+
+// ── Certificates by name ──────────────────────────────────
+
+/// The certificate for the name a client asks for: a send domain's own, else the main one.
+#[derive(Debug)]
+struct Sni {
+    main: Arc<dyn ResolvesServerCert>,
+    /// By host name, lower case.
+    extra: RwLock<HashMap<String, Arc<ResolvesServerCertAcme>>>,
+}
+
+impl ResolvesServerCert for Sni {
+    fn resolve(&self, hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        let extra = hello.server_name().and_then(|name| self.extra.read().get(&name.to_ascii_lowercase()).cloned());
+        match extra {
+            Some(resolver) => resolver.resolve(hello),
+            None => self.main.resolve(hello),
         }
     }
-    .map_err(|error| error.to_string())
+}
+
+/// The certificate from files, replaced when they change.
+#[derive(Debug)]
+struct FileCert(RwLock<Arc<CertifiedKey>>);
+
+impl ResolvesServerCert for FileCert {
+    fn resolve(&self, _hello: ClientHello<'_>) -> Option<Arc<CertifiedKey>> {
+        Some(self.0.read().clone())
+    }
+}
+
+/// Accepts TLS with the certificates of [`Sni`] — and answers the CA's TLS-ALPN-01 validation
+/// for any of its names, which comes as a handshake with ALPN `acme-tls/1` and ends there.
+#[derive(Clone)]
+struct SniAcceptor {
+    tls: Arc<ServerConfig>,
+    challenge: Arc<ServerConfig>,
+}
+
+impl SniAcceptor {
+    fn new(sni: Arc<Sni>) -> Result<Self, String> {
+        let config = |alpn: Vec<Vec<u8>>| -> Result<Arc<ServerConfig>, String> {
+            let mut tls = ServerConfig::builder_with_provider(provider())
+                .with_safe_default_protocol_versions()
+                .map_err(|error| error.to_string())?
+                .with_no_client_auth()
+                .with_cert_resolver(sni.clone());
+            tls.alpn_protocols = alpn;
+            Ok(Arc::new(tls))
+        };
+        Ok(SniAcceptor { tls: config(alpn())?, challenge: config(vec![b"acme-tls/1".to_vec()])? })
+    }
+}
+
+impl<I, S> axum_server::accept::Accept<I, S> for SniAcceptor
+where
+    I: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    S: Send + 'static,
+{
+    type Stream = tokio_rustls::server::TlsStream<I>;
+    type Service = S;
+    type Future = Pin<Box<dyn Future<Output = io::Result<(Self::Stream, Self::Service)>> + Send>>;
+
+    fn accept(&self, stream: I, service: S) -> Self::Future {
+        let (tls, challenge) = (self.tls.clone(), self.challenge.clone());
+        Box::pin(async move {
+            let start = tokio_rustls::LazyConfigAcceptor::new(rustls::server::Acceptor::default(), stream).await?;
+            if rustls_acme::is_tls_alpn_challenge(&start.client_hello()) {
+                start.into_stream(challenge).await?;
+                return Err(io::Error::other("TLS-ALPN-01 validation request"));
+            }
+            Ok((start.into_stream(tls).await?, service))
+        })
+    }
+}
+
+/// Keeps a certificate for every send domain that wants one from the server: an ACME order of
+/// its own per name, started when an admin adds it, stopped when it goes. What happens is told to
+/// the [`Registry`] for the admin portal.
+struct SendDomainCertificates {
+    acme: Acme,
+    cache: PathBuf,
+    sni: Arc<Sni>,
+    registry: Arc<Registry>,
+    /// Where this server listens, to look at a certificate as a client sees it.
+    connect: String,
+}
+
+impl SendDomainCertificates {
+    async fn run(self) {
+        let mut wanted = self.registry.acme_hosts();
+        let mut running: HashMap<String, tokio::task::JoinHandle<()>> = HashMap::new();
+        loop {
+            let hosts: Vec<String> = wanted.borrow_and_update().clone();
+            running.retain(|host, task| {
+                let keep = hosts.contains(host);
+                if !keep {
+                    task.abort();
+                    self.sni.extra.write().remove(host);
+                    tracing::info!(%host, "a send domain no longer gets a certificate from the server");
+                }
+                keep
+            });
+            for host in hosts {
+                if running.contains_key(&host) {
+                    continue;
+                }
+                match self.start(&host) {
+                    Ok(task) => {
+                        running.insert(host, task);
+                    }
+                    Err(error) => self
+                        .registry
+                        .set_certificate(&host, Certificate { status: "failed", expires: None, error: Some(error) }),
+                }
+            }
+            if wanted.changed().await.is_err() {
+                return;
+            }
+        }
+    }
+
+    fn start(&self, host: &str) -> Result<tokio::task::JoinHandle<()>, String> {
+        let mut settings = AcmeConfig::new_with_provider([host.to_string()], provider())
+            .cache(DirCache::new(self.cache.clone()))
+            .directory(&self.acme.directory);
+        if let Some(email) = &self.acme.email {
+            settings = settings.contact_push(format!("mailto:{email}"));
+        }
+        if let Some(ca) = &self.acme.directory_ca {
+            settings = settings.client_tls_config(client_trusting(ca)?);
+        }
+        let mut state = settings.state();
+        self.sni.extra.write().insert(host.to_string(), state.resolver());
+        self.registry.set_certificate(host, Certificate { status: "pending", ..Certificate::default() });
+        let (host, registry, connect) = (host.to_string(), self.registry.clone(), self.connect.clone());
+        Ok(tokio::spawn(async move {
+            while let Some(event) = state.next().await {
+                match event {
+                    Ok(event @ (EventOk::DeployedCachedCert | EventOk::DeployedNewCert)) => {
+                        tracing::info!(%host, ?event, "send domain certificate");
+                        // As a client sees it: for when it runs out.
+                        let probe = uwulock_api::certificate::Probe { connect: connect.clone(), name: host.clone() };
+                        let seen = uwulock_api::certificate::look(&probe).await;
+                        registry
+                            .set_certificate(&host, Certificate { status: "ok", expires: seen.expires, error: None });
+                    }
+                    Ok(event) => tracing::info!(%host, ?event, "send domain certificate"),
+                    Err(error) => {
+                        tracing::warn!(
+                            %host,
+                            %error,
+                            "no certificate for the send domain yet. Does {host} point to this machine, and does port 443 reach this server?"
+                        );
+                        registry.set_certificate(
+                            &host,
+                            Certificate { status: "failed", expires: None, error: Some(error.to_string()) },
+                        );
+                    }
+                }
+            }
+        }))
+    }
 }
 
 /// How long a connection gets for its TLS handshake.
@@ -180,6 +365,18 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for Idle<S> {
 
 /// A TLS configuration from a certificate chain and a key in PEM files.
 pub fn from_files(cert: &Path, key: &Path) -> Result<Arc<ServerConfig>, String> {
+    let certified = certified_from_files(cert, key)?;
+    let mut tls = ServerConfig::builder_with_provider(provider())
+        .with_safe_default_protocol_versions()
+        .map_err(|error| error.to_string())?
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(FileCert(RwLock::new(certified))));
+    tls.alpn_protocols = alpn();
+    Ok(Arc::new(tls))
+}
+
+/// A certificate chain and its key from PEM files, checked to go together.
+fn certified_from_files(cert: &Path, key: &Path) -> Result<Arc<CertifiedKey>, String> {
     let read = |path: &Path| std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()));
     let chain = rustls_pemfile::certs(&mut read(cert)?.as_slice())
         .collect::<Result<Vec<_>, _>>()
@@ -190,20 +387,15 @@ pub fn from_files(cert: &Path, key: &Path) -> Result<Arc<ServerConfig>, String> 
     let key_der = rustls_pemfile::private_key(&mut read(key)?.as_slice())
         .map_err(|error| format!("{}: {error}", key.display()))?
         .ok_or_else(|| format!("{} holds no private key", key.display()))?;
-    let mut tls = ServerConfig::builder_with_provider(provider())
-        .with_safe_default_protocol_versions()
-        .map_err(|error| error.to_string())?
-        .with_no_client_auth()
-        .with_single_cert(chain, key_der)
+    let certified = CertifiedKey::from_der(chain, key_der, &provider())
         .map_err(|error| format!("{} and {} do not go together: {error}", cert.display(), key.display()))?;
-    tls.alpn_protocols = alpn();
-    Ok(Arc::new(tls))
+    Ok(Arc::new(certified))
 }
 
 /// Read the files again whenever they change: certbot renews every two months, and the server
 /// should not need a restart for it. A pair that does not load — the certificate written, the
 /// key not yet — keeps the one that works, and is tried again next time.
-fn watch_files(tls: RustlsConfig, cert: PathBuf, key: PathBuf) {
+fn watch_files(current: Arc<FileCert>, cert: PathBuf, key: PathBuf) {
     let stamp = move |cert: &Path, key: &Path| -> Option<(SystemTime, SystemTime)> {
         Some((std::fs::metadata(cert).ok()?.modified().ok()?, std::fs::metadata(key).ok()?.modified().ok()?))
     };
@@ -217,9 +409,9 @@ fn watch_files(tls: RustlsConfig, cert: PathBuf, key: PathBuf) {
             if now.is_none() || now == seen {
                 continue;
             }
-            match from_files(&cert, &key) {
-                Ok(config) => {
-                    tls.reload_from_config(config);
+            match certified_from_files(&cert, &key) {
+                Ok(certified) => {
+                    *current.0.write() = certified;
                     seen = now;
                     tracing::info!(cert = %cert.display(), "certificate changed on disk; using the new one");
                 }
@@ -231,7 +423,7 @@ fn watch_files(tls: RustlsConfig, cert: PathBuf, key: PathBuf) {
 
 /// Let's Encrypt over TLS-ALPN-01: the CA connects to port 443 and asks for a special
 /// certificate, which only whoever controls that port can show. No port 80, no web root.
-fn acme_acceptor(acme: &Acme, cache: &Path) -> Result<rustls_acme::axum::AxumAcceptor, String> {
+fn acme_resolver(acme: &Acme, cache: &Path) -> Result<Arc<dyn ResolvesServerCert>, String> {
     let mut settings = AcmeConfig::new_with_provider([acme.domain.clone()], provider())
         .cache(DirCache::new(cache.to_path_buf()))
         .directory(&acme.directory);
@@ -242,15 +434,7 @@ fn acme_acceptor(acme: &Acme, cache: &Path) -> Result<rustls_acme::axum::AxumAcc
         settings = settings.client_tls_config(client_trusting(ca)?);
     }
     let mut state = settings.state();
-
-    let mut tls = ServerConfig::builder_with_provider(provider())
-        .with_safe_default_protocol_versions()
-        .map_err(|error| error.to_string())?
-        .with_no_client_auth()
-        .with_cert_resolver(state.resolver());
-    tls.alpn_protocols = alpn();
-    let acceptor = state.axum_acceptor(Arc::new(tls));
-
+    let resolver = state.resolver();
     let domain = acme.domain.clone();
     tokio::spawn(async move {
         while let Some(event) = state.next().await {
@@ -264,7 +448,7 @@ fn acme_acceptor(acme: &Acme, cache: &Path) -> Result<rustls_acme::axum::AxumAcc
             }
         }
     });
-    Ok(acceptor)
+    Ok(resolver)
 }
 
 /// A client configuration that trusts the usual roots and one more CA from a PEM file.

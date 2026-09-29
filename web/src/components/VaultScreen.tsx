@@ -18,13 +18,15 @@ import { copiedText } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { dueItems, useComfort } from '../lib/comfort';
 import { KIND_LABEL } from '../lib/items';
+import { useMaskedLinks } from '../lib/masked';
+import { useFeature } from '../lib/branding';
 import { useSettings } from '../lib/settings';
 import { singleKey, typing } from '../lib/shortcuts';
 import { toast } from '../lib/toast';
 import { AccountCard } from './AccountCard';
 import { ContextMenu, type MenuItem } from './ContextMenu';
 import { Icon, type IconName } from './Icon';
-import { ItemDetail } from './ItemDetail';
+import { ItemDetail, MaskedOffCheck, switchOffMasked } from './ItemDetail';
 import { ItemEditor } from './ItemEditor';
 import { ItemTile } from './ItemTile';
 import { listbox } from './listbox';
@@ -112,6 +114,8 @@ type Props = {
   openRequest?: string | null;
   /** The items due for a new password, from the link in the reminder's mail. */
   openDue?: boolean;
+  /** An item to show (`#/vault?itemId=<id>`): the link UwUMail keeps at a masked address. */
+  openItem?: string | null;
   /** A family's page to open (`#/organizations/<id>`). */
   openFamily?: string | null;
   /** What the server says about families for this account. */
@@ -127,6 +131,7 @@ export function VaultScreen({
   onAddAccount,
   openRequest,
   openDue,
+  openItem,
   openFamily,
   familyRules,
 }: Props) {
@@ -163,6 +168,21 @@ export function VaultScreen({
     location.hash = '';
   }, [openDue]);
 
+  // The link at a masked address in UwUMail: the item, where it is — once the items are there.
+  useEffect(() => {
+    if (!openItem || !loaded) return;
+    const item = items.find((i) => i.id === openItem);
+    location.hash = '';
+    if (!item) {
+      toast(t('Diesen Eintrag gibt es in deinem Tresor nicht (mehr).'), 'error');
+      return;
+    }
+    setQuery('');
+    setFilter({ kind: item.deleted ? 'trash' : item.archived ? 'archive' : 'all' });
+    setSelected(item.id);
+    setView('detail');
+  }, [openItem, loaded, items]);
+
   // The link in the mail about a file request: its page, and the link is used up.
   useEffect(() => {
     if (!openRequest) return;
@@ -180,6 +200,9 @@ export function VaultScreen({
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  /** Deleting for good: switch the ticked items' masked addresses off first. */
+  const [switchOff, setSwitchOff] = useState(true);
+  const maskedLinks = useMaskedLinks(useFeature('masked-addresses'));
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const detailRef = useRef<HTMLElement>(null);
 
@@ -389,6 +412,12 @@ export function VaultScreen({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   });
+
+  // The ticked items' masked addresses that are still on.
+  const enabledLinks = [...checked]
+    .map((itemId) => maskedLinks[itemId])
+    .filter((link) => link?.state === 'enabled')
+    .map((link) => link!);
 
   const bulk = async (work: () => Promise<void>, done: string) => {
     try {
@@ -717,7 +746,10 @@ export function VaultScreen({
                         </button>
                         <button
                           className="quiet danger-text"
-                          onClick={() => setConfirmBulkDelete(true)}
+                          onClick={() => {
+                            setSwitchOff(true);
+                            setConfirmBulkDelete(true);
+                          }}
                         >
                           {t('Endgültig löschen')}
                         </button>
@@ -1001,7 +1033,11 @@ export function VaultScreen({
                   className="danger"
                   onClick={() => {
                     setConfirmBulkDelete(false);
-                    void bulk(() => bulkItems('delete', [...checked]), t('Gelöscht.'));
+                    const links = switchOff ? enabledLinks : [];
+                    void bulk(async () => {
+                      if (links.length) await switchOffMasked(links);
+                      await bulkItems('delete', [...checked]);
+                    }, t('Gelöscht.'));
                   }}
                 >
                   {t('Endgültig löschen')}
@@ -1012,6 +1048,11 @@ export function VaultScreen({
             <p className="dialog-lead">
               {t('{n} Einträge sind danach für immer weg, auf jedem Gerät.', { n: checked.size })}
             </p>
+            <MaskedOffCheck
+              emails={enabledLinks.map((link) => link.email)}
+              checked={switchOff}
+              onChange={setSwitchOff}
+            />
           </Modal>
         )}
 

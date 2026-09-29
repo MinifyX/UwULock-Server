@@ -16,6 +16,8 @@ device, the address it came from and the time — and mailed in the account's la
 | Account changes | Master password, email address or key derivation (KDF) changed, keys rotated, two-step login turned on or off, the API key made or renewed |
 | Access | Emergency access asked for or taken over, a "log in with a device" request, the vault exported (the web vault says so, and so do Bitwarden's apps) |
 | Key derivation | The account's KDF is weaker than the server asks for (see [Policies](#policies)) |
+| UwU extras key | The key for UwULock's extras (suite vault, own icons, the health report) was made, wrapped again after a rotation, started over, or lost because the account's keys were renewed without it |
+| UwU app login | UwUSSH or UwURDP logged in and can read its data in the suite vault — every time, not only on a new device ([suite.md](suite.md)) |
 
 A burst of failed attempts is one notice that counts up while it lasts, not one per try.
 

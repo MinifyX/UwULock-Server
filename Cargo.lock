@@ -4803,11 +4803,13 @@ name = "uwulock-e2e"
 version = "0.4.0-beta.2"
 dependencies = [
  "base64 0.22.1",
+ "futures-util",
  "reqwest 0.13.5",
  "rustls",
  "serde_json",
  "tempfile",
  "tokio",
+ "tokio-tungstenite",
  "uwulock-api",
  "uwulock-bitwarden",
  "uwulock-core",
@@ -4868,6 +4870,7 @@ dependencies = [
  "tempfile",
  "time",
  "tokio",
+ "tokio-rustls",
  "tokio-stream",
  "tower",
  "tracing",

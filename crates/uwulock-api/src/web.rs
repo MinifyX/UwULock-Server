@@ -34,6 +34,18 @@ pub(crate) fn routes() -> Router<AppState> {
         // A file request's link on a send domain (docs/uwu-api.md §11.1): the page reads the
         // request from the path and the secret from after the `#`.
         .route("/r/{access_id}", get(app))
+        // A Send's short link on a send domain (§14.1), `/<accessId>#<key>`; any other single name
+        // is one of the app's files.
+        .route("/{name}", get(send_page))
+}
+
+async fn send_page(State(state): State<AppState>, request: Request) -> Response {
+    let path = request.uri().path();
+    if crate::send_hosts::is_access_id(path.trim_start_matches('/')) {
+        let headers = request.headers().clone();
+        return app(State(state), headers).await;
+    }
+    fallback(request).await
 }
 
 async fn app(State(state): State<AppState>, headers: HeaderMap) -> Response {

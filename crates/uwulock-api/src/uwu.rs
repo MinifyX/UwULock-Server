@@ -24,9 +24,32 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// What this server is and can do, for a client that wants to know before it logs in.
-async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Json<Value> {
+async fn info(
+    State(state): State<AppState>,
+    send_host: Option<axum::Extension<crate::send_hosts::SendHost>>,
+    headers: axum::http::HeaderMap,
+) -> Json<Value> {
     let settings = state.settings();
-    let branding = crate::branding::for_request(&state, &headers).await.json(&state.config.public);
+    let (loaded, base) = crate::branding::for_request_at(&state, &headers).await;
+    let branding = loaded.json(&base);
+    if send_host.is_some() {
+        // A send domain tells only what its pages need (§2).
+        let mut features = vec!["sends"];
+        if state.mailer.enabled() {
+            features.push("send-emails");
+        }
+        if settings.file_requests.enabled {
+            features.push("file-requests");
+        }
+        return Json(json!({
+            "object": "info",
+            "name": "UwULock Server",
+            "version": state.version,
+            "apiVersion": 1,
+            "features": features,
+            "branding": branding,
+        }));
+    }
     let mut features = vec![
         "vault",
         "folders",
@@ -36,6 +59,9 @@ async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> 
         "attachments",
         "sends",
         "emergency-access",
+        // Families are there even when nobody may make a new one: whether this account may is
+        // `families.mayCreate` of `/uwu/v1/account`.
+        "families",
         "two-factor-authenticator",
         "two-factor-email",
         "two-factor-webauthn",
@@ -72,6 +98,17 @@ async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> 
     if state.mailer.enabled() {
         features.push("send-emails");
     }
+    features.extend(["delta-sync", "realtime"]);
+    if settings.suite.enabled {
+        features.push("suite");
+    }
+    let send_domains = crate::send_domains::for_info(&state);
+    if !send_domains.is_empty() {
+        features.push("send-domains");
+    }
+    if !settings.masked.servers.is_empty() {
+        features.push("masked-addresses");
+    }
     let rules = &settings.policies.master_password;
     Json(json!({
         "object": "info",
@@ -82,6 +119,7 @@ async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> 
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
         "features": features,
+        "sendDomains": send_domains,
         "branding": branding,
         "sso": {
             "enabled": settings.sso.active(),
@@ -140,11 +178,13 @@ async fn invitation(
 /// What the web vault needs to know about the account beyond Bitwarden's profile.
 async fn account(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let settings = state.settings();
-    let (factors, unseen, used, travelling) = tokio::try_join!(
+    let (factors, unseen, used, travelling, send_domain, masked) = tokio::try_join!(
         state.store.two_factors(&session.user.id),
         state.store.unseen_notices(&session.user.id),
         state.store.storage_used(&session.user.id),
         state.store.travelling(&session.user.id),
+        state.store.account_send_domain(&session.user.id),
+        state.store.masked_connection(&session.user.id),
     )?;
     let require = &settings.policies.require_two_factor;
     let families = crate::families::account_info(&state, &session).await?;
@@ -160,6 +200,8 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         },
         "securityNoticesUnseen": unseen,
         "travel": { "enabled": travelling },
+        "sendDomainId": send_domain,
+        "maskedConnected": masked.is_some(),
         "storage": { "usedBytes": used, "limitBytes": settings.storage_limit() },
         "admin": session.user.admin,
         "hasMasterPassword": !session.user.user_key.is_empty(),
@@ -211,6 +253,8 @@ async fn devices(State(state): State<AppState>, session: Session) -> ApiResult<J
                 "lastSeen": device.last_seen,
                 "lastIp": device.last_ip,
                 "current": device.id == session.device,
+                // A suite app's device (docs/uwu-api.md §6.5), so it can be shown and removed.
+                "app": device.client_id.as_deref().filter(|client| crate::suite::space_of_client(client).is_some()),
                 "remembered": device.remember_expires.as_deref().is_some_and(|expires| expires > clock::now().as_str()),
             })
         })
@@ -228,6 +272,12 @@ async fn forget_device(
     if !state.store.delete_device(&session.user.id, &id).await? {
         return Err(ApiError::not_found("No such device."));
     }
+    crate::notify::live_to_device(
+        &state,
+        &session.user.id,
+        &id,
+        uwulock_notify::realtime::Live::Logout { reason: "deviceRemoved" },
+    );
     Ok(StatusCode::OK)
 }
 

@@ -335,7 +335,8 @@ async fn user_action(
         _ => return Err(ApiError::not_found("Not found.")),
     }
     if matches!(action.as_str(), "disable" | "log-out") {
-        crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
+        let reason = if action == "disable" { "disabled" } else { "securityStamp" };
+        crate::notify::logout(&state, &id, None, reason);
     }
     record(&state, &admin, format!("{action} for {}", target.email)).await;
     let overview = state
@@ -360,7 +361,8 @@ async fn delete_user(State(state): State<AppState>, admin: Admin, Path(id): Path
             owned.join(", ")
         )));
     }
-    crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &id, None, "disabled");
+    crate::masked::account_going(&state, &id).await;
     state.store.delete_user(&id).await?;
     record(&state, &admin, format!("deleted the account {}", target.email)).await;
     Ok(StatusCode::OK)
@@ -394,6 +396,8 @@ async fn delete_device(
     if !state.store.delete_device(&id, &device).await? {
         return Err(ApiError::not_found("No such device."));
     }
+    let logout = uwulock_notify::realtime::Live::Logout { reason: "deviceRemoved" };
+    crate::notify::live_to_device(&state, &id, &device, logout);
     record(&state, &admin, format!("logged out device {device} of {id}")).await;
     Ok(StatusCode::OK)
 }
@@ -474,6 +478,7 @@ async fn put_settings(
         push.installation_id = push.installation_id.trim().to_string();
         push.installation_key = push.installation_key.trim().to_string();
     }
+    new.masked.normalize().map_err(ApiError::bad)?;
     new.check().map_err(ApiError::bad)?;
     state.mailer.configure(new.smtp.as_ref()).map_err(|error| ApiError::bad(error.to_string()))?;
     new.save(&state.store).await?;
@@ -785,6 +790,7 @@ pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     state.oidc.forget();
     state.apply_settings(settings);
     state.count_legacy_hashes().await;
+    crate::send_domains::reload(state).await;
     crate::branding::reload(state).await;
     Ok(())
 }

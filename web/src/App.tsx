@@ -13,7 +13,10 @@ import { RegisterScreen } from './components/web/RegisterScreen';
 import { SetPasswordScreen, SsoForward } from './components/web/SetPasswordScreen';
 import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
+import { connectFailureText } from './components/web/MaskedSettings';
 import { errorText } from './lib/errors';
+import { publicLinkOf } from './lib/links';
+import { connectResultOf, reloadMaskedConnection } from './lib/masked';
 import { acceptContact } from './lib/features';
 import { acceptInvitation } from './lib/families';
 import { toast } from './lib/toast';
@@ -37,6 +40,11 @@ export function App() {
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const backgroundRef = useRef<HTMLDivElement>(null);
+  // A link by its path: what a send domain answers (`/<access id>#<key>` for a Send,
+  // `/r/<access id>#<secret>` for a file request). The page then shows only that — a send
+  // domain has no vault, no login and no account to ask about.
+  const [byPath] = useState(() => publicLinkOf(location.pathname, location.hash));
+  const publicPage = byPath !== null;
 
   // ── Vault state ──────────────────────────────────────────
   useEffect(() => {
@@ -49,9 +57,9 @@ export function App() {
 
   // What the server says about the account beyond Bitwarden's profile: admin or not, mail.
   useEffect(() => {
-    if (status?.state === 'logged-out') setInfo(null);
+    if (status?.state === 'logged-out' || publicPage) setInfo(null);
     else if (status) void account().then(setInfo, () => setInfo(null));
-  }, [status]);
+  }, [status, publicPage]);
 
   useEffect(() => {
     void setSecurity(settings.autoLock || null, settings.clipboardClear || null);
@@ -115,15 +123,14 @@ export function App() {
   }, [modalOpen, unlocked]);
 
   const registering = route.path === '/finish-signup' || route.path === '/register';
-  const sendLink = route.path.match(/^\/send\/([^/]+)\/([^/]+)$/);
+  const sendLink =
+    route.path.match(/^\/send\/([^/]+)\/([^/]+)$/) ??
+    (byPath?.kind === 'send' ? ['', byPath.accessId, byPath.key] : null);
   // A file request's link: `#/request/<access id>/<secret>` here, `/r/<access id>#<secret>` on a
   // send domain.
   const requestLink =
     route.path.match(/^\/request\/([^/]+)\/([^/]+)$/) ??
-    (() => {
-      const path = location.pathname.match(/^\/r\/([A-Za-z0-9_-]+)$/);
-      return path ? [path[0], path[1], location.hash.replace(/^#/, '')] : null;
-    })();
+    (byPath?.kind === 'request' ? ['', byPath.accessId, byPath.secret] : null);
   const fileRequest = route.path.match(/^\/file-requests\/([^/]+)$/)?.[1] ?? null;
   // A family's page: the desktop app and the mails link here.
   const family = route.path.match(/^\/organizations\/([^/]+)$/)?.[1] ?? null;
@@ -167,7 +174,15 @@ export function App() {
   useEffect(() => {
     const section = route.path.match(/^\/settings(?:\/([a-z-]+))?$/);
     if (!section || !unlocked) return;
+    // The way back from UwUMail (§13.2): read before the address is cleared.
+    const connected = section[1] === 'masked' ? connectResultOf(route.query) : null;
     location.hash = '';
+    if (connected?.ok) {
+      void reloadMaskedConnection();
+      toast(t('Mit UwUMail verbunden ✧'));
+    } else if (connected) {
+      toast(connectFailureText(connected.reason), 'error');
+    }
     const known: SettingsSection[] = [
       'security',
       'travel',
@@ -281,6 +296,7 @@ export function App() {
                 onAddAccount={() => undefined}
                 openRequest={fileRequest}
                 openDue={route.path === '/vault' && route.query.get('due') === '1'}
+                openItem={route.path === '/vault' ? route.query.get('itemId') : null}
                 openFamily={family}
                 familyRules={info?.families ?? null}
               />

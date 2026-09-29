@@ -42,7 +42,7 @@ export function reportExport(format: 'json' | 'encrypted_json' | 'csv') {
 
 /**
  * The kinds the admin can keep from being mailed, in this order. Later stages add theirs here
- * (travel mode, masked addresses, SSO …) once the server makes them.
+ * once the server makes them.
  */
 export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'failedLogins', label: N_('Falsche Master-Passwörter') },
@@ -62,10 +62,27 @@ export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'vaultExported', label: N_('Tresor exportiert') },
   { kind: 'kdfBelowMinimum', label: N_('Schlüsselableitung schwächer als verlangt') },
   { kind: 'ssoLinked', label: N_('Anmeldung über SSO verknüpft') },
+  { kind: 'maskedConnected', label: N_('Mit UwUMail verbunden') },
+  { kind: 'maskedDisconnected', label: N_('Von UwUMail getrennt') },
+  { kind: 'maskedApiKeyCreated', label: N_('Schlüssel für maskierte Adressen erstellt') },
   { kind: 'organizationJoined', label: N_('In eine Familie aufgenommen') },
   { kind: 'organizationRemoved', label: N_('Aus einer Familie entfernt') },
   { kind: 'organizationRoleChanged', label: N_('Rolle in einer Familie geändert') },
+  { kind: 'extrasKeyCreated', label: N_('Schlüssel für die UwU-Extras angelegt') },
+  { kind: 'extrasKeyLost', label: N_('Schlüssel für die UwU-Extras verloren') },
+  { kind: 'extrasKeyRewrapped', label: N_('Schlüssel für die UwU-Extras neu eingepackt') },
+  { kind: 'suiteLogin', label: N_('Anmeldung einer UwU-App (UwUSSH, UwURDP)') },
 ];
+
+/** A suite app by its `client_id` (docs/uwu-api.md §6.5). */
+export function suiteAppName(clientId: string): string {
+  const names: Record<string, string> = {
+    uwussh: 'UwUSSH',
+    uwurdp: 'UwURDP',
+    uwumail: 'UwUMail',
+  };
+  return names[clientId] ?? t('Eine UwU-App');
+}
 
 const PROVIDERS: Record<number, string> = {
   0: N_('Authenticator-App'),
@@ -144,6 +161,18 @@ export function noticeText(notice: Pick<Notice, 'kind' | 'detail'>): string {
       return t('Ein Versuch, den Reisemodus auszuschalten, ist gescheitert.');
     case 'extrasKeyReset':
       return t('Der Schlüssel für die UwU-Extras wurde zurückgesetzt.');
+    case 'extrasKeyCreated':
+      return t('Der Schlüssel für die UwU-Extras wurde angelegt.');
+    case 'extrasKeyLost':
+      return t(
+        'Die Schlüssel des Kontos wurden ohne den Schlüssel für die UwU-Extras erneuert; was darunter lag, öffnet sich nicht mehr.',
+      );
+    case 'extrasKeyRewrapped':
+      return t('Der Schlüssel für die UwU-Extras wurde für die neuen Kontoschlüssel eingepackt.');
+    case 'suiteLogin':
+      return t('{app} hat sich angemeldet und kann seine Daten im Suite-Tresor lesen.', {
+        app: suiteAppName(text('app')),
+      });
     case 'kdfBelowMinimum':
       return t('Deine Schlüsselableitung ist schwächer, als dieser Server verlangt.');
     case 'ssoLinked':

@@ -4,8 +4,11 @@ import { ResultLine, Row, type Result } from '../components/web/controls';
 import {
   branding,
   brandingPreview,
+  domainBranding,
   removeBrandingImage,
+  resetDomainBranding,
   saveBranding,
+  SERVER_BRANDING,
   uploadBrandingImage,
   type BrandingAdmin,
   type BrandingImage,
@@ -32,9 +35,21 @@ const PRESETS = [
  * The server's own look: a name, an accent colour, logos for the light and the dark theme, and a
  * favicon — for the web vault, the login, the Send and file-request pages and the mails. The
  * official apps stay as they are.
+ *
+ * With a `domain`, the same for one send domain (§14.4): its Send and file-request pages. It
+ * starts as the server's and can go back to it.
  */
-export function Branding() {
+export function Branding({
+  domain,
+  onChanged,
+}: {
+  domain?: { id: string; host: string; custom: boolean };
+  /** After a send domain's look changed: its list shows whether it has its own. */
+  onChanged?: () => void;
+} = {}) {
   useLanguage();
+  const path = domain ? domainBranding(domain.id) : SERVER_BRANDING;
+  const Heading = domain ? 'h3' : 'h2';
   const [current, setCurrent] = useState<BrandingAdmin | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState(DEFAULT_COLOR);
@@ -49,8 +64,8 @@ export function Branding() {
   };
 
   useEffect(() => {
-    branding().then(take, (e) => setResult({ tone: 'error', text: errorText(e) }));
-  }, []);
+    branding(path).then(take, (e) => setResult({ tone: 'error', text: errorText(e) }));
+  }, [path]);
 
   // The contrast of the colour being picked, and the shades it would give.
   useEffect(() => {
@@ -59,10 +74,10 @@ export function Branding() {
       return;
     }
     const timer = setTimeout(() => {
-      brandingPreview(color).then(setPreview, () => setPreview(null));
+      brandingPreview(color, path).then(setPreview, () => setPreview(null));
     }, 200);
     return () => clearTimeout(timer);
-  }, [color]);
+  }, [color, path]);
 
   const act = async (work: () => Promise<BrandingAdmin>, done: string) => {
     setBusy(true);
@@ -71,6 +86,10 @@ export function Branding() {
       const answer = await work();
       take(answer);
       setResult({ tone: 'info', text: done });
+      if (domain) {
+        onChanged?.();
+        return;
+      }
       // The portal shows it at once: colours here, name and logos from the server's answer.
       applyAccent(answer.colorSet ? await brandingPreview(answer.color) : null);
       await loadServerInfo(true);
@@ -91,11 +110,32 @@ export function Branding() {
   return (
     <>
       <p className="settings-lead">
-        {t(
-          'Name, Farbe, Logos und Favicon für den Web-Tresor, die Anmeldung, die Seiten von Sends und Datei-Anfragen und die Mails dieses Servers. Die offiziellen Bitwarden-Apps bleiben, wie sie sind.',
-        )}
+        {domain
+          ? t(
+              'Name, Farbe, Logos und Favicon der Send- und Datei-Anfrage-Seiten unter {host}. Solange hier nichts Eigenes steht, sehen sie aus wie der Server.',
+              { host: domain.host },
+            )
+          : t(
+              'Name, Farbe, Logos und Favicon für den Web-Tresor, die Anmeldung, die Seiten von Sends und Datei-Anfragen und die Mails dieses Servers. Die offiziellen Bitwarden-Apps bleiben, wie sie sind.',
+            )}
       </p>
-      <h2 className="settings-heading">{t('Name und Farbe')}</h2>
+      {domain?.custom && (
+        <div className="form-actions">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void act(async () => {
+                await resetDomainBranding(domain.id);
+                return branding(path);
+              }, t('Wieder wie der Server ✧'))
+            }
+          >
+            {t('Aussehen des Servers übernehmen')}
+          </button>
+        </div>
+      )}
+      <Heading className="settings-heading">{t('Name und Farbe')}</Heading>
       <Row label={t('Name')} description={t('Leer lässt es bei UwULock. Höchstens 40 Zeichen.')}>
         <input
           aria-label={t('Name')}
@@ -181,7 +221,7 @@ export function Branding() {
         <button
           type="button"
           disabled={busy || !current || (!current.nameSet && !current.colorSet)}
-          onClick={() => void act(() => saveBranding(null, null), t('Wieder UwULock ✧'))}
+          onClick={() => void act(() => saveBranding(null, null, path), t('Wieder UwULock ✧'))}
         >
           {t('Name und Farbe zurücksetzen')}
         </button>
@@ -196,6 +236,7 @@ export function Branding() {
                 saveBranding(
                   name.trim() || null,
                   color.toLowerCase() === DEFAULT_COLOR && !current?.colorSet ? null : color,
+                  path,
                 ),
               t('Gespeichert ✧'),
             )
@@ -205,7 +246,7 @@ export function Branding() {
         </button>
       </div>
 
-      <h2 className="settings-heading">{t('Bilder')}</h2>
+      <Heading className="settings-heading">{t('Bilder')}</Heading>
       <p className="settings-lead">
         {t(
           'PNG, JPEG, WebP, GIF, ICO oder SVG. Der Server zeichnet jedes Bild neu als PNG; was sonst in der Datei steckt, bleibt draußen. Logos bis 512 KB, das Favicon bis 128 KB.',
@@ -217,6 +258,7 @@ export function Branding() {
         url={current?.logoLight ?? null}
         busy={busy}
         act={act}
+        path={path}
         dark={false}
       />
       <ImageRow
@@ -225,6 +267,7 @@ export function Branding() {
         url={current?.logoDark ?? null}
         busy={busy}
         act={act}
+        path={path}
         dark
       />
       <ImageRow
@@ -233,6 +276,7 @@ export function Branding() {
         url={current?.favicon ?? null}
         busy={busy}
         act={act}
+        path={path}
         dark={false}
       />
       <ResultLine result={result} />
@@ -247,6 +291,7 @@ function ImageRow({
   busy,
   act,
   dark,
+  path,
 }: {
   label: string;
   image: BrandingImage;
@@ -254,6 +299,7 @@ function ImageRow({
   busy: boolean;
   act: (work: () => Promise<BrandingAdmin>, done: string) => Promise<void>;
   dark: boolean;
+  path: string;
 }) {
   useLanguage();
   const input = useRef<HTMLInputElement>(null);
@@ -277,7 +323,7 @@ function ImageRow({
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = '';
-          if (file) void act(() => uploadBrandingImage(image, file), t('Bild gespeichert ✧'));
+          if (file) void act(() => uploadBrandingImage(image, file, path), t('Bild gespeichert ✧'));
         }}
       />
       <button type="button" disabled={busy} onClick={() => input.current?.click()}>
@@ -290,7 +336,7 @@ function ImageRow({
           type="button"
           className="quiet"
           disabled={busy}
-          onClick={() => void act(() => removeBrandingImage(image), t('Bild entfernt.'))}
+          onClick={() => void act(() => removeBrandingImage(image, path), t('Bild entfernt.'))}
         >
           {t('Entfernen')}
           <span className="sr-only">{label}</span>

@@ -17,10 +17,28 @@ use time::format_description::well_known::Rfc3339;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
-        .route("/alive", get(now))
+        .route("/alive", get(alive))
         .route("/api/alive", get(now))
         .route("/api/now", get(now))
         .route("/healthz", get(healthz))
+}
+
+#[derive(serde::Deserialize)]
+struct AliveQuery {
+    probe: Option<String>,
+}
+
+/// The time; and for the check of a send domain (§14.1) a header saying the request reached this
+/// server, when it carries the check's token.
+async fn alive(
+    State(state): State<AppState>,
+    axum::extract::Query(query): axum::extract::Query<AliveQuery>,
+) -> axum::response::Response {
+    let mut response = now().await.into_response();
+    if query.probe.is_some_and(|token| state.send_domains.probe_known(&token)) {
+        response.headers_mut().insert(crate::send_domains::PROBE_HEADER, axum::http::HeaderValue::from_static("ok"));
+    }
+    response
 }
 
 async fn now() -> Json<String> {

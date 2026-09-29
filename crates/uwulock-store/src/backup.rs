@@ -67,6 +67,9 @@ pub(crate) fn end_sessions(conn: &Connection) -> rusqlite::Result<()> {
              remember_expires = NULL;",
         )?;
     }
+    // Every delta-sync cursor from before starts over (docs/uwu-api.md §4.3). A backup from
+    // before 0012 gets its epoch from that step.
+    conn.execute("UPDATE server SET value = lower(hex(randomblob(8))) WHERE key = 'sync_epoch'", [])?;
     Ok(())
 }
 
@@ -171,6 +174,7 @@ mod tests {
                 refresh_expires: "2999-01-01T00:00:00.000000Z".into(),
                 remember: None,
                 sso: false,
+                client_id: None,
             })
             .await
             .unwrap();

@@ -339,60 +339,77 @@ async fn sync(
     headers: HeaderMap,
     Query(query): Query<SyncQuery>,
 ) -> ApiResult<Response> {
-    let user = &session.user;
-    let (vault, two_factor, sends, orgs) = tokio::try_join!(
-        state.store.vault(&user.id),
-        state.store.two_factors(&user.id),
-        state.store.sends(&user.id),
-        state.store.org_vault(&user.id)
-    )?;
-    let attachments = attachments_by_cipher(&state, &user.id).await?;
-    let org_attachments = crate::organizations::attachments_of(&state, &orgs.ciphers).await?;
-    // SSH keys only for clients that know them; older ones break on them.
-    let ssh = client_version(&headers).is_some_and(|version| version >= (2024, 12, 0));
     let exclude_domains = query
         .exclude_domains
         .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"));
-
-    let memberships: Vec<Value> = orgs
-        .memberships
-        .iter()
-        .map(|(org, member)| crate::families::profile_organization(&state, org, member))
-        .collect();
-    let mut body = String::with_capacity(4096 + (vault.ciphers.len() + orgs.ciphers.len()) * 1200);
+    let parts = vault_parts(&state, &session.user, &headers, exclude_domains).await?;
+    let mut body = String::with_capacity(4096 + parts.ciphers.len());
     body.push_str("{\"object\":\"sync\",\"profile\":");
-    body.push_str(&out::profile(user, two_factor.iter().any(|factor| factor.enabled), memberships).to_string());
+    body.push_str(&parts.profile);
     body.push_str(",\"folders\":");
-    body.push_str(&Value::Array(vault.folders.iter().map(out::folder).collect()).to_string());
+    body.push_str(&parts.folders);
     body.push_str(",\"collections\":");
-    body.push_str(
-        &Value::Array(
-            orgs.collections
-                .iter()
-                .map(|(collection, access)| crate::organizations::collection_json(collection, access))
-                .collect(),
-        )
-        .to_string(),
-    );
-    let policies = Value::Array(orgs.policies.iter().map(crate::organizations::policy_json).collect()).to_string();
+    body.push_str(&parts.collections);
     body.push_str(",\"policies\":");
-    body.push_str(&policies);
+    body.push_str(&parts.policies);
     body.push_str(",\"policiesNew\":");
-    body.push_str(&policies);
+    body.push_str(&parts.policies);
     body.push_str(",\"sends\":");
-    body.push_str(&Value::Array(sends.iter().map(crate::sends::render).collect()).to_string());
-    body.push_str(",\"ciphers\":[");
+    body.push_str(&parts.sends);
+    body.push_str(",\"ciphers\":");
+    body.push_str(&parts.ciphers);
+    body.push_str(",\"domains\":");
+    body.push_str(&parts.domains);
+    body.push_str(",\"userDecryption\":");
+    body.push_str(&parts.user_decryption);
+    body.push('}');
+    Ok(json_text(body))
+}
+
+/// A whole vault as `/api/sync` hands it out, each part as its JSON text: for Bitwarden's sync,
+/// and for a full delta sync (docs/uwu-api.md §4.4), which gives the same objects.
+pub(crate) struct VaultParts {
+    pub profile: String,
+    pub folders: String,
+    pub collections: String,
+    pub policies: String,
+    pub sends: String,
+    pub ciphers: String,
+    pub domains: String,
+    pub user_decryption: String,
+    /// The ids of every item in it, own and shared.
+    pub cipher_ids: Vec<String>,
+}
+
+/// Whether the client knows SSH keys; older ones break on them.
+pub(crate) fn knows_ssh_keys(headers: &HeaderMap) -> bool {
+    client_version(headers).is_some_and(|version| version >= (2024, 12, 0))
+}
+
+pub(crate) async fn vault_parts(
+    state: &AppState,
+    user: &uwulock_store::User,
+    headers: &HeaderMap,
+    exclude_domains: bool,
+) -> ApiResult<VaultParts> {
+    let (vault, sends, orgs) =
+        tokio::try_join!(state.store.vault(&user.id), state.store.sends(&user.id), state.store.org_vault(&user.id))?;
+    let attachments = attachments_by_cipher(state, &user.id).await?;
+    let org_attachments = crate::organizations::attachments_of(state, &orgs.ciphers).await?;
+    let ssh = knows_ssh_keys(headers);
+    let mut ciphers = String::with_capacity((vault.ciphers.len() + orgs.ciphers.len()) * 1200 + 2);
+    ciphers.push('[');
     let mut first = true;
     for cipher in vault.ciphers.iter().filter(|cipher| ssh || cipher.kind != 5) {
         if !first {
-            body.push(',');
+            ciphers.push(',');
         }
         first = false;
-        out::write_cipher(&mut body, cipher, &View::own(attachments.get(&cipher.id).map(String::as_str)));
+        out::write_cipher(&mut ciphers, cipher, &View::own(attachments.get(&cipher.id).map(String::as_str)));
     }
     for item in orgs.ciphers.iter().filter(|item| ssh || item.cipher.kind != 5) {
         if !first {
-            body.push(',');
+            ciphers.push(',');
         }
         first = false;
         let view = View {
@@ -400,25 +417,56 @@ async fn sync(
             collection_ids: &item.collection_ids,
             access: item.access,
         };
-        out::write_cipher(&mut body, &item.cipher, &view);
+        out::write_cipher(&mut ciphers, &item.cipher, &view);
     }
-    body.push_str("],\"domains\":");
-    body.push_str(&if exclude_domains { Value::Null } else { crate::meta::domains(user, false) }.to_string());
-    body.push_str(",\"userDecryption\":");
-    body.push_str(
-        &json!({
-            "masterPasswordUnlock": {
-                "kdf": out::kdf(user),
-                "masterKeyEncryptedUserKey": user.user_key,
-                "masterKeyWrappedUserKey": user.user_key,
-                "salt": user.email,
-            },
-            "userKeyId": user.user_key_id,
-        })
+    ciphers.push(']');
+    let cipher_ids = vault
+        .ciphers
+        .iter()
+        .map(|cipher| cipher.id.clone())
+        .chain(orgs.ciphers.iter().map(|item| item.cipher.id.clone()))
+        .collect();
+    Ok(VaultParts {
+        profile: profile_json(state, user, &orgs.memberships).await?.to_string(),
+        folders: Value::Array(vault.folders.iter().map(out::folder).collect()).to_string(),
+        collections: Value::Array(
+            orgs.collections
+                .iter()
+                .map(|(collection, access)| crate::organizations::collection_json(collection, access))
+                .collect(),
+        )
         .to_string(),
-    );
-    body.push('}');
-    Ok(json_text(body))
+        policies: Value::Array(orgs.policies.iter().map(crate::organizations::policy_json).collect()).to_string(),
+        sends: Value::Array(sends.iter().map(crate::sends::render).collect()).to_string(),
+        ciphers,
+        domains: if exclude_domains { Value::Null } else { crate::meta::domains(user, false) }.to_string(),
+        user_decryption: user_decryption(user).to_string(),
+        cipher_ids,
+    })
+}
+
+/// The profile as the sync shows it, with the account's organisations.
+pub(crate) async fn profile_json(
+    state: &AppState,
+    user: &uwulock_store::User,
+    memberships: &[(uwulock_store::organizations::Organization, uwulock_store::organizations::Member)],
+) -> ApiResult<Value> {
+    let two_factor = state.store.two_factors(&user.id).await?;
+    let memberships: Vec<Value> =
+        memberships.iter().map(|(org, member)| crate::families::profile_organization(state, org, member)).collect();
+    Ok(out::profile(user, two_factor.iter().any(|factor| factor.enabled), memberships))
+}
+
+pub(crate) fn user_decryption(user: &uwulock_store::User) -> Value {
+    json!({
+        "masterPasswordUnlock": {
+            "kdf": out::kdf(user),
+            "masterKeyEncryptedUserKey": user.user_key,
+            "masterKeyWrappedUserKey": user.user_key,
+            "salt": user.email,
+        },
+        "userKeyId": user.user_key_id,
+    })
 }
 
 async fn list(State(state): State<AppState>, session: Session) -> ApiResult<Response> {

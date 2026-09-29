@@ -395,6 +395,9 @@ bumped by:
 - `POST /api/ciphers/purge`, a vault import of more than 1000 items;
 - the extras key being lost or deleted.
 
+A cursor with `suite` also carries each space's epoch: a space deleted or rekeyed (§6.4) makes
+such cursors full syncs without touching the account's epoch.
+
 The **server epoch** is bumped when a backup is restored into the running server (§21) or the
 database is migrated from another backend. A cursor with an old epoch, or older than the oldest
 tombstone that is left, cannot be served; the answer is then a full sync with `reset: true`.
@@ -455,18 +458,25 @@ Answer (full sync: every list complete, `deleted` lists empty, `reset: true`):
 - `suite.records`: envelopes of §6.3 with `seq` greater than the cursor's, of the spaces this
   token sees; deleted records are envelopes with `deleted: true` (they are the tombstones).
   `suite.spaces`: the §6.2 space objects that changed (new, or their key changed).
-- `uwu.extrasKey`: the §3 object when it changed, else `null`.
+- `uwu.extrasKey`: the whole `GET /uwu/v1/keys` body of §3 (`object: "uwuKeys"`, `extrasKey`,
+  `lost`) when it changed, else `null`; always present in a full sync (with `extrasKey: null`
+  when there is none yet).
 - `uwu.icons`: `[{ "cipherId", "revisionDate", "keyType" }]` of own icons that changed (§7.3);
   `iconsDeleted`: cipher ids whose own icon is gone.
 - `uwu.reminders`: the full §10 list when any reminder changed, else `null`.
 - `uwu.travel`: the §9 object when it changed, else `null`.
 - `uwu.sendDomains`: `{ "<sendId>": "<sendDomainId>" | null }` for Sends whose domain choice
   changed (§14.2); full map in a full sync.
-- `uwu.maskedLinks`: `{ "<cipherId>": { "id": "x42", "email": "…" } }`, the full map of §13.3
-  links when any changed, else `null`.
+- `uwu.maskedLinks`: `{ "<cipherId>": { "id": "x42", "email": "…", "state": "enabled" } }`, the
+  full map of §13.3 links when any changed, else `null`.
 - `uwu.unseen`: always present; counts for the badges.
 - `hasMore: true`: there is more; call again at once with the new cursor. Objects are delivered
   in `seq` order across all areas; `cursor` always points after the last one delivered.
+
+- `uwu.sendDomains` in a delta names every Send that changed in the window (its domain choice
+  included), whether or not the choice itself changed; a client just takes the values. The map of
+  `uwu.maskedLinks` carries `state` as well, like §13.3. In a full sync both are complete (`{}`
+  when empty).
 
 Errors: 400 `invalid` for an unreadable cursor (the client drops it and does a full sync).
 
@@ -507,7 +517,10 @@ Server answers:
   `{ "type": "ping" }`; the server answers `{ "type": "pong" }`. At most one client message per
   second on average (burst 10); more closes with 4429.
 - If `cursor` is given and the account has changed since it (for this token's areas), the server
-  sends `changed` right after `ready`. That is the whole of "resume".
+  sends `changed` right after `ready`. That is the whole of "resume". A cursor that cannot be
+  served any more (another epoch) counts as changed.
+- A later `auth` must be for the same account and app; another one is closed with 4400. With the
+  suite vault switched off, a `suite` token is closed with 4403.
 
 ### 5.2 Server messages
 
@@ -634,8 +647,9 @@ All take `user` (any space) or `suite` (its own space only; others are 403 `scop
   and tombstone, re-sealed for the new id and key, `baseSeq` = its current `seq`. One transaction;
   any missing or stale record is 409 `conflict` and nothing changes. Body limit 64 MiB. The
   space's epoch is bumped: other devices' next pull says `reset`.
-- `DELETE /uwu/v1/suite/spaces/{space}` — `user` only; body `{ "masterPasswordHash": "…" }`.
-  Deletes the space and all its records.
+- `DELETE /uwu/v1/suite/spaces/{space}` — `user` only; body `{ "masterPasswordHash": "…" }`
+  (a wrong one is 400 as everywhere). Deletes the space and all its records; 404 when there is
+  none. The web vault offers it under *Settings → Devices*.
 - `GET /uwu/v1/suite/spaces/{space}/records?since=<seq>&limit=<n>` — pull. `limit` default and
   maximum 500. Answer:
 
@@ -693,9 +707,17 @@ a token that can do nothing but their space:
 | `uwumail` | `mail` |
 | `uwusuite` | `generic` |
 
-`scope=uwu.suite` with any other `client_id` is `{"error": "invalid_client"}`. The server stores
-the `client_id` with the device; `GET /uwu/v1/devices` gets `"app": "uwussh" | … | null`, so the
-web vault can show and remove suite devices. The new-device mail and security notices apply.
+`scope=uwu.suite` with any other `client_id` is `{"error": "invalid_client"}`; a suite
+`client_id` with any other scope is `{"error": "invalid_scope"}`, and with the passkey grant
+(`webauthn`) `invalid_client`. With the suite vault switched off (§21.1 `suite.enabled`) suite
+logins are `invalid_client` and suite refreshes `invalid_grant`. The server stores the `client_id`
+with the device; `GET /uwu/v1/devices` gets `"app": "uwussh" | … | null`, so the web vault can
+show and remove suite devices. The new-device mail applies; instead of a `newDevice` notice, every
+suite login (new device or not) is a `suiteLogin` notice (§12.1).
+
+A refresh (`grant_type=refresh_token`) answers with the **same** refresh token, as for every other
+client; it must name the device's own `client_id` (another one, or a suite `client_id` for a
+device that is not a suite device, is `invalid_grant`).
 
 A `suite` token may use: `/identity/**`, `/api/accounts/prelogin`, `/uwu/v1/info`,
 `GET|POST /uwu/v1/keys`, `PUT /uwu/v1/keys/user-wrap`, its space's endpoints of §6.4 except
@@ -1305,6 +1327,10 @@ account's language. The Stufe 5 event log builds on the same table.
 | `vaultExported` | reported by a client (§12.2) or by Bitwarden's event 1007 | `{ "format": "json" }` |
 | `travelModeEnabled`, `travelModeDisabled`, `travelDisableFailed` | §9 | `{}` |
 | `extrasKeyReset` | §3 | `{}` |
+| `extrasKeyCreated` | §3: a client made the extras key | `{}` |
+| `extrasKeyRewrapped` | §3: a client wrapped it again for the user key (`PUT …/user-wrap`) | `{}` |
+| `extrasKeyLost` | §3: a rotation changed the key pair without it; nothing under it opens | `{}` |
+| `suiteLogin` | §6.5: a suite app logged in (every time, not only on a new device) | `{ "app": "uwussh", "space": "ssh", "new": true }` |
 | `kdfBelowMinimum` | §20 | `{}` |
 | `ssoLinked` | an SSO identity was linked to the account for the first time (§19) | `{ "issuer": "https://auth.example.com" }` |
 | `maskedConnected`, `maskedDisconnected` | §13 | `{ "server": "https://mail.example.com" }` |
@@ -1457,6 +1483,17 @@ old refresh token comes again. `invalid_grant` on refresh: the connection's `sta
   refresh token and `client_id`, best effort), deletes it here, notice `maskedDisconnected`.
   Addresses stay at UwUMail.
 
+Implementation notes (Stufe 6):
+
+- With no UwUMail server listed, §13.2 and §13.3 answer 404 `feature_off` — except
+  `GET`/`DELETE /uwu/v1/masked/connection` for an account that still has a connection from
+  before, so it can be seen and ended. A connection whose server the admin took off the list
+  answers 403 `server_not_allowed` on §13.3 and is not revoked at UwUMail when ended (the Lock
+  server no longer talks to that server).
+- Deleting the account (by the person, an admin or SCIM) ends its grant at UwUMail first, best
+  effort, like `DELETE /uwu/v1/masked/connection`.
+- UwUMail answering 429 is 429 here too (no change of `status`).
+
 ### 13.3 Addresses — auth `user`
 
 Without a connection: 409 `not_connected`; with `status: revoked`: 409 `revoked`. UwUMail
@@ -1490,6 +1527,11 @@ day (429).
   address.
 - `PATCH /uwu/v1/masked/addresses/{id}` — any of `{ "state": "enabled" | "disabled" | "deleted", "description", "forDomain", "cipherId" }`;
   a new `cipherId` (or `null`) also sets (or clears) `url` at UwUMail.
+- `GET /uwu/v1/masked/links` → `{ "<cipherId>": { "id": "x42", "email": "…", "state": "enabled" | … | null }, … }`:
+  the account's links from this server alone, without asking UwUMail (`state` as UwUMail last
+  said it). What the web vault shows at the items; the same map as `uwu.maskedLinks` (§4.4).
+- `POST /uwu/v1/masked/addresses` also takes `emailPrefix` (UwUMail's, optional). A `cipherId`
+  that already has an address: 409 `exists`; `domain` not one of the connection's: 400 `invalid`.
 - `DELETE /uwu/v1/masked/addresses/{id}` → `state: "deleted"` (UwUMail never reuses it; mail to it
   is refused).
 
@@ -1587,6 +1629,10 @@ origins (the Bitwarden desktop app's `bw-desktop-file://bundle`); extensions and
 
 A key works only on §13.4 and §13.5, never as a login.
 
+The `error` values of §13.4/§13.5: 401 `unauthorized`; 403 `not_connected`, `revoked`,
+`feature_off`, `server_not_allowed`, `forbidden` (UwUMail refused it, its limit included); 429
+`rate_limited`; 502 `upstream`; 404 `not_found` for any other path under the two bases.
+
 **Clients:** web vault (connect, manage, keys, generator, at the item), UwULock desktop and
 extension (generator and item, through §13.3 with their session), official clients (§13.4/§13.5).
 
@@ -1624,8 +1670,22 @@ server's).
 - `DELETE /uwu/v1/admin/send-domains/{id}` — Sends and file requests that chose it fall back to
   the main host; links under it stop working.
 - `POST /uwu/v1/admin/send-domains/{id}/check` → `{ "dns": { "ok": true, "addresses": ["203.0.113.5"] }, "https": { "ok": true, "error": null }, "routing": { "ok": true } }`
-  (the server resolves the host and fetches `https://<host>/alive` from itself).
+  (the server resolves the host and fetches `https://<host>/alive` from itself). `dns` also
+  carries `error` (text or `null`). `routing.ok` means the answer came from this very server: the
+  check puts a one-time token on the request (`/alive?probe=…`), which only this server answers
+  with a header.
 - Branding per domain: §14.4.
+
+Implementation notes (Stufe 6): the `sendDomain` object also has `url` (`https://send.example.com`,
+as in `/uwu/v1/info`). Send-domain URLs carry the main address's port when it has one (the same
+listener serves both names). `tls: "acme"` on a server with `UWULOCK_TLS=off` has
+`certificate.status: "failed"` with an `error` saying so; with `UWULOCK_TLS=files` or `acme` the
+server orders one certificate per name (TLS-ALPN-01, the same CA and contact as the main name,
+`UWULOCK_ACME_DIRECTORY`/`UWULOCK_ACME_EMAIL`) and serves it by SNI. Invalid host: 400; taken:
+409 `exists`. The branding of one domain: `GET|PUT|DELETE /uwu/v1/admin/send-domains/{id}/branding`
+(`DELETE` drops all of it, back to the server's), `…/branding/preview`,
+`PUT|DELETE …/branding/logo/{light|dark}`, `PUT|DELETE …/branding/favicon`, answering like the
+server's.
 
 **What a send domain answers** (by the `Host` header; `X-Forwarded-Host` only with
 `trust_forwarded`): the web vault's files (the Send and file-request pages, assets), `GET /<accessId>`
@@ -1654,6 +1714,12 @@ keep working and deleting a domain loses nothing.
 - `GET /uwu/v1/sends/domains` → `{ "<sendId>": "<sendDomainId>" | null, … }` (all the account's
   Sends; also in the sync as `uwu.sendDomains`).
 - File requests carry `sendDomainId` themselves (§11.4).
+
+Implementation notes (Stufe 6): `PUT /uwu/v1/account/send-domain` answers
+`{ "object": "sendDomainDefault", "sendDomainId" }`; an unknown id is 400 `invalid` (also on
+`PUT /uwu/v1/sends/{sendId}/domain`; a Send that is not the account's is 404). On a send domain,
+the download link of a Send's file (`url` of `/api/sends/access/file/{fileId}` and
+`/api/sends/{id}/access/file/{fileId}`) is under that domain, so its page can fetch it.
 
 The official clients build their links from their own server URL (the main host); their links
 work, they just do not use the send domain.
@@ -2592,7 +2658,7 @@ would shut out the IP making it is 400 `would_lock_out`. Escape hatch:
   }
   ```
 
-  `status`: `ok`, `warning`, `error`, `skipped`. Check ids: `certificate` (and each send domain's),
+  `status`: `ok`, `warning`, `error`, `skipped`. Check ids: `certificate` (and each send domain's, as `certificate.<host>`),
   `clock` (offset from the `Date` of the push relay's and GitHub's answers — `UWULOCK_TIME_SOURCE`
 names others or `off`, GitHub only while the update check is on; warning over 30 s, error over
 2 min; `skipped` when none answers),
@@ -2682,7 +2748,7 @@ addresses, names, hosts of icons, IPs or ids.
 | `uwulock_loki_dropped_total` | counter | – |
 
 Plus the process collector (`process_*`). What does not exist yet is left out rather than
-reported as 0: `kind` `file_requests`/`icons`, `channel` `realtime`, `target` `offsite`, the send
+reported as 0: `kind` `file_requests`/`icons`, `target` `offsite`, the send
 domains' certificates and `uwulock_icon_fetches_total` come with their features. `route` is
 `other` for the web vault's files and unknown paths. `docs/metrics.md` ships example alert rules (backup
 older than 2 days, certificate under 14 days, error rate, failed logins spike).

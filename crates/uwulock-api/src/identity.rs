@@ -55,10 +55,15 @@ impl TokenForm {
 async fn token(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
+    send_host: Option<axum::Extension<crate::send_hosts::SendHost>>,
     headers: HeaderMap,
     Form(raw): Form<HashMap<String, String>>,
 ) -> ApiResult<Response> {
     let form = TokenForm::new(raw);
+    // A send domain opens Sends, nothing else: no logins there.
+    if send_host.is_some() && form.get("granttype") != Some("send_access") {
+        return Err(ApiError::bad("Only Sends can be opened on this address."));
+    }
     let (grant, result) = match form.get("granttype") {
         Some("password") => ("password", password_login(&state, ip, &headers, &form).await),
         Some("refresh_token") => ("refresh_token", refresh(&state, ip, &form).await),
@@ -71,7 +76,7 @@ async fn token(
                 email: form.get("email"),
                 otp: form.get("otp"),
             };
-            ("send_access", crate::sends::grant(&state, ip, form.get("sendid"), proof).await)
+            ("send_access", crate::sends::grant(&state, ip, &headers, form.get("sendid"), proof).await)
         }
         _ => return Err(ApiError::bad("Invalid type")),
     };
@@ -97,9 +102,7 @@ async fn password_login(
     let device_id = form.require("deviceidentifier", "device_identifier")?;
     let device_name = form.require("devicename", "device_name")?;
     let device_type: i64 = form.require("devicetype", "device_type")?.trim().parse().unwrap_or(14);
-    if scope != "api offline_access" {
-        return Err(ApiError::bad("Scope not supported"));
-    }
+    check_scope(state, form.get("clientid").unwrap_or_default(), Some(scope))?;
     // An address is never this long; what is, is not kept in the event log either.
     if username.len() > MAX_EMAIL || device_name.len() > 256 || device_id.len() > 256 {
         return Err(ApiError::bad("Username or password is incorrect. Try again"));
@@ -184,6 +187,33 @@ async fn password_login(
     Ok(Json(body).into_response())
 }
 
+/// Whether a login may ask for `scope` as `client_id`: Bitwarden's `api offline_access` for
+/// every client but the suite apps, which ask for `uwu.suite offline_access` (docs/uwu-api.md
+/// §6.5) and get nothing else. No scope at all (an SSO code) is the client's usual one.
+pub(crate) fn check_scope(state: &AppState, client_id: &str, scope: Option<&str>) -> ApiResult<()> {
+    let asked: std::collections::BTreeSet<&str> = scope.unwrap_or_default().split_whitespace().collect();
+    let suite = crate::suite::space_of_client(client_id).is_some();
+    let invalid_client = || ApiError::json(json!({ "error": "invalid_client", "error_description": "invalid_client" }));
+    if asked.contains(crate::suite::SCOPE) != suite && scope.is_some() {
+        return Err(if suite {
+            ApiError::json(json!({ "error": "invalid_scope", "error_description": "invalid_scope" }))
+        } else {
+            invalid_client()
+        });
+    }
+    if suite {
+        if !state.settings().suite.enabled {
+            return Err(invalid_client());
+        }
+        if scope.is_some() && asked != [crate::suite::SCOPE, "offline_access"].into() {
+            return Err(ApiError::bad("Scope not supported"));
+        }
+    } else if scope.is_some() && asked != ["api", "offline_access"].into() {
+        return Err(ApiError::bad("Scope not supported"));
+    }
+    Ok(())
+}
+
 /// The device a login is for, and what the second step said.
 pub(crate) struct Login<'a> {
     pub device_id: &'a str,
@@ -228,15 +258,18 @@ pub(crate) async fn finish_login(
                 .as_ref()
                 .map(|token| (auth::sha256(token.as_bytes()), clock::in_seconds(auth::REMEMBER_DAYS * 86_400))),
             sso,
+            client_id: Some(client_id.chars().take(64).collect()),
         })
         .await?;
     log(state, "login", Some(user), &user.email, ip, device_type, device_name).await;
+    let suite = crate::suite::space_of_client(client_id);
     let context = notices::Context {
         ip: Some(ip),
         device_type: Some(device_type),
         device_name: Some(device_name.to_string()),
         app: Some(client_id.to_string()),
     };
+    let mut new_device_mailed = false;
     if (new && !first_device) || by_request {
         let settings = state.settings();
         let mail_off = settings.security_notices.mail_off.iter().any(|kind| kind == "newDevice");
@@ -250,14 +283,27 @@ pub(crate) async fn finish_login(
             };
             send_later(state, &user.email, mail, Language::from_code(&user.language));
         }
-        if new && !first_device {
+        if new && !first_device && suite.is_none() {
             notices::record_mailed(state, user, "newDevice", &context, json!({ "app": client_id }), mailed).await;
+        }
+        new_device_mailed = mailed;
+    }
+    // A suite app that logs in can read its space: always a notice, a new one or not.
+    if let Some(space) = suite {
+        let detail = json!({ "app": client_id, "space": space, "new": new });
+        if new_device_mailed {
+            notices::record_mailed(state, user, "suiteLogin", &context, detail, true).await;
+        } else {
+            notices::record(state, user, "suiteLogin", &context, detail).await;
         }
     }
     notices::kdf_below_minimum(state, user, &context).await;
 
     let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id, sso);
     let mut body = login_response(user, access_token, expires_in);
+    if suite.is_some() {
+        body["scope"] = format!("{} offline_access", crate::suite::SCOPE).into();
+    }
     body["MasterPasswordPolicy"] = state.settings().policies.master_password_policy();
     body["refresh_token"] = refresh_token.into();
     if let Some(remember) = remember {
@@ -399,16 +445,28 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
     if session.user.disabled {
         return Err(invalid_grant());
     }
-    let client_id = form.get("clientid").unwrap_or("undefined");
+    let asked = form.get("clientid").unwrap_or("undefined");
+    // A suite app's device stays one: its refresh token gives a suite token, and only to it.
+    let stored_suite = device.client_id.as_deref().filter(|client| crate::suite::space_of_client(client).is_some());
+    let client_id = match stored_suite {
+        Some(stored) if stored == asked => stored,
+        Some(_) => return Err(invalid_grant()),
+        None if crate::suite::space_of_client(asked).is_some() => return Err(invalid_grant()),
+        None => asked,
+    };
+    if stored_suite.is_some() && !state.settings().suite.enabled {
+        return Err(invalid_grant());
+    }
     two_factor_policy(state, &session.user, client_id).await?;
     let (access_token, expires_in) =
         state.tokens.access_token(&session.user, &device.id, device.kind, client_id, device.sso);
+    let scope = if stored_suite.is_some() { "uwu.suite offline_access" } else { "api offline_access" };
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
         "token_type": "Bearer",
         "refresh_token": token,
-        "scope": "api offline_access",
+        "scope": scope,
     }))
     .into_response())
 }

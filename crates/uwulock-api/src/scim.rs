@@ -643,7 +643,7 @@ async fn disable(state: &AppState, user: &User) -> ScimResult<()> {
             user.security_stamp = uuid::Uuid::new_v4().to_string();
         })
         .await?;
-    crate::notify::user(state, &user.id, None, uwulock_notify::Kind::LogOut);
+    crate::notify::logout(state, &user.id, None, "disabled");
     log(state, Some(user), &user.email, "disabled the account".into()).await;
     Ok(())
 }
@@ -721,7 +721,8 @@ async fn delete_user(State(state): State<AppState>, _scim: Scim, Path(id): Path<
                     }
                 }
                 OnDelete::Delete => {
-                    crate::notify::user(&state, &user.id, None, uwulock_notify::Kind::LogOut);
+                    crate::notify::logout(&state, &user.id, None, "disabled");
+                    crate::masked::account_going(&state, &user.id).await;
                     state.store.delete_user(&user.id).await?;
                     log(&state, None, &user.email, "deleted the account and its vault".into()).await;
                 }

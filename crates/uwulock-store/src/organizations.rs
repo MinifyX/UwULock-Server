@@ -255,14 +255,14 @@ pub(crate) fn reachable(conn: &rusqlite::Connection, member: &Member) -> rusqlit
     Ok(access)
 }
 
-fn collections_of(tx: &rusqlite::Connection, cipher_id: &str) -> rusqlite::Result<Vec<String>> {
+pub(crate) fn collections_of(tx: &rusqlite::Connection, cipher_id: &str) -> rusqlite::Result<Vec<String>> {
     tx.prepare_cached("SELECT collection_id FROM collection_ciphers WHERE cipher_id = ?1")?
         .query_map([cipher_id], |row| row.get(0))?
         .collect()
 }
 
 /// What `member` may do with an item in `collections` (none: in no collection).
-fn access_to(member: &Member, reach: &HashMap<String, Access>, collections: &[String]) -> Option<Access> {
+pub(crate) fn access_to(member: &Member, reach: &HashMap<String, Access>, collections: &[String]) -> Option<Access> {
     if member.status != CONFIRMED {
         return None;
     }
@@ -614,6 +614,48 @@ impl Store {
             self.forget_session_of(user);
         }
         Ok(changed)
+    }
+
+    /// The organisations the user is in (accepted or confirmed), with the membership.
+    pub async fn memberships_of(&self, user_id: &str) -> Result<Vec<(Organization, Member)>> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| memberships(conn, &user_id)).await
+    }
+
+    /// The policies of every organisation the user is in, as the sync lists them.
+    pub async fn policies_of(&self, user_id: &str) -> Result<Vec<Policy>> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached(
+                "SELECT p.id, p.org_id, p.type, p.enabled, p.data, p.revision FROM policies p \
+                 JOIN org_members m ON m.org_id = p.org_id JOIN organizations o ON o.id = p.org_id \
+                 WHERE m.user_id = ?1 AND m.status IN (1, 2) ORDER BY o.name",
+            )?
+            .query_map([user_id], |row| {
+                Ok(Policy {
+                    id: row.get(0)?,
+                    org_id: row.get(1)?,
+                    kind: row.get(2)?,
+                    enabled: row.get(3)?,
+                    data: row.get(4)?,
+                    revision: row.get(5)?,
+                })
+            })?
+            .collect()
+        })
+        .await
+    }
+
+    /// The organisation an item belongs to; none for a person's own (or no such item).
+    pub async fn cipher_organization(&self, cipher_id: &str) -> Result<Option<String>> {
+        let cipher_id = cipher_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached("SELECT organization_id FROM ciphers WHERE id = ?1")?
+                .query_row([cipher_id], |row| row.get::<_, Option<String>>(0))
+                .optional()
+                .map(Option::flatten)
+        })
+        .await
     }
 
     /// The user ids of an organisation's confirmed members.

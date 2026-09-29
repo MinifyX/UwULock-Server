@@ -692,6 +692,8 @@ async fn complete(
         Some(Err(())) => return Err(ApiError::bad("A file of the submission is still missing.").code("incomplete")),
         Some(Ok(done)) => done,
     };
+    let notice = uwulock_notify::realtime::Live::Notice { kind: "fileRequest", id: Some(request.id.clone()) };
+    crate::notify::live(&state, &request.user_id, None, notice);
     if mail && let Ok(Some(owner)) = state.store.user(&request.user_id).await {
         let link = format!("{}/#/file-requests/{}", state.config.public, request.id);
         let mailer = state.mailer.clone();

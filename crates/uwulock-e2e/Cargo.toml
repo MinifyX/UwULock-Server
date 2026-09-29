@@ -30,3 +30,6 @@ serde_json.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 zeroize = "1"
+# The realtime channel, as a suite app opens it; the versions uwulock-api's tests use.
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["sink"] }

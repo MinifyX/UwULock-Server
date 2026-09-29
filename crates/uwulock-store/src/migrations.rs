@@ -19,6 +19,10 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0009_vault_comfort.sql"),
     include_str!("../migrations/sqlite/0010_sends_branding_reports.sql"),
     include_str!("../migrations/sqlite/0011_families.sql"),
+    include_str!("../migrations/sqlite/0012_delta_sync.sql"),
+    include_str!("../migrations/sqlite/0013_suite.sql"),
+    include_str!("../migrations/sqlite/0014_send_domains.sql"),
+    include_str!("../migrations/sqlite/0015_masked.sql"),
 ];
 
 /// The schema this build writes.

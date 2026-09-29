@@ -9,7 +9,10 @@ Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit 
 Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind zusammen als
 0.4.0-beta.1 erschienen, nach einem Sicherheitsreview
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
-0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit), 4c (Tresor-Komfort) und 4d (Familie), dann Stufe 5.
+0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Seitdem fertig: Stufe 4b (Betrieb und
+Sicherheit), 4c (Tresor-Komfort), 4d (Familie) und Stufe 6 (UwU-Extras) — Stufe 6 kam vor Stufe 5.
+Sie erscheinen zusammen als 0.6.0-beta.1, passend dazu UwULock 0.3.0-beta.1. Stufe 5 (Firma) ist
+zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
 Die Schnittstellen, die Server, Web-Tresor, UwULock-Client, Browsererweiterung, UwUSSH, UwURDP,
 UwUMail und UwUAuth für 0.6 gemeinsam umsetzen, stehen in [uwu-api.md](uwu-api.md).
@@ -185,7 +188,7 @@ den Tests auf echten Geräten.
       UwULock-Client (die offiziellen Clients kennen das nicht). Rate-Limits gegen Missbrauch; läuft
       auch unter den Send-Domains aus Stufe 6. (Server und Web-Tresor fertig, mit dem
       Extras-Schlüssel und `storagePerUserMb`; `docs/file-requests.md`. Die Seite unter `/r/<id>`
-      und die Regel, was eine Send-Domain beantwortet, stehen bereit. Die Live-Meldung an den
+      läuft unter den Send-Domains aus Stufe 6. Die Live-Meldung an den
       Besitzer und das Zählen im Delta-Sync kommen mit dem Echtzeit-Kanal und dem Delta-Sync;
       die Seite im UwULock-Client mit dessen 0.3.)
 - [x] UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
@@ -338,9 +341,10 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   Stufe 6 auch pro Domain.
   (Fertig: Bilder werden als PNG neu gezeichnet, auch SVG; die Farbe braucht 3:1 zu Weiß und zum
   dunklen Hintergrund, die Töne daraus rechnet UwUMails Palette; gespeichert pro Bereich, damit
-  Stufe 6 pro Send-Domain nur noch die Routen braucht. `docs/branding.md`.)
+  Stufe 6 pro Send-Domain nur noch die Routen braucht. `docs/branding.md`. Pro Send-Domain seit
+  Stufe 6, `docs/send-domains.md`.)
 
-### Stufe 4d — Familie (vor Stufe 5)
+### Stufe 4d — Familie (vor Stufe 5; fertig, kommt mit 0.6)
 
 Teilen in der Familie, ohne auf alles aus Stufe 5 zu warten: eine schlanke Organisation, wie
 Bitwardens „Families".
@@ -365,7 +369,7 @@ Bitwardens „Families".
 - Gruppen, Richtlinien, Account-Recovery, Ereignisprotokoll und alles Weitere bleiben in Stufe 5,
   die darauf aufbaut.
 
-### Stufe 5 — Firma
+### Stufe 5 — Firma (zurückgestellt, nach Stufe 6)
 
 - Organisationen, Sammlungen, Rollen, Einladungen (aufbauend auf Stufe 4d)
 - Gruppen, Richtlinien (2FA-Pflicht, Master-Passwort-Anforderungen, Account-Recovery)
@@ -378,30 +382,47 @@ Bitwardens „Families".
   Bitwarden (der Schlüssel steckt im Token, der Server sieht keine Secrets); Verwaltung im
   Web-Tresor. Vaultwarden kann das nicht. Hängt an Organisationen, darum hier.
 
-### Stufe 6 — UwU-Extras (unter `/uwu/v1`, angekündigt unter `GET /uwu/v1/info`)
+### Stufe 6 — UwU-Extras (unter `/uwu/v1`, angekündigt unter `GET /uwu/v1/info`; vor Stufe 5 fertig, kommt mit 0.6)
 
-- Schlanker Echtzeit-Kanal und Delta-Sync für den UwULock-Client
-- Suite-Tresor: eigene verschlüsselte Objekte für SSH-Hosts, RDP-Verbindungen, UwUMail-Konten —
+- [x] Schlanker Echtzeit-Kanal und Delta-Sync für den UwULock-Client (`/uwu/v1/realtime`,
+  `/uwu/v1/sync` mit Zählern, Tombstones 90 Tage und Epochen; `docs/sync.md`, Zahlen in
+  `docs/performance.md`)
+- [x] Suite-Tresor: eigene verschlüsselte Objekte für SSH-Hosts, RDP-Verbindungen, UwUMail-Konten —
   bewusst nicht in Bitwardens Eintragsliste, weil unbekannte Typen die offiziellen Clients
-  stören könnten
-- UwUSync ersetzen: UwUSSH und UwURDP synchronisieren über UwULock Server, mit Übernahme aus der
-  UwUSync-Datenbank
-- Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
-  einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf
-- Eigene Domains für Sends: Im Admin-Portal lassen sich weitere Domains oder Subdomains
+  stören könnten (Bereiche `ssh`/`rdp`/`mail`/`generic`, Suite-Anmeldung, `docs/suite.md`)
+- [x] UwUSync ersetzen: UwUSSH und UwURDP synchronisieren über UwULock Server, mit Übernahme aus der
+  UwUSync-Datenbank (die Übernahme machen die Apps selbst, die Datensätze sind nur dort lesbar;
+  ihre Abläufe laufen in `uwulock-e2e`)
+- [x] Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
+  einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf (der Web-Tresor
+  speichert und lädt ihn unter dem Extras-Schlüssel)
+- [x] Eigene Domains für Sends: Im Admin-Portal lassen sich weitere Domains oder Subdomains
   (z. B. `send.example.com` neben `lock.example.com`) anlegen, unter denen nur Sends erreichbar
   sind — die Send-Seite und `/api/sends/access…`, kein Tresor, keine Anmeldung, kein
   Admin-Portal. Links werden kürzer, etwa `https://send.example.com/<access id>#<schlüssel>`;
   der Schlüssel bleibt hinter dem `#`, sonst sähe ihn der Server. Alte Links unter
-  `/#/send/…` gehen weiter. Noch zu klären, bevor es gebaut wird:
+  `/#/send/…` gehen weiter. Entschieden:
   - Die offiziellen Bitwarden-Clients bauen den Link selbst aus ihrer Web-Tresor-Adresse; die
     eigene Domain nutzen also nur Web-Tresor und UwULock-Client (dort über `/uwu/v1/info`).
-  - Eine Send-Domain für alle, oder wählbar pro Send bzw. pro Konto?
-  - TLS für die zusätzlichen Domains: Let's Encrypt über den Server selbst, oder nur hinter
-    einem Proxy (Caddy)?
-  - Eigene Optik der Send-Seite pro Domain (Name, Logo)?
-- Masken-Adressen von UwUMail: UwULock Server legt für ein Konto Masken-Adressen bei UwUMail
+  - Mehrere Send-Domains, vom Admin verwaltet; wählbar pro Send (und pro Datei-Anfrage), mit
+    einem Standard pro Konto, den auch Sends aus den offiziellen Clients bekommen. Jeder Send
+    ist unter der Hauptadresse und allen Send-Domains erreichbar; die Wahl bestimmt nur den
+    Link und die Optik, darum verliert das Löschen einer Domain nichts außer ihren Links.
+  - TLS pro Domain wählbar: Let's Encrypt über den Server selbst (TLS-ALPN-01 wie die
+    Hauptadresse, je Name ein Zertifikat, per SNI ausgeliefert; auch neben Zertifikat-Dateien)
+    oder ein Proxy davor.
+  - Eigene Optik pro Domain (Name, Farbe, Logos, Favicon), sonst die des Servers; auch die
+    Mail mit dem Code eines Sends für bestimmte Adressen kommt in der Optik der Domain.
+  (Fertig: Admin-Portal mit Prüfung von DNS, HTTPS und Weiterleitung, Zertifikatsstand und
+  Optik je Domain; Diagnose und Metrik je Domain; Web-Tresor mit Wahl am Send, an der
+  Datei-Anfrage und dem Standard in den Einstellungen. `docs/send-domains.md`.)
+- [x] Masken-Adressen von UwUMail: UwULock Server legt für ein Konto Masken-Adressen bei UwUMail
   Server an (dessen JMAP `MaskedEmail`, siehe `docs/jmap-masked-email.md` dort).
+  (Fertig im Server und Web-Tresor, gegen einen nachgebauten UwUMail getestet — OAuth mit
+  Registrierung, PKCE, Rotation der Refresh-Tokens, neue Registrierung bei `invalid_client`,
+  429 — und im Browsertest; die Probe gegen einen echten UwUMail mit dem Scope `maskedemail`
+  (UwUMail-Server PR #21) ist ein `#[ignore]`-Test zum Starten von Hand.
+  `docs/masked-addresses.md`.)
   - Verbinden: Der Admin trägt im Admin-Portal die erlaubten UwUMail-Server ein; nur an diese
     schickt der Lock-Server Anfragen. Der Nutzer klickt im Web-Tresor „Mit UwUMail verbinden",
     meldet sich per OAuth (PKCE, dynamische Registrierung, beides hat UwUMail schon) bei
