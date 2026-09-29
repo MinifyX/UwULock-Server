@@ -2416,7 +2416,7 @@ a mounted folder; deduplicated; encrypted by default with a recovery key shown o
 PostgreSQL), the attachment, Send, file-request and icon directories, and the server's secret
 files (token key, the secret of §13.2). (As built: own icons are in the database; the `icons/`
 directory holds only what the server fetched from websites and the library, which it fetches
-again, so it is left out.)
+again — and which would say which websites the accounts use — so it is left out.)
 
 - `GET /uwu/v1/admin/backups/offsite` →
   `{ "object": "offsiteBackups", "enabled", "hour", "minute", "retention": { "days": 7, "weeks": 4, "months": 6 }, "encrypted", "target", "status": { "lastSuccess", "lastError", "lastDuration", "bytes" }, "running", "warnAfterHours": 48 }`.
