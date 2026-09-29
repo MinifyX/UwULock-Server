@@ -228,5 +228,7 @@ GitHub release with the scripts.
 - [Performance](docs/performance.md) — how it is measured, and the numbers
 - [Security review, September 2026](docs/security-review-2026-09.md) — what was found for 0.4,
   and how it was fixed
+- [Security review of 0.6](docs/security-review-0.6.md) — what was found for 0.6, what is fixed,
+  and the low findings that stay open
 - [Changelog](CHANGELOG.md)
 - [Security](SECURITY.md) — how to report a vulnerability
