@@ -2561,6 +2561,12 @@ app on the UwUAuth side is deleted there.
 - Wrong SCIM tokens: 30 per address, then one every 30 seconds (429 before that).
 - The client secret is sealed (AES-256-GCM) under `secret.key` in the data directory (§13.2);
   a value set on the command line unsealed is taken as it is.
+- Since 0.6.0-beta.2 the other secrets in the database are sealed the same way: the SMTP and Loki
+  passwords and the push relay's installation key in the settings, the tokens of notification
+  channels, and the S3 secret key, SFTP password or key and recovery key of the off-site backups.
+  A server seals what an older one kept in plain when it starts, and after a restore. It refuses
+  to start when sealed values exist but `secret.key` is gone (`UWULOCK_NEW_SECRET_KEY=1` empties
+  them instead, docs/deployment.md).
 
 Other suite apps pair the same way with their own `app` values (UwUMail, UwUSync for
 UwUSSH/UwURDP).

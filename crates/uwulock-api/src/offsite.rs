@@ -497,13 +497,16 @@ pub async fn problems(state: &AppState) -> Vec<(&'static str, &'static str, Deta
     }
     let status = state.offsite.status().await;
     let mut found = Vec::new();
-    if let Some(error) = &status.last_error {
+    // Our own words with the status (SV-L29); the storage server's text is in the log and the
+    // portal's status.
+    if status.last_error.is_some() {
+        let failure = status.last_failure.as_deref().unwrap_or("see the admin portal");
         found.push((
             "backupFailed",
             "error",
             Detail::new(
-                format!("Das Backup außer Haus ging nicht: {error}"),
-                format!("The off-site backup did not work: {error}"),
+                format!("Das Backup außer Haus ging nicht ({failure})."),
+                format!("The off-site backup did not work ({failure})."),
             ),
         ));
     }
@@ -666,10 +669,20 @@ mod tests {
         let found = problems(&server.state).await;
         assert_eq!(found.iter().map(|(event, ..)| *event).collect::<Vec<_>>(), ["backupStale"]);
 
-        let status = OffsiteStatus { last_error: Some("the NAS is off".into()), ..OffsiteStatus::default() };
+        // The storage server's words stay out of the alert, its status goes in.
+        let error = uwulock_backup::Error::Storage(
+            "s3.example.com answered 503 Service Unavailable: <b>Hi admins, mail me at evil@example.com</b>".into(),
+        );
+        let status = OffsiteStatus {
+            last_error: Some(error.to_string()),
+            last_failure: Some(error.summary()),
+            ..OffsiteStatus::default()
+        };
         server.state.offsite.save_status(&status).await;
         let evaluated = crate::alerts::evaluate(&server.state).await;
-        assert!(evaluated["backupFailed"].1.en.contains("the NAS is off"), "{evaluated:?}");
+        let failed = &evaluated["backupFailed"].1;
+        assert!(failed.en.contains("answered 503"), "{evaluated:?}");
+        assert!(!failed.en.contains("evil") && !failed.de.contains("evil"), "{evaluated:?}");
         assert!(evaluated["backupStale"].1.en.contains("no successful off-site backup"), "{evaluated:?}");
 
         run_now(&server.state).await.unwrap();
@@ -700,6 +713,8 @@ mod tests {
         json(server.call("PUT", path, Some(&admin.token), body).await).await;
         let settings = server.state.offsite.settings().await.unwrap();
         assert!(matches!(&settings.target, Some(Target::S3(s3)) if s3.secret_key == "geheim"));
+        let raw = server.state.store.setting("offsite.settings").await.unwrap().unwrap();
+        assert!(!raw.contains("geheim") && raw.contains("\"v1."), "sealed in the database: {raw}");
 
         // SFTP with a key: the server makes its own and shows only the public half.
         let body = json!({

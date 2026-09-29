@@ -106,7 +106,9 @@ async fn reloaded_allows(state: &AppState, ip: IpAddr) -> bool {
     {
         return false;
     }
-    let Ok(stored) = crate::Settings::load(&state.store, &state.config.start_settings).await else { return false };
+    let Ok(stored) = crate::Settings::load(&state.store, &state.config.start_settings, &state.secret).await else {
+        return false;
+    };
     let networks = stored.admin_networks.clone();
     if networks != state.settings.read().admin_networks {
         tracing::info!("the admin networks changed in the database; taking them over");
@@ -156,8 +158,10 @@ mod tests {
 
         // The command line empties the list in the database; the refused address makes the
         // running server look again.
-        let stored = crate::Settings::load(&server.state.store, &crate::Settings::default()).await.unwrap();
-        stored.with("adminNetworks", json!([])).unwrap().save(&server.state.store).await.unwrap();
+        let stored = crate::Settings::load(&server.state.store, &crate::Settings::default(), &server.state.secret)
+            .await
+            .unwrap();
+        stored.with("adminNetworks", json!([])).unwrap().save(&server.state.store, &server.state.secret).await.unwrap();
         server.state.admin_reloaded.store(0, Ordering::Relaxed);
         let back = server.call_from("203.0.113.5", "GET", "/uwu/v1/admin/users", &admin.token, json!({})).await;
         assert_eq!(back.status(), StatusCode::OK);

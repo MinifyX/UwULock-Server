@@ -535,7 +535,9 @@ mod tests {
         off["loki"]["enabled"] = json!(false);
         server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), off).await;
         assert!(!server.state.logs.loki().wanted());
-        let stored = crate::Settings::load(&server.state.store, &crate::Settings::default()).await.unwrap();
+        let stored = crate::Settings::load(&server.state.store, &crate::Settings::default(), &server.state.secret)
+            .await
+            .unwrap();
         assert_eq!(stored.loki.password.as_deref(), Some("glc_secret"), "kept for later");
     }
 }

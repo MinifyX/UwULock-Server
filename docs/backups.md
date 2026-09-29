@@ -57,9 +57,11 @@ rest: who has an account, the server's signing key, the settings with their pass
 Unencrypted backups are possible only into a **folder** of this machine (a mounted disk that
 encrypts by itself, say); SFTP and S3 always get encrypted ones. An unencrypted backup leaves out
 the server's own keys: the key that signs access tokens, `secret.key` (it opens the OpenID Connect
-client secret and the UwUMail tokens of masked addresses) and the Let's Encrypt keys under
-`acme/`. After a restore from one, everybody logs in again, a new certificate is fetched, and SSO
-and masked addresses have to be set up anew. It goes back only with the command line, into a new
+client secret, the UwUMail tokens of masked addresses and the passwords and tokens in the
+settings, the notification channels and the off-site settings; the copy has them emptied) and the
+Let's Encrypt keys under `acme/`. After a restore from one, everybody logs in again, a new
+certificate is fetched, SSO and masked addresses have to be set up anew, and those passwords and
+tokens are entered again. It goes back only with the command line, into a new
 server — never into the running one from the portal, since nothing ties its content to this
 server. The choice is fixed once there are backups at the target; for a change, use another
 folder or bucket.

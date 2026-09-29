@@ -456,6 +456,7 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |
 | `UWULOCK_LOG_FORMAT` | `text` | `json` for one JSON object a line, the same the server sends to Loki. |
 | `UWULOCK_TIME_SOURCE` | GitHub's API, with the update check on | http(s) addresses whose `Date` the diagnosis compares the clock with, or `off`. |
+| `UWULOCK_NEW_SECRET_KEY` | — | `1` for one start when `secret.key` in the data directory is lost for good: the server otherwise refuses to start while values sealed with it are in the database. They are emptied, and the SSO client secret, the channel tokens and the passwords of the mail server, Loki and the off-site backups are entered again; masked addresses connect again. Once, e.g. `docker compose run --rm -e UWULOCK_NEW_SECRET_KEY=1 uwulock`. |
 | `RUST_LOG` | `info` for the server | How much it logs, e.g. `uwulock_server=debug`. |
 
 ## Without Docker

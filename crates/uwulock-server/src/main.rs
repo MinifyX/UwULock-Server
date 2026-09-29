@@ -269,7 +269,9 @@ async fn invite(
 /// `uwulock-server settings list | get <key> | set <key> <value>`.
 async fn settings(config: Config, action: SettingsAction) -> Result<(), String> {
     let store = uwulock_server::open_store(&config)?;
-    let current = uwulock_api::Settings::load(&store, &config.start_settings).await?;
+    let secret = uwulock_api::secret::ServerSecret::new(&config.data_dir);
+    uwulock_api::secret::check_key(&store, &secret).await?;
+    let current = uwulock_api::Settings::load(&store, &config.start_settings, &secret).await?;
     let find = |value: &serde_json::Value, key: &str| {
         key.split('.').filter(|part| !part.is_empty()).try_fold(value.clone(), |value, part| value.get(part).cloned())
     };
@@ -292,7 +294,7 @@ async fn settings(config: Config, action: SettingsAction) -> Result<(), String> 
             // JSON, or else the text as it is.
             let parsed = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
             let new = current.with(&key, parsed)?;
-            new.save(&store).await.map_err(|error| error.to_string())?;
+            new.save(&store, &secret).await?;
             let shown = find(&new.for_portal(), &key).unwrap_or(serde_json::Value::Null);
             println!("{key} is now {shown}.");
             if key != "adminNetworks" {
@@ -335,7 +337,8 @@ async fn features(config: Config, action: FeaturesAction) -> Result<(), String> 
 /// `uwulock-server import-vaultwarden <path> [--dry-run] [--admin <email>]…`.
 async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins: Vec<String>) -> Result<(), String> {
     let store = uwulock_server::open_store(&config)?;
-    let settings = uwulock_api::Settings::load(&store, &config.start_settings).await?;
+    let secret = uwulock_api::secret::ServerSecret::new(&config.data_dir);
+    let settings = uwulock_api::Settings::load(&store, &config.start_settings, &secret).await?;
     if !dry_run {
         let backup = backups::write(&store, &config.backups(), None).await?;
         println!("Backup of this server first: {}", backup.display());

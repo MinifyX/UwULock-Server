@@ -4919,8 +4919,10 @@ dependencies = [
 name = "uwulock-store"
 version = "0.6.0-beta.1"
 dependencies = [
+ "base64 0.22.1",
  "libc",
  "parking_lot",
+ "ring",
  "rusqlite",
  "serde_json",
  "tempfile",

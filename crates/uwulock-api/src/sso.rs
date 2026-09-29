@@ -1190,7 +1190,7 @@ async fn put_settings(
     }
     all.sso = new;
     all.check().map_err(ApiError::bad)?;
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     state.oidc.forget();
     crate::admin::record(&state, &admin, "changed the SSO settings".into()).await;
@@ -1231,7 +1231,7 @@ async fn scim_token(State(state): State<AppState>, admin: Admin) -> ApiResult<Js
     let token = auth::random_token(32);
     let mut all = state.settings();
     all.scim.token_hash = Some(crate::metrics::hex(&auth::sha256(token.as_bytes())));
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     crate::admin::record(&state, &admin, "made a new SCIM token".into()).await;
     Ok(Json(json!({ "token": token })))
@@ -1403,7 +1403,7 @@ async fn pair(State(state): State<AppState>, admin: Admin, Json(data): Json<Pair
         all.scim.token_hash = Some(crate::metrics::hex(&auth::sha256(token.as_bytes())));
     }
     all.check().map_err(ApiError::bad)?;
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     crate::admin::record(&state, &admin, format!("paired with UwUAuth at {base}")).await;
     Ok(Json(settings_json(&state)))
@@ -1416,7 +1416,7 @@ async fn unpair(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<V
     };
     all.sso = SsoSettings { identifier: all.sso.identifier.clone(), ..SsoSettings::default() };
     all.scim.token_hash = None;
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     state.oidc.forget();
     crate::admin::record(&state, &admin, format!("ended the pairing with UwUAuth at {}", paired.url)).await;

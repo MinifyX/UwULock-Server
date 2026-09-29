@@ -481,7 +481,7 @@ async fn put_settings(
     new.masked.normalize().map_err(ApiError::bad)?;
     new.check().map_err(ApiError::bad)?;
     state.mailer.configure(new.smtp.as_ref()).map_err(|error| ApiError::bad(error.to_string()))?;
-    new.save(&state.store).await?;
+    new.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     if new.push != current.push {
         state.relay.reset();
     }
@@ -781,14 +781,21 @@ pub(crate) async fn backup_before_restore(state: &AppState) -> ApiResult<String>
 /// After a restore into the running server: the settings are the backup's now, and so is
 /// everything read from them.
 pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
-    let settings = Settings::load(&state.store, &state.config.start_settings).await.map_err(ApiError::internal)?;
+    // The backup's `secret.key` came along; what an older server kept in plain is sealed.
+    state.secret.forget();
+    Settings::seal_stored(&state.store, &state.secret).await.map_err(ApiError::internal)?;
+    crate::alerts::seal_stored(&state.store, &state.secret).await.map_err(ApiError::internal)?;
+    if let Err(error) = state.offsite.seal_stored().await {
+        tracing::warn!(%error, "sealing the restored off-site backup settings");
+    }
+    let settings =
+        Settings::load(&state.store, &state.config.start_settings, &state.secret).await.map_err(ApiError::internal)?;
     let features =
         crate::Features::load(&state.store, &state.config.start_features).await.map_err(ApiError::internal)?;
     if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
         tracing::warn!(%error, "the mail server of the restored settings");
     }
     state.relay.reset();
-    state.secret.forget();
     state.oidc.forget();
     state.apply_features(features);
     state.apply_settings(settings);
@@ -910,7 +917,7 @@ mod tests {
         again["smtp"]["password"] = Value::Null;
         again["invitationDays"] = json!(5);
         server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), again).await;
-        let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
+        let stored = Settings::load(&server.state.store, &Settings::default(), &server.state.secret).await.unwrap();
         assert_eq!(stored.smtp.as_ref().unwrap().password.as_deref(), Some("s3cret"), "kept");
         assert_eq!(stored.invitation_days, 5);
 
@@ -918,7 +925,7 @@ mod tests {
         elsewhere["smtp"]["host"] = json!("mail.attacker.example");
         let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), elsewhere).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the password does not go to another server");
-        let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
+        let stored = Settings::load(&server.state.store, &Settings::default(), &server.state.secret).await.unwrap();
         assert_eq!(stored.smtp.unwrap().host, "mail.example.com");
 
         let wrong = json!({"invitationDays": 0});
