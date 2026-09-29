@@ -168,12 +168,20 @@ impl App {
         for _ in 0..2 {
             let keys: Keys = serde_json::from_value(self.ok(reqwest::Method::GET, "/uwu/v1/keys", None).await).unwrap();
             match extras::resolve(&keys, user_key, private).unwrap() {
-                Resolved::Open { key, rewrap } => {
+                Resolved::Open { key, rewrap, private_wrap } => {
                     if let Some(rewrap) = rewrap {
                         self.ok(
                             reqwest::Method::PUT,
                             "/uwu/v1/keys/user-wrap",
                             Some(serde_json::to_value(&rewrap).unwrap()),
+                        )
+                        .await;
+                    }
+                    if let Some(private_wrap) = private_wrap {
+                        self.ok(
+                            reqwest::Method::PUT,
+                            "/uwu/v1/keys/private-wrap",
+                            Some(serde_json::to_value(&private_wrap).unwrap()),
                         )
                         .await;
                     }

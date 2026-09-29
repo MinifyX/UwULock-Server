@@ -348,7 +348,11 @@ function RequestDetail({
             <span className="detail-label">{t('Link')}</span>
             <span className="detail-value mono send-link">
               {link ??
-                t('Der Link lässt sich nicht mehr zeigen. Mach unter Bearbeiten einen neuen.')}
+                (request.foreign
+                  ? t(
+                      'Dieser Link würde für einen fremden Schlüssel verschlüsseln und wird nicht gezeigt. Mach unter Bearbeiten einen neuen.',
+                    )
+                  : t('Der Link lässt sich nicht mehr zeigen. Mach unter Bearbeiten einen neuen.'))}
             </span>
           </div>
         </div>

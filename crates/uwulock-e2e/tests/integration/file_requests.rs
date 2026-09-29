@@ -58,7 +58,8 @@ async fn somebody_uploads_to_a_link_and_the_owner_takes_it_into_an_item() {
     let answer: Keys =
         serde_json::from_value(call(&http, reqwest::Method::GET, url("/uwu/v1/keys"), Some(access), Value::Null).await)
             .unwrap();
-    let Resolved::Open { key: extras_key, rewrap: None } = extras::resolve(&answer, &user_key, Some(&private)).unwrap()
+    let Resolved::Open { key: extras_key, rewrap: None, private_wrap: None } =
+        extras::resolve(&answer, &user_key, Some(&private)).unwrap()
     else {
         panic!("the same key")
     };
@@ -84,6 +85,9 @@ async fn somebody_uploads_to_a_link_and_the_owner_takes_it_into_an_item() {
     let made = call(&http, reqwest::Method::POST, url("/uwu/v1/file-requests"), Some(access), request).await;
     let (request_id, access_id) =
         (made["id"].as_str().unwrap().to_string(), made["accessId"].as_str().unwrap().to_string());
+    // The owner hands out the link only if what the server keeps encrypts for their own key.
+    let kept = PublicInfo::open(made["publicInfo"].as_str().unwrap(), &secret).unwrap();
+    assert!(kept.is_for(&private.public()));
     let shared = link(&server.url, &access_id, &secret, false);
     assert!(shared.ends_with(&format!("/#/request/{access_id}/{}", secret.to_link_part())));
 

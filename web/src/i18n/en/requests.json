@@ -36,6 +36,7 @@
   "Der Empfänger bekommt Bescheid. Nur er kann öffnen, was du geschickt hast.": "The recipient is told. Only they can open what you sent.",
   "Der letzte Versuch ging nicht: {error}": "The last attempt did not work: {error}",
   "Der Link lässt sich nicht mehr zeigen. Mach unter Bearbeiten einen neuen.": "The link can no longer be shown. Make a new one under Edit.",
+  "Dieser Link würde für einen fremden Schlüssel verschlüsseln und wird nicht gezeigt. Mach unter Bearbeiten einen neuen.": "This link would encrypt for a key that isn't yours, so it isn't shown. Make a new one under Edit.",
   "Der Link nimmt danach nichts mehr an, und was angekommen ist, ist weg.": "The link takes nothing any more afterwards, and what arrived is gone.",
   "Die Schlüssel deines Kontos wurden erneuert, und die Namen und Links deiner Datei-Anfragen lassen sich nicht mehr öffnen. Die Links funktionieren weiter; um neue Anfragen zu machen, fang neu an.": "Your account's keys were renewed, and the names and links of your file requests no longer open. The links keep working; to make new requests, start over.",
   "Diesen Stand zurückspielen?": "Restore this snapshot?",

@@ -276,7 +276,7 @@ mod tests {
             json(server.call("POST", "/api/ciphers", Some(&nyu.token), item("2.a|a|a", "2.p1|p|p")).await).await;
         let id = created["id"].as_str().unwrap().to_string();
         server.call("PUT", &format!("/api/ciphers/{id}"), Some(&nyu.token), item("2.a|a|a", "2.p2|p|p")).await;
-        let keys = json!({"userKeyWrapped": type2(), "publicKeyWrapped": type4()});
+        let keys = json!({"userKeyWrapped": type2(), "privateKeyWrapped": type2()});
         assert_eq!(server.call("POST", "/uwu/v1/keys", Some(&nyu.token), keys).await.status(), StatusCode::OK);
         let versions = json(server.get_as(&nyu.token, "/uwu/v1/versions?scope=personal").await).await;
         let version = versions["data"][0].clone();
@@ -291,7 +291,11 @@ mod tests {
         let mut again = version["cipher"].clone();
         again["name"] = json!("2.rotated|r|r");
         stale["versions"] = json!([{"id": version["id"], "cipher": again}]);
-        stale["extrasKey"] = json!({"userKeyWrapped": format!("2.{}", &type2()[2..]), "publicKeyWrapped": type4()});
+        stale["extrasKey"] = json!({"userKeyWrapped": type2(), "privateKeyWrapped": type4()});
+        let response = server.call("POST", "/uwu/v1/accounts/rotate-keys", Some(&nyu.token), stale.clone()).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "never an RSA wrap");
+        let private_wrap = rewrapped();
+        stale["extrasKey"] = json!({"userKeyWrapped": type2(), "privateKeyWrapped": private_wrap});
         let response = server.call("POST", "/uwu/v1/accounts/rotate-keys", Some(&nyu.token), stale).await;
         assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
         assert_eq!(server.get_as(&nyu.token, "/api/sync").await.status(), StatusCode::UNAUTHORIZED, "logged out");
@@ -301,6 +305,7 @@ mod tests {
         assert_eq!(versions["data"][0]["cipher"]["login"]["password"], "2.p1|p|p");
         let keys = json(server.get_as(&nyu.token, "/uwu/v1/keys").await).await;
         assert!(keys["extrasKey"]["userKeyWrapped"].is_string(), "wrapped for the new key");
+        assert_eq!(keys["extrasKey"]["privateKeyWrapped"], private_wrap.as_str());
 
         let official = rotation(email, json!([cipher_now]));
         let response = server
@@ -309,6 +314,16 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
         let nyu = server.login(email, "device-3").await;
         assert!(json(server.get_as(&nyu.token, "/uwu/v1/versions").await).await["data"].as_array().unwrap().is_empty());
-        assert!(json(server.get_as(&nyu.token, "/uwu/v1/keys").await).await["extrasKey"]["userKeyWrapped"].is_null());
+        let keys = json(server.get_as(&nyu.token, "/uwu/v1/keys").await).await;
+        assert!(keys["extrasKey"]["userKeyWrapped"].is_null());
+        assert_eq!(keys["extrasKey"]["privateKeyWrapped"], private_wrap.as_str(), "the key pair's stays");
+        assert_eq!(keys["lost"], false);
+    }
+
+    /// Another type 2 value than [`type2`], of the same form.
+    fn rewrapped() -> String {
+        use base64::Engine as _;
+        let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+        format!("2.{}|{}|{}", b64(&[5; 16]), b64(&[6; 32]), b64(&[7; 32]))
     }
 }

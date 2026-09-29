@@ -243,18 +243,17 @@ attachments, Send files, file-request submissions, versions and own icons.
 Everything UwULock encrypts beyond Bitwarden's own objects — suite spaces, own icons, file-request
 labels, the health report — is encrypted under one **extras key** per account, not directly under
 the user key. The reason is key rotation by an official client: it re-encrypts only what Bitwarden
-knows, and anything else under the old user key would be lost. The extras key is kept wrapped
-**twice**:
+knows, and anything else under the old user key would be lost.
 
-- `userKeyWrapped`: the 64-byte extras key under the user key (EncString type 2);
-- `publicKeyWrapped`: the same key wrapped for the account's RSA public key (EncString type 4,
-  exactly like an organization key for a member).
-
-Bitwarden's clients keep the account's RSA key pair when they rotate (they re-wrap the private key
-under the new user key; `accountKeys.publicKeyEncryptionKeyPair.publicKey` stays the same). So
-after an official rotation the server drops `userKeyWrapped`, keeps `publicKeyWrapped`, and the
-next UwULock client opens the extras key with the private key and wraps it again for the new user
-key. Nothing under the extras key needs re-encrypting, ever.
+The extras key is kept wrapped twice: `userKeyWrapped` (type 2 under the user key) and
+`privateKeyWrapped` (type 2 under Kp = HKDF-SHA256(ikm = the account's RSA private key, PKCS#8
+DER; salt `uwulock-extras-key-v1`; info `private-key-wrap`; 64 bytes);
+`uwulock_core::extras::private_wrap_key`). Both need a secret the server never holds, so it
+cannot hand out a key of its own. A type 4 wrap for the public key can be made by anyone who knows
+it and is never accepted. Official clients keep the key pair, so after their rotation the server
+drops `userKeyWrapped` and the next client opens `privateKeyWrapped` and PUTs `/keys/user-wrap`.
+Clients that hold the private key check that both wraps hold the same key, and refuse otherwise.
+Nothing under the extras key needs re-encrypting, ever.
 
 Personal **entry versions** (§8) are copies of Bitwarden ciphers under the user key (or under a
 cipher key that is under the user key). They cannot survive an official rotation, and they are
@@ -267,7 +266,7 @@ dropped then (decided). A rotation through UwULock's own endpoint re-encrypts th
   "object": "uwuKeys",
   "extrasKey": {
     "userKeyWrapped": "2.…",
-    "publicKeyWrapped": "4.…",
+    "privateKeyWrapped": "2.…",
     "revisionDate": "2026-09-28T12:00:00.000000Z"
   },
   "lost": false
@@ -275,9 +274,13 @@ dropped then (decided). A rotation through UwULock's own endpoint re-encrypts th
 ```
 
 - `extrasKey` is `null` until a client has made one.
-- `userKeyWrapped` is `null` after an official rotation, until a client wraps it again.
-- `lost: true` (and `extrasKey: null`): the account's public key changed in a rotation, so
-  neither wrap opens any more. The client says so and offers to start over (`DELETE` below).
+- `extrasKey {userKeyWrapped|null, privateKeyWrapped|null, revisionDate}`: `userKeyWrapped` is
+  `null` after an official rotation, until a client wraps it again; `privateKeyWrapped` is null
+  for keys made before it existed, until a client adds it (`PUT …/private-wrap`).
+- `lost: true` (and `extrasKey: null`): the account's key pair changed, or no wrap is left (a key
+  with only the pre-release `publicKeyWrapped`, or one without `privateKeyWrapped` that an
+  official client rotated), so nothing opens it any more. The client says so and offers to start
+  over (`DELETE` below).
 
 ### `POST /uwu/v1/keys` — auth `user` or `suite`
 
@@ -285,23 +288,32 @@ Makes the extras key; the first UwULock client (web vault, desktop, extension, U
 that needs it does this. Body:
 
 ```json
-{ "userKeyWrapped": "2.…", "publicKeyWrapped": "4.…" }
+{ "userKeyWrapped": "2.…", "privateKeyWrapped": "2.…" }
 ```
 
-The client makes 64 random bytes, wraps them for the user key and for the public key it has from
-the token response (`AccountKeys.publicKeyEncryptionKeyPair.publicKey`, SPKI DER, base64). Answer:
-the `GET` body. 409 `exists` when there is one already (two clients raced): the loser fetches it.
-400 `no_key_pair` if the account has no key pair (only possible for accounts that never finished
-registration), 400 `invalid` when a wrap is not an EncString of its type. A key that is `lost`
+The client makes 64 random bytes and wraps them under the user key and under Kp, from the private
+key it opens with the user key (`uwulock_core::extras::create`). Answer: the `GET` body. 409
+`exists` when there is one already (two clients raced): the loser fetches it. 400 `no_key_pair`
+if the account has no key pair (only possible for accounts that never finished registration), 400
+`invalid` when a wrap is not an EncString of type 2. A key that is `lost`
 makes way for the new one, without a `DELETE` first. The server keeps the account's public key
-beside the wraps: `lost` is that it differs from the account's now. A rotation through Bitwarden's
+beside the wraps: `lost` is that it differs from the account's now, or that no wrap is left. A rotation through Bitwarden's
 `/api/accounts/key-management/rotate-user-account-keys` (by any client) drops `userKeyWrapped` in
 the same transaction.
 
 ### `PUT /uwu/v1/keys/user-wrap` — auth `user` or `suite`
 
 After an official rotation. Body `{ "userKeyWrapped": "2.…" }`. Only allowed while
-`userKeyWrapped` is `null`; otherwise 409 `exists`. Answer: the `GET` body.
+`userKeyWrapped` is `null`; otherwise 409 `exists` (404 when there is no key, or it is `lost`).
+Answer: the `GET` body. Security notice `extrasKeyRewrapped`, realtime `changed` `uwu`.
+
+### `PUT /uwu/v1/keys/private-wrap` — auth `user` or `suite`
+
+For a key made before `privateKeyWrapped` existed: the client that opened it with the user key
+adds it (`Resolved::Open.private_wrap`, best effort). Body `{ "privateKeyWrapped": "2.…" }`
+(400 `invalid` if not type 2). Only while it is `null`, else 409 `exists` (404 when there is no
+key, it has no `userKeyWrapped`, or it is `lost`). Answer: the `GET` body. Announced like
+`user-wrap`.
 
 ### `DELETE /uwu/v1/keys` — auth `user`
 
@@ -318,7 +330,7 @@ A key rotation made by the web vault or UwULock Client. Body limit: the router's
 ```json
 {
   "rotation": { "oldMasterKeyAuthenticationHash": "…", "accountUnlockData": {}, "accountKeys": {}, "accountData": {} },
-  "extrasKey": { "userKeyWrapped": "2.…", "publicKeyWrapped": "4.…" },
+  "extrasKey": { "userKeyWrapped": "2.…", "privateKeyWrapped": "2.…" },
   "versions": [
     { "id": "7f1c…", "cipher": { "type": 1, "name": "2.…", "notes": null, "key": null, "login": {}, "fields": [], "passwordHistory": [], "reprompt": 0 } }
   ],
@@ -329,8 +341,10 @@ A key rotation made by the web vault or UwULock Client. Body limit: the router's
 - `rotation` is exactly the body of **[BW]** `POST /api/accounts/key-management/rotate-user-account-keys`
   (`RotateUserAccountKeysAndDataRequestModel`, as the server already parses it in
   `accounts.rs::RotateKeys`), checked the same way.
-- `extrasKey`: the extras key wrapped again (for the new user key; `publicKeyWrapped` again only
-  if the key pair changed, else the old value). `null` if the account has none.
+- `extrasKey` = `{userKeyWrapped, privateKeyWrapped}`, both type 2 (400 `invalid` otherwise): the
+  extras key wrapped for the new user key, and `privateKeyWrapped` holding the same key as before
+  (the key pair is unchanged; `uwulock_core::extras::wrap`). `null` if the account has none, and
+  then `userKeyWrapped` is dropped as in an official rotation.
 - `versions`: every **personal** version of the account (§8.5, `GET /uwu/v1/versions`), each
   re-encrypted for the new user key. The server compares the set of ids with what it holds; any
   difference is 409 `versions_changed` and nothing is written (the client fetches the list again).
@@ -348,9 +362,10 @@ On `POST /api/accounts/key-management/rotate-user-account-keys` (and any other B
 that replaces the user key), in the same transaction:
 
 1. delete all personal versions (§8);
-2. set `extrasKey.userKeyWrapped = null`;
-3. if `accountKeys.publicKeyEncryptionKeyPair.publicKey` differs from the stored public key, the
-   extras key is lost (`lost: true`); keep the data until `DELETE /uwu/v1/keys`;
+2. set `extrasKey.userKeyWrapped = null` (`privateKeyWrapped` stays);
+3. if `accountKeys.publicKeyEncryptionKeyPair.publicKey` differs from the stored public key, or
+   the key had no `privateKeyWrapped` yet, the extras key is lost (`lost: true`; security notice
+   `extrasKeyLost`); keep the data until `DELETE /uwu/v1/keys`;
 4. bump the sync epoch (§4.3).
 
 Organization keys do not change in a user's rotation, so organization versions and organization
@@ -696,7 +711,7 @@ a token that can do nothing but their space:
    access token's `scope` claim is `["uwu.suite", "offline_access"]`, its `client_id` the app's.
    `Key`, `PrivateKey` and `AccountKeys` are in it as always: the app opens the user key with the
    master key, the private key with the user key, then the extras key (`GET /uwu/v1/keys`,
-   `userKeyWrapped`, or `publicKeyWrapped` with the private key and then `PUT …/user-wrap`), then
+   `userKeyWrapped`, or `privateKeyWrapped` with the private key and then `PUT …/user-wrap`), then
    the space key.
 5. Refresh with `grant_type=refresh_token` as usual; the scope stays.
 
@@ -720,7 +735,7 @@ client; it must name the device's own `client_id` (another one, or a suite `clie
 device that is not a suite device, is `invalid_grant`).
 
 A `suite` token may use: `/identity/**`, `/api/accounts/prelogin`, `/uwu/v1/info`,
-`GET|POST /uwu/v1/keys`, `PUT /uwu/v1/keys/user-wrap`, its space's endpoints of §6.4 except
+`GET|POST /uwu/v1/keys`, `PUT /uwu/v1/keys/user-wrap`, `PUT /uwu/v1/keys/private-wrap`, its space's endpoints of §6.4 except
 `DELETE`, `/uwu/v1/sync?include=suite`, `/uwu/v1/realtime`. Nothing else (403 `scope`).
 
 The app keeps the space key sealed locally as it keeps its UwUSync vault key today (DPAPI,
@@ -1270,6 +1285,9 @@ The request object:
 }
 ```
 
+Owner clients check that `publicInfo.publicKey` equals their own public key before showing or
+copying a link. If it doesn't, the request gets no link and must be saved with a new link.
+
 - `GET /uwu/v1/file-requests` → list; `GET /uwu/v1/file-requests/{id}` → one.
 - `POST /uwu/v1/file-requests` — body: `name`, `linkSecret`, `publicInfo`, `passwordHash`
   (or `null`), `expirationDate` (one hour to `fileRequests.maxDays` days ahead, default 7 days in
@@ -1349,8 +1367,8 @@ account's language. The Stufe 5 event log builds on the same table.
 | `travelModeEnabled`, `travelModeDisabled`, `travelDisableFailed` | §9 | `{}` |
 | `extrasKeyReset` | §3 | `{}` |
 | `extrasKeyCreated` | §3: a client made the extras key | `{}` |
-| `extrasKeyRewrapped` | §3: a client wrapped it again for the user key (`PUT …/user-wrap`) | `{}` |
-| `extrasKeyLost` | §3: a rotation changed the key pair without it; nothing under it opens | `{}` |
+| `extrasKeyRewrapped` | §3: a client wrapped it again for the user key (`PUT …/user-wrap`) or added the private key's wrap (`PUT …/private-wrap`) | `{}` |
+| `extrasKeyLost` | §3: after a rotation nothing opens it any more (no `privateKeyWrapped` yet) | `{}` |
 | `suiteLogin` | §6.5: a suite app logged in (every time, not only on a new device) | `{ "app": "uwussh", "space": "ssh", "new": true }` |
 | `kdfBelowMinimum` | §20 | `{}` |
 | `ssoLinked` | an SSO identity was linked to the account for the first time (§19) | `{ "issuer": "https://auth.example.com" }` |

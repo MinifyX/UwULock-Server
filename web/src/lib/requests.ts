@@ -17,14 +17,19 @@ type List<T> = { data: T[] };
 
 type Keys = { extrasKey: unknown; lost: boolean };
 type Resolved =
-  | { action: 'open'; rewrap: { userKeyWrapped: string } | null }
-  | { action: 'create'; request: { userKeyWrapped: string; publicKeyWrapped: string } }
+  | {
+      action: 'open';
+      rewrap: { userKeyWrapped: string } | null;
+      privateWrap: { privateKeyWrapped: string } | null;
+    }
+  | { action: 'create'; request: { userKeyWrapped: string; privateKeyWrapped: string } }
   | { action: 'lost' };
 
 /**
- * Opens the account's extras key, making one the first time and wrapping it again for the user
- * key after an official client rotated it. Throws `{ kind: 'extras-lost' }` when the key pair
- * changed and nothing under the old key opens any more.
+ * Opens the account's extras key, making one the first time, wrapping it again for the user key
+ * after an official client rotated it, and adding the private key's wrap to a key from before it
+ * existed. Throws `{ kind: 'extras-lost' }` when nothing opens it any more, and a crypto error
+ * when its wraps don't fit the account's keys (the server may have swapped one).
  */
 export async function openExtras(): Promise<void> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -38,6 +43,11 @@ export async function openExtras(): Promise<void> {
         await request('/uwu/v1/keys/user-wrap', { method: 'PUT', body: resolved.rewrap }).catch(
           () => undefined,
         );
+      if (resolved.privateWrap)
+        await request('/uwu/v1/keys/private-wrap', {
+          method: 'PUT',
+          body: resolved.privateWrap,
+        }).catch(() => undefined);
       return;
     }
     try {
@@ -81,8 +91,13 @@ type Stored = {
 export type FileRequest = Omit<Stored, 'name' | 'linkSecret' | 'publicInfo'> & {
   /** The owner's label; null when it no longer opens (the extras key was reset). */
   name: string | null;
-  /** The link's secret, for showing the link again; null when it no longer opens. */
+  /**
+   * The link's secret, for showing the link again; null when it no longer opens, or when the
+   * request's details encrypt for someone else's key (`foreign`).
+   */
   secret: string | null;
+  /** Its details encrypt uploads for a key that isn't this account's: it needs a new link. */
+  foreign: boolean;
   title: string | null;
   note: string | null;
   owner: string | null;
@@ -91,6 +106,7 @@ export type FileRequest = Omit<Stored, 'name' | 'linkSecret' | 'publicInfo'> & {
 async function opened(stored: Stored): Promise<FileRequest> {
   const open = await callJson<{
     name: string | null;
+    foreign: boolean;
     secret: string | null;
     title: string | null;
     note: string | null;

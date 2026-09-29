@@ -17,19 +17,25 @@ pub(crate) fn extras_key(unlocked: &Unlocked) -> Result<&uwulock_core::crypto::S
 }
 
 /// What to do with the answer of `GET /uwu/v1/keys`: `open` (and maybe `rewrap`, for
-/// `PUT /uwu/v1/keys/user-wrap`), `create` (the body for `POST /uwu/v1/keys`), or `lost`. The
-/// key is kept from here on; after a 409 on `create`, ask again.
+/// `PUT /uwu/v1/keys/user-wrap`, and `privateWrap`, for `PUT /uwu/v1/keys/private-wrap`),
+/// `create` (the body for `POST /uwu/v1/keys`), or `lost`. The key is kept from here on; after a
+/// 409 on `create`, ask again. With the private key at hand both wraps must hold the same key,
+/// and an RSA wrap (which the server could have made) is never taken: either is an error.
 pub fn extras(unlocked: &mut Unlocked, keys: &str) -> Result<Value> {
     let keys: Keys = serde_json::from_str(keys)?;
     let private = unlocked.private_key.as_ref().map(|_| crate::keys::private_key(unlocked)).transpose()?;
-    Ok(match extras::resolve(&keys, &unlocked.user_key, private.as_ref())? {
+    let resolved = extras::resolve(&keys, &unlocked.user_key, private.as_ref()).map_err(|error| {
+        unlocked.extras = None;
+        Failure::new("crypto", format!("UwULock's own key of this account does not open: {error}"))
+    })?;
+    Ok(match resolved {
         Resolved::Create(new) => {
             unlocked.extras = Some(new.key);
             json!({ "action": "create", "request": new.request })
         }
-        Resolved::Open { key, rewrap } => {
+        Resolved::Open { key, rewrap, private_wrap } => {
             unlocked.extras = Some(key);
-            json!({ "action": "open", "rewrap": rewrap })
+            json!({ "action": "open", "rewrap": rewrap, "privateWrap": private_wrap })
         }
         Resolved::Lost => {
             unlocked.extras = None;
@@ -91,7 +97,10 @@ pub struct Sealed {
 }
 
 /// A request as the owner sees it: label, the link's secret, and the public details. What does
-/// not open (a label from before the extras key was reset) is null.
+/// not open (a label from before the extras key was reset) is null. Details that encrypt for
+/// another key than the account's own (`foreign`) were made by someone else who knows the
+/// link's secret: what is uploaded there would be theirs to read, so neither the link nor the
+/// details are handed on, and the request needs a new link.
 pub fn open(unlocked: &Unlocked, request: &str) -> Result<Value> {
     let request: Sealed = serde_json::from_str(request)?;
     let extras = unlocked.extras.as_ref();
@@ -104,8 +113,14 @@ pub fn open(unlocked: &Unlocked, request: &str) -> Result<Value> {
         _ => None,
     };
     let info = secret.as_ref().and_then(|secret| PublicInfo::open(&request.public_info, secret).ok());
+    let foreign = match &info {
+        Some(info) => !info.is_for(&crate::keys::private_key(unlocked)?.public()),
+        None => false,
+    };
+    let (secret, info) = if foreign { (None, None) } else { (secret, info) };
     Ok(json!({
         "name": name,
+        "foreign": foreign,
         "secret": secret.as_ref().map(LinkSecret::to_link_part),
         "title": info.as_ref().map(|info| info.title.clone()),
         "note": info.as_ref().and_then(|info| info.note.clone()),
@@ -352,5 +367,59 @@ mod tests {
         assert_eq!(opened["files"][0]["name"], "front.jpg");
         assert_eq!(open_file(&owner, &submission, "f1", &encrypted).unwrap(), b"the front page");
         assert!(Upload::open(sealed["publicInfo"].as_str().unwrap(), &LinkSecret::generate().to_link_part()).is_err());
+    }
+
+    fn keys(user: Option<String>, private: Option<String>) -> String {
+        json!({ "extrasKey": { "userKeyWrapped": user, "privateKeyWrapped": private }, "lost": false }).to_string()
+    }
+
+    #[test]
+    fn the_extras_key_is_bound_to_the_private_key() {
+        let private = PrivateKey::generate().unwrap();
+        let mut owner = unlocked(&private);
+        let made = extras(&mut owner, r#"{"extrasKey":null,"lost":false}"#).unwrap();
+        let (user_wrap, private_wrap) = (
+            made["request"]["userKeyWrapped"].as_str().unwrap().to_string(),
+            made["request"]["privateKeyWrapped"].as_str().unwrap().to_string(),
+        );
+        assert!(private_wrap.starts_with("2."));
+        let key = owner.extras.clone().unwrap();
+
+        // A key from before the private key's wrap gets it.
+        let opened = extras(&mut owner, &keys(Some(user_wrap.clone()), None)).unwrap();
+        assert_eq!((opened["action"].as_str(), opened["rewrap"].is_null()), (Some("open"), true));
+        assert!(opened["privateWrap"]["privateKeyWrapped"].as_str().unwrap().starts_with("2."));
+        // After an official rotation, the private key's wrap opens it.
+        let opened = extras(&mut owner, &keys(None, Some(private_wrap.clone()))).unwrap();
+        assert!(opened["rewrap"]["userKeyWrapped"].is_string());
+        assert_eq!(owner.extras.as_ref().unwrap().to_bytes(), key.to_bytes());
+
+        // What the server could make itself: an RSA wrap, or a key of its own next to ours.
+        let rsa = uwulock_core::crypto::wrap_for(&private.public(), &SymmetricKey::generate()).unwrap().to_string();
+        assert!(extras(&mut owner, &keys(None, Some(rsa))).is_err());
+        assert!(owner.extras.is_none(), "nothing is kept");
+        let other = EncString::encrypt(&SymmetricKey::generate().to_bytes(), &owner.user_key).to_string();
+        assert!(extras(&mut owner, &keys(Some(other), Some(private_wrap))).is_err(), "the wraps disagree");
+    }
+
+    #[test]
+    fn a_request_for_someone_elses_key_gets_no_link() {
+        let private = PrivateKey::generate().unwrap();
+        let mut owner = unlocked(&private);
+        extras(&mut owner, r#"{"extrasKey":null,"lost":false}"#).unwrap();
+        let draft = serde_json::from_value(json!({ "name": "Tax", "title": "Tax papers" })).unwrap();
+        let mut sealed = seal(&owner, draft).unwrap();
+        let shown = open(&owner, &sealed.to_string()).unwrap();
+        assert_eq!((shown["foreign"].as_bool(), shown["secret"].is_string()), (Some(false), true));
+
+        // Somebody who knows the link's secret puts in details for their own key.
+        let theirs = PrivateKey::generate().unwrap().public();
+        let secret = LinkSecret::from_link_part(sealed["secret"].as_str().unwrap()).unwrap();
+        sealed["publicInfo"] =
+            json!(PublicInfo::new("Tax papers", None, None, &theirs).unwrap().seal(&secret).unwrap());
+        let shown = open(&owner, &sealed.to_string()).unwrap();
+        assert_eq!(shown["foreign"], true);
+        assert!(shown["secret"].is_null() && shown["title"].is_null(), "{shown}");
+        assert_eq!(shown["name"], "Tax");
     }
 }

@@ -116,7 +116,7 @@ async fn the_account_s_devices_hear_what_changed_but_not_what_they_did_themselve
     assert_eq!(next(&mut socket).await, json!({ "type": "changed", "areas": ["vault"] }));
 
     // UwULock's own: the extras key, a notice.
-    let keys = json!({ "userKeyWrapped": type2(), "publicKeyWrapped": type4() });
+    let keys = json!({ "userKeyWrapped": type2(), "privateKeyWrapped": type2() });
     assert_eq!(server.call("POST", "/uwu/v1/keys", Some(&phone.token), keys).await.status(), StatusCode::OK);
     let mut heard = [next(&mut socket).await, next(&mut socket).await];
     heard.sort_by_key(|message| message["type"].as_str().unwrap_or_default().to_string());

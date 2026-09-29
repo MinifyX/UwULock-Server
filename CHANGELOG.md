@@ -5,6 +5,16 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Security.**
+
+- **The server can't hand out an extras key of its own**: the second wrap of the extras key was an
+  RSA wrap for the account's public key, which anyone who knows that key (the server too) can
+  make. It is now `privateKeyWrapped`, under a key derived from the account's private key;
+  clients never take an RSA wrap and check that both wraps hold the same key, and the web vault
+  shows no file-request link whose details encrypt for another key. Keys made before get the new
+  wrap from the next client that opens them; one left with only the old wrap counts as lost
+  ([docs/uwu-api.md](docs/uwu-api.md) §3).
+
 **The UwU extras (Stufe 6).**
 
 - **Delta sync** (`GET /uwu/v1/sync`) for UwULock's own clients: a first full sync with

@@ -145,10 +145,8 @@ pub fn rotate(
         again.push(json!({ "id": id, "cipher": cipher }));
     }
     let extras_key = match &unlocked.extras {
-        Some(key) => {
-            let (_, public) = crate::keys::public_key(public_key)?;
-            Some(extras::wrap(key, &new_key, &public)?)
-        }
+        // The key pair stays in a rotation: the private key's wrap holds the same key as before.
+        Some(key) => Some(extras::wrap(key, &new_key, &crate::keys::private_key(unlocked)?)?),
         None => None,
     };
     Ok(json!({
