@@ -7,9 +7,12 @@
 //
 // Serious and critical findings fail the test; minor and moderate ones are printed as notes.
 
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
-const axePath = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
+// Evaluated through the DevTools protocol rather than added as a <script>: the pages' own
+// Content-Security-Policy allows no inline scripts, and the tests must not loosen it.
+const axeSource = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8');
 
 /** The WCAG 2.0, 2.1 and 2.2 rules of level A and AA: what UwULock aims for. */
 const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
@@ -17,7 +20,7 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 /** Checks what `page` shows now; throws when axe finds something serious or critical. */
 export async function checkA11y(page, name) {
   const started = Date.now();
-  if (!(await page.evaluate(() => 'axe' in window))) await page.addScriptTag({ path: axePath });
+  if (!(await page.evaluate(() => 'axe' in window))) await page.evaluate(axeSource);
   const violations = await page.evaluate(async (tags) => {
     const result = await window.axe.run(document, {
       runOnly: { type: 'tag', values: tags },
