@@ -212,6 +212,14 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   code does not work at login. Before, the master password on a seized device was enough to take
   the second step away and switch travel mode off. A second step that is set up but cannot be
   used is no longer given up either; an admin resets it.
+- Off-site backups: every change to their settings, and forgetting the SFTP host key, asks for
+  the admin's master password, and switching encryption off drops the recovery key only when
+  confirmed. A stolen admin session could send the whole database, unencrypted, to a target of
+  its choosing.
+- Unencrypted off-site backups only into a folder of this machine, without the server's own keys
+  (token key, `secret.key`, Let's Encrypt keys), and never back into the running server from the
+  portal. Existing unencrypted SFTP/S3 setups stop and raise the "backup failed" alert until
+  they are saved again with encryption.
 
 ## 0.4.0-beta.2
 

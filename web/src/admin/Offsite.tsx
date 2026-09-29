@@ -85,6 +85,8 @@ export function Offsite() {
   const [askingKey, setAskingKey] = useState(false);
   const [list, setList] = useState<Snapshot[] | null>(null);
   const [restoring, setRestoring] = useState<Snapshot | null>(null);
+  const [askingSave, setAskingSave] = useState(false);
+  const [askingForget, setAskingForget] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -122,14 +124,17 @@ export function Offsite() {
     }
   };
 
-  const save = () =>
-    run(async () => {
-      const saved = await saveOffsite(draft);
-      setView(saved);
-      setDraft(draftOf(saved));
-      if (saved.recoveryKey) setShownKey(saved.recoveryKey);
-      setResult({ tone: 'info', text: t('Gespeichert ✧') });
-    });
+  // Only a folder of this machine takes backups unencrypted.
+  const plainAllowed = target?.kind === 'folder';
+  const forgetsKey = view.encrypted && !draft.encrypted;
+  const save = async (password: string) => {
+    const saved = await saveOffsite(draft, password, forgetsKey);
+    setAskingSave(false);
+    setView(saved);
+    setDraft(draftOf(saved));
+    if (saved.recoveryKey) setShownKey(saved.recoveryKey);
+    setResult({ tone: 'info', text: t('Gespeichert ✧') });
+  };
 
   const status = view.status;
   return (
@@ -150,10 +155,23 @@ export function Offsite() {
         )}
       </p>
 
+      {view.encryptionRequired && (
+        <p className="form-error" role="alert">
+          {t(
+            'Diese Backups gehen unverschlüsselt per SFTP oder S3 und laufen deshalb nicht mehr. Speichere die Einstellungen verschlüsselt, an einem neuen Ort.',
+          )}
+        </p>
+      )}
       <Segmented
         label={t('Ziel')}
         value={target?.kind ?? ('' as OffsiteKind)}
-        onChange={(kind) => setDraft({ ...draft, target: blankTarget(kind) })}
+        onChange={(kind) =>
+          setDraft({
+            ...draft,
+            target: blankTarget(kind),
+            encrypted: kind === 'folder' ? draft.encrypted : true,
+          })
+        }
         options={KINDS.map((k) => ({ value: k.value, label: t(k.label) }))}
       />
 
@@ -250,20 +268,7 @@ export function Offsite() {
                 <div className="field">
                   <span>{t('Host-Schlüssel des Backup-Servers')}</span>
                   <code className="mono wrap">{view.target.hostKey}</code>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      void run(async () => {
-                        const next = await forgetHostKey();
-                        setView(next);
-                        setResult({
-                          tone: 'info',
-                          text: t('Vergessen. Der nächste Test merkt sich den neuen.'),
-                        });
-                      })
-                    }
-                  >
+                  <button type="button" disabled={busy} onClick={() => setAskingForget(true)}>
                     {t('Vergessen')}
                   </button>
                 </div>
@@ -420,19 +425,33 @@ export function Offsite() {
       </div>
       <Row
         label={t('Verschlüsselt')}
-        description={t(
-          'Empfohlen. Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf. Liegen erst Backups am Ziel, lässt sich das nicht mehr ändern.',
-        )}
+        description={
+          plainAllowed
+            ? t(
+                'Empfohlen. Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf. Liegen erst Backups am Ziel, lässt sich das nicht mehr ändern.',
+              )
+            : t(
+                'Backups per SFTP oder S3 sind immer verschlüsselt. Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf.',
+              )
+        }
       >
         <Toggle
           label={t('Verschlüsselt')}
-          checked={draft.encrypted}
+          checked={draft.encrypted || !plainAllowed}
+          disabled={!plainAllowed}
           onChange={(encrypted) => setDraft({ ...draft, encrypted })}
         />
       </Row>
+      {plainAllowed && !draft.encrypted && (
+        <p className="form-error" role="alert">
+          {t(
+            'Unverschlüsselt liegt die ganze Datenbank lesbar im Ordner: Konten, Passwort-Hashes, die verschlüsselten Tresore. Die Schlüssel des Servers bleiben weg; nach einem Zurückspielen melden sich alle neu an, und SSO sowie UwUMail müssen neu eingerichtet werden. Zurückspielen geht dann nur über die Kommandozeile.',
+          )}
+        </p>
+      )}
 
       <div className="form-actions">
-        <button className="primary" disabled={busy || !dirty} onClick={() => void save()}>
+        <button className="primary" disabled={busy || !dirty} onClick={() => setAskingSave(true)}>
           {t('Speichern')}
         </button>
         <button
@@ -581,6 +600,44 @@ export function Offsite() {
             const key = await recoveryKey(password);
             setAskingKey(false);
             setShownKey(key);
+          }}
+        />
+      )}
+      {askingSave && (
+        <PasswordPrompt
+          title={t('Backups außer Haus speichern?')}
+          tone={forgetsKey ? 'warning' : 'default'}
+          lead={
+            forgetsKey
+              ? t(
+                  'Ohne Verschlüsselung vergisst der Server den Wiederherstellungsschlüssel. Die verschlüsselten Backups lassen sich dann nur noch mit dem Schlüssel lesen, den du aufgehoben hast.',
+                )
+              : t(
+                  'Hier entscheidet sich, wohin die ganze Datenbank geht. Deshalb braucht jede Änderung dein Master-Passwort.',
+                )
+          }
+          confirm={t('Speichern')}
+          onCancel={() => setAskingSave(false)}
+          action={save}
+        />
+      )}
+      {askingForget && (
+        <PasswordPrompt
+          title={t('Host-Schlüssel vergessen?')}
+          tone="warning"
+          lead={t(
+            'Der nächste Test vertraut dem Schlüssel, den der Backup-Server dann zeigt. Tu das nur, wenn du weißt, warum er sich geändert hat.',
+          )}
+          confirm={t('Vergessen')}
+          onCancel={() => setAskingForget(false)}
+          action={async (password) => {
+            const next = await forgetHostKey(password);
+            setAskingForget(false);
+            setView(next);
+            setResult({
+              tone: 'info',
+              text: t('Vergessen. Der nächste Test merkt sich den neuen.'),
+            });
           }}
         />
       )}

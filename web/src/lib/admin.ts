@@ -701,6 +701,8 @@ export type Offsite = {
   };
   running: boolean;
   stale: boolean;
+  /** Settings from before that send backups unencrypted over SFTP or S3: they do not run. */
+  encryptionRequired?: boolean;
   /** Only in the answer to the first save that encrypts: shown once. */
   recoveryKey?: string | null;
 };
@@ -708,7 +710,7 @@ export type Offsite = {
 /** What the portal sends: the target with the secrets typed (empty keeps the stored ones). */
 export type OffsiteDraft = Omit<
   Offsite,
-  'status' | 'running' | 'stale' | 'recoveryKey' | 'target'
+  'status' | 'running' | 'stale' | 'recoveryKey' | 'target' | 'encryptionRequired'
 > & {
   target: (OffsiteTarget & { password?: string; secretKey?: string }) | null;
 };
@@ -725,13 +727,25 @@ export type Snapshot = {
 const offsiteBase = `${base}/backups/offsite`;
 
 export const offsite = () => request<Offsite>(offsiteBase);
-export const saveOffsite = (draft: OffsiteDraft) =>
-  request<Offsite>(offsiteBase, { method: 'PUT', body: draft });
+/**
+ * The settings decide where the whole database goes, so saving them asks for the master
+ * password. `forgetKey` says out loud that encryption goes off and the recovery key with it.
+ */
+export async function saveOffsite(draft: OffsiteDraft, password: string, forgetKey = false) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<Offsite>(offsiteBase, {
+    method: 'PUT',
+    body: { ...draft, masterPasswordHash, forgetKey },
+  });
+}
 export const testOffsite = () =>
   request<{ kind: OffsiteKind; hostKey: string | null; known: boolean }>(`${offsiteBase}/test`, {
     body: {},
   });
-export const forgetHostKey = () => request<Offsite>(`${offsiteBase}/forget-host-key`, { body: {} });
+export async function forgetHostKey(password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<Offsite>(`${offsiteBase}/forget-host-key`, { body: { masterPasswordHash } });
+}
 export const runOffsite = () => request(`${offsiteBase}/run`, { body: {} });
 export const snapshots = async () =>
   (await request<{ data: Snapshot[] }>(`${offsiteBase}/snapshots`)).data;

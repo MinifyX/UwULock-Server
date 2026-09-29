@@ -74,9 +74,22 @@ impl OffsiteSettings {
         if self.enabled && self.target.is_none() {
             return Err(Error::Config("say where the backups go first".into()));
         }
+        if self.enabled && self.plain_elsewhere() {
+            return Err(Error::Config(PLAIN_ELSEWHERE.into()));
+        }
         Ok(())
     }
+
+    /// Backups without encryption to another machine: not any more. Only a folder of this
+    /// machine may take them unencrypted — it holds nothing the data directory does not.
+    /// Settings from before are kept, but do not run until they are saved with encryption.
+    pub fn plain_elsewhere(&self) -> bool {
+        self.key.is_none() && matches!(self.target, Some(Target::Sftp(_) | Target::S3(_)))
+    }
 }
+
+/// Why settings that send backups unencrypted to SFTP or S3 do not run.
+pub const PLAIN_ELSEWHERE: &str = "backups to SFTP or S3 are encrypted; save the settings again with encryption on (at a new place, since the backups there are not encrypted)";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
@@ -241,6 +254,9 @@ impl Offsite {
 
         let result = async {
             let mut settings = self.settings().await?;
+            if settings.plain_elsewhere() {
+                return Err(Error::Config(PLAIN_ELSEWHERE.into()));
+            }
             let repo = self.open(&mut settings, true).await?;
             let source = Source {
                 store: &self.inner.store,
@@ -292,6 +308,14 @@ impl Offsite {
             .map_err(|_| Error::Busy("an off-site backup or restore is running already".into()))?;
         let mut settings = self.settings().await?;
         let repo = self.open(&mut settings, false).await?;
+        if !repo.config.encrypted {
+            repo.storage.close().await;
+            // Whoever can write there could have put any database there: without the key that
+            // seals every object, nothing ties a snapshot to this server.
+            return Err(Error::Config(
+                "an unencrypted backup goes back only with the command line, into a new server".into(),
+            ));
+        }
         let fetched = async {
             let manifest = repo.manifest(snapshot).await?;
             crate::fits_this_server(&manifest)?;
@@ -413,6 +437,20 @@ mod tests {
         assert!(OffsiteSettings { key: Some("nonsense".into()), ..settings() }.check().is_err());
         assert!(OffsiteSettings { target: None, ..settings() }.check().is_err());
         let key = RepoKey::generate().recovery_text();
-        assert!(OffsiteSettings { key: Some(key), ..settings() }.check().is_ok());
+        assert!(OffsiteSettings { key: Some(key.clone()), ..settings() }.check().is_ok());
+        // Unencrypted only into a folder of this machine.
+        let sftp = Target::Sftp(crate::SftpTarget {
+            host: "nas.example.com".into(),
+            port: 22,
+            user: "backup".into(),
+            path: "lock".into(),
+            login: crate::Login::Password { password: "pw".into() },
+            host_key: None,
+        });
+        let plain = OffsiteSettings { target: Some(sftp.clone()), ..settings() };
+        assert!(plain.plain_elsewhere() && plain.check().is_err());
+        assert!(OffsiteSettings { enabled: false, ..plain }.check().is_ok(), "kept, but it does not run");
+        assert!(OffsiteSettings { target: Some(sftp), key: Some(key), ..settings() }.check().is_ok());
+        assert!(!settings().plain_elsewhere());
     }
 }

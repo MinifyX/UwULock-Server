@@ -124,5 +124,13 @@
   "{owner} bekommt Bescheid. Nur {owner} kann öffnen, was du geschickt hast.": "{owner} is told. Only {owner} can open what you sent.",
   "{owner} bittet um Dateien ✧": "{owner} asks for files ✧",
   "{size} gesichert, davon {uploaded} neu hochgeladen, in {seconds} s": "{size} backed up, {uploaded} of it newly uploaded, in {seconds} s",
-  "Übernimmt …": "Taking over …"
+  "Übernimmt …": "Taking over …",
+  "Diese Backups gehen unverschlüsselt per SFTP oder S3 und laufen deshalb nicht mehr. Speichere die Einstellungen verschlüsselt, an einem neuen Ort.": "These backups go unencrypted over SFTP or S3 and so do not run any more. Save the settings encrypted, at a new place.",
+  "Backups per SFTP oder S3 sind immer verschlüsselt. Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf.": "Backups over SFTP or S3 are always encrypted. The recovery key shows once after saving: keep it apart from the server.",
+  "Unverschlüsselt liegt die ganze Datenbank lesbar im Ordner: Konten, Passwort-Hashes, die verschlüsselten Tresore. Die Schlüssel des Servers bleiben weg; nach einem Zurückspielen melden sich alle neu an, und SSO sowie UwUMail müssen neu eingerichtet werden. Zurückspielen geht dann nur über die Kommandozeile.": "Unencrypted, the whole database lies readable in the folder: accounts, password hashes, the encrypted vaults. The server's own keys stay out; after a restore everybody logs in again, and SSO and UwUMail have to be set up anew. Restoring then works only with the command line.",
+  "Backups außer Haus speichern?": "Save the off-site backups?",
+  "Ohne Verschlüsselung vergisst der Server den Wiederherstellungsschlüssel. Die verschlüsselten Backups lassen sich dann nur noch mit dem Schlüssel lesen, den du aufgehoben hast.": "Without encryption the server forgets the recovery key. The encrypted backups can then only be read with the key you kept.",
+  "Hier entscheidet sich, wohin die ganze Datenbank geht. Deshalb braucht jede Änderung dein Master-Passwort.": "This decides where the whole database goes, so every change needs your master password.",
+  "Host-Schlüssel vergessen?": "Forget the host key?",
+  "Der nächste Test vertraut dem Schlüssel, den der Backup-Server dann zeigt. Tu das nur, wenn du weißt, warum er sich geändert hat.": "The next test trusts whatever key the backup server shows then. Only do this when you know why it changed."
 }

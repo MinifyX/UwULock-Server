@@ -45,7 +45,7 @@ pub use accounts::{
 pub use admin::{Day, EVENT_DAYS, Event, Stats};
 pub use attachments::{Attachment, AttachmentKey, Owner};
 pub use auth_requests::{AUTH_REQUEST_SECONDS, AuthRequest};
-pub use backup::{restore, schema_of, setting_in};
+pub use backup::{SERVER_SECRETS, forget_secrets_in, restore, schema_of, setting_in};
 pub use emergency::EmergencyAccess;
 pub use file_requests::{ExtrasKey, FileRequest, FileRequestSummary, RequestFile, Submission};
 pub use icons::OwnIcon;

@@ -46,6 +46,40 @@ async fn a_backup_goes_to_a_folder_and_comes_back() {
     assert!(matches!(Repository::open_existing(storage, Some(RepoKey::generate())).await, Err(Error::WrongKey)));
 }
 
+/// An unencrypted backup leaves out the server's own keys: whoever reads the folder must not be
+/// able to forge a login, or open the secrets the server keeps for talking to others.
+#[tokio::test]
+async fn an_unencrypted_backup_leaves_the_server_keys_out() {
+    let server = Server::new().await;
+    server.store.set_setting("token_key", "the signing key").await.unwrap();
+    write(server.data(), "secret.key", b"thirty-two bytes of server key..");
+    let target = tempfile::tempdir().unwrap();
+    let repo = open(target.path(), None).await;
+    let done = server.backup(&repo, 1_000).await;
+    let manifest = repo.manifest(&done.snapshot).await.unwrap();
+    let paths: Vec<&str> = manifest.files.iter().map(|file| file.path.as_str()).collect();
+    assert!(paths.contains(&"attachments/c1/a1"), "{paths:?}");
+    assert!(!paths.iter().any(|path| *path == "secret.key" || path.starts_with("acme/")), "{paths:?}");
+    for entry in walk(target.path()) {
+        let bytes = std::fs::read(&entry).unwrap();
+        assert!(!bytes.windows(15).any(|window| window == b"the signing key"), "{}", entry.display());
+    }
+    let new = tempfile::tempdir().unwrap();
+    uwulock_backup::restore_into(&repo, &done.snapshot, new.path()).await.unwrap();
+    let store =
+        uwulock_store::Store::open_sqlite(&new.path().join("uwulock.db"), &uwulock_store::Options { readers: 1 })
+            .unwrap();
+    assert_eq!(store.setting("marker").await.unwrap().as_deref(), Some("first"));
+    assert_eq!(store.setting("token_key").await.unwrap(), None);
+
+    // Encrypted, they go along.
+    let sealed = tempfile::tempdir().unwrap();
+    let repo = open(sealed.path(), Some(RepoKey::generate())).await;
+    let done = server.backup(&repo, 1_000).await;
+    let manifest = repo.manifest(&done.snapshot).await.unwrap();
+    assert!(manifest.files.iter().any(|file| file.path == "secret.key"));
+}
+
 #[tokio::test]
 async fn old_snapshots_go_and_take_what_only_they_needed() {
     let server = Server::new().await;

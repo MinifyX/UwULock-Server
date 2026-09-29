@@ -43,6 +43,24 @@ pub fn setting_in(backup: &Path, key: &str) -> Result<Option<String>, String> {
         .map_err(|error| format!("{}: {error}", backup.display()))
 }
 
+/// Rows of the `server` table that are the server's own keys: the one that signs access tokens.
+/// An unencrypted off-site backup leaves them out, so whoever reads the backup cannot forge a
+/// login with them; a server restored from one makes a new key, and everybody logs in again.
+pub const SERVER_SECRETS: &[&str] = &["token_key"];
+
+/// Removes the server's own keys ([`SERVER_SECRETS`]) from the database copy at `path`, with the
+/// deleted bytes overwritten and the file compacted, so nothing of them stays in free pages.
+pub fn forget_secrets_in(path: &Path) -> Result<(), String> {
+    let failed = |error: rusqlite::Error| format!("{}: {error}", path.display());
+    let conn = Connection::open(path).map_err(failed)?;
+    conn.pragma_update(None, "secure_delete", "ON").map_err(failed)?;
+    for key in SERVER_SECRETS {
+        conn.execute("DELETE FROM server WHERE key = ?1", [key]).map_err(failed)?;
+    }
+    conn.execute_batch("VACUUM").map_err(failed)?;
+    Ok(())
+}
+
 /// The schema version of the database file at `path`, for an off-site backup's manifest.
 pub fn schema_of(path: &Path) -> Result<i64, String> {
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)

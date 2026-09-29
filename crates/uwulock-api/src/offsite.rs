@@ -105,6 +105,9 @@ fn view_of(offsite: &Offsite, settings: &OffsiteSettings, status: &OffsiteStatus
             "uploaded": report.map(|report| report.uploaded),
             "snapshot": report.map(|report| report.snapshot.clone()),
         },
+        // Settings from before that send backups unencrypted to SFTP or S3: they do not run
+        // until they are saved again with encryption.
+        "encryptionRequired": settings.plain_elsewhere(),
         "running": offsite.is_running(),
         "stale": Offsite::stale_hours(settings, status, crate::auth::now_seconds()).is_some(),
     })
@@ -164,6 +167,13 @@ struct SaveBody {
     warn_after_hours: Option<u32>,
     #[serde(default)]
     target: Option<TargetBody>,
+    /// Every change asks for the admin's master password: the settings decide where the whole
+    /// database goes, so a session token that got away is not enough to send it elsewhere.
+    #[serde(default)]
+    master_password_hash: Option<String>,
+    /// Said out loud when encryption goes off and the recovery key with it.
+    #[serde(default)]
+    forget_key: bool,
 }
 
 fn yes() -> bool {
@@ -273,6 +283,7 @@ fn target_from(body: TargetBody, before: Option<&Target>, data: &std::path::Path
 }
 
 async fn save(State(state): State<AppState>, admin: Admin, Json(body): Json<SaveBody>) -> ApiResult<Json<Value>> {
+    crate::accounts::check_password(&state, &admin.0.user, body.master_password_hash.as_deref()).await?;
     let before = state.offsite.settings().await.map_err(failed)?;
     let status = state.offsite.status().await;
     let target =
@@ -280,6 +291,17 @@ async fn save(State(state): State<AppState>, admin: Admin, Json(body): Json<Save
     // Whether there are backups where they go: then encrypting them or not is fixed.
     let same = matches!((&target, &before.target), (Some(new), Some(old)) if same_place(new, old));
     let has_backups = same && status.last_success.is_some();
+    // Unencrypted, a backup is the whole database in the open: only into a folder of this
+    // machine, and never with the server's own keys (uwulock-backup leaves them out).
+    if !body.encrypted && target.as_ref().is_some_and(|target| !matches!(target, Target::Folder(_))) {
+        return Err(ApiError::bad("Backups to SFTP or S3 are always encrypted.").code("encryption_required"));
+    }
+    if !body.encrypted && before.key.is_some() && !body.forget_key {
+        return Err(ApiError::bad(
+            "Without encryption the recovery key is forgotten, and the encrypted backups need it. Keep it first, then confirm.",
+        )
+        .code("key_would_be_forgotten"));
+    }
     let mut recovery_key = None;
     let key = match (body.encrypted, before.key.clone()) {
         (true, Some(key)) => Some(key),
@@ -337,7 +359,14 @@ async fn test(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Val
     Ok(Json(json!({ "object": "offsiteTest", "kind": kind, "hostKey": host_key, "known": known })))
 }
 
-async fn forget_host_key(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+/// Trusting whatever host key the backup server shows next: the master password first, as for
+/// the settings themselves.
+async fn forget_host_key(
+    State(state): State<AppState>,
+    admin: Admin,
+    Json(secret): Json<crate::two_factor::Secret>,
+) -> ApiResult<Json<Value>> {
+    crate::accounts::check_password(&state, &admin.0.user, secret.master_password_hash.as_deref()).await?;
     let mut settings = state.offsite.settings().await.map_err(failed)?;
     if let Some(sftp) = settings.target.as_mut().and_then(Target::as_sftp_mut) {
         sftp.host_key = None;
@@ -538,6 +567,7 @@ mod tests {
             "retention": { "days": 7, "weeks": 4, "months": 6 },
             "warnAfterHours": 48,
             "target": { "kind": "folder", "path": path.display().to_string() },
+            "masterPasswordHash": password_hash("admin@example.com"),
         })
     }
 
@@ -646,9 +676,9 @@ mod tests {
         let path = "/uwu/v1/admin/backups/offsite";
         let body = json!({
             "enabled": false,
-            "encrypted": false,
             "target": { "kind": "s3", "endpoint": "https://s3.example.com", "region": "eu-central-1",
                 "bucket": "backups", "prefix": "lock", "accessKey": "AKIDEXAMPLE", "secretKey": "geheim" },
+            "masterPasswordHash": password_hash("admin@example.com"),
         });
         let saved = json(server.call("PUT", path, Some(&admin.token), body).await).await;
         assert_eq!(saved["target"]["secretKeySet"], true);
@@ -656,9 +686,9 @@ mod tests {
         // Left out, the secret stays for the same bucket and key.
         let body = json!({
             "enabled": false,
-            "encrypted": false,
             "target": { "kind": "s3", "endpoint": "https://s3.example.com", "region": "eu-central-1",
                 "bucket": "backups", "prefix": "lock", "accessKey": "AKIDEXAMPLE" },
+            "masterPasswordHash": password_hash("admin@example.com"),
         });
         json(server.call("PUT", path, Some(&admin.token), body).await).await;
         let settings = server.state.offsite.settings().await.unwrap();
@@ -669,11 +699,88 @@ mod tests {
             "enabled": false,
             "encrypted": true,
             "target": { "kind": "sftp", "host": "nas.example.com", "user": "backup", "path": "uwulock", "method": "key" },
+            "masterPasswordHash": password_hash("admin@example.com"),
         });
         let saved = json(server.call("PUT", path, Some(&admin.token), body).await).await;
         assert!(saved["target"]["publicKey"].as_str().unwrap().starts_with("ssh-ed25519 "), "{saved}");
         assert!(!saved.to_string().contains("PRIVATE KEY"));
         let user = server.account("nyu@example.com").await;
         assert_eq!(server.get_as(&user.token, path).await.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// Backups H1, R4-2, M1: a session token alone cannot send the database elsewhere, nothing
+    /// unencrypted leaves the machine, the recovery key is not dropped by the way, and an
+    /// unencrypted repository does not go back into the running server.
+    #[tokio::test]
+    async fn the_target_needs_the_password_and_only_a_folder_takes_backups_unencrypted() {
+        let server = TestServer::new().await;
+        let admin = admin(&server).await;
+        let path = "/uwu/v1/admin/backups/offsite";
+        let target = tempfile::tempdir().unwrap();
+        let mut body = folder_body(target.path(), true);
+        for hash in [json!(null), json!("wrong")] {
+            body["masterPasswordHash"] = hash;
+            let refused = server.call("PUT", path, Some(&admin.token), body.clone()).await;
+            assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+            assert!(json(refused).await.get("recoveryKey").is_none());
+        }
+        assert!(server.state.offsite.settings().await.unwrap().target.is_none(), "nothing saved");
+        let forget = server.call("POST", &format!("{path}/forget-host-key"), Some(&admin.token), json!({})).await;
+        assert_eq!(forget.status(), StatusCode::BAD_REQUEST);
+
+        let s3 = json!({
+            "enabled": true,
+            "encrypted": false,
+            "target": { "kind": "s3", "endpoint": "https://s3.example.com", "region": "eu-central-1",
+                "bucket": "backups", "prefix": "lock", "accessKey": "AKIDEXAMPLE", "secretKey": "geheim" },
+            "masterPasswordHash": password_hash("admin@example.com"),
+        });
+        let refused = server.call("PUT", path, Some(&admin.token), s3).await;
+        assert_eq!(json(refused).await["code"], "encryption_required");
+
+        // Encrypted first; switching it off drops the key only when that is said.
+        let saved = json(server.call("PUT", path, Some(&admin.token), folder_body(target.path(), true)).await).await;
+        assert!(saved["recoveryKey"].is_string());
+        let elsewhere = tempfile::tempdir().unwrap();
+        let plain = folder_body(elsewhere.path(), false);
+        let refused = server.call("PUT", path, Some(&admin.token), plain.clone()).await;
+        assert_eq!(json(refused).await["code"], "key_would_be_forgotten");
+        assert!(server.state.offsite.settings().await.unwrap().key.is_some());
+        let mut confirmed = plain;
+        confirmed["forgetKey"] = json!(true);
+        let saved = json(server.call("PUT", path, Some(&admin.token), confirmed).await).await;
+        assert_eq!(saved["encrypted"], false, "{saved}");
+
+        // An unencrypted snapshot goes back only with the command line.
+        run_now(&server.state).await.unwrap();
+        let list = json(server.get_as(&admin.token, &format!("{path}/snapshots")).await).await;
+        let snapshot = list["data"][0]["id"].as_str().unwrap().to_string();
+        let body = json!({ "snapshot": snapshot, "masterPasswordHash": password_hash("admin@example.com") });
+        let refused = server.call("POST", &format!("{path}/restore"), Some(&admin.token), body).await;
+        assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+        assert!(json(refused).await["message"].as_str().unwrap().contains("command line"));
+
+        // Settings from before that send unencrypted backups over SFTP do not run, and say so.
+        let old = OffsiteSettings {
+            enabled: false,
+            target: Some(Target::Sftp(SftpTarget {
+                host: "nas.example.com".into(),
+                port: 22,
+                user: "backup".into(),
+                path: "lock".into(),
+                login: Login::Password { password: "pw".into() },
+                host_key: None,
+            })),
+            ..OffsiteSettings::default()
+        };
+        server.state.offsite.save_settings(&old).await.unwrap();
+        let raw = serde_json::to_string(&OffsiteSettings { enabled: true, ..old }).unwrap();
+        server.state.store.set_setting("offsite.settings", &raw).await.unwrap();
+        let shown = json(server.get_as(&admin.token, path).await).await;
+        assert_eq!(shown["encryptionRequired"], true);
+        let error = run_now(&server.state).await.unwrap_err();
+        assert!(error.to_string().contains("encrypted"), "{error}");
+        let evaluated = crate::alerts::evaluate(&server.state).await;
+        assert!(evaluated["backupFailed"].1.en.contains("encrypted"), "{evaluated:?}");
     }
 }

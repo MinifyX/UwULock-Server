@@ -146,6 +146,9 @@ try {
   await card.getByLabel('Ordner (eingehängt, außerhalb der Daten)').fill(folder);
   await card.getByRole('switch', { name: 'Backups außer Haus an' }).click();
   await card.getByRole('button', { name: 'Speichern' }).click();
+  // Where the database goes is decided with the master password.
+  await owner.locator('.modal input[type=password]').fill(password);
+  await owner.locator('.modal').getByRole('button', { name: 'Speichern' }).click();
   const key = (await owner.locator('.recovery-key').innerText({ timeout: 30000 })).trim();
   if (!/^[A-Z2-7]{4}(-[A-Z2-7]{1,4})+$/.test(key)) throw new Error(`the recovery key: ${key}`);
   await snap(owner, 'recovery-key');

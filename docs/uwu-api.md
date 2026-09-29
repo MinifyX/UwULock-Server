@@ -2578,7 +2578,7 @@ As UwUMail Server's (its `docs/backups.md` and `routes/backups.rs`; reuse the de
 a mounted folder; deduplicated; encrypted by default with a recovery key shown once; retention
 7 days / 4 weeks / 6 months. Contents: the database (an online SQLite backup, or `pg_dump` on
 PostgreSQL), the attachment, Send, file-request and icon directories, and the server's secret
-files (token key, the secret of §13.2). (As built: own icons are in the database; the `icons/`
+files (token key, the secret of §13.2; both left out of unencrypted backups). (As built: own icons are in the database; the `icons/`
 directory holds only what the server fetched from websites and the library, which it fetches
 again — and which would say which websites the accounts use — so it is left out.)
 
@@ -2591,8 +2591,14 @@ again — and which would say which websites the accounts use — so it is left 
   `target` as UwUMail's view: `{ "kind": "sftp", "host", "port", "user", "path", "method": "key" | "password", "publicKey", "passwordSet", "hostKey" }`,
   `{ "kind": "s3", "endpoint", "region", "bucket", "prefix", "accessKey", "secretKeySet", "pathStyle" }`,
   or `{ "kind": "folder", "path" }`.
-- `PUT /uwu/v1/admin/backups/offsite` — `{ enabled, hour, minute, retention, encrypted, warnAfterHours, target: { kind, …, password?, secretKey? } }`;
-  the first save with `encrypted: true` answers `recoveryKey` once (the `GET` body plus
+- `PUT /uwu/v1/admin/backups/offsite` — `{ enabled, hour, minute, retention, encrypted, warnAfterHours, target: { kind, …, password?, secretKey? }, masterPasswordHash, forgetKey? }`;
+  every save needs the admin's `masterPasswordHash` (400 without or wrong). `encrypted: false` only
+  for `kind: "folder"` (else 400 `encryption_required`); switching an encrypted setup to
+  unencrypted needs `forgetKey: true` (else 400 `key_would_be_forgotten`), since the recovery key
+  goes with it. Unencrypted snapshots leave out the token key, `secret.key` and `acme/`. The `GET`
+  body has `encryptionRequired: true` for settings from before that send unencrypted backups over
+  SFTP or S3; they do not run (each attempt fails, `backupFailed` alert) until saved again with
+  encryption. The first save with `encrypted: true` answers `recoveryKey` once (the `GET` body plus
   `recoveryKey`; `null` on every later save). `encrypted` is fixed once there are backups (400):
   once a backup succeeded and the target is still the same place. `encrypted` left out means
   `true`. `enabled` needs a target. For SFTP, `method: "key"` makes the server's own Ed25519 key
@@ -2600,7 +2606,8 @@ again — and which would say which websites the accounts use — so it is left 
   `authorized_keys`. The host key is kept while host and port stay the same. A folder must be an
   absolute path outside the data directory (400).
 - `POST …/offsite/test` → `{ "kind", "hostKey": "…" | null, "known": true }` (SFTP: first contact
-  shows and remembers the host key); `POST …/offsite/forget-host-key` → the `GET` body. The test
+  shows and remembers the host key); `POST …/offsite/forget-host-key` `{ "masterPasswordHash" }` →
+  the `GET` body. The test
   writes a small file there, reads it back and removes it.
 - `POST …/offsite/run` → 202; progress in `GET`. 409 `conflict` while one runs.
 - `GET …/offsite/snapshots` → list `{ id, date, bytes, version }`, newest first, each also with
@@ -2608,7 +2615,8 @@ again — and which would say which websites the accounts use — so it is left 
 - Errors of the target itself (unreachable, login refused, host key changed, damaged backup)
   are 502 `upstream` with the reason; settings that cannot work are 400.
 - `POST …/offsite/restore` — `{ "snapshot", "masterPasswordHash" }`: like the local restore (a
-  local backup first, only backups of this server, into the running server); bumps the server
+  local backup first, only encrypted backups of this server, into the running server; an
+  unencrypted one: 400, it goes back only with the command line); bumps the server
   epoch (§4.3). Answer `{ "restored", "before", "files" }` (`before`: the local backup of how it
   was; `files`: how many files came back). The off-site settings and status stay those from
   before the restore; so they do when a local backup goes back.
