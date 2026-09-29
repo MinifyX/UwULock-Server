@@ -602,7 +602,8 @@ export const clientDiagnosis = (results: { websocket?: SocketResult; upload?: Up
 export async function checkWebSocket(): Promise<SocketResult> {
   let ticket: string;
   try {
-    ticket = (await request<{ ticket: string }>(`${base}/diagnosis/websocket-ticket`, { body: {} })).ticket;
+    ticket = (await request<{ ticket: string }>(`${base}/diagnosis/websocket-ticket`, { body: {} }))
+      .ticket;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -749,17 +750,21 @@ export async function saveOffsite(draft: OffsiteDraft, password: string, forgetK
     body: { ...draft, masterPasswordHash, forgetKey },
   });
 }
-export const testOffsite = () =>
-  request<{ kind: OffsiteKind; hostKey: string | null; known: boolean }>(`${offsiteBase}/test`, {
-    body: {},
-  });
+/** Without a confirmed SFTP host key the server only reads the key (`confirmed: false`); tested
+ * again with that `hostKey`, it trusts it. */
+export const testOffsite = (hostKey?: string) =>
+  request<{ kind: OffsiteKind; hostKey: string | null; known: boolean; confirmed?: boolean }>(
+    `${offsiteBase}/test`,
+    { body: hostKey ? { hostKey } : {} },
+  );
 export async function forgetHostKey(password: string) {
   const masterPasswordHash = await passwordHash(password);
   return request<Offsite>(`${offsiteBase}/forget-host-key`, { body: { masterPasswordHash } });
 }
 export const runOffsite = () => request(`${offsiteBase}/run`, { body: {} });
+/** The snapshots, and whether the last one this server wrote is missing from them. */
 export const snapshots = async () =>
-  (await request<{ data: Snapshot[] }>(`${offsiteBase}/snapshots`)).data;
+  request<{ data: Snapshot[]; lastWrittenMissing?: boolean }>(`${offsiteBase}/snapshots`);
 
 export async function restoreSnapshot(snapshot: string, password: string) {
   const masterPasswordHash = await passwordHash(password);

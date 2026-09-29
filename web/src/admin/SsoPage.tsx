@@ -309,7 +309,9 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
           />
         </label>
         <label className="field">
-          <span>{t('Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)')}</span>
+          <span>
+            {t('Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)')}
+          </span>
           <textarea
             rows={2}
             value={(draft.extensionIds ?? []).join('\n')}

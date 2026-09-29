@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Modal } from '../components/Modal';
 import { PasswordInput } from '../components/PasswordInput';
+import { Button, Callout } from '../components/ui';
 import {
   PasswordPrompt,
   ResultLine,
@@ -84,6 +85,8 @@ export function Offsite() {
   const [shownKey, setShownKey] = useState<string | null>(null);
   const [askingKey, setAskingKey] = useState(false);
   const [list, setList] = useState<Snapshot[] | null>(null);
+  const [newestHidden, setNewestHidden] = useState(false);
+  const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<Snapshot | null>(null);
   const [askingSave, setAskingSave] = useState(false);
   const [askingForget, setAskingForget] = useState(false);
@@ -459,6 +462,10 @@ export function Offsite() {
           onClick={() =>
             void run(async () => {
               const tested = await testOffsite();
+              if (tested.confirmed === false && tested.hostKey) {
+                setConfirmingKey(tested.hostKey);
+                return;
+              }
               setResult({
                 tone: 'info',
                 text: tested.hostKey
@@ -520,7 +527,9 @@ export function Offsite() {
           disabled={busy || !view.target}
           onClick={() =>
             void run(async () => {
-              setList(await snapshots());
+              const got = await snapshots();
+              setList(got.data);
+              setNewestHidden(got.lastWrittenMissing === true);
             })
           }
         >
@@ -556,7 +565,55 @@ export function Offsite() {
           </tbody>
         </table>
       )}
+      {list && newestHidden && (
+        <Callout tone="warning">
+          {t(
+            'Der letzte Stand, den dieser Server geschrieben hat, fehlt am Ziel. Wer das Ziel verwaltet, kann Stände verstecken: Spiel nichts zurück, bevor du weißt, warum.',
+          )}
+        </Callout>
+      )}
       {list?.length === 0 && <p className="empty-note">{t('Noch keine Stände am Ziel.')}</p>}
+
+      {confirmingKey && (
+        <Modal
+          title={t('Host-Schlüssel bestätigen?')}
+          tone="warning"
+          onCancel={() => setConfirmingKey(null)}
+          footer={
+            <>
+              <span className="spacer" />
+              <Button data-secondary onClick={() => setConfirmingKey(null)}>
+                {t('Abbrechen')}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    const key = confirmingKey;
+                    setConfirmingKey(null);
+                    await testOffsite(key);
+                    setResult({
+                      tone: 'info',
+                      text: t('Verbindung steht ✧ Host-Schlüssel gemerkt: {key}', { key }),
+                    });
+                    await load();
+                  })
+                }
+              >
+                {t('Schlüssel vertrauen')}
+              </Button>
+            </>
+          }
+        >
+          <p className="dialog-lead">
+            {t(
+              'Der Backup-Server zeigt diesen Host-Schlüssel. Vergleiche ihn mit dem des Servers (dort: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Erst danach meldet sich dieser Server dort an.',
+            )}
+          </p>
+          <code className="mono wrap">{confirmingKey}</code>
+        </Modal>
+      )}
 
       {shownKey && (
         <Modal
