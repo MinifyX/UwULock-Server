@@ -262,7 +262,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
       (s.id !== 'invite' || info?.mayInvite) &&
       // When an admin allowed a UwUMail server, or a connection is left from before, or the
       // apps' link asks for it (it then says what is missing).
-      (s.id !== 'masked' || masked || info?.masked?.connected || initial === 'masked'),
+      (s.id !== 'masked' || masked || info?.maskedConnected || initial === 'masked'),
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (
