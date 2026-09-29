@@ -5,6 +5,27 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Comfort in the vault (Stufe 4c, first part).**
+
+- **Icons for items**: `/icons/<host>/icon.png`, where the Bitwarden apps and extensions ask, now
+  answers with the website's icon, fetched by the server — every resolved address checked (also
+  after redirects, against DNS rebinding), nothing in the local network ever asked, with time,
+  size and image limits — converted to PNG and kept for 30 days. **Own icons**: uploaded, picked
+  from the [selfh.st Icons](https://selfh.st/icons/) library (CC BY 4.0, mirrored by the server)
+  or fetched from a device in the home network by the browser, and stored encrypted with the item.
+  The admin portal switches both off and empties the cache ([docs/icons.md](docs/icons.md)).
+- **Travel mode**: folders marked "hide while travelling" disappear from every device — the
+  Bitwarden apps too — while it is on. On from any device; off only with the master password and
+  the second step of the login, every failed try noticed
+  ([docs/travel-mode.md](docs/travel-mode.md)).
+- **Earlier versions of items**: every change keeps the state before, encrypted; list, show and
+  bring back in the web vault. How many and how long is the admin's choice; they count toward the
+  storage.
+- **Reminders to renew a password**, per item after some months or on a day, with a mail that
+  names no item and a *Due* section in the web vault.
+- **New keys** from the web vault go through `POST /uwu/v1/accounts/rotate-keys` and take the
+  extras key and the versions along; a rotation by a Bitwarden app drops the versions.
+
 **Running it and keeping it safe (Stufe 4b, first part).**
 
 - **Security notices** for everybody, under *Settings → Security* in the web vault and by mail in

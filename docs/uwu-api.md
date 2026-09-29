@@ -336,6 +336,10 @@ A key rotation made by the web vault or UwULock Client. Body limit: the router's
   Or `dropVersions: true` and `versions: []`: the personal versions are deleted.
 - All of it in one transaction with the Bitwarden part. Then as today: security stamp, logout of
   other devices, notify `LogOut`. Security notice `keysRotated`.
+- While travel mode is on (§9), this and Bitwarden's rotation are refused with 400
+  `travel_active`: the hidden items could not be re-encrypted by a client that does not see them.
+- `versions[].cipher` is read like a cipher of `accountData.ciphers` (Bitwarden's
+  `CipherRequestModel` keys; `organizationId` must be null).
 
 ### When an official client rotates
 
@@ -775,7 +779,14 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   32 px wins, else the largest. ICO, PNG, JPEG, GIF, WebP, SVG (rasterized) are read; the result is
   PNG. At most 8 fetches at a time server-wide, one per host.
 - Cache: on disk under the data directory, keyed by SHA-256 of the host, 30 days for an icon,
-  3 days for "none". The admin portal switches the feature and empties the cache (§21.10).
+  3 days for "none" (a site that could not be reached counts as "none"). The admin portal switches
+  the feature and empties the cache (§21.10).
+- Redirects go only to `http`/`https` on the usual ports (80, 443), never to a name that
+  normalizes to nothing (local names) or an address refused above; a page's `<link>` may point to
+  another host (a CDN), checked the same way. `data:` URLs in a `<link>` are read in place. A
+  proxy from the environment is never used (it would resolve names past the checks). SVG is drawn
+  without text, fonts or anything the file points to; files with `<!ENTITY` or more than 16
+  `<use>` are refused. Raster images are decoded up to 2048 × 2048 pixels and 64 MiB.
 - Log lines and metrics never name the host.
 
 ### 7.2 Icon library
@@ -818,6 +829,16 @@ host only), cached on disk. `Cache-Control: private, max-age=604800`. 404 if not
 The client does not link to the library icon: it downloads it, encrypts it, and stores it as an
 own icon (§7.3), so the server does not learn which icon belongs to which item.
 
+As built for 0.6: only selfh.st Icons. Its licence was checked in its repository
+(`github.com/selfhst/icons`, `LICENSE`: Creative Commons Attribution 4.0 International, SPDX
+`CC-BY-4.0`) on 2026-09-28. The server reads `<upstream>/index.json` (entries with `PNG: "Yes"`;
+`Light`/`Dark: "Yes"` add the variants `light`/`dark`; `aliases` stays empty) and fetches icons
+from `<upstream>/png/<id>[-light|-dark].png`, upstream `https://cdn.jsdelivr.net/gh/selfhst/icons@main`.
+Ids are `[a-z0-9._-]{1,100}` not starting with a dot; others are left out of the index. The index
+answer carries `Cache-Control: private, no-cache`; an uncached library icon costs a try of the
+§7.1 per-IP bucket (429 `rate_limited`), and 502 `upstream` when the library did not answer.
+Dashboard Icons and Simple Icons are not mirrored (not checked yet).
+
 ### 7.3 Own icons
 
 A PNG of at most 128 × 128 pixels (the client resizes and converts: PNG, JPEG, WebP accepted from
@@ -841,6 +862,10 @@ Endpoints (auth `user`; the cipher must be visible to the account and not hidden
 - `GET /uwu/v1/icons/own/{cipherId}` → `{ "object": "ownIcon", "cipherId", "keyType", "data", "revisionDate" }`.
 - `POST /uwu/v1/icons/own/get` — body `{ "cipherIds": ["…"] }`, at most 500 → list of `ownIcon`
   (those that exist and are visible).
+- `GET /uwu/v1/icons/own` → list of `ownIcon` **without** `data` for every item the account sees
+  (added for the web vault, which uses `/api/sync` and not `uwu.icons` of §4.4).
+- `PUT` for a personal item counts toward `storagePerUserMb` (422 `quota`); the answer has no
+  `data`.
 - `DELETE /uwu/v1/icons/own/{cipherId}` → 200.
 
 Which ciphers have one comes with the sync (`uwu.icons`, §4.4).
@@ -915,7 +940,8 @@ Personal cipher: its owner. Organization cipher: members who may edit it (not `r
   }
   ```
 
-  `cipher` uses the same keys and encodings as the cipher in `/api/sync`.
+  `cipher` uses the same keys and encodings as the cipher in `/api/sync`. Both the version and its
+  `cipher` also carry `organizationId` (null for a personal item), so a client knows the key.
 - `GET /uwu/v1/ciphers/{cipherId}/versions/{versionId}` → one `cipherVersion`.
 - `POST /uwu/v1/ciphers/{cipherId}/versions/{versionId}/restore` — body
   `{ "lastKnownRevisionDate": "<the cipher's current revisionDate>" }`; a different date is 409
@@ -969,7 +995,10 @@ everything, and the official clients drop them locally at their next sync.
   `twoFactorProvider` as Bitwarden numbers them: 0 authenticator, 1 e-mail, 7 WebAuthn (token = the
   assertion JSON as the login sends it). The recovery code is not accepted. Wrong password or code:
   400 `invalid`; both are counted per account (5 tries, one back every 3 minutes; then 429) and
-  a failure writes security notice `travelDisableFailed`.
+  a failure writes security notice `travelDisableFailed`. `twoFactorToken` may also be sent as a
+  JSON object (the assertion itself). A wrong password on `send-email` and `webauthn-challenge`
+  counts and is noticed the same way; both answer 400 `invalid` while the mode is off, and
+  `send-email` 400 `invalid` without two-step login by mail (or without a mail server).
 
 Switching on or off: sync epoch bumped (§4.3), the account's revision date bumped, notify
 `SyncVault` (Bitwarden `PushType` 5) to all devices including the one that did it, security
@@ -987,6 +1016,12 @@ downloads), `/api/ciphers/organization-details` rows *for this account*, `/uwu/v
 views and takeover of this account's vault.
 
 Writes to a hidden cipher are 404 as well. Moving a visible cipher into a marked folder hides it.
+
+The marked folders themselves are hidden too while the mode is on (left out of `/api/sync` and
+`/api/folders`; renaming or deleting one answers as for a folder that does not exist), so their
+names do not show either. `PUT /uwu/v1/travel/folders` still takes their ids. While it is on,
+`POST /api/ciphers/purge` and both key rotations (§3) answer 400 `travel_active`; download links
+of a hidden item's attachments issued before stop working.
 Organization-wide views of admins (`/api/ciphers/organization-details` as an organization admin,
 organization export) are organization data and are not filtered.
 
@@ -1025,7 +1060,9 @@ Rules:
 - A job runs hourly. A reminder with `due` ≤ today (UTC) is `isDue`; once per due date, one mail
   per account for all that became due ("An item in your vault is due for a new password"), with a
   link to `<public>/#/vault?due=1`. No mail without a mail server; hidden (travel) reminders are
-  skipped. Realtime `notice` `reminderDue`.
+  skipped. Realtime `notice` `reminderDue` (with the realtime channel, Stufe 6). Setting a reminder
+  also works for organization items the account may only read. `due` in the past is allowed (the
+  item is due at once).
 - Deleting the cipher for good deletes its reminder.
 
 **Clients:** web vault, UwULock desktop (set, list, mark due items).
@@ -2347,7 +2384,7 @@ defaults in brackets):
 
 | Key | Contents |
 | --- | --- |
-| `versions` | `{ perItem [20], days [365] }` (§8) |
+| `versions` | `{ perItem [20], days [365] }` (§8); `perItem` 0–100, `days` 0–3650 |
 | `icons` | `{ automatic [true], library [true], sources [["selfhst"]] }` (§7) |
 | `fileRequests` | `{ enabled [true], perUser [50], maxDays [90], maxFiles [20] }` (§11) |
 | `families` / `organizations` | `{ whoMayCreate, maxMembers, perUser }` (§16.4) |
@@ -2377,7 +2414,9 @@ As UwUMail Server's (its `docs/backups.md` and `routes/backups.rs`; reuse the de
 a mounted folder; deduplicated; encrypted by default with a recovery key shown once; retention
 7 days / 4 weeks / 6 months. Contents: the database (an online SQLite backup, or `pg_dump` on
 PostgreSQL), the attachment, Send, file-request and icon directories, and the server's secret
-files (token key, the secret of §13.2).
+files (token key, the secret of §13.2). (As built: own icons are in the database; the `icons/`
+directory holds only what the server fetched from websites and the library, which it fetches
+again, so it is left out.)
 
 - `GET /uwu/v1/admin/backups/offsite` →
   `{ "object": "offsiteBackups", "enabled", "hour", "minute", "retention": { "days": 7, "weeks": 4, "months": 6 }, "encrypted", "target", "status": { "lastSuccess", "lastError", "lastDuration", "bytes" }, "running", "warnAfterHours": 48 }`.
@@ -2520,7 +2559,8 @@ saved one — → 200 or 502.
 ### 21.10 Icons
 
 `DELETE /uwu/v1/admin/icons/cache` (automatic icons), `POST /uwu/v1/admin/icons/library/refresh`
-→ 202.
+→ 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "ownBytes",
+"libraryUpdated", "libraryIcons" }` for the portal (added).
 
 ### 21.11 Families and organizations
 

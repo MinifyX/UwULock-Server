@@ -23,9 +23,9 @@ UwUMail und UwUAuth für 0.6 gemeinsam umsetzen, stehen in [uwu-api.md](uwu-api.
   offiziellen Clients nie hinschauen.
 - **Eine Datei, ein Container.** SQLite, ein Docker-Image, `install.sh` und `update.sh` wie bei
   UwUSync. PostgreSQL kommt später als zweites Backend hinter derselben Schicht.
-- **Der Browser spricht nie mit Dritten.** Heute liefert `/icons/…` nichts, die Erweiterung zeigt
-  ihr Standard-Symbol. Mit Stufe 4c holt der Server Website-Icons selbst und liefert sie aus
-  (abschaltbar); Web-Tresor und Apps fragen weiter nur den eigenen Server.
+- **Der Browser spricht nie mit Dritten.** Seit Stufe 4c holt der Server Website-Icons selbst und
+  liefert sie unter `/icons/…` aus (abschaltbar); Web-Tresor und Apps fragen nur den eigenen
+  Server.
 
 ## Aufbau
 
@@ -242,11 +242,11 @@ den Tests auf echten Geräten.
       für die Anmeldung per UwUAuth (mit ihr). Tresor, Sends und Kommandozeile sind davon nicht
       betroffen; `uwulock-server settings set adminNetworks '[]'` ist der Weg zurück.
 
-### Stufe 4c — Tresor-Komfort (vor Stufe 5)
+### Stufe 4c — Tresor-Komfort (vor Stufe 5; erster Teil fertig, kommt mit 0.6)
 
 Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach Stufe 4b.
 
-- Icons für Einträge:
+- [x] Icons für Einträge:
   - Automatisch: Der Server holt das Icon der Website (`<link rel="icon">`,
     `apple-touch-icon`, `/favicon.ico`), rechnet es in PNG um und hebt es auf; Web-Tresor,
     UwULock-Client und die offiziellen Clients bekommen es über `/icons/<host>/icon.png`.
@@ -268,46 +268,56 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
     CDN. Im Eintrag wird es wie ein eigenes Icon verschlüsselt gespeichert, damit der Server
     nicht erfährt, welches Icon zu welchem Eintrag gehört.
   - Reihenfolge: eigenes Icon, sonst automatisches, sonst Standard-Symbol.
-- Import aus anderen Passwort-Managern im Web-Tresor, gelesen im Browser (der Server sieht nur
+  (Fertig: `/icons/<host>/icon.png` mit Prüfung jeder aufgelösten Adresse, fester Verbindung
+  zur geprüften, Grenzen für Zeit, Größe und Bildgröße; eigene Icons verschlüsselt unter
+  `/uwu/v1/icons/own`; die Bibliothek sind selfh.st Icons, CC BY 4.0, geprüft am 2026-09-28 —
+  Dashboard Icons und Simple Icons noch nicht; `docs/icons.md`. Im UwULock-Client mit dessen 0.3.)
+- [ ] Import aus anderen Passwort-Managern im Web-Tresor, gelesen im Browser (der Server sieht nur
   Verschlüsseltes): KeePass/KeePassXC (KDBX mit dessen Passwort, und CSV), 1Password (1PUX und
   CSV), Chrome/Edge, Firefox, Apple Passwörter, Proton Pass, LastPass. Mit Vorschau, Ordnern und
   TOTP; was nicht passt, wird zur Notiz. Bitwardens eigene Importer dienen als Maßstab.
-- Reisemodus: Ordner lassen sich als „auf Reisen ausblenden" markieren. Ist der Modus an, lässt
+- [x] Reisemodus: Ordner lassen sich als „auf Reisen ausblenden" markieren. Ist der Modus an, lässt
   der Server deren Einträge (samt Anhängen) aus Sync und allen Abfragen weg; die Apps entfernen
   sie beim nächsten Sync auch lokal — das geht mit den offiziellen Clients. Einschalten auf jedem
   Gerät im Web-Tresor, ausschalten nur mit Master-Passwort und 2FA. Der Server kennt dafür nur
   die Ordner-IDs, nie ihre Namen.
-- Versionen von Einträgen: Bei jeder Änderung hebt der Server den vorigen verschlüsselten Stand
+  (Fertig, auch die Ordner selbst sind ausgeblendet; Leeren des Tresors und neue Schlüssel
+  warten, solange er an ist; `docs/travel-mode.md`. Die Epoche des Delta-Syncs kommt mit Stufe 6.)
+- [x] Versionen von Einträgen: Bei jeder Änderung hebt der Server den vorigen verschlüsselten Stand
   auf (Anzahl bzw. Tage im Admin-Portal einstellbar, zählt zum Speicher); zurückholen im
   Web-Tresor und UwULock-Client. Anhänge nicht. Beim Rotieren der Schlüssel werden die alten
   Stände im Client neu verschlüsselt oder verworfen (noch zu entscheiden); endgültig gelöschte
   Einträge verlieren auch ihre Versionen.
-- Erinnerung ans Erneuern eines Passworts, nur wenn man sie pro Eintrag einstellt (nach N Monaten
+  (Fertig; entschieden: Web-Tresor und UwULock-Client verschlüsseln sie beim Rotieren über
+  `POST /uwu/v1/accounts/rotate-keys` neu, rotiert ein offizieller Client, verwirft der Server
+  die persönlichen.)
+- [x] Erinnerung ans Erneuern eines Passworts, nur wenn man sie pro Eintrag einstellt (nach N Monaten
   oder an einem Datum). Der Server speichert nur Eintrags-ID und Datum und schickt dann eine Mail
   ohne Namen des Eintrags („Ein Eintrag in deinem Tresor ist fällig") mit Link in den
   Web-Tresor; dort und im UwULock-Client sind fällige Einträge markiert.
-- Bericht „2FA möglich, aber nicht eingerichtet" bei der Passwortprüfung: Einträge für Websites,
+  (Fertig: Mail stündlich, Link `#/vault?due=1`, Glocke und Bereich *Fällig* im Web-Tresor.)
+- [ ] Bericht „2FA möglich, aber nicht eingerichtet" bei der Passwortprüfung: Einträge für Websites,
   die laut [2fa.directory](https://2fa.directory/) 2FA anbieten, bei denen aber kein TOTP
   hinterlegt ist, mit Link zur Anleitung der Website. Der Server spiegelt die Liste täglich
   (Lizenz prüfen), verglichen wird im Browser — der Server erfährt nicht, welche Websites im
   Tresor sind.
-- „Eintrag als Send teilen": Ein Knopf am Eintrag (Web-Tresor, UwULock-Client) macht daraus
+- [ ] „Eintrag als Send teilen": Ein Knopf am Eintrag (Web-Tresor, UwULock-Client) macht daraus
   einen Text-Send; man wählt, welche Felder hinein sollen (Benutzername, Passwort, Notiz, eigene
   Felder, nie das TOTP-Geheimnis). Vorgaben: Ablauf nach einem Tag, einmal abrufbar, optional mit
   Passwort. Ein ganz normaler Send, also auch in den offiziellen Clients sichtbar.
-- Sends nur für bestimmte E-Mail-Adressen, wie in den neueren Bitwarden-Clients: Wer den Link
+- [ ] Sends nur für bestimmte E-Mail-Adressen, wie in den neueren Bitwarden-Clients: Wer den Link
   öffnet, gibt seine Adresse an und bekommt einen Code per Mail; erst dann gibt der Server den
   Send heraus (über den `send_access`-Weg, den es schon gibt). Der Server kennt dafür die
   Adressen. Braucht Mail; ohne Mail im Admin-Portal ist die Option aus.
-- Umzug von Bitwarden (Cloud und selbst gehostet): Bitwardens Export lässt Anhänge und
+- [ ] Umzug von Bitwarden (Cloud und selbst gehostet): Bitwardens Export lässt Anhänge und
   Organisationen weg. Der UwULock-Client meldet sich an beiden Servern an und überträgt Einträge,
   Ordner, Anhänge und Sends (entschlüsselt nur im Client, neu verschlüsselt für UwULock);
   Organisationen, sobald sie hier angelegt werden können (Stufe 4d bzw. 5). Braucht ein
   Client-Release.
-- Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
+- [ ] Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
   Kürzeln und einer Übersicht dazu), mit Screenreader nutzbar, ein Modus mit hohem Kontrast; Ziel
   WCAG 2.2 AA, geprüft mit axe im bestehenden Browsertest, ohne ihn spürbar langsamer zu machen.
-- Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
+- [ ] Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
   Web-Tresor, Anmeldung, Send- und Datei-Anfrage-Seiten und Mails; wie bei UwUMail Server (dort
   `docs/branding.md`). Die offiziellen Clients bleiben, wie sie sind. Mit den Send-Domains aus
   Stufe 6 auch pro Domain.

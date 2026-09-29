@@ -75,6 +75,10 @@ Coming with the next release (on `main` already):
   and Matrix, a diagnosis of the setup, and backups on another system (SFTP, S3 or a folder).
 - **File requests** (people without an account send you files, encrypted in their browser) and
   **the emergency sheet** as a PDF for your family.
+- **Icons** for items — the website's, fetched by the server and never by your browser, or your
+  own, encrypted, also from the selfh.st library ([docs/icons.md](docs/icons.md)); **travel
+  mode**, **earlier versions** of items and **reminders** to renew a password
+  ([docs/travel-mode.md](docs/travel-mode.md)).
 
 ## What it will and won't do
 
@@ -83,8 +87,9 @@ Coming with the next release (on `main` already):
 - **The official Bitwarden clients keep working.** That is the contract. UwULock's own features
   live under `/uwu/v1`, where Bitwarden's clients never look.
 - **No favicons from third parties, no telemetry.** The only connections it opens on its own are
-  Let's Encrypt (if you use it) and a daily look at GitHub for a newer release, which
-  `UWULOCK_UPDATE_CHECK=off` stops.
+  Let's Encrypt (if you use it), a daily look at GitHub for a newer release, which
+  `UWULOCK_UPDATE_CHECK=off` stops, and — unless the admin switches them off — websites' icons
+  and the icon library's index, fetched for your apps so they never ask anybody but this server.
 - **Faster than Vaultwarden, measured.** [docs/performance.md](docs/performance.md) has the
   numbers, and CI runs both side by side every week.
 
@@ -189,6 +194,8 @@ GitHub release with the scripts.
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
 - [Backups](docs/backups.md) — on another system: SFTP, S3 or a folder, and back onto a new machine
 - [File requests](docs/file-requests.md) — links through which people without an account send you files
+- [Icons](docs/icons.md) — website icons fetched by the server, own icons and the icon library
+- [Travel mode, versions and reminders](docs/travel-mode.md) — hiding folders at the border, earlier versions of items, renewing passwords
 - [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing
 - [Metrics](docs/metrics.md) and [notifications](docs/notifications.md) — Prometheus, Loki, and alerts to the admins
 - [Performance](docs/performance.md) — how it is measured, and the numbers
