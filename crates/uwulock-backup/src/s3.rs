@@ -16,9 +16,9 @@ use std::time::Duration;
 use reqwest::{Method, StatusCode};
 use ring::hmac;
 
-use crate::Error;
 use crate::format::{hex, sha256_hex};
 use crate::target::S3Target;
+use crate::{Error, MAX_LISTED_BYTES, MAX_LISTED_NAMES};
 
 /// How long an answer may take to begin, on top of the time the upload itself needs.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(120);
@@ -33,10 +33,6 @@ const ERROR_MAX: u64 = 64 * 1024;
 const ATTEMPTS: u32 = 5;
 /// Pages of a listing this follows at most, 1000 names each.
 const MAX_PAGES: usize = 10_000;
-/// Names one listing may bring, and their bytes together: a server that says "truncated" for
-/// ever could otherwise fill the memory at every backup.
-const MAX_LISTED_NAMES: usize = 2_000_000;
-const MAX_LISTED_BYTES: usize = 128 * 1024 * 1024;
 const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /// A connection to a bucket. It holds no socket of its own: every request takes one from the pool.

@@ -9,13 +9,15 @@ use russh::client::{self, Handle};
 use russh::keys::ssh_key::LineEnding;
 use russh::keys::ssh_key::private::{Ed25519Keypair, KeypairData};
 use russh::keys::{HashAlg, PrivateKey, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{RawSftpSession, SftpSession};
 use russh_sftp::protocol::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::Error;
 
 const TIMEOUT: Duration = Duration::from_secs(60);
+/// Pages of a listing that bring no name at all, before the server counts as stalling.
+const EMPTY_PAGES_MAX: usize = 100;
 
 /// How to log in.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,6 +83,9 @@ impl client::Handler for HostKeyCheck {
 
 pub struct Sftp {
     session: SftpSession,
+    /// A second SFTP channel for directory listings, read page by page with a ceiling:
+    /// `SftpSession::read_dir` collects whatever the server sends, for as long as it sends it.
+    lister: RawSftpSession,
     handle: Handle<HostKeyCheck>,
     root: String,
     /// The host key this connection saw, to remember after the first one.
@@ -139,9 +144,14 @@ impl Sftp {
         channel.request_subsystem(true, "sftp").await.map_err(|err| Error::Storage(err.to_string()))?;
         let session = SftpSession::new(channel.into_stream()).await.map_err(sftp_error)?;
         session.set_timeout(TIMEOUT.as_secs());
+        let channel = handle.channel_open_session().await.map_err(|err| Error::Storage(err.to_string()))?;
+        channel.request_subsystem(true, "sftp").await.map_err(|err| Error::Storage(err.to_string()))?;
+        let lister = RawSftpSession::new(channel.into_stream());
+        lister.set_timeout(TIMEOUT.as_secs());
+        lister.init().await.map_err(sftp_error)?;
         let root = target.path.trim_end_matches('/').to_owned();
         let root = if root.is_empty() { ".".to_owned() } else { root };
-        let sftp = Sftp { session, handle, root, host_key };
+        let sftp = Sftp { session, lister, handle, root, host_key };
         sftp.create_dirs("").await?;
         Ok(sftp)
     }
@@ -180,11 +190,48 @@ impl Sftp {
         self.session.rename(self.full(from), self.full(to)).await.map_err(sftp_error)
     }
 
+    /// The names in a directory, with the same ceiling as an S3 listing: a backup server that is
+    /// not ours must not be able to have this one collect names until the memory is gone.
     pub async fn list(&self, dir: &str) -> Result<Vec<String>, Error> {
-        match self.session.read_dir(self.full(dir)).await {
-            Ok(entries) => Ok(entries.map(|entry| entry.file_name()).collect()),
-            Err(err) if not_found(&err) => Ok(Vec::new()),
-            Err(err) => Err(sftp_error(err)),
+        self.list_within(dir, crate::MAX_LISTED_NAMES, crate::MAX_LISTED_BYTES).await
+    }
+
+    /// [`Sftp::list`] with other ceilings, for the tests.
+    #[doc(hidden)]
+    pub async fn list_within(&self, dir: &str, max_names: usize, max_bytes: usize) -> Result<Vec<String>, Error> {
+        let handle = match self.lister.opendir(self.full(dir)).await {
+            Ok(opened) => opened.handle,
+            Err(err) if not_found(&err) => return Ok(Vec::new()),
+            Err(err) => return Err(sftp_error(err)),
+        };
+        let listed = self.pages(&handle, max_names, max_bytes).await;
+        let _ = self.lister.close(handle).await;
+        listed
+    }
+
+    async fn pages(&self, handle: &str, max_names: usize, max_bytes: usize) -> Result<Vec<String>, Error> {
+        let (mut names, mut bytes, mut empty) = (Vec::new(), 0usize, 0usize);
+        loop {
+            let page = match self.lister.readdir(handle).await {
+                Ok(page) => page,
+                Err(russh_sftp::client::error::Error::Status(status)) if status.status_code == StatusCode::Eof => {
+                    return Ok(names);
+                }
+                Err(err) => return Err(sftp_error(err)),
+            };
+            if page.files.is_empty() {
+                empty += 1;
+                if empty > EMPTY_PAGES_MAX {
+                    return Err(Error::Damaged("the backup server never finished its listing".into()));
+                }
+            }
+            for file in page.files {
+                bytes += file.filename.len();
+                names.push(file.filename);
+                if names.len() > max_names || bytes > max_bytes {
+                    return Err(Error::Damaged("the backup server lists more than this reads".into()));
+                }
+            }
         }
     }
 
@@ -213,6 +260,7 @@ impl Sftp {
     }
 
     pub async fn close(self) {
+        let _ = self.lister.close_session();
         let _ = self.session.close().await;
         let _ = self.handle.disconnect(russh::Disconnect::ByApplication, "", "en").await;
     }

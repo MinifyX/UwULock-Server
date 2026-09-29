@@ -47,6 +47,11 @@ const CONFIG_MAX: u64 = 64 * 1024;
 const MANIFEST_MAX: u64 = 256 * 1024 * 1024;
 /// What an object adds to its content: the header, the nonce and the tag.
 const OBJECT_OVERHEAD: u64 = 64;
+/// Names one listing may bring, and their bytes together: a server that says "there is more"
+/// for ever could otherwise fill the memory at every backup. A repository of a terabyte in
+/// 64 KiB chunks has about 16 million objects over 256 folders, some 65,000 each.
+pub(crate) const MAX_LISTED_NAMES: usize = 2_000_000;
+pub(crate) const MAX_LISTED_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
@@ -15,6 +16,13 @@ const SETTINGS_KEY: &str = "offsite.settings";
 const STATUS_KEY: &str = "offsite.status";
 /// After a failed run, the next attempt waits this long.
 const RETRY_SECS: i64 = 3600;
+/// The longest a backup, or fetching a snapshot, may take. Each request to the backup server has
+/// its own timeout, but a server that answers just in time, slowly, for ever, would otherwise hold
+/// the lock that restores need, and skip every nightly run after it. A first backup of 100 GB
+/// at 5 MB/s takes under 6 hours.
+const RUN_DEADLINE: Duration = Duration::from_secs(12 * 3600);
+/// The longest listing the snapshots may take, for the portal.
+const LIST_DEADLINE: Duration = Duration::from_secs(10 * 60);
 /// The most of each kind of retention, and the latest a warning may come.
 const RETENTION_MAX: usize = 1000;
 const WARN_MAX_HOURS: u32 = 24 * 90;
@@ -115,6 +123,8 @@ struct Inner {
     busy: Arc<Mutex<()>>,
     /// Whether the one holding `busy` is a backup.
     backing_up: AtomicBool,
+    /// [`RUN_DEADLINE`], shorter in tests.
+    deadline: Duration,
 }
 
 /// The off-site backups of one server. Cheap to clone.
@@ -155,8 +165,17 @@ impl Offsite {
                 wakeup: Notify::new(),
                 busy: Arc::new(Mutex::new(())),
                 backing_up: AtomicBool::new(false),
+                deadline: RUN_DEADLINE,
             }),
         }
+    }
+
+    /// The same, with another deadline for a run: for tests.
+    #[doc(hidden)]
+    pub fn with_deadline(store: Store, data_dir: &Path, deadline: Duration) -> Offsite {
+        let mut offsite = Offsite::new(store, data_dir, "lock.example.com", "0.0.0-test");
+        Arc::get_mut(&mut offsite.inner).expect("not shared yet").deadline = deadline;
+        offsite
     }
 
     pub async fn settings(&self) -> Result<OffsiteSettings, Error> {
@@ -252,7 +271,7 @@ impl Offsite {
         status.finished = None;
         self.save_status(&status).await;
 
-        let result = async {
+        let run = async {
             let mut settings = self.settings().await?;
             if settings.plain_elsewhere() {
                 return Err(Error::Config(PLAIN_ELSEWHERE.into()));
@@ -267,8 +286,9 @@ impl Offsite {
             let report = crate::backup(&source, &repo, settings.retention, now()).await;
             repo.storage.close().await;
             report
-        }
-        .await;
+        };
+        // Dropped at the deadline, the run lets go of the connection and the lock with it.
+        let result = within(self.inner.deadline, "the backup", run).await;
         let _ = tokio::fs::remove_dir_all(self.inner.data_dir.join(TEMP_DIR)).await;
         let finished = now();
         match &result {
@@ -291,11 +311,14 @@ impl Offsite {
 
     /// The snapshots in the repository, newest first.
     pub async fn snapshots(&self) -> Result<Vec<Manifest>, Error> {
-        let mut settings = self.settings().await?;
-        let repo = self.open(&mut settings, false).await?;
-        let listing = repo.listing().await;
-        repo.storage.close().await;
-        listing
+        within(LIST_DEADLINE.min(self.inner.deadline), "listing the snapshots", async {
+            let mut settings = self.settings().await?;
+            let repo = self.open(&mut settings, false).await?;
+            let listing = repo.listing().await;
+            repo.storage.close().await;
+            listing
+        })
+        .await
     }
 
     /// Fetches a snapshot's database for a restore into the running server.
@@ -306,6 +329,10 @@ impl Offsite {
             .clone()
             .try_lock_owned()
             .map_err(|_| Error::Busy("an off-site backup or restore is running already".into()))?;
+        within(self.inner.deadline, "fetching the snapshot", self.fetch_locked(snapshot, busy)).await
+    }
+
+    async fn fetch_locked(&self, snapshot: &str, busy: OwnedMutexGuard<()>) -> Result<Fetched, Error> {
         let mut settings = self.settings().await?;
         let repo = self.open(&mut settings, false).await?;
         if !repo.config.encrypted {
@@ -363,6 +390,17 @@ impl Offsite {
         let hours = (now - from) / 3600;
         (hours >= i64::from(settings.warn_after_hours)).then_some(hours)
     }
+}
+
+/// `work`, given up once `deadline` passed.
+async fn within<T>(
+    deadline: Duration,
+    what: &str,
+    work: impl std::future::Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    tokio::time::timeout(deadline, work).await.unwrap_or_else(|_| {
+        Err(Error::Storage(format!("{what} took longer than {} minutes and was stopped", deadline.as_secs() / 60)))
+    })
 }
 
 /// Says "a backup is running" for as long as it lives.

@@ -132,3 +132,26 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     }
     found
 }
+
+/// A run that goes on and on is stopped at its deadline, and lets go of the lock that restores
+/// and the next nightly run need (review finding M2).
+#[tokio::test]
+async fn a_run_past_its_deadline_is_stopped() {
+    let server = Server::new().await;
+    let target = tempfile::tempdir().unwrap();
+    let offsite =
+        uwulock_backup::Offsite::with_deadline(server.store.clone(), server.data(), std::time::Duration::ZERO);
+    let settings = uwulock_backup::OffsiteSettings {
+        enabled: true,
+        target: Some(Target::Folder(FolderTarget { path: target.path().display().to_string() })),
+        key: Some(RepoKey::generate().recovery_text()),
+        ..Default::default()
+    };
+    offsite.save_settings(&settings).await.unwrap();
+    let error = offsite.run_now().await.unwrap_err();
+    assert!(error.to_string().contains("was stopped"), "{error}");
+    assert!(!offsite.is_running());
+    assert!(offsite.status().await.last_error.unwrap().contains("was stopped"));
+    let again = offsite.run_now().await.unwrap_err();
+    assert!(!matches!(again, Error::Busy(_)), "the lock is free again: {again}");
+}

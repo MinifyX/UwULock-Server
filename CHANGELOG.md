@@ -220,6 +220,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   (token key, `secret.key`, Let's Encrypt keys), and never back into the running server from the
   portal. Existing unencrypted SFTP/S3 setups stop and raise the "backup failed" alert until
   they are saved again with encryption.
+- Off-site backups over SFTP read directory listings page by page with the same ceiling as S3
+  (2 million names, 128 MiB), and every run has a deadline (12 hours; listing the snapshots 10
+  minutes): a hostile backup server can no longer fill the memory or hold the backup lock for
+  ever.
 
 ## 0.4.0-beta.2
 

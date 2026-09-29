@@ -38,6 +38,11 @@ Every snapshot is complete on its own. The retention rules keep the newest snaps
 the last **7 days, 4 weeks and 6 months** (changeable), and remove what no remaining snapshot
 needs.
 
+A backup server that is not ours cannot have this one read without end: files, manifests and
+listings have ceilings (a directory listing at most 2 million names), and a run stops after 12
+hours (listing the snapshots in the portal after 10 minutes), letting go of the lock restores
+need.
+
 ## Encryption
 
 Backups are encrypted by default (ChaCha20-Poly1305, with keyed names, so the backup server sees
