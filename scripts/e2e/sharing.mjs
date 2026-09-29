@@ -240,9 +240,12 @@ try {
   await friend.getByRole('heading', { name: 'Code aus der Mail' }).waitFor();
   await checkA11y(friend, 'Send page asking for the code');
   const sent = await smtp.mailTo('friend@example.com');
-  const code = subject(sent.text).match(/(\d{6})\s*$/)?.[1];
+  // Eight digits since 0.6.0-beta.2 (SV-L24).
+  const code = subject(sent.text).match(/\b(\d{8})\s*$/)?.[1];
   if (!code) throw new Error(`no code in “${subject(sent.text)}”`);
-  await friend.getByLabel('Code', { exact: true }).fill(code === '000000' ? '111111' : '000000');
+  await friend
+    .getByLabel('Code', { exact: true })
+    .fill(code === '00000000' ? '11111111' : '00000000');
   await friend.getByRole('button', { name: 'Öffnen' }).click();
   await friend.getByText('Der Code stimmt nicht oder ist abgelaufen.').waitFor();
   await friend.getByLabel('Code', { exact: true }).fill(code);
