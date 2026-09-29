@@ -251,7 +251,7 @@ pub(crate) fn member_users(conn: &rusqlite::Connection, org_id: &str) -> rusqlit
         .collect()
 }
 
-fn bump_org(tx: &Transaction<'_>, org_id: &str) -> rusqlite::Result<Vec<String>> {
+pub(crate) fn bump_org(tx: &Transaction<'_>, org_id: &str) -> rusqlite::Result<Vec<String>> {
     let users = member_users(tx, org_id)?;
     for user in &users {
         bump_revision(tx, user)?;
@@ -265,6 +265,7 @@ impl Store {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
             let memberships = memberships(conn, &user_id)?;
+            let hidden = crate::travel::hidden_folders(conn, &user_id)?;
             let mut vault = OrgVault::default();
             let preferences: HashMap<String, (Option<String>, bool)> = conn
                 .prepare_cached("SELECT cipher_id, folder_id, favorite FROM cipher_preferences WHERE user_id = ?1")?
@@ -303,6 +304,9 @@ impl Store {
                         let collection_ids = in_collections.remove(&cipher.id).unwrap_or_default();
                         let Some(access) = access_to(member, &reach, &collection_ids) else { continue };
                         let (folder, favorite) = preferences.get(&cipher.id).cloned().unwrap_or((None, false));
+                        if folder.as_ref().is_some_and(|folder| hidden.contains(folder)) {
+                            continue;
+                        }
                         cipher.folder_id = folder;
                         cipher.favorite = favorite;
                         vault.ciphers.push(OrgCipher { cipher, collection_ids, access });
@@ -358,6 +362,11 @@ impl Store {
                 )
                 .optional()?;
             let (folder, favorite) = preference.unwrap_or((None, false));
+            if let Some(folder) = &folder
+                && crate::travel::hidden_folders(conn, &user_id)?.contains(folder)
+            {
+                return Ok(None);
+            }
             cipher.folder_id = folder;
             cipher.favorite = favorite;
             Ok(Some(OrgCipher { cipher, collection_ids, access }))
@@ -392,6 +401,7 @@ impl Store {
         attachments: Vec<crate::AttachmentKey>,
     ) -> Result<(Cipher, Vec<String>)> {
         let user_id = user_id.to_string();
+        let rule = self.version_rule();
         let (saved, users) = self
             .sqlite_write(move |tx| {
                 let org = cipher.organization_id.clone().unwrap_or_default();
@@ -399,7 +409,10 @@ impl Store {
                 cipher.favorite = false;
                 cipher.user_id = String::new();
                 cipher.revision = clock::now();
+                let before = crate::versions::current(tx, &cipher.id)?
+                    .filter(|before| before.organization_id.as_deref() == Some(org.as_str()));
                 write_cipher(tx, &cipher)?;
+                crate::versions::changed(tx, rule, before.as_ref(), &cipher)?;
                 crate::attachments::set_keys(tx, &cipher.id, &attachments)?;
                 if let Some(ids) = collection_ids {
                     tx.execute("DELETE FROM collection_ciphers WHERE cipher_id = ?1", [&cipher.id])?;
@@ -517,6 +530,9 @@ impl Store {
                     ],
                 )?;
                 crate::attachments::set_keys(tx, &cipher.id, &attachments)?;
+                // Under the account's keys, which the organisation's members do not have.
+                tx.execute("DELETE FROM cipher_versions WHERE cipher_id = ?1", [&cipher.id])?;
+                tx.execute("DELETE FROM own_icons WHERE cipher_id = ?1", [&cipher.id])?;
                 for id in &collection_ids {
                     tx.execute(
                         "INSERT OR IGNORE INTO collection_ciphers (collection_id, cipher_id) \

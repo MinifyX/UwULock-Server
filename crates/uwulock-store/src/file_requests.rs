@@ -123,7 +123,10 @@ const USER_BYTES: &str = "SELECT \
         WHERE user_id = ?1 AND type = 1) \
      + (SELECT coalesce(sum(f.size), 0) FROM file_request_files f \
         JOIN file_request_submissions s ON s.id = f.submission_id \
-        JOIN file_requests r ON r.id = s.request_id WHERE r.user_id = ?1)";
+        JOIN file_requests r ON r.id = s.request_id WHERE r.user_id = ?1) \
+     + (SELECT coalesce(sum(size), 0) FROM cipher_versions WHERE user_id = ?1) \
+     + (SELECT coalesce(sum(length(i.data)), 0) FROM own_icons i JOIN ciphers c ON c.id = i.cipher_id \
+        WHERE c.user_id = ?1)";
 
 fn files_of(conn: &rusqlite::Connection, submission_id: &str) -> rusqlite::Result<Vec<RequestFile>> {
     conn.prepare_cached(
@@ -237,6 +240,10 @@ impl Store {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {
             tx.execute("DELETE FROM extras_keys WHERE user_id = ?1", [&user_id])?;
+            tx.execute(
+                "DELETE FROM own_icons WHERE key_type = 'extras' AND cipher_id IN (SELECT id FROM ciphers WHERE user_id = ?1)",
+                [&user_id],
+            )?;
             tx.execute(
                 "UPDATE file_requests SET name = NULL, link_secret = NULL, revision = ?2 WHERE user_id = ?1",
                 params![user_id, clock::now()],
@@ -490,7 +497,8 @@ impl Store {
         Ok(Some(cipher))
     }
 
-    /// Bytes the account's attachments, Send files and file requests take together.
+    /// Bytes the account's attachments, Send files, file requests, versions and own icons take
+    /// together.
     pub async fn storage_used(&self, user_id: &str) -> Result<i64> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| conn.query_row(USER_BYTES, [user_id], |row| row.get(0))).await

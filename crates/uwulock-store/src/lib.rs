@@ -17,15 +17,19 @@ pub mod backups;
 pub mod clock;
 pub mod emergency;
 pub mod file_requests;
+pub mod icons;
 mod migrate;
 mod migrations;
 pub mod notices;
 pub mod organizations;
 mod passkeys;
+pub mod reminders;
 pub mod sends;
 mod sqlite;
 pub mod sso;
+pub mod travel;
 mod vault;
+pub mod versions;
 
 pub use accounts::{
     CODE_ATTEMPTS, CodeRefusal, Device, DeviceLogin, Invitation, Kdf, NewUser, SessionUser, TwoFactor, User,
@@ -37,13 +41,17 @@ pub use auth_requests::{AUTH_REQUEST_SECONDS, AuthRequest};
 pub use backup::{restore, schema_of, setting_in};
 pub use emergency::EmergencyAccess;
 pub use file_requests::{ExtrasKey, FileRequest, FileRequestSummary, RequestFile, Submission};
+pub use icons::OwnIcon;
 pub use migrate::{Migration, MovedDevice, MovedTwoFactor, MovedUser};
 pub use migrations::SCHEMA_VERSION;
 pub use notices::{Channel, NOTICE_DAYS, Notice};
 pub use organizations::{Access, OrgCipher, OrgVault};
 pub use passkeys::{MAX_PASSKEYS, Passkey};
 pub use sso::{ScimGroup, ScimUser, SsoCode, SsoIdentity, SsoState};
-pub use vault::{Bulk, Cipher, Folder, Rotation, VaultContents};
+pub use reminders::Reminder;
+pub use travel::{Travel, TravelRefusal};
+pub use vault::{Bulk, Cipher, Folder, Rotation, RotationExtras, RotationOutcome, VaultContents};
+pub use versions::{RestoreRefusal, Version, VersionRule};
 
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -93,6 +101,8 @@ pub struct Store {
     /// Who the requests are from, by user id, and since when that is known: see
     /// [`Store::session_user`].
     sessions: Arc<RwLock<Sessions>>,
+    /// How many versions of an item are kept, and how long: the admin's settings.
+    version_rule: Arc<RwLock<versions::VersionRule>>,
 }
 
 /// Who the requests are from, in memory.
@@ -112,7 +122,7 @@ impl Store {
     /// Open (or make) the SQLite database at `path` and bring its schema up to date.
     pub fn open_sqlite(path: &Path, options: &Options) -> Result<Self> {
         let sqlite = sqlite::Sqlite::open(path, options)?;
-        Ok(Self { backend: Arc::new(Backend::Sqlite(sqlite)), sessions: Arc::default() })
+        Ok(Self { backend: Arc::new(Backend::Sqlite(sqlite)), sessions: Arc::default(), version_rule: Arc::default() })
     }
 
     /// Whether the database answers. What `/healthz` asks.
