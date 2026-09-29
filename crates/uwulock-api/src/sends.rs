@@ -34,7 +34,8 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/sends/file/v2", post(create_file))
         .route("/api/sends/file", post(legacy_file))
         .route("/api/sends/{id}", get(one).put(update).delete(delete))
-        .route("/api/sends/{id}/remove-password", put(remove_password))
+        .route("/api/sends/{id}/remove-password", put(remove_auth))
+        .route("/api/sends/{id}/remove-auth", put(remove_auth))
         .route("/api/sends/{id}/file/{file}", get(renew))
         .route("/api/sends/access", post(access))
         .route("/api/sends/access/{access_id}", post(access_legacy))
@@ -86,6 +87,23 @@ fn data(send: &Send) -> Value {
     data
 }
 
+/// Bitwarden's `authType`: 0 only given addresses, 1 a password, 2 anybody with the link.
+fn auth_type(send: &Send) -> i64 {
+    if send.emails.is_some() {
+        EMAIL
+    } else if send.password_hash.is_some() {
+        PASSWORD
+    } else {
+        NONE
+    }
+}
+
+const EMAIL: i64 = 0;
+const PASSWORD: i64 = 1;
+const NONE: i64 = 2;
+/// The most the list of addresses may hold, as stored.
+const EMAILS_CHARS: usize = 4000;
+
 /// A Send, as its owner's clients read it.
 pub(crate) fn render(send: &Send) -> Value {
     let data = data(send);
@@ -102,8 +120,8 @@ pub(crate) fn render(send: &Send) -> Value {
         "accessCount": send.access_count,
         // Only whether there is one matters to the clients; the hash stays here.
         "password": send.password_hash.as_ref().map(|_| "set"),
-        "authType": if send.password_hash.is_some() { 1 } else { 2 },
-        "emails": null,
+        "authType": auth_type(send),
+        "emails": send.emails,
         "disabled": send.disabled,
         "hideEmail": send.hide_email,
         "revisionDate": send.revision,
@@ -125,6 +143,7 @@ async fn render_access(state: &AppState, send: &Send) -> ApiResult<Value> {
         "file": if send.kind == FILE { data } else { Value::Null },
         "expirationDate": send.expiration,
         "creatorIdentifier": creator,
+        "authType": auth_type(send),
         "object": "send-access",
     }))
 }
@@ -159,6 +178,8 @@ pub(crate) struct SendData {
     hide_email: Option<bool>,
     #[serde(default)]
     emails: Option<String>,
+    #[serde(default, deserialize_with = "number_or_string")]
+    auth_type: Option<i64>,
     name: String,
     #[serde(default)]
     notes: Option<String>,
@@ -187,8 +208,23 @@ fn tidy(value: Option<Value>, keys: &[&str]) -> ApiResult<String> {
 /// `data` over `into`: everything a Send is, except its id, owner, file and counts. The
 /// password is hashed here; none given keeps the one there is.
 pub(crate) async fn apply(state: &AppState, data: SendData, mut into: Send) -> ApiResult<Send> {
-    if data.emails.is_some() {
-        return Err(ApiError::bad("Sends that ask for a code by mail are not available on this server."));
+    let emails = address_list(data.emails.as_deref())?;
+    let password = data.password.as_deref().filter(|password| !password.is_empty());
+    // Without one said, what came decides; with nothing, it stays as it is.
+    let auth = match data.auth_type {
+        Some(kind @ (EMAIL | PASSWORD | NONE)) => Some(kind),
+        Some(_) => return Err(ApiError::bad("Invalid authType.")),
+        None if emails.is_some() => Some(EMAIL),
+        None if password.is_some() => Some(PASSWORD),
+        None => None,
+    };
+    if auth == Some(EMAIL) {
+        if emails.is_none() {
+            return Err(ApiError::bad("Name at least one email address."));
+        }
+        if !state.mailer.enabled() {
+            return Err(ApiError::bad("Sends for given addresses need the server to send mail.").code("mail_off"));
+        }
     }
     if into.kind != data.kind {
         return Err(ApiError::bad("Sends can't change type"));
@@ -223,10 +259,47 @@ pub(crate) async fn apply(state: &AppState, data: SendData, mut into: Send) -> A
     into.deletion = clock::format(deletion);
     into.disabled = data.disabled;
     into.hide_email = data.hide_email.unwrap_or(false);
-    if let Some(password) = data.password.filter(|password| !password.is_empty()) {
-        into.password_hash = Some(auth::hash_password(state.config.hash_cost, &password).await?);
+    match auth {
+        Some(EMAIL) => {
+            into.emails = emails;
+            into.password_hash = None;
+        }
+        Some(PASSWORD) => {
+            into.emails = None;
+            if let Some(password) = password {
+                into.password_hash = Some(auth::hash_password(state.config.hash_cost, password).await?);
+            }
+        }
+        Some(_) => {
+            into.emails = None;
+            into.password_hash = None;
+        }
+        None => {}
     }
     Ok(into)
+}
+
+/// The addresses of a Send as they are kept: each trimmed and in lower case, comma-separated.
+/// `None` for none; 400 for something that is not a list of addresses.
+fn address_list(raw: Option<&str>) -> ApiResult<Option<String>> {
+    let Some(raw) = raw else { return Ok(None) };
+    if raw.trim_start().starts_with("P|") {
+        return Err(ApiError::bad("The addresses have to be plain text."));
+    }
+    let emails: Vec<String> =
+        raw.split(',').map(|email| email.trim().to_lowercase()).filter(|email| !email.is_empty()).collect();
+    for email in &emails {
+        let (local, domain) = email.split_once('@').unwrap_or_default();
+        let odd = email.chars().any(|c| c.is_whitespace() || c.is_control());
+        if local.is_empty() || !domain.contains('.') || domain.starts_with('.') || domain.ends_with('.') || odd {
+            return Err(ApiError::bad(format!("{email} is not an email address.")));
+        }
+    }
+    let list = emails.join(",");
+    if list.len() > EMAILS_CHARS {
+        return Err(ApiError::bad(format!("The addresses can have at most {EMAILS_CHARS} characters together.")));
+    }
+    Ok((!list.is_empty()).then_some(list))
 }
 
 fn new_send(user_id: &str, kind: i64) -> Send {
@@ -249,6 +322,7 @@ fn new_send(user_id: &str, kind: i64) -> Send {
         disabled: false,
         hide_email: false,
         uploaded: false,
+        emails: None,
     }
 }
 
@@ -399,13 +473,16 @@ async fn delete(State(state): State<AppState>, session: Session, Path(id): Path<
     Ok(StatusCode::OK)
 }
 
-async fn remove_password(
+/// Anybody with the link may open it: no password, no addresses. Also under Bitwarden's older
+/// name, `remove-password`.
+async fn remove_auth(
     State(state): State<AppState>,
     session: Session,
     Path(id): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let mut send = own(&state, &session, &id).await?;
     send.password_hash = None;
+    send.emails = None;
     let send = save(&state, send).await?;
     notify::send(&state, &session.user.id, Some(&session), Kind::SendUpdate, &send.id, &send.revision);
     Ok(Json(render(&send)))
@@ -416,6 +493,10 @@ async fn remove_password(
 /// Whether `password` opens `send`. Wrong ones count per Send, so nobody guesses a short
 /// password from many addresses.
 async fn check_password(state: &AppState, send: &Send, password: Option<&str>) -> Result<(), PasswordRefusal> {
+    // Only the grant with the mailed code opens those.
+    if send.emails.is_some() {
+        return Err(PasswordRefusal::NeedsCode);
+    }
     let Some(hash) = &send.password_hash else { return Ok(()) };
     let Some(password) = password.filter(|password| !password.is_empty()) else { return Err(PasswordRefusal::Missing) };
     let key = format!("send:{}", send.id);
@@ -434,6 +515,8 @@ async fn check_password(state: &AppState, send: &Send, password: Option<&str>) -
 
 pub(crate) enum PasswordRefusal {
     Missing,
+    /// A Send only given addresses may open.
+    NeedsCode,
     Wrong,
     TooMany,
 }
@@ -447,6 +530,10 @@ struct AccessData {
 fn refused(refusal: PasswordRefusal) -> ApiError {
     match refusal {
         PasswordRefusal::Missing => ApiError::new(StatusCode::UNAUTHORIZED, "Password not provided"),
+        PasswordRefusal::NeedsCode => ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            "This Send opens only with a code sent by mail. Open it in the web vault or a current Bitwarden app.",
+        ),
         PasswordRefusal::Wrong => ApiError::bad("Invalid password."),
         PasswordRefusal::TooMany => ApiError::too_many("Too many wrong passwords. Wait a few minutes and try again."),
     }
@@ -543,13 +630,22 @@ async fn access_file(
     file_download(&state, &send, &file).await
 }
 
-/// The identity endpoint's `send_access` grant: a token for one Send, after its password.
-/// Answers the way Bitwarden's newest clients expect, errors included.
+/// What the `send_access` grant was given besides the Send: a password's hash, or an address
+/// and perhaps the code mailed to it.
+pub(crate) struct GrantProof<'a> {
+    pub password: Option<&'a str>,
+    pub email: Option<&'a str>,
+    pub otp: Option<&'a str>,
+}
+
+/// The identity endpoint's `send_access` grant: a token for one Send, after its password or the
+/// code mailed to one of its addresses. Answers the way Bitwarden's newest clients expect,
+/// errors included.
 pub(crate) async fn grant(
     state: &AppState,
     ip: std::net::IpAddr,
     access_id: Option<&str>,
-    password: Option<&str>,
+    proof: GrantProof<'_>,
 ) -> ApiResult<Response> {
     use axum::response::IntoResponse;
     if !state.limits.anonymous.check(ip) {
@@ -560,27 +656,50 @@ pub(crate) async fn grant(
         error.status = StatusCode::NOT_FOUND;
         error
     };
+    let request = |kind: &str, description: &str| {
+        ApiError::json(json!({
+            "error": "invalid_request",
+            "error_description": description,
+            "send_access_error_type": kind,
+        }))
+    };
     let send = match access_id {
         Some(access_id) => by_access_id(state, access_id).await.map_err(|_| invalid("send_id_invalid"))?,
-        None => {
-            return Err(ApiError::json(
-                json!({ "error": "invalid_request", "send_access_error_type": "send_id_required" }),
-            ));
-        }
+        None => return Err(request("send_id_required", "send_id is required.")),
     };
     if !send.accessible() {
         return Err(invalid("send_id_invalid"));
     }
-    match check_password(state, &send, password).await {
-        Ok(()) => {}
-        Err(PasswordRefusal::Missing) => {
-            return Err(ApiError::json(
-                json!({ "error": "invalid_request", "send_access_error_type": "password_hash_b64_required" }),
-            ));
+    let mut proven = None;
+    if let Some(list) = &send.emails {
+        let Some(email) = proof.email.map(|email| email.trim().to_lowercase()).filter(|email| !email.is_empty()) else {
+            return Err(request("email_required", "email is required."));
+        };
+        let listed = list.split(',').any(|entry| entry == email);
+        match proof.otp {
+            Some(otp) if listed && state.send_codes.check(&send.id, &email, otp) => proven = Some(email),
+            Some(_) => return Err(request("email_and_otp_required", "email and otp are required.")),
+            None => {
+                // Only addresses on the list get a mail; the answer is the same for all, so the
+                // list stays unknown.
+                if listed && state.limits.mail.take(email.clone()) {
+                    mail_code(state, &send.id, &email);
+                }
+                return Err(request("email_and_otp_required", "email and otp are required."));
+            }
         }
-        Err(PasswordRefusal::Wrong) => return Err(invalid("password_hash_b64_invalid")),
-        Err(PasswordRefusal::TooMany) => {
-            return Err(ApiError::too_many("Too many wrong passwords. Wait a few minutes and try again."));
+    } else {
+        match check_password(state, &send, proof.password).await {
+            Ok(()) => {}
+            Err(PasswordRefusal::Missing | PasswordRefusal::NeedsCode) => {
+                return Err(ApiError::json(
+                    json!({ "error": "invalid_request", "send_access_error_type": "password_hash_b64_required" }),
+                ));
+            }
+            Err(PasswordRefusal::Wrong) => return Err(invalid("password_hash_b64_invalid")),
+            Err(PasswordRefusal::TooMany) => {
+                return Err(ApiError::too_many("Too many wrong passwords. Wait a few minutes and try again."));
+            }
         }
     }
     // A text is opened now; a file is counted when its download link is asked for.
@@ -590,7 +709,7 @@ pub(crate) async fn grant(
         }
         opened(state, &send);
     }
-    let (token, expires_in) = state.tokens.send_token(&send.id);
+    let (token, expires_in) = state.tokens.send_token(&send.id, proven.as_deref());
     Ok(Json(json!({
         "access_token": token,
         "expires_in": expires_in,
@@ -598,6 +717,19 @@ pub(crate) async fn grant(
         "scope": "api.send.access",
     }))
     .into_response())
+}
+
+/// A new code for `email`, mailed on the side so the answer takes as long whether it went or
+/// not; nothing when the address had its mails for now.
+fn mail_code(state: &AppState, send_id: &str, email: &str) {
+    let Some(code) = state.send_codes.issue(send_id, email) else { return };
+    let (mailer, email) = (state.mailer.clone(), email.to_string());
+    let language = state.settings().default_language;
+    tokio::spawn(async move {
+        if let Err(error) = mailer.send(&email, &uwulock_mail::Mail::SendCode { code }, language).await {
+            tracing::warn!(%error, "the code for a Send could not be mailed");
+        }
+    });
 }
 
 #[derive(Deserialize)]
@@ -820,5 +952,170 @@ mod tests {
             uuid::Uuid::parse_str(id).unwrap().to_bytes_le(),
         );
         assert!(super::ids_for(&dotnet).contains(&id.to_string()));
+    }
+
+    fn grant_form<'a>(access_id: &'a str, extra: &[(&'static str, &'a str)]) -> Vec<(&'static str, &'a str)> {
+        let mut form = vec![
+            ("grant_type", "send_access"),
+            ("client_id", "send"),
+            ("scope", "api.send.access"),
+            ("send_id", access_id),
+        ];
+        form.extend_from_slice(extra);
+        form
+    }
+
+    /// The code in the mail to `email`, the last one that went there.
+    fn code_for(server: &TestServer, email: &str) -> String {
+        let mail = server.mails().into_iter().rev().find(|mail| mail.to == email).expect("a mail");
+        mail.subject.rsplit(' ').next().unwrap().to_string()
+    }
+
+    #[tokio::test]
+    async fn a_send_for_given_addresses_opens_with_the_mailed_code() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let mut send = text_send();
+        send["emails"] = json!(" Friend@Example.com, other@example.net ");
+        send["password"] = json!("ignored-for-addresses");
+        let created = json(server.call("POST", "/api/sends", Some(&account.token), send).await).await;
+        assert_eq!(created["authType"], 0);
+        assert_eq!(created["emails"], "friend@example.com,other@example.net");
+        assert!(created["password"].is_null(), "addresses exclude a password");
+        let synced = json(server.get_as(&account.token, "/api/sync").await).await;
+        assert_eq!(synced["sends"][0]["emails"], "friend@example.com,other@example.net");
+        let access_id = created["accessId"].as_str().unwrap().to_string();
+
+        // Without an address; then with one not on the list: the same answer, no mail.
+        let response = server.form("/identity/connect/token", &grant_form(&access_id, &[])).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = json(response).await;
+        assert_eq!(body["error"], "invalid_request");
+        assert_eq!(body["send_access_error_type"], "email_required");
+        let stranger =
+            server.form("/identity/connect/token", &grant_form(&access_id, &[("email", "stranger@example.org")])).await;
+        let stranger = json(stranger).await;
+        assert_eq!(stranger["send_access_error_type"], "email_and_otp_required");
+        let asked =
+            server.form("/identity/connect/token", &grant_form(&access_id, &[("email", "FRIEND@example.com")])).await;
+        assert_eq!(json(asked).await, stranger, "nobody learns the list");
+        let mail = server.wait_for_mail(|mail| mail.to == "friend@example.com").await;
+        assert!(mail.subject.starts_with("Dein Code für den Send: "), "{}", mail.subject);
+        assert!(server.mails().iter().all(|mail| mail.to != "stranger@example.org"));
+
+        // Asked again at once: no second mail.
+        server.form("/identity/connect/token", &grant_form(&access_id, &[("email", "friend@example.com")])).await;
+        tokio::task::yield_now().await;
+        assert_eq!(server.mails().iter().filter(|mail| mail.to == "friend@example.com").count(), 1);
+
+        let code = code_for(&server, "friend@example.com");
+        let wrong = if code == "000000" { "111111" } else { "000000" };
+        let response = server
+            .form(
+                "/identity/connect/token",
+                &grant_form(&access_id, &[("email", "friend@example.com"), ("otp", wrong)]),
+            )
+            .await;
+        assert_eq!(json(response).await["send_access_error_type"], "email_and_otp_required");
+        // The code of one address does not open for another.
+        let response = server
+            .form(
+                "/identity/connect/token",
+                &grant_form(&access_id, &[("email", "other@example.net"), ("otp", code.as_str())]),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let response = server
+            .form(
+                "/identity/connect/token",
+                &grant_form(&access_id, &[("email", "friend@example.com"), ("otp", code.as_str())]),
+            )
+            .await;
+        assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+        let token = json(response).await["access_token"].as_str().unwrap().to_string();
+        let request = Request::post("/api/sends/access")
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let opened = json(server.send(request).await).await;
+        assert_eq!(opened["authType"], 0);
+        assert!(opened.get("emails").is_none(), "the recipient never sees the list");
+        assert_eq!(opened["text"]["text"], "2.text|text|text");
+
+        // The code is used up, and the old way does not open it at all.
+        let again = server
+            .form(
+                "/identity/connect/token",
+                &grant_form(&access_id, &[("email", "friend@example.com"), ("otp", code.as_str())]),
+            )
+            .await;
+        assert_eq!(again.status(), StatusCode::BAD_REQUEST);
+        let legacy = server.call("POST", &format!("/api/sends/access/{access_id}"), None, json!({})).await;
+        assert_eq!(legacy.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn addresses_and_passwords_replace_each_other() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let mut send = text_send();
+        send["password"] = json!("hash");
+        let created = json(server.call("POST", "/api/sends", Some(&account.token), send.clone()).await).await;
+        let id = created["id"].as_str().unwrap().to_string();
+        assert_eq!(created["authType"], 1);
+
+        // A change without authType and without a password (a key rotation, an older client)
+        // keeps what there is.
+        let mut change = text_send();
+        change["name"] = json!("2.renamed|r|r");
+        let kept = json(server.call("PUT", &format!("/api/sends/{id}"), Some(&account.token), change).await).await;
+        assert_eq!(kept["authType"], 1);
+
+        let mut change = text_send();
+        change["authType"] = json!(0);
+        change["emails"] = json!("friend@example.com");
+        let emails = json(server.call("PUT", &format!("/api/sends/{id}"), Some(&account.token), change).await).await;
+        assert_eq!(emails["authType"], 0);
+        assert!(emails["password"].is_null());
+
+        let mut change = text_send();
+        change["authType"] = json!(2);
+        let none = json(server.call("PUT", &format!("/api/sends/{id}"), Some(&account.token), change).await).await;
+        assert_eq!(none["authType"], 2);
+        assert!(none["emails"].is_null());
+
+        let mut change = text_send();
+        change["emails"] = json!("friend@example.com");
+        server.call("PUT", &format!("/api/sends/{id}"), Some(&account.token), change).await;
+        let removed =
+            json(server.call("PUT", &format!("/api/sends/{id}/remove-auth"), Some(&account.token), json!({})).await)
+                .await;
+        assert_eq!(removed["authType"], 2);
+
+        for bad in [json!("not-an-address"), json!("P|abc"), json!(format!("{}@example.com", "a".repeat(4000)))] {
+            let mut change = text_send();
+            change["emails"] = bad.clone();
+            let response = server.call("PUT", &format!("/api/sends/{id}"), Some(&account.token), change).await;
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{bad}");
+        }
+        let mut change = text_send();
+        change["authType"] = json!(0);
+        let response = server.call("PUT", &format!("/api/sends/{id}"), Some(&account.token), change).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "addresses needed");
+    }
+
+    #[tokio::test]
+    async fn without_mail_there_are_no_sends_for_addresses() {
+        let mut server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        server.state.mailer = uwulock_mail::Mailer::new(None).unwrap();
+        server.router = crate::router(server.state.clone());
+        let info = json(server.get("/uwu/v1/info").await).await;
+        assert!(!info["features"].as_array().unwrap().iter().any(|feature| feature == "send-emails"));
+        let mut send = text_send();
+        send["emails"] = json!("friend@example.com");
+        let response = server.call("POST", "/api/sends", Some(&account.token), send).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(text(response).await.contains("need the server to send mail"));
     }
 }

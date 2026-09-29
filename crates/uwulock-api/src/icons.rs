@@ -93,6 +93,16 @@ impl Icons {
         }
     }
 
+    /// The HTTP client with its checks, and where it may go: for other lists the server mirrors.
+    pub(crate) fn fetcher(&self) -> Option<(&reqwest::Client, &Upstream)> {
+        self.client().map(|client| (client, &*self.upstream))
+    }
+
+    /// The directory the icons are kept in, under the data directory.
+    pub(crate) fn dir(&self) -> &FilePath {
+        &self.dir
+    }
+
     fn client(&self) -> Option<&reqwest::Client> {
         match &self.client {
             Ok(client) => Some(client),

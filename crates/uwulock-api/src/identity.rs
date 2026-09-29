@@ -66,7 +66,12 @@ async fn token(
         Some("webauthn") => ("webauthn", crate::passkeys::grant(&state, ip, &form).await),
         Some("authorization_code") => ("authorization_code", crate::sso::grant(&state, ip, &headers, &form).await),
         Some("send_access") => {
-            ("send_access", crate::sends::grant(&state, ip, form.get("sendid"), form.get("passwordhashb64")).await)
+            let proof = crate::sends::GrantProof {
+                password: form.get("passwordhashb64"),
+                email: form.get("email"),
+                otp: form.get("otp"),
+            };
+            ("send_access", crate::sends::grant(&state, ip, form.get("sendid"), proof).await)
         }
         _ => return Err(ApiError::bad("Invalid type")),
     };

@@ -6,7 +6,7 @@
 
 use crate::AppState;
 use axum::Router;
-use axum::extract::Request;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
@@ -36,9 +36,21 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/r/{access_id}", get(app))
 }
 
-async fn app(headers: HeaderMap) -> Response {
+async fn app(State(state): State<AppState>, headers: HeaderMap) -> Response {
     match uwulock_web::find("/index.html") {
-        Some(index) => respond(index, &headers),
+        Some(index) => {
+            // With branding of its own, the page carries its name, favicon and colours.
+            let loaded = crate::branding::for_request(&state, &headers).await;
+            if let Some(page) =
+                std::str::from_utf8(index.bytes).ok().and_then(|page| crate::branding::brand_page(page, &loaded))
+            {
+                let mut response = Html(page).into_response();
+                page_headers(response.headers_mut());
+                response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+                return response;
+            }
+            respond(index, &headers)
+        }
         None => Html(format!(
             "<!doctype html><meta charset=\"utf-8\"><title>UwULock Server</title>\
              <p style=\"font-family:sans-serif\">UwULock Server {} is running. This build has no web vault; \
@@ -92,15 +104,20 @@ fn respond(asset: &'static Asset, request: &HeaderMap) -> Response {
         // With frame-ancestors, browsers ignore X-Frame-Options.
         headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONNECTOR_POLICY));
     } else if asset.content_type.starts_with("text/html") {
-        headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONTENT_SECURITY_POLICY));
-        headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
-        // A page that opened the vault gets no handle on it, to send it somewhere else later.
-        headers.insert(
-            axum::http::HeaderName::from_static("cross-origin-opener-policy"),
-            HeaderValue::from_static("same-origin"),
-        );
+        page_headers(headers);
     }
     response
+}
+
+/// What every page of the app is sent with: where scripts may come from, no frames.
+fn page_headers(headers: &mut HeaderMap) {
+    headers.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(CONTENT_SECURITY_POLICY));
+    headers.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
+    // A page that opened the vault gets no handle on it, to send it somewhere else later.
+    headers.insert(
+        axum::http::HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
 }
 
 /// For the admin portal's overview.

@@ -52,6 +52,11 @@ async fn fake_web() -> (u16, Arc<AtomicUsize>) {
                 ]))
                 .into_response(),
                 ("library.example.com", "/png/nextcloud.png") => png(png_of(512)),
+                ("library.example.com", "/2fa.json") => axum::Json(json!([
+                    ["Shop", {"domain": "shop.example.com", "tfa": ["totp"], "documentation": "https://shop.example.com/2fa"}],
+                    ["Plain", {"domain": "plain.example.net"}],
+                ]))
+                .into_response(),
                 _ => StatusCode::NOT_FOUND.into_response(),
             }
         }
@@ -76,6 +81,7 @@ fn upstream(port: u16, allow: bool) -> Upstream {
         https_port: port,
         http_port: port,
         selfhst: format!("http://library.example.com:{port}"),
+        twofa: format!("http://library.example.com:{port}/2fa.json"),
     }
 }
 
@@ -231,4 +237,36 @@ async fn own_icons_are_the_account_s_items_only() {
     assert_eq!(server.call("DELETE", &path, Some(&other.token), json!({})).await.status(), StatusCode::NOT_FOUND);
     assert_eq!(server.call("DELETE", &path, Some(&nyu.token), json!({})).await.status(), StatusCode::OK);
     assert_eq!(server.get_as(&nyu.token, &path).await.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn the_2fa_directory_is_mirrored_for_accounts_only() {
+    let (port, hits) = fake_web().await;
+    let server = TestServer::new().await.with_upstream(upstream(port, true));
+    assert_eq!(server.get("/uwu/v1/twofa-directory").await.status(), StatusCode::UNAUTHORIZED);
+    let account = server.account("nyu@example.com").await;
+    let response = server.get_as(&account.token, "/uwu/v1/twofa-directory").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let etag = response.headers()["etag"].to_str().unwrap().to_string();
+    let list = json(response).await;
+    assert_eq!(list["object"], "twofaDirectory");
+    assert_eq!(list["entries"].as_array().unwrap().len(), 1, "only sites with a second factor");
+    assert_eq!(list["entries"][0]["documentation"], "https://shop.example.com/2fa");
+
+    let asked = hits.load(Ordering::SeqCst);
+    let again = server
+        .send(
+            Request::get("/uwu/v1/twofa-directory")
+                .header("authorization", format!("Bearer {}", account.token))
+                .header("if-none-match", &etag)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(again.status(), StatusCode::NOT_MODIFIED);
+    assert_eq!(hits.load(Ordering::SeqCst), asked, "from the mirror");
+
+    // The daily refresh fetches it again, now that it is in use.
+    crate::reports::daily(&server.state).await;
+    assert_eq!(hits.load(Ordering::SeqCst), asked + 1);
 }

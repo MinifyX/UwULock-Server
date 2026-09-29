@@ -24,8 +24,9 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// What this server is and can do, for a client that wants to know before it logs in.
-async fn info(State(state): State<AppState>) -> Json<Value> {
+async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Json<Value> {
     let settings = state.settings();
+    let branding = crate::branding::for_request(&state, &headers).await.json(&state.config.public);
     let mut features = vec![
         "vault",
         "folders",
@@ -46,6 +47,8 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
         "own-icons",
         "travel-mode",
         "reminders",
+        "twofa-directory",
+        "health-report",
     ];
     if settings.icons.automatic {
         features.push("icons");
@@ -66,6 +69,9 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
     if settings.sso.active() {
         features.push("sso");
     }
+    if state.mailer.enabled() {
+        features.push("send-emails");
+    }
     let rules = &settings.policies.master_password;
     Json(json!({
         "object": "info",
@@ -76,6 +82,7 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
         "features": features,
+        "branding": branding,
         "sso": {
             "enabled": settings.sso.active(),
             "only": settings.sso.active() && settings.sso.only,

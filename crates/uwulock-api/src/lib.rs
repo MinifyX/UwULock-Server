@@ -19,6 +19,7 @@ pub mod alerts;
 mod attachments;
 mod auth;
 mod auth_requests;
+pub mod branding;
 pub mod certificate;
 mod ciphers;
 mod cors;
@@ -49,11 +50,14 @@ pub mod offsite;
 pub(crate) mod oidc;
 mod organizations;
 pub(crate) mod outbound;
+mod palette;
 mod passkeys;
 pub mod policies;
 pub mod reminders;
+pub mod reports;
 pub mod scim;
 pub mod secret;
+mod send_codes;
 pub mod send_hosts;
 mod sends;
 mod settings;
@@ -180,6 +184,12 @@ pub struct AppState {
     pub oidc: Arc<oidc::Cache>,
     /// Websites' icons and the icon library, fetched by the server.
     pub icons: Arc<icons::Icons>,
+    /// The server's name, colour and pictures, as read from the database.
+    pub branding: Arc<branding::Cache>,
+    /// The codes mailed for Sends only given addresses may open.
+    pub send_codes: Arc<send_codes::SendCodes>,
+    /// 2FA Directory's list, mirrored for the password check.
+    pub twofa: Arc<reports::Directory>,
 }
 
 impl AppState {
@@ -206,7 +216,7 @@ impl AppState {
         if let Some(success) = offsite.status().await.last_success {
             alerts.offsite_succeeded(success.max(0) as u64);
         }
-        Ok(AppState {
+        let state = AppState {
             store,
             version,
             config: Arc::new(config),
@@ -234,7 +244,12 @@ impl AppState {
             offsite,
             oidc: Arc::default(),
             icons,
-        })
+            branding: Arc::default(),
+            send_codes: Arc::default(),
+            twofa: Arc::default(),
+        };
+        branding::reload(&state).await;
+        Ok(state)
     }
 
     /// Settings an admin saved, or a restore brought, take effect everywhere.
@@ -315,6 +330,8 @@ pub fn router(state: AppState) -> Router {
         .merge(versions::routes())
         .merge(travel::routes())
         .merge(reminders::routes())
+        .merge(branding::routes())
+        .merge(reports::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())

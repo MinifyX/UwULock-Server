@@ -52,6 +52,8 @@ pub struct Upstream {
     pub http_port: u16,
     /// Where the selfh.st icons are: their index and their files.
     pub selfhst: String,
+    /// 2FA Directory's list of sites and the second factors they offer.
+    pub twofa: String,
 }
 
 impl Default for Upstream {
@@ -62,6 +64,7 @@ impl Default for Upstream {
             https_port: 443,
             http_port: 80,
             selfhst: "https://cdn.jsdelivr.net/gh/selfhst/icons@main".into(),
+            twofa: crate::reports::UPSTREAM.into(),
         }
     }
 }

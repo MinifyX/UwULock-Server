@@ -107,6 +107,9 @@ struct LinkClaims {
     sub: String,
     exp: i64,
     iss: String,
+    /// For a Send only given addresses may open: the address that proved itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    email: Option<String>,
 }
 
 impl Tokens {
@@ -154,8 +157,12 @@ impl Tokens {
 
     /// A token for one file, `subject`, that works for `seconds`: download links carry it.
     pub fn file_token(&self, subject: &str, seconds: i64) -> String {
-        let claims =
-            LinkClaims { sub: subject.to_string(), exp: now_seconds() + seconds, iss: self.link_issuer("file") };
+        let claims = LinkClaims {
+            sub: subject.to_string(),
+            exp: now_seconds() + seconds,
+            iss: self.link_issuer("file"),
+            email: None,
+        };
         self.sign(&claims)
     }
 
@@ -166,10 +173,14 @@ impl Tokens {
 
     /// A token that opens one Send, `send_id`, for a short while: what the send access grant
     /// hands out after the password.
-    pub fn send_token(&self, send_id: &str) -> (String, i64) {
+    pub fn send_token(&self, send_id: &str, email: Option<&str>) -> (String, i64) {
         let seconds = 2 * 60;
-        let claims =
-            LinkClaims { sub: send_id.to_string(), exp: now_seconds() + seconds, iss: self.link_issuer("send") };
+        let claims = LinkClaims {
+            sub: send_id.to_string(),
+            exp: now_seconds() + seconds,
+            iss: self.link_issuer("send"),
+            email: email.map(str::to_string),
+        };
         (self.sign(&claims), seconds)
     }
 
@@ -186,13 +197,15 @@ impl Tokens {
             sub: request_id.to_string(),
             exp: now_seconds() + seconds,
             iss: self.link_issuer("filerequest"),
+            email: None,
         };
         (self.sign(&claims), seconds)
     }
 
     /// What `/identity/sso/prevalidate` hands out, for `/identity/connect/authorize`: two minutes.
     pub fn sso_token(&self) -> String {
-        let claims = LinkClaims { sub: "sso".into(), exp: now_seconds() + 2 * 60, iss: self.link_issuer("sso") };
+        let claims =
+            LinkClaims { sub: "sso".into(), exp: now_seconds() + 2 * 60, iss: self.link_issuer("sso"), email: None };
         self.sign(&claims)
     }
 
@@ -622,7 +635,7 @@ mod tests {
         assert!(!tokens.check_file_token(&file, "c1/a2"));
         assert!(tokens.verify(&file).is_none(), "not an access token");
         assert!(tokens.check_send_token(&file).is_none(), "not a Send token");
-        let (send, _) = tokens.send_token("s1");
+        let (send, _) = tokens.send_token("s1", None);
         assert_eq!(tokens.check_send_token(&send).as_deref(), Some("s1"));
         assert!(!tokens.check_file_token(&send, "s1"));
         let (login, _) = tokens.access_token(&user(), "d", 3, "browser", false);
