@@ -1223,7 +1223,10 @@ full requests are the same 404 `gone`, so a link cannot be probed.
 - `PUT <file url>` — `Authorization: Bearer <upload token>`, body `application/octet-stream`,
   exactly `size` bytes, first byte `0x02` (checked while streaming: more is 413 `too_large`, less
   400 `incomplete`). No body limit but this one (upload router). May be repeated until the
-  submission is complete.
+  file arrived (a failed upload leaves nothing); once it is there, 404 `gone` — a file is never
+  written again. One upload at a time per file (409 `conflict` for a second), four per request
+  (429), counted by the anonymous per-address limit like `complete`; the free-space check counts
+  the announced sizes of every upload on its way (400 when there is no room).
 - `POST /uwu/v1/public/file-requests/{accessId}/submissions/{id}/complete` — same token. 400
   `incomplete` while a file is missing. Then the submission is visible to the owner: the request's
   `submissionCount` goes up (a full request closes), realtime `notice` `fileRequest` to the owner,

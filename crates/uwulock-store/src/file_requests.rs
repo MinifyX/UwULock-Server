@@ -600,14 +600,15 @@ impl Store {
         .await
     }
 
-    /// A file of a submission still on its way, with its size: what an upload may bring.
+    /// A file of a submission still on its way, with its size: what an upload may bring. Not
+    /// one that arrived already: it is never written again.
     pub async fn pending_file(&self, request_id: &str, submission_id: &str, file_id: &str) -> Result<Option<i64>> {
         let (request_id, submission_id, file_id) =
             (request_id.to_string(), submission_id.to_string(), file_id.to_string());
         self.sqlite_read(move |conn| {
             conn.query_row(
                 "SELECT f.size FROM file_request_files f JOIN file_request_submissions s ON s.id = f.submission_id \
-                 WHERE f.id = ?1 AND s.id = ?2 AND s.request_id = ?3 AND s.completed IS NULL",
+                 WHERE f.id = ?1 AND s.id = ?2 AND s.request_id = ?3 AND s.completed IS NULL AND NOT f.uploaded",
                 params![file_id, submission_id, request_id],
                 |row| row.get(0),
             )

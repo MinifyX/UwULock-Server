@@ -630,19 +630,21 @@ async fn start(
 /// One file of a submission, exactly as large as announced, an EncArrayBuffer.
 async fn upload(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Path((access_id, sid, fid)): Path<(String, String, String)>,
     body: Body,
 ) -> ApiResult<StatusCode> {
     enabled(&state)?;
+    limited(&state, ip)?;
     let id = uploader(&state, &headers, &access_id)?;
+    // Only a file that has not arrived yet, one upload at a time: a file that is there is never
+    // written again, and parallel uploads of the same file cannot fill the disk with parts.
     let size = state.store.pending_file(&id, &sid, &fid).await?.ok_or_else(gone)? as u64;
     let path = file_path(&state, &id, &fid)?;
     let dir = path.parent().expect("files have a folder").to_path_buf();
     tokio::fs::create_dir_all(&dir).await.map_err(ApiError::internal)?;
-    if !uwulock_store::backups::has_room(&dir, size) {
-        return Err(ApiError::bad("There is not enough room on the server for this file."));
-    }
+    let _uploading = state.uploads.start_file(&id, &fid, size, &dir)?;
     let partial = dir.join(format!(".{fid}.{}.part", crate::files::new_file_id()));
     let received = async {
         let mut file = tokio::fs::File::create(&partial).await.map_err(ApiError::internal)?;
@@ -675,17 +677,28 @@ async fn upload(
         let _ = tokio::fs::remove_file(&partial).await;
         return Err(error);
     }
-    tokio::fs::rename(&partial, &path).await.map_err(ApiError::internal)?;
+    // Never over a file that is there already.
+    let linked = tokio::fs::hard_link(&partial, &path).await;
+    let _ = tokio::fs::remove_file(&partial).await;
+    match linked {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(ApiError::new(StatusCode::CONFLICT, "This file is uploaded already.").code("conflict"));
+        }
+        Err(error) => return Err(ApiError::internal(error)),
+    }
     state.store.request_file_uploaded(&sid, &fid).await?;
     Ok(StatusCode::OK)
 }
 
 async fn complete(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     headers: HeaderMap,
     Path((access_id, sid)): Path<(String, String)>,
 ) -> ApiResult<StatusCode> {
     enabled(&state)?;
+    limited(&state, ip)?;
     let id = uploader(&state, &headers, &access_id)?;
     let (request, mail) = match state.store.complete_submission(&id, &sid).await? {
         None => return Err(gone()),
@@ -878,6 +891,78 @@ mod tests {
         let delete = server.call("DELETE", &format!("/uwu/v1/file-requests/{id}"), Some(&owner.token), json!({})).await;
         assert_eq!(delete.status(), StatusCode::OK);
         assert_eq!(json(server.get(&public).await).await["code"], "gone");
+    }
+
+    /// Review finding R3-19: one upload at a time per file, none over a file that arrived, and
+    /// the free-space check counts every upload on its way.
+    #[tokio::test]
+    async fn a_file_is_uploaded_once_and_one_upload_at_a_time() {
+        let server = TestServer::new().await;
+        let owner = server.account("nyu@example.com").await;
+        let made = request(&server, &owner.token, None).await;
+        let (id, access) = (made["id"].as_str().unwrap(), made["accessId"].as_str().unwrap());
+        let public = format!("/uwu/v1/public/file-requests/{access}");
+        let token = open(&server, access, None).await;
+        let submission = json!({
+            "wrappedKey": type4(),
+            "files": [ { "fileName": type2(), "key": type2(), "size": 300 } ],
+        });
+        let started = server.call_from("192.0.2.7", "POST", &format!("{public}/submissions"), &token, submission).await;
+        let started = json(started).await;
+        let url = started["files"][0]["url"].as_str().unwrap().to_string();
+        let fid = url.rsplit('/').next().unwrap().to_string();
+        let dir = server.state.config.data.join("file-requests").join(id);
+
+        // An upload that is still on its way: a second one for the same file waits its turn.
+        let (sender, receiver) = tokio::sync::mpsc::channel::<Result<Vec<u8>, std::io::Error>>(1);
+        let slow = Request::put(&url)
+            .header("authorization", format!("Bearer {token}"))
+            .body(Body::from_stream(tokio_stream::wrappers::ReceiverStream::new(receiver)))
+            .unwrap();
+        let app = server.router.clone();
+        let running = tokio::spawn(async move { tower::ServiceExt::oneshot(app, slow).await.unwrap().status() });
+        sender.send(Ok(encrypted(100))).await.unwrap();
+        let part = || {
+            std::fs::read_dir(&dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .any(|entry| entry.file_name().to_string_lossy().ends_with(".part"))
+        };
+        for _ in 0..500 {
+            if part() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        assert!(part(), "the first upload is on its way");
+        let second = server.send(put_file(&url, &token, encrypted(300))).await;
+        assert_eq!(second.status(), StatusCode::CONFLICT);
+        sender.send(Ok(vec![7u8; 200])).await.unwrap();
+        drop(sender);
+        assert_eq!(running.await.unwrap(), StatusCode::OK);
+
+        // There now: never written again.
+        let mut other = encrypted(300);
+        other[299] = 9;
+        let again = server.send(put_file(&url, &token, other)).await;
+        assert!(again.status().is_client_error(), "{}", again.status());
+        let mut first = encrypted(100);
+        first.extend(vec![7u8; 200]);
+        assert_eq!(std::fs::read(dir.join(&fid)).unwrap(), first);
+    }
+
+    #[test]
+    fn uploads_reserve_their_room_on_the_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let Some((free, total)) = uwulock_store::backups::disk_space(dir.path()) else { return };
+        let margin = (total / 20).max(256 * 1024 * 1024);
+        let Some(most) = free.checked_sub(margin + 1_000_000) else { return };
+        let uploads = std::sync::Arc::new(crate::files::Uploads::default());
+        let first = uploads.start_file("r1", "f1", most, dir.path()).unwrap();
+        assert!(uploads.start_file("r2", "f2", 2_000_000, dir.path()).is_err(), "no room beside the first");
+        drop(first);
+        assert!(uploads.start_file("r2", "f2", 2_000_000, dir.path()).is_ok(), "room again");
     }
 
     #[tokio::test]

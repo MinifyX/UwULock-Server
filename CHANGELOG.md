@@ -240,6 +240,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   pairing, UwUMail and the push relay could each fill the memory with an endless answer.
 - The request metrics label only the standard HTTP methods; anything else is `other`. Requests
   with invented methods made new counters that were never removed, metrics on or off.
+- Uploads to a file request: one at a time per file, four per request, never over a file that
+  arrived, counted per address, and the free-space check reserves the room of every upload on
+  its way. Parallel uploads to the same file could fill the disk past the guard.
 
 ## 0.4.0-beta.2
 

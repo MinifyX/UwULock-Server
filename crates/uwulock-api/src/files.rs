@@ -69,37 +69,78 @@ const STALLED: std::time::Duration = std::time::Duration::from_secs(60);
 const UPLOADS_PER_USER: usize = 4;
 
 /// Uploads running, per account: a few at once, so nobody holds the server's files open by the
-/// hundred.
+/// hundred. Uploads to a file request also count per file (one at a time) and per request, and
+/// reserve the bytes they announced: the free-space check counts every upload still on its way.
 #[derive(Default)]
 pub struct Uploads {
-    running: parking_lot::Mutex<std::collections::HashMap<String, usize>>,
+    running: parking_lot::Mutex<Running>,
+}
+
+#[derive(Default)]
+struct Running {
+    counts: std::collections::HashMap<String, usize>,
+    /// Bytes announced by uploads running now, which the disk needs room for together.
+    reserved: u64,
 }
 
 /// One running upload; it ends when this is dropped.
 pub struct Uploading {
     uploads: std::sync::Arc<Uploads>,
-    user_id: String,
+    keys: Vec<String>,
+    reserved: u64,
 }
 
 impl Uploads {
     pub fn start(self: &std::sync::Arc<Self>, user_id: &str) -> ApiResult<Uploading> {
         let mut running = self.running.lock();
-        let count = running.entry(user_id.to_string()).or_default();
+        let count = running.counts.entry(user_id.to_string()).or_default();
         if *count >= UPLOADS_PER_USER {
             return Err(ApiError::too_many("Too many uploads at once. Wait for the others to finish."));
         }
         *count += 1;
-        Ok(Uploading { uploads: self.clone(), user_id: user_id.to_string() })
+        Ok(Uploading { uploads: self.clone(), keys: vec![user_id.to_string()], reserved: 0 })
+    }
+
+    /// An upload of `size` bytes to file `file_id` of file request `request_id`, into `dir`: one
+    /// at a time per file, a few per request, and only while the disk has room for it besides
+    /// every other upload on its way — checked and reserved in one step.
+    pub fn start_file(
+        self: &std::sync::Arc<Self>,
+        request_id: &str,
+        file_id: &str,
+        size: u64,
+        dir: &Path,
+    ) -> ApiResult<Uploading> {
+        let (request, file) = (format!("request:{request_id}"), format!("file:{file_id}"));
+        let mut running = self.running.lock();
+        if running.counts.get(&file).is_some_and(|count| *count > 0) {
+            return Err(ApiError::new(axum::http::StatusCode::CONFLICT, "This file is being uploaded already.")
+                .code("conflict"));
+        }
+        if running.counts.get(&request).is_some_and(|count| *count >= UPLOADS_PER_USER) {
+            return Err(ApiError::too_many("Too many uploads at once. Wait for the others to finish."));
+        }
+        if !uwulock_store::backups::has_room(dir, running.reserved.saturating_add(size)) {
+            return Err(ApiError::bad("There is not enough room on the server for this file."));
+        }
+        running.reserved += size;
+        for key in [&request, &file] {
+            *running.counts.entry(key.clone()).or_default() += 1;
+        }
+        Ok(Uploading { uploads: self.clone(), keys: vec![request, file], reserved: size })
     }
 }
 
 impl Drop for Uploading {
     fn drop(&mut self) {
         let mut running = self.uploads.running.lock();
-        if let Some(count) = running.get_mut(&self.user_id) {
-            *count -= 1;
-            if *count == 0 {
-                running.remove(&self.user_id);
+        running.reserved = running.reserved.saturating_sub(self.reserved);
+        for key in &self.keys {
+            if let Some(count) = running.counts.get_mut(key) {
+                *count -= 1;
+                if *count == 0 {
+                    running.counts.remove(key);
+                }
             }
         }
     }
