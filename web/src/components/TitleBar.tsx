@@ -4,6 +4,8 @@ import { Nyu } from './nyu/Nyu';
 
 type Props = {
   onSettings?: () => void;
+  /** New security notices: a count on the settings button. */
+  badge?: number;
   /** What the bar is for: nothing for the vault, "Admin" for the admin portal. */
   area?: string;
   children?: ReactNode;
@@ -19,7 +21,7 @@ const ICONS = {
  * portal), its actions, and the settings. The same bar the desktop app draws, without the
  * window buttons: here the browser has those.
  */
-export function TitleBar({ onSettings, area, children }: Props) {
+export function TitleBar({ onSettings, badge = 0, area, children }: Props) {
   useLanguage();
   return (
     <header className="titlebar">
@@ -38,11 +40,22 @@ export function TitleBar({ onSettings, area, children }: Props) {
           onClick={onSettings}
           title={t('Einstellungen (Strg+,)')}
           aria-label={t('Einstellungen')}
+          aria-describedby={badge > 0 ? 'settings-badge' : undefined}
         >
           <svg viewBox="0 0 24 24" aria-hidden>
             <path d={ICONS.settings} />
           </svg>
+          {badge > 0 && (
+            <span className="titlebar-badge" aria-hidden>
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </button>
+      )}
+      {onSettings && badge > 0 && (
+        <span id="settings-badge" className="sr-only">
+          {t('{n} neue Sicherheitshinweise', { n: badge })}
+        </span>
       )}
     </header>
   );

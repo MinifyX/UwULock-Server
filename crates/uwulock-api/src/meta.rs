@@ -7,8 +7,7 @@ use crate::auth::Session;
 use crate::errors::ApiResult;
 use crate::{AppState, json as out};
 use axum::extract::State;
-use axum::http::StatusCode;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -31,7 +30,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/settings/domains", get(get_domains).post(set_domains).put(set_domains))
         .route("/api/policies", get(empty_list))
         .route("/api/tasks", get(tasks))
-        .route("/events/collect", post(nothing))
         .route("/app-id.json", get(app_id))
         .route("/.well-known/apple-app-site-association", get(apple_association))
 }
@@ -121,10 +119,6 @@ async fn empty_list(_session: Session) -> Json<Value> {
 
 async fn tasks() -> Json<Value> {
     Json(json!({ "data": [], "object": "list" }))
-}
-
-async fn nothing() -> StatusCode {
-    StatusCode::OK
 }
 
 /// For security keys: which apps may use this server's name.

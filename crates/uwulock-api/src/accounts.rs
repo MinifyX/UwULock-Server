@@ -10,7 +10,7 @@ use crate::ciphers::{CipherData, apply};
 use crate::errors::{ApiError, ApiResult};
 use crate::identity::{KdfData, clean_hint, mail_allowed, mail_failed};
 use crate::two_factor::number_or_string;
-use crate::{AppState, json as out};
+use crate::{AppState, json as out, notices};
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post, put};
@@ -267,6 +267,7 @@ struct ChangePassword {
 
 async fn change_password(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<ChangePassword>,
 ) -> ApiResult<StatusCode> {
@@ -295,6 +296,8 @@ async fn change_password(
             user.revision = clock::now();
         })
         .await?;
+    let context = notices::Context::of(&state, &session, ip).await;
+    notices::record(&state, &session.user, "passwordChanged", &context, json!({})).await;
     crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "master password changed");
     Ok(StatusCode::OK)
@@ -324,6 +327,7 @@ struct ChangeKdf {
 
 async fn change_kdf(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<ChangeKdf>,
 ) -> ApiResult<StatusCode> {
@@ -342,6 +346,7 @@ async fn change_kdf(
         data.key,
     )?;
     let kdf = kdf.or(flat_kdf).ok_or_else(|| ApiError::bad("Invalid request!"))?.check()?;
+    state.settings().policies.check_kdf(&kdf)?;
     let password_hash = auth::hash_password(state.config.hash_cost, &hash).await?;
     state
         .store
@@ -353,6 +358,8 @@ async fn change_kdf(
             user.revision = clock::now();
         })
         .await?;
+    let context = notices::Context::of(&state, &session, ip).await;
+    notices::record(&state, &session.user, "kdfChanged", &context, json!({})).await;
     crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "key derivation changed");
     Ok(StatusCode::OK)
@@ -441,6 +448,7 @@ struct RotateKeys {
 /// the user key under the (maybe new) master password. All of it in one step, or nothing.
 async fn rotate_keys(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<RotateKeys>,
 ) -> ApiResult<StatusCode> {
@@ -523,6 +531,8 @@ async fn rotate_keys(
             "All existing ciphers, folders, sends, emergency contacts and passkeys must be included in the rotation",
         ));
     }
+    let context = notices::Context::of(&state, &session, ip).await;
+    notices::record(&state, user, "keysRotated", &context, json!({})).await;
     crate::notify::user(&state, &user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %user.id, "user key rotated");
     Ok(StatusCode::OK)
@@ -612,6 +622,7 @@ struct ChangeEmail {
 /// wrapped under the new master key.
 async fn change_email(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<ChangeEmail>,
 ) -> ApiResult<StatusCode> {
@@ -634,6 +645,8 @@ async fn change_email(
     }
     let password_hash = auth::hash_password(state.config.hash_cost, &data.new_master_password_hash).await?;
     let key = data.key;
+    let context = notices::Context::of(&state, &session, ip).await;
+    notices::tell_old_address(&state, &session.user.email, &session.user, &context);
     state
         .store
         .update_user(&session.user.id, move |user| {
@@ -644,6 +657,9 @@ async fn change_email(
             user.revision = clock::now();
         })
         .await?;
+    if let Some(user) = state.store.user(&session.user.id).await? {
+        notices::record(&state, &user, "emailChanged", &context, json!({})).await;
+    }
     crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "address changed");
     Ok(StatusCode::OK)
@@ -654,21 +670,30 @@ async fn change_email(
 /// The CLI's API key, made on first ask. After the master password, like everything secret.
 async fn api_key(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<SecretData>,
 ) -> ApiResult<Json<Value>> {
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
+    let existed = state.store.api_key_of(&session.user.id).await?.is_some();
     let (key, revision) = state.store.api_key(&session.user.id, auth::random_token(24)).await?;
+    if !existed {
+        let context = notices::Context::of(&state, &session, ip).await;
+        notices::record(&state, &session.user, "apiKeyCreated", &context, json!({})).await;
+    }
     Ok(Json(json!({ "apiKey": key, "revisionDate": revision, "object": "apiKey" })))
 }
 
 async fn rotate_api_key(
     State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<SecretData>,
 ) -> ApiResult<Json<Value>> {
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
     let (key, revision) = state.store.rotate_api_key(&session.user.id, auth::random_token(24)).await?;
+    let context = notices::Context::of(&state, &session, ip).await;
+    notices::record(&state, &session.user, "apiKeyRotated", &context, json!({})).await;
     tracing::info!(user = %session.user.id, "API key rotated");
     Ok(Json(json!({ "apiKey": key, "revisionDate": revision, "object": "apiKey" })))
 }

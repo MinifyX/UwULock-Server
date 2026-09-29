@@ -5,6 +5,83 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Running it and keeping it safe (Stufe 4b, first part).**
+
+- **Security notices** for everybody, under *Settings → Security* in the web vault and by mail in
+  the account's language: failed passwords and two-step codes (a burst is one notice that counts
+  up), a new device, changes to the master password, address, KDF, keys, two-step login and API
+  key, emergency access asked for or taken over, "log in with a device" requests, exports of the
+  vault (the web vault says so, and so do Bitwarden's apps). Mails come bundled — five minutes
+  after the first notice, at most one every fifteen minutes — so an attack does not flood an
+  inbox; the admin chooses which kinds are mailed.
+- **Server policies** in the admin portal: two-step login required from a date on (then only the
+  web vault lets such an account in, to set it up; the apps say what to do), a minimum key
+  derivation (weaker ones are refused; accounts below it get a notice and a *Switch now* button),
+  and rules for the master password, which the web vault checks and Bitwarden's apps get with
+  every login.
+- **The admin portal only from some networks**: outside them `/admin` and its API answer 404.
+  `uwulock-server settings set adminNetworks '[]'` is the way back in; `uwulock-server settings`
+  reads and changes every setting of the portal.
+- **Monitoring**: `/metrics` for Prometheus (off by default; with a token or on an address of its
+  own; no user data in labels) with example alert rules in [docs/metrics.md](docs/metrics.md),
+  the log to Grafana Loki from the admin portal, and `UWULOCK_LOG_FORMAT=json` with the same lines.
+- **Admin notifications** by mail, ntfy, Gotify and Matrix when a backup fails or is too old, the
+  certificate runs out, an update is out, many logins fail, the disk fills up, or the push relay
+  or mail stop working — per channel which, with a test; tokens stay on the server
+  ([docs/notifications.md](docs/notifications.md)).
+- **Diagnosis** in the admin portal, on demand and after every update: certificate, clock, mail,
+  push relay, backups, disk, and the reverse proxy (WebSockets, upload limit, the client's
+  address, the public address), each with what to do for Caddy and nginx.
+- Errors under `/uwu/v1` carry a machine-readable `code`.
+
+**Stufe 4b, second part.**
+
+- **Backups on another system**: an SFTP server (a NAS), an S3 bucket (Amazon, MinIO, B2,
+  Hetzner, Garage, …) or a mounted folder, every night and at the press of a button,
+  deduplicated (only what is new goes up), encrypted with a recovery key shown once (and again
+  after the master password), kept 7 days / 4 weeks / 6 months. They hold the database, the
+  attachments, Send files, file requests and the server's keys. A snapshot goes back in the admin
+  portal like a local backup, or with `uwulock-server backup restore --sftp|--s3|--folder` onto a
+  new machine. A failed or too old off-site backup is an alert, a warning in the diagnosis and a
+  metric. The local backups stay beside them ([docs/backups.md](docs/backups.md)).
+- **File requests**: a link through which somebody without an account uploads files and a message
+  to you, encrypted in their browser for your account — with an expiry, a number of submissions,
+  files and bytes, a password and a note. A mail when something arrives; read it, download it, or
+  take it over as an item with the files attached, in the web vault. Rate-limited against abuse,
+  deleted 30 days after it expired ([docs/file-requests.md](docs/file-requests.md)).
+- **The emergency sheet**: a PDF for your family, made in the browser (the server never sees it),
+  in German or English — the server's address and your email as text and QR codes, a box for
+  the master password to write in by hand, the recovery code of two-step login, and what to do,
+  with your emergency contacts and their waiting times. Under *Settings → Emergency access*.
+- **Storage per account** (`storagePerUserMb`): attachments, Send files and file requests
+  together; uploads past it are refused. The web vault's account data says how much is used.
+- The extras key of the 0.6 API (`/uwu/v1/keys`), which UwULock's own things are encrypted
+  under so that a key rotation by any client loses nothing.
+
+**Stufe 4b, third part: UwUAuth (or any OpenID Connect provider) as the login.**
+
+- **Log in with SSO** in the web vault, the admin portal and Bitwarden's own apps — browser
+  extension, desktop, phones, CLI — the way they do it with Vaultwarden: any SSO identifier will
+  do. SSO says who somebody is; the vault still opens only with the master password, which the
+  server never sees. The server's own two-step login still applies. Works with UwUAuth, Keycloak,
+  Authentik, Entra ID and any other provider (ID tokens signed RS256/PS256/ES256/ES384/EdDSA).
+- **Accounts without an invitation** for whoever the settings let in: everybody the provider lets
+  through, the members of a group, or (after pairing) UwUAuth's `user` role. They set their master
+  password at the first login. An existing account is linked by its verified address, with a
+  security notice (`ssoLinked`).
+- **Admins through SSO**: being an admin can follow a group (or UwUAuth's `admin` role) — given
+  only within the admin networks, never taken from the last admin — and the admin portal can be
+  kept to SSO logins. "SSO only" leaves password logins to admins and the CLI's API key.
+- **SCIM 2.0** at `/scim/v2`: the provider disables accounts (every session ends at once), deletes
+  them (or only disables them, as the admin chooses), adds addresses that may sign up, and keeps
+  the admin group, whose former members lose the admin right. The address never changes this way:
+  it is the salt of the account's keys.
+- **Pairing with UwUAuth** (0.4 and newer): a code (or the QR code's text) in the admin portal
+  under *Anmeldung*, and client id, secret, addresses, roles and SCIM set themselves up. Any other
+  provider is set up by hand on the same page, with a test.
+- The client secret is kept encrypted, under a key in `secret.key` in the data directory (the
+  off-site backups take it along). See [docs/sso.md](docs/sso.md).
+
 - Development: `scripts/test.sh` runs the tests quietly, with only a summary and what failed.
   The tests take about half the time (the crypto and SQLite are built optimised in the dev
   profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).

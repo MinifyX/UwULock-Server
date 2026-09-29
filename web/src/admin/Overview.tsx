@@ -1,9 +1,17 @@
 import { useEffect, useState } from 'react';
-import { overview, type Overview as Data } from '../lib/admin';
+import { Icon } from '../components/Icon';
+import { alertTitle, overview, type Alert, type Overview as Data } from '../lib/admin';
 import { errorText } from '../lib/errors';
-import { ago, bytes, seconds } from '../lib/format';
-import { t, useLanguage } from '../lib/i18n';
+import { ago, bytes, seconds, when } from '../lib/format';
+import { N_, t, useLanguage } from '../lib/i18n';
+import { go } from '../lib/route';
 import { History } from './History';
+
+const SEVERITY: Record<Alert['severity'], string> = {
+  info: N_('Hinweis'),
+  warning: N_('Warnung'),
+  error: N_('Fehler'),
+};
 
 function uptime(total: number): string {
   const days = Math.floor(total / 86400);
@@ -12,7 +20,10 @@ function uptime(total: number): string {
   return t('{h} Std., {m} Min.', { h: hours, m: Math.floor((total % 3600) / 60) });
 }
 
-/** The numbers: accounts, items, devices, the database, backups, mail, updates. */
+/**
+ * What needs attention first — alerts, channels that fail, the last diagnosis — then the numbers:
+ * accounts, items, devices, the database, backups, mail, updates.
+ */
 export function Overview() {
   useLanguage();
   const [data, setData] = useState<Data | null>(null);
@@ -23,8 +34,58 @@ export function Overview() {
   if (error) return <p className="form-error">{error}</p>;
   if (!data) return null;
   const update = data.update;
+  const loki = data.loki;
   return (
     <>
+      {data.alerts.length > 0 && (
+        <ul className="alert-list" aria-label={t('Warnungen')}>
+          {data.alerts.map((alert) => (
+            <li key={alert.kind} className="alert" data-severity={alert.severity}>
+              <Icon name="warning" size={18} />
+              <span className="alert-text">
+                <b>
+                  {alertTitle(alert.kind)}
+                  <span className={alert.severity === 'info' ? 'badge' : 'badge alarm'}>
+                    {t(SEVERITY[alert.severity] ?? alert.severity)}
+                  </span>
+                </b>
+                <small>
+                  {alert.detail}
+                  {when(alert.since) ? ` · ${t('seit {when}', { when: when(alert.since)! })}` : ''}
+                </small>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {data.failingChannels.length > 0 && (
+        <div className="overview-line" data-alarm role="status">
+          <Icon name="warning" size={16} />
+          <span className="overview-line-text">
+            {t('Benachrichtigungen kommen nicht an:')}{' '}
+            {data.failingChannels.map((channel) => `${channel.name} (${channel.error})`).join(', ')}
+          </span>
+          <button onClick={() => go('/notifications')}>{t('Zu den Benachrichtigungen')}</button>
+        </div>
+      )}
+      <div
+        className="overview-line"
+        data-alarm={data.diagnosis && data.diagnosis.errors > 0 ? true : undefined}
+      >
+        <Icon name="lifebuoy" size={16} />
+        <span className="overview-line-text">
+          {data.diagnosis
+            ? t('Letzte Diagnose {when}: {errors} Fehler, {warnings} Warnungen.', {
+                when: when(data.diagnosis.date) ?? '',
+                errors: data.diagnosis.errors,
+                warnings: data.diagnosis.warnings,
+              })
+            : t(
+                'Die Diagnose lief noch nie. Sie prüft Zertifikat, Uhrzeit, Mail, Backups und den Proxy davor.',
+              )}
+        </span>
+        <button onClick={() => go('/diagnosis')}>{t('Zur Diagnose')}</button>
+      </div>
       <div className="stat-grid">
         <Stat
           label={t('Nutzer')}
@@ -57,6 +118,13 @@ export function Overview() {
         />
         <Fact label={t('Läuft seit')} value={uptime(data.uptimeSeconds)} />
         <Fact label={t('Datenbank')} value={bytes(data.databaseBytes)} />
+        <Fact
+          label={t('Dateien')}
+          value={t('Anhänge {attachments}, Sends {sends}', {
+            attachments: bytes(data.storage.filesBytes.attachments),
+            sends: bytes(data.storage.filesBytes.sends),
+          })}
+        />
         <Fact
           label={t('Backups')}
           value={
@@ -97,6 +165,21 @@ export function Overview() {
           alarm={Boolean(update.newer)}
         />
         {update.channel && <Fact label={t('Kanal')} value={update.channel} />}
+        {loki.enabled && (
+          <Fact
+            label={t('Loki')}
+            value={
+              loki.error
+                ? t('Geht nicht: {error}', { error: loki.error })
+                : t('{sent} Zeilen geschickt, {queued} warten, {dropped} verworfen', {
+                    sent: loki.sent.toLocaleString(),
+                    queued: loki.queued.toLocaleString(),
+                    dropped: loki.dropped.toLocaleString(),
+                  })
+            }
+            alarm={Boolean(loki.error) || loki.dropped > 0}
+          />
+        )}
       </div>
       <History />
     </>

@@ -7,17 +7,22 @@ import {
   changeKdf,
   changePassword,
   DEFAULT_KDFS,
+  DEFAULT_RULES,
   deleteAccount,
   kdfOf,
   logOutEverywhere,
+  passwordProblem,
   prelogin,
   requestEmailChange,
   rotateKeys,
   rotationContacts,
   saveName,
+  serverInfo,
   setLanguage,
+  strength,
   type AccountInfo,
   type Kdf,
+  type PasswordRules,
   type RotationContact,
 } from '../../lib/account';
 import { errorText } from '../../lib/errors';
@@ -368,7 +373,20 @@ function NewPassword({
   const [hint, setHint] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const ready = current && next.length >= 12 && next === repeat && !(hint && next.includes(hint));
+  const [bits, setBits] = useState(0);
+  const [rules, setRules] = useState<PasswordRules>(DEFAULT_RULES);
+  useEffect(() => {
+    void strength(next).then(setBits, () => setBits(0));
+  }, [next]);
+  // The server's rules for master passwords; Bitwarden's 12 characters without them.
+  useEffect(() => {
+    serverInfo().then(
+      (info) => setRules({ ...DEFAULT_RULES, ...info.policies?.masterPassword }),
+      () => undefined,
+    );
+  }, []);
+  const problem = passwordProblem(next, bits, rules);
+  const ready = current && !problem && next === repeat && !(hint && next.includes(hint));
   return (
     <Modal
       title={t('Master-Passwort ändern')}
@@ -386,6 +404,9 @@ function NewPassword({
               setBusy(true);
               setError(null);
               try {
+                // The bits above may be a few keys behind: the check takes them now.
+                const refused = passwordProblem(next, await strength(next), rules);
+                if (refused) throw { kind: 'invalid', message: refused };
                 await changePassword(current, next, hint);
                 onDone();
               } catch (e) {
@@ -412,9 +433,7 @@ function NewPassword({
             autoComplete="new-password"
             disabled={busy}
           />
-          {next && next.length < 12 && (
-            <small className="field-hint">{t('Mindestens 12 Zeichen.')}</small>
-          )}
+          {next && problem && <small className="field-hint">{problem}</small>}
         </label>
         <label className="field">
           <span>{t('Neues Master-Passwort wiederholen')}</span>

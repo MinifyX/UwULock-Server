@@ -30,11 +30,21 @@ pub struct LogLine {
 pub struct LogBuffer {
     capacity: usize,
     lines: Mutex<(VecDeque<LogLine>, u64)>,
+    /// A copy of every line for Grafana Loki, while that is switched on.
+    loki: Arc<crate::loki::Loki>,
 }
 
 impl LogBuffer {
     pub fn new(capacity: usize) -> Arc<Self> {
-        Arc::new(LogBuffer { capacity, lines: Mutex::new((VecDeque::with_capacity(capacity), 1)) })
+        Arc::new(LogBuffer {
+            capacity,
+            lines: Mutex::new((VecDeque::with_capacity(capacity), 1)),
+            loki: Arc::default(),
+        })
+    }
+
+    pub fn loki(&self) -> &Arc<crate::loki::Loki> {
+        &self.loki
     }
 
     /// A tracing layer that copies every event here.
@@ -86,13 +96,55 @@ impl<S: Subscriber> Layer<S> for LogLayer {
         };
         let mut visitor = Message::default();
         event.record(&mut visitor);
-        self.0.push(LogLine {
-            seq: 0,
-            time: uwulock_store::clock::now(),
-            level,
-            target: event.metadata().target().to_string(),
-            message: tidy(visitor.0),
-        });
+        let time = uwulock_store::clock::now();
+        let target = event.metadata().target();
+        // What Loki's own module says about Loki being away must not pile up in front of Loki.
+        if self.0.loki.wanted() && !target.starts_with("uwulock_api::loki") {
+            let mut fields = Fields::default();
+            event.record(&mut fields);
+            let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+            let line = crate::loki::json_line(&time, level, target, &fields.message, fields.rest);
+            self.0.loki.offer(crate::loki::Entry { nanos, level, line });
+        }
+        self.0.push(LogLine { seq: 0, time, level, target: target.to_string(), message: tidy(visitor.0) });
+    }
+}
+
+/// The fields of an event as JSON, the way tracing-subscriber's JSON format writes them: the
+/// message on its own, numbers and switches as themselves, everything else as text.
+#[derive(Default)]
+struct Fields {
+    message: String,
+    rest: serde_json::Map<String, serde_json::Value>,
+}
+
+impl Visit for Fields {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        if field.name() == "message" {
+            self.message = format!("{value:?}");
+        } else {
+            self.rest.insert(field.name().into(), format!("{value:?}").into());
+        }
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.message = value.to_string();
+        } else {
+            self.rest.insert(field.name().into(), value.into());
+        }
+    }
+
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.rest.insert(field.name().into(), value.into());
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.rest.insert(field.name().into(), value.into());
+    }
+
+    fn record_bool(&mut self, field: &Field, value: bool) {
+        self.rest.insert(field.name().into(), value.into());
     }
 }
 
@@ -171,6 +223,23 @@ mod tests {
         assert_eq!(warnings.iter().map(|line| line.level).collect::<Vec<_>>(), ["warn", "error"]);
         assert_eq!(warnings[1].message, "broken code=5");
         assert!(buffer.lines(all[2].seq, "trace", 100).is_empty(), "nothing newer");
+    }
+
+    #[tokio::test]
+    async fn lines_for_loki_are_the_json_of_the_log_format() {
+        let buffer = LogBuffer::new(3);
+        buffer.loki().configure(&crate::loki::LokiSettings {
+            enabled: true,
+            url: "http://192.0.2.20:3100".into(),
+            ..crate::loki::LokiSettings::default()
+        });
+        let subscriber = tracing_subscriber::registry().with(buffer.layer());
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(user = "u1", count = 3, "logged in");
+            tracing::warn!(target: "uwulock_api::loki", "Loki does not take the lines");
+        });
+        assert_eq!(buffer.loki().status().queued, 1, "not what Loki's own module says");
+        assert_eq!(buffer.lines(0, "trace", 10).len(), 2, "the portal still has both");
     }
 
     #[test]

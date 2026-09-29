@@ -72,6 +72,7 @@ const PATHS = {
   lifebuoy:
     'M12 3.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17Z M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7Z M6 6l3.5 3.5 M14.5 14.5 18 18 M18 6l-3.5 3.5 M9.5 14.5 6 18',
   devices: 'M3.5 6h12v9h-12z M1.5 18h16 M18.5 9h4v10h-4z',
+  bell: 'M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15Z M10 20.5h4',
 } as const;
 
 export type IconName = keyof typeof PATHS;

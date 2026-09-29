@@ -23,13 +23,14 @@ export default defineConfig({
     sourcemap: false,
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 1500,
-    // The WebAuthn connectors are pages of their own, at the paths Bitwarden's clients open.
+    // The WebAuthn and SSO connectors are pages of their own, at the paths Bitwarden's clients open.
     rollupOptions: {
       input: {
         main: 'index.html',
         webauthn: 'webauthn-connector.html',
         'webauthn-mobile': 'webauthn-mobile-connector.html',
         'webauthn-fallback': 'webauthn-fallback-connector.html',
+        sso: 'sso-connector.html',
       },
     },
   },

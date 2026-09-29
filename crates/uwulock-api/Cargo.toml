@@ -12,6 +12,7 @@ rust-version.workspace = true
 doctest = false
 
 [dependencies]
+uwulock-backup.workspace = true
 uwulock-mail.workspace = true
 uwulock-notify.workspace = true
 uwulock-store.workspace = true
@@ -21,6 +22,7 @@ argon2.workspace = true
 axum.workspace = true
 base64.workspace = true
 ciborium.workspace = true
+libc.workspace = true
 parking_lot.workspace = true
 reqwest.workspace = true
 ring.workspace = true
@@ -29,6 +31,8 @@ serde.workspace = true
 serde_json.workspace = true
 time.workspace = true
 tokio.workspace = true
+tokio-rustls.workspace = true
+tokio-stream.workspace = true
 tokio-util.workspace = true
 tower.workspace = true
 tower-http.workspace = true
@@ -38,6 +42,7 @@ uuid.workspace = true
 webpki-roots.workspace = true
 
 [dev-dependencies]
+rcgen.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
 # A real WebSocket client for the hub's test; the same version axum speaks with.

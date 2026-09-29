@@ -2,11 +2,15 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { login, type Status } from '../../lib/api';
 import {
   DEFAULT_KDFS,
+  DEFAULT_RULES,
   invitation,
+  passwordProblem,
   register,
+  serverInfo,
   strength,
   type Invitation,
   type Kdf,
+  type PasswordRules,
 } from '../../lib/account';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
@@ -42,6 +46,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
   const [hint, setHint] = useState('');
   const [kdf, setKdf] = useState<Kdf['kind']>('argon2id');
   const [bits, setBits] = useState(0);
+  const [rules, setRules] = useState<PasswordRules>(DEFAULT_RULES);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,15 +64,29 @@ export function RegisterScreen({ token, email, onDone }: Props) {
     void strength(password).then(setBits, () => setBits(0));
   }, [password]);
 
+  // The server's rules for master passwords; Bitwarden's 12 characters without them.
+  useEffect(() => {
+    serverInfo().then(
+      (info) => setRules({ ...DEFAULT_RULES, ...info.policies?.masterPassword }),
+      () => undefined,
+    );
+  }, []);
+
   const address = invited?.email ?? email;
-  const tooShort = password.length > 0 && password.length < 12;
+  const weak = passwordProblem(password, bits, rules);
   const mismatch = repeat.length > 0 && repeat !== password;
   const hintGivesAway = hint.trim() !== '' && password.includes(hint.trim());
   const level = strengthLabel(bits);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (password.length < 12 || password !== repeat || hintGivesAway) return;
+    if (password !== repeat || hintGivesAway) return;
+    // The meter may still show the bits of a few keys ago: the check takes them now.
+    const refused = passwordProblem(password, await strength(password).catch(() => 0), rules);
+    if (refused) {
+      setError(refused);
+      return;
+    }
     setError(null);
     setBusy(t('Nyu macht deine Schlüssel …'));
     try {
@@ -146,7 +165,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                   <small>{t('Stärke: {level}', { level: level.text })}</small>
                 </span>
               )}
-              {tooShort && <small className="field-hint">{t('Mindestens 12 Zeichen.')}</small>}
+              {password && weak && <small className="field-hint">{weak}</small>}
             </label>
             <label className="field">
               <span>{t('Master-Passwort wiederholen')}</span>
@@ -214,11 +233,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                 className="primary"
                 type="submit"
                 disabled={
-                  Boolean(busy) ||
-                  password.length < 12 ||
-                  password !== repeat ||
-                  hintGivesAway ||
-                  !invited
+                  Boolean(busy) || Boolean(weak) || password !== repeat || hintGivesAway || !invited
                 }
               >
                 {busy ?? t('Konto anlegen')}

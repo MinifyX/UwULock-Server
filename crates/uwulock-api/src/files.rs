@@ -211,6 +211,21 @@ pub fn limit(state: &AppState) -> u64 {
     u64::from(state.settings().max_file_mb) * 1024 * 1024
 }
 
+/// Whether `adding` more bytes fit into the account's storage (`storagePerUserMb`: its
+/// attachments, Send files and file requests together). 422 `quota` when not.
+pub async fn check_storage(state: &AppState, user_id: &str, adding: i64) -> ApiResult<()> {
+    let Some(limit) = state.settings().storage_limit() else { return Ok(()) };
+    let used = state.store.storage_used(user_id).await?;
+    if used.saturating_add(adding) > limit {
+        return Err(ApiError::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Your storage on this server is full ({} of {}).", size_name(used), size_name(limit)),
+        )
+        .code("quota"));
+    }
+    Ok(())
+}
+
 /// The file at `path`, streamed.
 pub async fn serve(path: &Path) -> ApiResult<Response> {
     let file = tokio::fs::File::open(path).await.map_err(|_| ApiError::not_found("The file is not there."))?;

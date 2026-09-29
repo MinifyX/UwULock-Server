@@ -167,6 +167,15 @@ async fn create(
         ..Event::default()
     };
     let _ = state.store.log_event(event).await;
+    let context = crate::notices::Context { device_type: Some(request.device_type), ..crate::notices::Context::ip(ip) };
+    crate::notices::record(
+        &state,
+        &user,
+        "loginWithDeviceRequested",
+        &context,
+        serde_json::json!({ "approved": null }),
+    )
+    .await;
     Ok(Json(rendered))
 }
 

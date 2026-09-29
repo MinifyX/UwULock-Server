@@ -20,6 +20,7 @@ test = false
 
 [dependencies]
 uwulock-api.workspace = true
+uwulock-backup.workspace = true
 uwulock-mail.workspace = true
 uwulock-store.workspace = true
 

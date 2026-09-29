@@ -328,6 +328,15 @@ jobs:
         run: |
           node scripts/e2e/features.mjs https://localhost:8443 nyu@example.com \
             'correct horse battery staple' "$RUNNER_TEMP/api-key" "$RUNNER_TEMP/shots"
+      - name: File requests, the emergency sheet and off-site backups, in a browser
+        run: |
+          mkdir -p "$RUNNER_TEMP/offsite"
+          node scripts/e2e/operations.mjs https://localhost:8443 nyu@example.com \
+            'correct horse battery staple' "$RUNNER_TEMP/offsite" "$RUNNER_TEMP/shots"
+      - name: Logging in through SSO, with a provider of its own, in a browser
+        run: |
+          node scripts/e2e/sso.mjs https://localhost:8443 nyu@example.com \
+            'correct horse battery staple' "$RUNNER_TEMP/shots"
       - name: Bitwarden's CLI, with the account the browser made
         run: |
           scripts/e2e/bw-cli.sh https://localhost:8443 nyu@example.com 'correct horse battery staple' \

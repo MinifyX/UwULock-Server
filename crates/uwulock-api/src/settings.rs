@@ -34,6 +34,51 @@ pub struct Settings {
     pub users_may_invite: bool,
     /// How many accounts one user may bring in, counting invitations that still work.
     pub invitations_per_user: u32,
+    /// Security notices: which kinds are not mailed (they are listed all the same).
+    pub security_notices: SecurityNoticeSettings,
+    /// Rules for every account: two-step login, the key derivation, the master password.
+    pub policies: crate::policies::Policies,
+    /// Networks the admin portal answers from, like `192.0.2.0/24`; none means everywhere.
+    pub admin_networks: Vec<String>,
+    /// `/metrics` for Prometheus.
+    pub metrics: crate::metrics::MetricsSettings,
+    /// The log to Grafana Loki.
+    pub loki: crate::loki::LokiSettings,
+    /// File requests: links people without an account upload files to.
+    pub file_requests: FileRequestSettings,
+    /// How much an account may keep in files (attachments, Send files, file requests), in MiB;
+    /// none for no limit.
+    pub storage_per_user_mb: Option<u64>,
+    /// Logging in through an OpenID Connect provider (docs/uwu-api.md §19.1). Changed through its
+    /// own endpoints, `/uwu/v1/admin/sso`, never with the rest.
+    pub sso: crate::sso::SsoSettings,
+    /// SCIM from the provider: what a deleted person means, and the token's hash.
+    pub scim: crate::scim::ScimSettings,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct FileRequestSettings {
+    pub enabled: bool,
+    /// Requests one account may have.
+    pub per_user: u32,
+    /// How far ahead a request may run out.
+    pub max_days: u32,
+    /// Files one submission may bring.
+    pub max_files: u32,
+}
+
+impl Default for FileRequestSettings {
+    fn default() -> Self {
+        FileRequestSettings { enabled: true, per_user: 50, max_days: 90, max_files: 20 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SecurityNoticeSettings {
+    /// Kinds that are not mailed, like `newDevice`.
+    pub mail_off: Vec<String>,
 }
 
 impl Default for Settings {
@@ -50,7 +95,23 @@ impl Default for Settings {
             push: None,
             users_may_invite: false,
             invitations_per_user: 5,
+            security_notices: SecurityNoticeSettings::default(),
+            policies: crate::policies::Policies::default(),
+            admin_networks: Vec::new(),
+            metrics: crate::metrics::MetricsSettings::default(),
+            loki: crate::loki::LokiSettings::default(),
+            file_requests: FileRequestSettings::default(),
+            storage_per_user_mb: None,
+            sso: crate::sso::SsoSettings::default(),
+            scim: crate::scim::ScimSettings::default(),
         }
+    }
+}
+
+impl Settings {
+    /// The most an account may keep in files, in bytes; none for no limit.
+    pub fn storage_limit(&self) -> Option<i64> {
+        self.storage_per_user_mb.map(|mb| (mb.min(i64::MAX as u64 / (1024 * 1024)) * 1024 * 1024) as i64)
     }
 }
 
@@ -65,6 +126,57 @@ impl Settings {
 
     pub async fn save(&self, store: &Store) -> Result<(), uwulock_store::StoreError> {
         store.set_setting(KEY, &serde_json::to_string(self).expect("settings serialize")).await
+    }
+
+    /// The settings as the portal (and `uwulock-server settings get`) shows them: passwords,
+    /// keys and tokens never, only whether there is one.
+    pub fn for_portal(&self) -> serde_json::Value {
+        use serde_json::Value;
+        let mut value = serde_json::to_value(self).expect("settings serialize");
+        let mut hide = |section: &str, secret: &str, flag: &str| {
+            if let Some(object) = value.get_mut(section).and_then(Value::as_object_mut) {
+                let set =
+                    object.remove(secret).is_some_and(|value| value.as_str().is_some_and(|text| !text.is_empty()));
+                object.insert(flag.into(), set.into());
+            }
+        };
+        hide("smtp", "password", "passwordSet");
+        hide("push", "installationKey", "installationKeySet");
+        hide("metrics", "tokenHash", "tokenSet");
+        hide("loki", "password", "passwordSet");
+        hide("sso", "clientSecret", "clientSecretSet");
+        hide("scim", "tokenHash", "tokenSet");
+        value["mailEnabled"] = self.smtp.as_ref().is_some_and(|smtp| smtp.is_set()).into();
+        value
+    }
+
+    /// These settings with `value` at `path` (`adminNetworks`, `policies.requireTwoFactor.enabled`,
+    /// camelCase like the admin portal's), checked: what `uwulock-server settings set` does.
+    pub fn with(&self, path: &str, value: serde_json::Value) -> Result<Settings, String> {
+        use serde_json::Value;
+        let mut whole = serde_json::to_value(self).expect("settings serialize");
+        let keys: Vec<&str> = path.split('.').filter(|key| !key.is_empty()).collect();
+        let (last, parents) = keys.split_last().ok_or("Which setting? Like adminNetworks or metrics.enabled.")?;
+        let mut place = &mut whole;
+        for key in parents {
+            let object = place.as_object_mut().ok_or_else(|| format!("{path}: {key} holds no settings of its own"))?;
+            let next = object.entry(key.to_string()).or_insert_with(|| Value::Object(serde_json::Map::new()));
+            if next.is_null() {
+                *next = Value::Object(serde_json::Map::new());
+            }
+            place = next;
+        }
+        let object = place.as_object_mut().ok_or_else(|| format!("{path} is not a setting"))?;
+        // The metrics token is only ever stored as its hash.
+        let known = object.contains_key(*last) || (path == "metrics.token");
+        if !known {
+            return Err(format!("There is no setting {path}."));
+        }
+        object.insert(last.to_string(), value);
+        let mut new: Settings = serde_json::from_value(whole).map_err(|error| format!("{path}: {error}"))?;
+        new.metrics.take_token(&self.metrics)?;
+        new.check()?;
+        Ok(new)
     }
 
     /// Checked before saving: what would not work, said so a person can fix it.
@@ -88,6 +200,30 @@ impl Settings {
         {
             return Err("The mail server needs a host, a port and a sender address.".into());
         }
+        if let Some(kind) =
+            self.security_notices.mail_off.iter().find(|kind| !crate::notices::KINDS.contains(&kind.as_str()))
+        {
+            return Err(format!("{kind} is no kind of security notice."));
+        }
+        self.policies.check()?;
+        crate::networks::IpNetwork::parse_list(&self.admin_networks)
+            .map_err(|error| format!("Admin networks: {error}"))?;
+        self.metrics.check()?;
+        self.loki.check()?;
+        let requests = &self.file_requests;
+        if !(1..=1000).contains(&requests.per_user) {
+            return Err("An account may have from 1 to 1000 file requests.".into());
+        }
+        if !(1..=365).contains(&requests.max_days) {
+            return Err("A file request may run from 1 to 365 days.".into());
+        }
+        if !(1..=100).contains(&requests.max_files) {
+            return Err("A file request may take from 1 to 100 files at once.".into());
+        }
+        if self.storage_per_user_mb == Some(0) {
+            return Err("The storage per account is at least 1 MB, or no limit.".into());
+        }
+        self.sso.check()?;
         Ok(())
     }
 }
@@ -113,6 +249,19 @@ mod tests {
         assert!(Settings { invitation_days: 0, ..Settings::default() }.check().is_err());
         let smtp = SmtpSettings { host: "mail.example.com".into(), port: 0, ..SmtpSettings::default() };
         assert!(Settings { smtp: Some(smtp), ..Settings::default() }.check().is_err());
+    }
+
+    #[test]
+    fn one_setting_at_a_time_from_the_command_line() {
+        let start = Settings { admin_networks: vec!["192.0.2.0/24".into()], ..Settings::default() };
+        let open = start.with("adminNetworks", serde_json::json!([])).unwrap();
+        assert!(open.admin_networks.is_empty());
+        let on = start.with("policies.requireTwoFactor.enabled", serde_json::json!(true)).unwrap();
+        assert!(on.policies.require_two_factor.enabled);
+        assert!(start.with("adminNetworks", serde_json::json!(["nonsense"])).is_err(), "checked");
+        assert!(start.with("noSuchThing", serde_json::json!(1)).is_err());
+        let token = start.with("metrics.token", serde_json::json!("a-long-token-for-prometheus")).unwrap();
+        assert!(token.metrics.token_hash.is_some() && token.metrics.token.is_none(), "only the hash");
     }
 
     #[test]

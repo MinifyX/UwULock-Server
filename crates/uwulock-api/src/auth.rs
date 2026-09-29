@@ -122,8 +122,16 @@ impl Tokens {
         Ok(Tokens { key, issuer: format!("{public}|login") })
     }
 
-    /// An access token for `user` on `device`, and how many seconds it lasts.
-    pub fn access_token(&self, user: &User, device: &str, device_type: i64, client_id: &str) -> (String, i64) {
+    /// An access token for `user` on `device`, and how many seconds it lasts. `sso`: the login
+    /// came through SSO, which its `amr` says.
+    pub fn access_token(
+        &self,
+        user: &User,
+        device: &str,
+        device_type: i64,
+        client_id: &str,
+        sso: bool,
+    ) -> (String, i64) {
         let now = now_seconds();
         let claims = Claims {
             nbf: now,
@@ -139,7 +147,7 @@ impl Tokens {
             devicetype: device_type_name(device_type).to_string(),
             client_id: client_id.to_string(),
             scope: vec!["api".into(), "offline_access".into()],
-            amr: vec!["Application".into()],
+            amr: if sso { vec!["Application".into(), "sso".into()] } else { vec!["Application".into()] },
         };
         (self.sign(&claims), ACCESS_SECONDS)
     }
@@ -168,6 +176,34 @@ impl Tokens {
     /// The Send a send access token opens.
     pub fn check_send_token(&self, token: &str) -> Option<String> {
         self.verify_link(token, "send").map(|claims| claims.sub)
+    }
+
+    /// The token a file request's upload page gets once the link (and its password) opened:
+    /// it may start submissions to `request_id` for an hour.
+    pub fn upload_token(&self, request_id: &str) -> (String, i64) {
+        let seconds = 60 * 60;
+        let claims = LinkClaims {
+            sub: request_id.to_string(),
+            exp: now_seconds() + seconds,
+            iss: self.link_issuer("filerequest"),
+        };
+        (self.sign(&claims), seconds)
+    }
+
+    /// What `/identity/sso/prevalidate` hands out, for `/identity/connect/authorize`: two minutes.
+    pub fn sso_token(&self) -> String {
+        let claims = LinkClaims { sub: "sso".into(), exp: now_seconds() + 2 * 60, iss: self.link_issuer("sso") };
+        self.sign(&claims)
+    }
+
+    /// Whether `token` is one [`Tokens::sso_token`] made, and has not run out.
+    pub fn check_sso_token(&self, token: &str) -> bool {
+        self.verify_link(token, "sso").is_some()
+    }
+
+    /// The file request an upload token is for.
+    pub fn check_upload_token(&self, token: &str) -> Option<String> {
+        self.verify_link(token, "filerequest").map(|claims| claims.sub)
     }
 
     fn link_issuer(&self, what: &str) -> String {
@@ -447,6 +483,10 @@ fn canonical(ip: IpAddr) -> IpAddr {
 pub struct Session {
     pub user: Arc<User>,
     pub device: String,
+    /// The client the token was made for: `web`, `browser`, `desktop`, `cli`, `mobile`, …
+    pub client_id: String,
+    /// The login came through SSO.
+    pub sso: bool,
 }
 
 impl FromRequestParts<AppState> for Session {
@@ -456,6 +496,13 @@ impl FromRequestParts<AppState> for Session {
         let header = parts.headers.get("authorization").and_then(|value| value.to_str().ok()).unwrap_or_default();
         // Bitwarden takes what follows the last "Bearer ", or the whole value.
         let token = header.rsplit_once("Bearer ").map_or(header, |(_, token)| token);
+        Session::from_token(state, token).await
+    }
+}
+
+impl Session {
+    /// The session an access token stands for, if it still does.
+    pub async fn from_token(state: &AppState, token: &str) -> Result<Self, ApiError> {
         if token.is_empty() {
             return Err(ApiError::unauthorized());
         }
@@ -466,7 +513,8 @@ impl FromRequestParts<AppState> for Session {
         if user.disabled || user.security_stamp != claims.sstamp || !devices.contains(&claims.device) {
             return Err(ApiError::unauthorized());
         }
-        Ok(Session { user, device: claims.device })
+        let sso = claims.amr.iter().any(|method| method == "sso");
+        Ok(Session { user, device: claims.device, client_id: claims.client_id, sso })
     }
 }
 
@@ -481,6 +529,13 @@ impl FromRequestParts<AppState> for Admin {
         let session = Session::from_request_parts(parts, state).await?;
         if !session.user.admin {
             return Err(ApiError::forbidden("Only admins can do this."));
+        }
+        let only_sso = {
+            let settings = state.settings.read();
+            settings.sso.enabled && settings.sso.admins_only_with_sso
+        };
+        if only_sso && !session.sso {
+            return Err(ApiError::forbidden("Log in with SSO to use the admin portal.").code("sso_required"));
         }
         Ok(Admin(session))
     }
@@ -535,7 +590,7 @@ mod tests {
     #[tokio::test]
     async fn a_token_says_who_and_where() {
         let (tokens, _dir) = tokens().await;
-        let (token, lasts) = tokens.access_token(&user(), "device-1", 3, "browser");
+        let (token, lasts) = tokens.access_token(&user(), "device-1", 3, "browser", false);
         assert_eq!(lasts, ACCESS_SECONDS);
         let claims = tokens.verify(&token).unwrap();
         assert_eq!((claims.sub.as_str(), claims.device.as_str()), ("u1", "device-1"));
@@ -546,7 +601,7 @@ mod tests {
     #[tokio::test]
     async fn a_changed_token_is_refused() {
         let (tokens, _dir) = tokens().await;
-        let (token, _) = tokens.access_token(&user(), "device-1", 3, "browser");
+        let (token, _) = tokens.access_token(&user(), "device-1", 3, "browser", false);
         let (signed, signature) = token.rsplit_once('.').unwrap();
         let (header, _) = signed.split_once('.').unwrap();
         let mut claims: serde_json::Value =
@@ -570,7 +625,7 @@ mod tests {
         let (send, _) = tokens.send_token("s1");
         assert_eq!(tokens.check_send_token(&send).as_deref(), Some("s1"));
         assert!(!tokens.check_file_token(&send, "s1"));
-        let (login, _) = tokens.access_token(&user(), "d", 3, "browser");
+        let (login, _) = tokens.access_token(&user(), "d", 3, "browser", false);
         assert!(!tokens.check_file_token(&login, "u1"), "an access token opens no file");
         assert!(!tokens.check_file_token(&tokens.file_token("c1/a1", -1), "c1/a1"), "ran out");
     }
@@ -582,8 +637,12 @@ mod tests {
             uwulock_store::Store::open_sqlite(&dir.path().join("db"), &uwulock_store::Options { readers: 1 }).unwrap();
         let first = Tokens::load(&store, "https://vault.example.com").await.unwrap();
         let second = Tokens::load(&store, "https://vault.example.com").await.unwrap();
-        let (token, _) = first.access_token(&user(), "d", 8, "desktop");
-        assert!(second.verify(&token).is_some(), "a restart keeps sessions");
+        let (token, _) = first.access_token(&user(), "d", 8, "desktop", true);
+        let claims = second.verify(&token).expect("a restart keeps sessions");
+        assert_eq!(claims.amr, ["Application", "sso"]);
+        assert!(second.check_sso_token(&second.sso_token()));
+        assert!(!second.check_sso_token(&token), "an access token is no SSO token");
+        assert!(second.verify(&second.sso_token()).is_none(), "nor the other way round");
     }
 
     #[tokio::test]

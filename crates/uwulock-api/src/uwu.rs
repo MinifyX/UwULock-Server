@@ -25,16 +25,62 @@ pub(crate) fn routes() -> Router<AppState> {
 
 /// What this server is and can do, for a client that wants to know before it logs in.
 async fn info(State(state): State<AppState>) -> Json<Value> {
+    let settings = state.settings();
+    let mut features = vec![
+        "vault",
+        "folders",
+        "trash",
+        "archive",
+        "import",
+        "attachments",
+        "sends",
+        "emergency-access",
+        "two-factor-authenticator",
+        "two-factor-email",
+        "two-factor-webauthn",
+        "passkeys",
+        "login-with-device",
+        "api-key",
+        "admin",
+        "security-notices",
+    ];
+    if settings.hibp {
+        features.push("hibp");
+    }
+    if settings.file_requests.enabled {
+        features.push("file-requests");
+    }
+    if settings.sso.active() {
+        features.push("sso");
+    }
+    let rules = &settings.policies.master_password;
     Json(json!({
+        "object": "info",
         "name": "UwULock Server",
         "version": state.version,
+        "apiVersion": 1,
+        "publicUrl": state.config.public,
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
-        "features": [
-            "vault", "folders", "trash", "archive", "import", "attachments", "sends", "emergency-access",
-            "two-factor-authenticator", "two-factor-email", "two-factor-webauthn", "passkeys", "login-with-device",
-            "api-key", "hibp", "admin",
-        ],
+        "features": features,
+        "sso": {
+            "enabled": settings.sso.active(),
+            "only": settings.sso.active() && settings.sso.only,
+            "identifier": settings.sso.identifier,
+            "label": settings.sso.label,
+        },
+        "policies": {
+            "masterPassword": {
+                "minLength": rules.min_length,
+                "minComplexity": rules.min_complexity,
+                "enforceOnLogin": rules.enforce_on_login,
+            },
+        },
+        "limits": {
+            "maxFileBytes": u64::from(settings.max_file_mb) * 1024 * 1024,
+            "fileRequestMaxFiles": settings.file_requests.max_files,
+            "fileRequestMaxDays": settings.file_requests.max_days,
+        },
     }))
 }
 
@@ -65,9 +111,27 @@ async fn invitation(
 /// What the web vault needs to know about the account beyond Bitwarden's profile.
 async fn account(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let settings = state.settings();
-    let factors = state.store.two_factors(&session.user.id).await?;
+    let (factors, unseen, used) = tokio::try_join!(
+        state.store.two_factors(&session.user.id),
+        state.store.unseen_notices(&session.user.id),
+        state.store.storage_used(&session.user.id),
+    )?;
+    let require = &settings.policies.require_two_factor;
     Ok(Json(json!({
+        "object": "account",
+        "policy": {
+            "twoFactorRequired": require.enabled,
+            "twoFactorDeadline": require.deadline.as_ref().filter(|_| require.enabled),
+            "twoFactorEnforced": settings.policies.two_factor_enforced(),
+            "kdfBelowMinimum": settings.policies.kdf_below_minimum(&session.user.kdf),
+            "minimumKdf": settings.policies.minimum_kdf,
+        },
+        "securityNoticesUnseen": unseen,
+        "storage": { "usedBytes": used, "limitBytes": settings.storage_limit() },
         "admin": session.user.admin,
+        "hasMasterPassword": !session.user.user_key.is_empty(),
+        "sso": session.sso,
+        "adminNeedsSso": settings.sso.active() && settings.sso.admins_only_with_sso,
         "language": session.user.language,
         "mail": state.mailer.enabled(),
         "passwordHints": settings.password_hints,

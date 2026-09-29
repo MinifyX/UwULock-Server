@@ -21,6 +21,7 @@ import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
 import { Row, save } from './controls';
+import { EmergencySheetDialog } from './EmergencySheet';
 
 const STATUS: Record<number, string> = {
   0: N_('Eingeladen'),
@@ -35,6 +36,7 @@ type Dialog =
   | { kind: 'confirm'; contact: Contact; publicKey: string; phrase: string }
   | { kind: 'view'; contact: Contact; vault: string }
   | { kind: 'takeover'; contact: Contact }
+  | { kind: 'sheet' }
   | null;
 
 /**
@@ -79,6 +81,15 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
           'Vertrauenspersonen können im Notfall auf deinen Tresor zugreifen: Sie fragen an, und wenn du nicht innerhalb der Wartezeit ablehnst, bekommen sie Zugriff. Sie brauchen ein Konto auf diesem Server.',
         )}
       </p>
+
+      <Row
+        label={t('Notfallblatt')}
+        description={t(
+          'Ein PDF für deine Angehörigen, mit Server-Adresse, E-Mail, einem Feld für das Master-Passwort, dem Wiederherstellungscode und deinen Notfallkontakten – im Browser erstellt.',
+        )}
+      >
+        <button onClick={() => setDialog({ kind: 'sheet' })}>{t('Notfallblatt erstellen')}</button>
+      </Row>
 
       <h3 className="settings-heading">{t('Meine Vertrauenspersonen')}</h3>
       {trusted.map((contact) => (
@@ -196,6 +207,7 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
         </>
       )}
 
+      {dialog?.kind === 'sheet' && <EmergencySheetDialog onClose={() => setDialog(null)} />}
       {dialog?.kind === 'invite' && (
         <Invite
           onClose={() => setDialog(null)}

@@ -55,6 +55,8 @@ impl TestServer {
             hibp_url: hibp_url.into(),
             login_attempts: 10,
             start_settings: settings,
+            certificate_probe: None,
+            time_sources: Vec::new(),
         };
         let mut state = AppState::new(store, config, "0.0.0-test", LogBuffer::new(100)).await.unwrap();
         state.mailer = Mailer::capturing();
@@ -67,6 +69,35 @@ impl TestServer {
         self.state.limits = Arc::new(limits);
         self.router = router(self.state.clone());
         self
+    }
+
+    /// Behind a proxy it trusts: `X-Forwarded-For` says where a request comes from.
+    pub(crate) fn behind_proxy(mut self) -> Self {
+        let mut config = (*self.state.config).clone();
+        config.trust_forwarded = true;
+        self.state.config = Arc::new(config);
+        self.router = router(self.state.clone());
+        self
+    }
+
+    /// `method` with a JSON body and a token, from `ip` (behind a proxy it trusts).
+    pub(crate) async fn call_from(
+        &self,
+        ip: &str,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: Value,
+    ) -> Response<Body> {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {token}"))
+            .header("x-forwarded-for", ip)
+            .body(Body::from(body.to_string()))
+            .unwrap();
+        self.send(request).await
     }
 
     pub(crate) async fn send(&self, request: Request<Body>) -> Response<Body> {
@@ -234,4 +265,17 @@ pub(crate) async fn fake_relay() -> (String, tokio::sync::mpsc::UnboundedReceive
     let address = listener.local_addr().unwrap();
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
     (format!("http://{address}"), told)
+}
+
+/// An EncString of type 2 with nothing in it, the right form for the server's checks.
+pub(crate) fn type2() -> String {
+    use base64::Engine as _;
+    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+    format!("2.{}|{}|{}", b64(&[1; 16]), b64(&[2; 32]), b64(&[3; 32]))
+}
+
+/// An EncString of type 4, as an RSA-2048 wrap looks.
+pub(crate) fn type4() -> String {
+    use base64::Engine as _;
+    format!("4.{}", base64::engine::general_purpose::STANDARD.encode([4; 256]))
 }

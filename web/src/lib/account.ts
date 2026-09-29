@@ -5,6 +5,7 @@
  */
 
 import { currentProfile, lock, logout, prelogin } from './api';
+import { t } from './i18n';
 import { call, callJson } from './web/core';
 import { deviceId, request } from './web/http';
 
@@ -22,7 +23,46 @@ export type AccountInfo = {
   twoFactor: number[];
   created: string;
   lastLogin: string | null;
+  /** The server's rules as they apply to this account (§20). */
+  policy?: {
+    twoFactorRequired: boolean;
+    /** From then on only the web vault lets an account without two-step login in. */
+    twoFactorDeadline: string | null;
+    /** The deadline has passed. */
+    twoFactorEnforced: boolean;
+    kdfBelowMinimum: boolean;
+    minimumKdf: MinimumKdf;
+  };
+  securityNoticesUnseen?: number;
+  /** False for an account made through SSO until its master password is set. */
+  hasMasterPassword?: boolean;
+  /** This session's login came through SSO. */
+  sso?: boolean;
+  /** The admin portal takes only sessions from an SSO login. */
+  adminNeedsSso?: boolean;
 };
+
+export type MinimumKdf = {
+  pbkdf2Iterations: number;
+  argon2Memory: number;
+  argon2Iterations: number;
+  argon2Parallelism: number;
+};
+
+/** The rules for a new master password: `minComplexity` is a zxcvbn score, 0 (none) to 4. */
+export type PasswordRules = { minLength: number; minComplexity: number; enforceOnLogin?: boolean };
+
+/** What the server tells anybody before a login; only what the web vault uses of it. */
+export type ServerInfo = {
+  policies?: { masterPassword?: PasswordRules };
+  /** Logging in through an OpenID Connect provider (§19): `label` goes on the button. */
+  sso?: { enabled: boolean; only: boolean; identifier: string; label: string };
+};
+
+export const serverInfo = () => request<ServerInfo>('/uwu/v1/info', { auth: false });
+
+/** Without a word from the server: what Bitwarden's clients ask anyway. */
+export const DEFAULT_RULES: PasswordRules = { minLength: 12, minComplexity: 0 };
 
 export type Kdf =
   | { kind: 'pbkdf2'; iterations: number }
@@ -129,8 +169,102 @@ export async function register(input: {
   });
 }
 
+/**
+ * The first master password of an account made through SSO (docs/uwu-api.md §19.2 step 6): keys
+ * made here as for a registration, sent with the session of the SSO login.
+ */
+export async function setInitialPassword(input: {
+  email: string;
+  password: string;
+  hint: string;
+  kdf: Kdf;
+}): Promise<void> {
+  const pair = await crypto.subtle.generateKey(
+    {
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-1',
+    },
+    true,
+    ['encrypt', 'decrypt'],
+  );
+  const base64 = (buffer: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  const publicKey = base64(await crypto.subtle.exportKey('spki', pair.publicKey));
+  const privateKey = base64(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+  const made = await callJson<{ hash: string; key: string; encryptedPrivateKey: string }>((core) =>
+    core.newAccount(input.email, input.password, kdfText(input.kdf), privateKey),
+  );
+  const kdf = kdfBody(input.kdf);
+  await request('/api/accounts/set-password', {
+    body: {
+      masterPasswordHash: made.hash,
+      masterPasswordHint: input.hint.trim() || null,
+      key: made.key,
+      kdf: kdf.kdfType,
+      kdfIterations: kdf.iterations,
+      kdfMemory: kdf.memory,
+      kdfParallelism: kdf.parallelism,
+      keys: { publicKey, encryptedPrivateKey: made.encryptedPrivateKey },
+      orgIdentifier: null,
+    },
+  });
+}
+
 /** How strong a password is, in bits, the way the generator counts. */
 export const strength = (password: string) => call((core) => core.entropyBits(password));
+
+/**
+ * The bits as a score from 0 to 4 like zxcvbn's, which the admin's rule is written in. zxcvbn
+ * draws its lines at 10³, 10⁶, 10⁸ and 10¹⁰ guesses: that is 10, 20, 26.6 and 33.2 bits.
+ */
+export function complexityScore(bits: number): number {
+  if (bits < 10) return 0;
+  if (bits < 20) return 1;
+  if (bits < 26.6) return 2;
+  if (bits < 33.2) return 3;
+  return 4;
+}
+
+/** Why a new master password is refused under `rules`, or null when it is fine. */
+export function passwordProblem(
+  password: string,
+  bits: number,
+  rules: PasswordRules,
+): string | null {
+  // Bitwarden's clients ask for 12 characters whatever the server says; so does this one.
+  const length = Math.max(rules.minLength, DEFAULT_RULES.minLength);
+  if ([...password].length < length) return t('Mindestens {n} Zeichen.', { n: length });
+  if (rules.minComplexity > 0 && complexityScore(bits) < rules.minComplexity)
+    return t(
+      'Dieser Server verlangt ein stärkeres Master-Passwort (Stufe {need} von 4, dieses hat {has}).',
+      {
+        need: rules.minComplexity,
+        has: complexityScore(bits),
+      },
+    );
+  return null;
+}
+
+/**
+ * Key derivation settings that meet the server's minimum. Bitwarden's Argon2id default when that
+ * is enough; otherwise Argon2id raised to the minimum — or, for an account on PBKDF2 when
+ * Argon2id is not the answer, PBKDF2 with enough rounds.
+ */
+export function kdfForMinimum(current: Kdf, minimum: MinimumKdf, keepKind = false): Kdf {
+  if (keepKind && current.kind === 'pbkdf2')
+    return {
+      kind: 'pbkdf2',
+      iterations: Math.max(DEFAULT_KDFS.pbkdf2.iterations, minimum.pbkdf2Iterations),
+    };
+  const base = DEFAULT_KDFS.argon2id as Extract<Kdf, { kind: 'argon2id' }>;
+  return {
+    kind: 'argon2id',
+    memory: Math.max(base.memory, minimum.argon2Memory),
+    iterations: Math.max(base.iterations, minimum.argon2Iterations),
+    parallelism: Math.max(base.parallelism, minimum.argon2Parallelism),
+  };
+}
 
 // ── Changing how the account is unlocked ──────────────────
 

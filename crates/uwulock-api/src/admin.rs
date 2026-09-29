@@ -4,7 +4,7 @@
 //! An admin sees accounts, devices and numbers — never anything inside a vault. That is
 //! encrypted with keys only the account's owner has.
 
-use crate::auth::{self, Admin, device_type_name};
+use crate::auth::{self, Admin, ClientIp, device_type_name};
 use crate::errors::{ApiError, ApiResult};
 use crate::{AppState, Settings};
 use axum::extract::{Path, Query, State};
@@ -30,6 +30,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/admin/settings", get(get_settings).put(put_settings))
         .route("/uwu/v1/admin/settings/test-mail", post(test_mail))
         .route("/uwu/v1/admin/settings/test-push", post(test_push))
+        .route("/uwu/v1/admin/settings/test-loki", post(test_loki))
         .route("/uwu/v1/admin/stats", get(daily_stats))
         .route("/uwu/v1/admin/events", get(events))
         .route("/uwu/v1/admin/logs", get(logs))
@@ -38,7 +39,7 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/admin/backups/{name}/restore", post(restore_backup))
 }
 
-async fn record(state: &AppState, admin: &Admin, detail: String) {
+pub(crate) async fn record(state: &AppState, admin: &Admin, detail: String) {
     let event = Event {
         kind: "admin".into(),
         user_id: Some(admin.0.user.id.clone()),
@@ -392,21 +393,18 @@ async fn delete_device(
 
 // ── Settings ──────────────────────────────────────────────
 
-/// The settings as the portal shows them: the mail password is never sent back, only whether
-/// there is one.
 fn settings_json(settings: &Settings) -> Value {
-    let mut value = serde_json::to_value(settings).expect("settings serialize");
-    if let Some(smtp) = value.get_mut("smtp").and_then(Value::as_object_mut) {
-        let set =
-            smtp.remove("password").is_some_and(|password| password.as_str().is_some_and(|text| !text.is_empty()));
-        smtp.insert("passwordSet".into(), set.into());
+    settings.for_portal()
+}
+
+/// The Loki password left out means: keep the one there is — for the same Loki and user only.
+fn keep_loki_password(new: &mut crate::loki::LokiSettings, old: &crate::loki::LokiSettings) {
+    if new.password.as_deref().is_none_or(str::is_empty)
+        && new.url.trim().trim_end_matches('/') == old.url.trim().trim_end_matches('/')
+        && new.username == old.username
+    {
+        new.password = old.password.clone();
     }
-    if let Some(push) = value.get_mut("push").and_then(Value::as_object_mut) {
-        let set = push.remove("installationKey").is_some_and(|key| key.as_str().is_some_and(|text| !text.is_empty()));
-        push.insert("installationKeySet".into(), set.into());
-    }
-    value["mailEnabled"] = settings.smtp.as_ref().is_some_and(|smtp| smtp.is_set()).into();
-    value
 }
 
 async fn get_settings(State(state): State<AppState>, _admin: Admin) -> Json<Value> {
@@ -416,9 +414,23 @@ async fn get_settings(State(state): State<AppState>, _admin: Admin) -> Json<Valu
 async fn put_settings(
     State(state): State<AppState>,
     admin: Admin,
+    ClientIp(ip): ClientIp,
     Json(mut new): Json<Settings>,
 ) -> ApiResult<Json<Value>> {
     let current = state.settings();
+    // SSO and the SCIM token have endpoints of their own, for their secrets.
+    new.sso = current.sso.clone();
+    new.scim.token_hash = current.scim.token_hash.clone();
+    new.metrics.take_token(&current.metrics).map_err(ApiError::bad)?;
+    keep_loki_password(&mut new.loki, &current.loki);
+    new.admin_networks =
+        new.admin_networks.iter().map(|entry| entry.trim().to_string()).filter(|entry| !entry.is_empty()).collect();
+    if !crate::networks::allowed(&new.admin_networks, ip) {
+        return Err(ApiError::bad(format!(
+            "These admin networks would shut you out: you are at {ip}. Add your network, or leave the list empty."
+        ))
+        .code("would_lock_out"));
+    }
     // A password left out means: keep the one there is — for the same account on the same mail
     // server only. Otherwise whoever holds an admin session could point the settings at a server
     // of their own, and the stored password would log in there.
@@ -461,9 +473,29 @@ async fn put_settings(
     if new.push != current.push {
         state.relay.reset();
     }
-    *state.settings.write() = new.clone();
+    state.apply_settings(new.clone());
     record(&state, &admin, "changed the settings".into()).await;
     Ok(Json(settings_json(&new)))
+}
+
+/// Whether Loki takes a line, with the settings as typed (the stored password where it is left
+/// out for the same Loki), or the saved ones.
+async fn test_loki(
+    State(state): State<AppState>,
+    _admin: Admin,
+    body: Option<Json<crate::loki::LokiSettings>>,
+) -> ApiResult<StatusCode> {
+    let current = state.settings().loki;
+    let mut loki = body.map_or_else(|| current.clone(), |Json(loki)| loki);
+    keep_loki_password(&mut loki, &current);
+    loki.target().map_err(ApiError::bad)?;
+    state
+        .logs
+        .loki()
+        .test(&loki)
+        .await
+        .map_err(|error| ApiError::upstream(format!("Loki did not take the line: {error}")))?;
+    Ok(StatusCode::OK)
 }
 
 #[derive(Deserialize)]
@@ -543,8 +575,30 @@ async fn logs(State(state): State<AppState>, _admin: Admin, Query(query): Query<
     Json(json!(lines))
 }
 
-async fn overview(State(state): State<AppState>, _admin: Admin) -> ApiResult<Json<Value>> {
-    let stats = state.store.stats().await?;
+async fn overview(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+    let (stats, (attachments, sends)) = tokio::try_join!(state.store.stats(), state.store.file_bytes())?;
+    let language = Language::from_code(&admin.0.user.language);
+    let alerts: Vec<Value> = state
+        .alerts
+        .active()
+        .into_iter()
+        .map(|(kind, active)| {
+            json!({
+                "kind": kind,
+                "severity": active.severity,
+                "since": active.since,
+                "detail": active.detail.in_language(language),
+            })
+        })
+        .collect();
+    let channels = state.store.channels().await?;
+    let failing: Vec<Value> = crate::alerts::failing_channels(&state)
+        .into_iter()
+        .filter_map(|(id, error)| {
+            let channel = channels.iter().find(|channel| channel.id == id)?;
+            Some(json!({ "id": id, "name": channel.name, "kind": channel.kind, "error": error }))
+        })
+        .collect();
     let database = state.store.path().to_path_buf();
     let size = |path: &std::path::Path| std::fs::metadata(path).map_or(0, |meta| meta.len());
     let database_size = size(&database) + size(&with_suffix(&database, "-wal"));
@@ -570,6 +624,18 @@ async fn overview(State(state): State<AppState>, _admin: Admin) -> ApiResult<Jso
         "mail": state.mailer.enabled(),
         "webVault": crate::web::is_built(),
         "update": update,
+        "alerts": alerts,
+        "failingChannels": failing,
+        "storage": {
+            "databaseBytes": database_size,
+            "filesBytes": {
+                "attachments": attachments,
+                "sends": sends,
+                "fileRequests": state.store.file_request_bytes().await?,
+            },
+        },
+        "loki": state.logs.loki().status(),
+        "diagnosis": crate::diagnosis::summary(&state).await,
     })))
 }
 
@@ -619,6 +685,7 @@ async fn create_backup(State(state): State<AppState>, admin: Admin) -> ApiResult
     let path = backups::write(&state.store, &state.config.backups, None).await.map_err(ApiError::bad)?;
     backups::keep_newest(&state.config.backups, backups::KEPT);
     let name = path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+    state.alerts.report("backupFailed", None);
     record(&state, &admin, format!("wrote the backup {name}")).await;
     let bytes = std::fs::metadata(&path).map_or(0, |meta| meta.len());
     Ok(Json(json!({ "name": name, "bytes": bytes })))
@@ -669,7 +736,23 @@ async fn restore_backup(
     if theirs.is_none() || theirs != state.store.setting(auth::TOKEN_KEY).await? {
         return Err(ApiError::bad("This backup is of another server; it can only go back with the command line."));
     }
-    // Its own name, and never one that is there: a restore undone within the second is one too.
+    let before = backup_before_restore(&state).await?;
+    // The off-site backups stay as they are now: the backup's settings may be older than the
+    // recovery key of what is out there.
+    let (offsite, offsite_status) = (state.offsite.settings().await.ok(), state.offsite.status().await);
+    state.store.restore_online(&path).await.map_err(ApiError::bad)?;
+    if let Some(offsite) = offsite {
+        let _ = state.offsite.save_settings(&offsite).await;
+        state.offsite.save_status(&offsite_status).await;
+    }
+    after_restore(&state).await?;
+    record(&state, &admin, format!("restored the backup {name} (what was there before: {before})")).await;
+    Ok(Json(json!({ "restored": name, "before": before })))
+}
+
+/// A local backup of how the server is now, before a restore: its own name, and never one that
+/// is there — a restore undone within the second is one too. Answers its name.
+pub(crate) async fn backup_before_restore(state: &AppState) -> ApiResult<String> {
     let stamp = backups::stamp(backups::now_ms());
     let aside = (1..)
         .map(|n| match n {
@@ -680,18 +763,22 @@ async fn restore_backup(
         .find(|path| !path.exists())
         .expect("a free name");
     let before = backups::write(&state.store, &state.config.backups, Some(aside)).await.map_err(ApiError::bad)?;
-    let before = before.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
-    state.store.restore_online(&path).await.map_err(ApiError::bad)?;
-    // The settings are the backup's now, and so is everything read from them.
+    Ok(before.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default())
+}
+
+/// After a restore into the running server: the settings are the backup's now, and so is
+/// everything read from them.
+pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     let settings = Settings::load(&state.store, &state.config.start_settings).await.map_err(ApiError::internal)?;
     if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
         tracing::warn!(%error, "the mail server of the restored settings");
     }
     state.relay.reset();
-    *state.settings.write() = settings;
+    state.secret.forget();
+    state.oidc.forget();
+    state.apply_settings(settings);
     state.count_legacy_hashes().await;
-    record(&state, &admin, format!("restored the backup {name} (what was there before: {before})")).await;
-    Ok(Json(json!({ "restored": name, "before": before })))
+    Ok(())
 }
 
 #[cfg(test)]

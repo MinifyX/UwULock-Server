@@ -3,7 +3,8 @@
 //! `pnpm build` in `web/` writes next to every text file a `.br` and a `.gz` copy, compressed as
 //! hard as the formats go; those are embedded too, and served to whoever takes them, so nothing is
 //! compressed again per request. Without a build the server works as before, and says at `/` that
-//! the web vault is missing. After the first `pnpm build`, touch this file so Cargo notices.
+//! the web vault is missing. `pnpm build` touches this file at its end, so Cargo notices the first
+//! build too.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};

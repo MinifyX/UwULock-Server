@@ -16,12 +16,15 @@ mod backup;
 pub mod backups;
 pub mod clock;
 pub mod emergency;
+pub mod file_requests;
 mod migrate;
 mod migrations;
+pub mod notices;
 pub mod organizations;
 mod passkeys;
 pub mod sends;
 mod sqlite;
+pub mod sso;
 mod vault;
 
 pub use accounts::{
@@ -31,12 +34,15 @@ pub use accounts::{
 pub use admin::{Day, EVENT_DAYS, Event, Stats};
 pub use attachments::{Attachment, AttachmentKey, Owner};
 pub use auth_requests::{AUTH_REQUEST_SECONDS, AuthRequest};
-pub use backup::{restore, setting_in};
+pub use backup::{restore, schema_of, setting_in};
 pub use emergency::EmergencyAccess;
+pub use file_requests::{ExtrasKey, FileRequest, FileRequestSummary, RequestFile, Submission};
 pub use migrate::{Migration, MovedDevice, MovedTwoFactor, MovedUser};
 pub use migrations::SCHEMA_VERSION;
+pub use notices::{Channel, NOTICE_DAYS, Notice};
 pub use organizations::{Access, OrgCipher, OrgVault};
 pub use passkeys::{MAX_PASSKEYS, Passkey};
+pub use sso::{ScimGroup, ScimUser, SsoCode, SsoIdentity, SsoState};
 pub use vault::{Bulk, Cipher, Folder, Rotation, VaultContents};
 
 use parking_lot::RwLock;

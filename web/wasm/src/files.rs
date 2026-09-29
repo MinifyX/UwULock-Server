@@ -43,7 +43,7 @@ fn text_of(value: &Option<String>, key: &SymmetricKey) -> Result<Option<String>>
 // ── Attachments ───────────────────────────────────────────
 
 /// The key an item's attachment keys are under: the item's own, or the one the item is under.
-fn item_key<'a>(unlocked: &'a Unlocked, item_id: &str) -> Result<&'a SymmetricKey> {
+pub(crate) fn item_key<'a>(unlocked: &'a Unlocked, item_id: &str) -> Result<&'a SymmetricKey> {
     let item = unlocked.vault.item(item_id).ok_or_else(|| Failure::new("not-found", "This item isn't in the vault."))?;
     match &item.key {
         Some(key) => Ok(key),

@@ -4,7 +4,9 @@
 //! its channel is newer than itself, says so in its log along with the one
 //! command that updates it. A build of `main` (the `edge` tag) asks how many
 //! commits came since instead. That is the only connection this server ever
-//! opens on its own, and `UWULOCK_UPDATE_CHECK=off` stops it.
+//! opens on its own, and `UWULOCK_UPDATE_CHECK=off` stops it. (The diagnosis
+//! after an update compares the clock with the `Date` of the same server, and
+//! the admin portal's channels and Loki go only where an admin points them.)
 //!
 //! Updating is not something the server does to itself: `update.sh` does it on
 //! the machine, with a backup first and the old version back if the new one
@@ -19,6 +21,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const CHECK_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Where the diagnosis compares the clock by default: the server GitHub it asks for updates
+/// anyway, and the `Date` of its answer.
+pub const TIME_SOURCE: &str = "https://api.github.com";
 const MAX_RESPONSE: usize = 2 * 1024 * 1024;
 
 /// What this binary is: its version, and for a CI build its commit and

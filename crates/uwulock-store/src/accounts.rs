@@ -160,10 +160,12 @@ pub struct Device {
     pub remember_hash: Option<Vec<u8>>,
     pub remember_expires: Option<String>,
     pub push_token: Option<String>,
+    /// The device's login came through SSO.
+    pub sso: bool,
 }
 
 const DEVICE_COLUMNS: &str = "user_id, id, name, type, created, last_seen, last_ip, refresh_hash IS NOT NULL, \
-     refresh_expires, remember_hash, remember_expires, push_token";
+     refresh_expires, remember_hash, remember_expires, push_token, sso";
 
 fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
     Ok(Device {
@@ -179,6 +181,7 @@ fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
         remember_hash: row.get(9)?,
         remember_expires: row.get(10)?,
         push_token: row.get(11)?,
+        sso: row.get(12)?,
     })
 }
 
@@ -194,6 +197,8 @@ pub struct DeviceLogin {
     pub refresh_expires: String,
     /// A new token that skips two-step login here, when "remember me" was ticked.
     pub remember: Option<(Vec<u8>, String)>,
+    /// The login came through SSO.
+    pub sso: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -494,10 +499,10 @@ impl Store {
                 )?;
                 tx.execute(
                     "INSERT INTO devices (user_id, id, name, type, created, last_seen, last_ip, refresh_hash, \
-                     refresh_expires) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8) \
+                     refresh_expires, sso) VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?7, ?8, ?9) \
                      ON CONFLICT (user_id, id) DO UPDATE SET name = excluded.name, type = excluded.type, \
                      last_seen = excluded.last_seen, last_ip = excluded.last_ip, refresh_hash = excluded.refresh_hash, \
-                     refresh_expires = excluded.refresh_expires",
+                     refresh_expires = excluded.refresh_expires, sso = excluded.sso",
                     params![
                         login.user_id,
                         login.id,
@@ -506,7 +511,8 @@ impl Store {
                         now,
                         login.ip,
                         login.refresh_hash,
-                        login.refresh_expires
+                        login.refresh_expires,
+                        login.sso
                     ],
                 )?;
                 if let Some((hash, expires)) = login.remember {
@@ -1013,6 +1019,7 @@ pub(crate) mod tests {
             refresh_hash: vec![hash; 32],
             refresh_expires: clock::in_seconds(3600),
             remember: None,
+            sso: false,
         }
     }
 

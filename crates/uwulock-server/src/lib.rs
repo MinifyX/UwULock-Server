@@ -6,6 +6,7 @@
 
 pub mod config;
 pub mod health;
+pub mod offsite;
 pub mod tls;
 pub mod updates;
 pub mod vaultwarden;
@@ -40,6 +41,8 @@ pub async fn app_state(config: &Config, store: Store, logs: Arc<LogBuffer>) -> R
         hibp_url: "https://api.pwnedpasswords.com".into(),
         login_attempts: config.login_attempts,
         start_settings: config.start_settings.clone(),
+        certificate_probe: config.certificate_probe(),
+        time_sources: config.time_sources.clone(),
     };
     let state = AppState::new(store, api, updates::build().version, logs).await?;
     {
@@ -68,7 +71,10 @@ pub async fn run(
 
     let state = app_state(&config, store, logs).await?;
     spawn_maintenance(config.clone(), state.clone());
+    uwulock_api::offsite::spawn(state.clone());
     updates::spawn(Arc::new(config.clone()), state.update.clone());
+    state.logs.loki().spawn();
+    uwulock_api::metrics::spawn_listener(state.clone());
     if state.mailer.enabled() {
         tracing::info!("mail is set up");
     }
@@ -148,11 +154,46 @@ pub async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
+/// Every minute: the bundled mails of security notices that are due, and a look at how the
+/// server is for the admin notifications. Every six hours: the certificate clients see. Once
+/// after a start with a new version: the diagnosis.
+fn spawn_watch(state: AppState) {
+    let minutely = state.clone();
+    tokio::spawn(async move {
+        // The listener is up by then, and a server restarted in a loop sends nothing twice.
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        loop {
+            uwulock_api::notices::deliver_due(&minutely, &uwulock_store::clock::now()).await;
+            uwulock_api::alerts::tick(&minutely).await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+    });
+    let certificate = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        loop {
+            if let Some(probe) = certificate.config.certificate_probe.clone() {
+                let seen = uwulock_api::certificate::look(&probe).await;
+                if let Some(problem) = &seen.problem {
+                    tracing::warn!(%problem, "the certificate clients see has a problem");
+                }
+                *certificate.certificate.write() = Some(seen);
+            }
+            tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
+        }
+    });
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(25)).await;
+        uwulock_api::diagnosis::after_update(&state).await;
+    });
+}
+
 /// Once a day: a backup, and the old ones swept away — backups, events, codes, invitations and
 /// sessions that ran out, items that were in the trash for 30 days, Sends past their deletion
 /// date, files nothing claims any more. Every hour: emergency access whose wait is over, and the
 /// day's numbers for the admin portal.
 pub fn spawn_maintenance(config: Config, state: AppState) {
+    spawn_watch(state.clone());
     let hourly = state.clone();
     tokio::spawn(async move {
         loop {
@@ -176,12 +217,21 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
                 tracing::warn!(%error, "sweeping up did not work");
             }
             sweep_files(&config, &state).await;
+            uwulock_api::file_requests::sweep(&state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");
                     backups::keep_newest(&config.backups(), backups::KEPT);
+                    state.alerts.report("backupFailed", None);
                 }
-                Err(error) => tracing::warn!("no backup tonight: {error}"),
+                Err(error) => {
+                    tracing::warn!("no backup tonight: {error}");
+                    let detail = uwulock_api::alerts::Detail::new(
+                        format!("Das nächtliche Backup ging nicht: {error}"),
+                        format!("The nightly backup did not work: {error}"),
+                    );
+                    state.alerts.report("backupFailed", Some(("error", detail)));
+                }
             }
             tokio::time::sleep(Duration::from_secs(24 * 60 * 60)).await;
         }

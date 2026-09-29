@@ -11,7 +11,7 @@
 
 mod templates;
 
-pub use templates::Mail;
+pub use templates::{Mail, NoticeLine, alert_text};
 
 use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
@@ -156,6 +156,24 @@ struct Inner {
     connection: RwLock<Option<Connection>>,
     /// In tests: what would have been sent, instead of sending it.
     captured: Option<Mutex<Vec<Sent>>>,
+    health: Mutex<MailHealth>,
+}
+
+/// How sending goes, for the metrics, the admin alerts and the diagnosis.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MailHealth {
+    /// Mails that went out since the start.
+    pub sent: u64,
+    /// Mails the mail server did not take since the start.
+    pub errors: u64,
+    /// When the last one went out, as seconds since 1970.
+    pub last_success: Option<u64>,
+    /// When the last one did not, and why.
+    pub last_error: Option<(u64, String)>,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs())
 }
 
 #[derive(Clone)]
@@ -167,14 +185,22 @@ struct Connection {
 impl Mailer {
     /// A mailer for these settings; none means mail is off.
     pub fn new(settings: Option<&SmtpSettings>) -> Result<Self, MailError> {
-        let mailer = Mailer { inner: Arc::new(Inner { connection: RwLock::new(None), captured: None }) };
+        let mailer = Mailer {
+            inner: Arc::new(Inner { connection: RwLock::new(None), captured: None, health: Mutex::default() }),
+        };
         mailer.configure(settings)?;
         Ok(mailer)
     }
 
     /// A mailer that keeps what it sends in memory, for tests.
     pub fn capturing() -> Self {
-        Mailer { inner: Arc::new(Inner { connection: RwLock::new(None), captured: Some(Mutex::new(Vec::new())) }) }
+        Mailer {
+            inner: Arc::new(Inner {
+                connection: RwLock::new(None),
+                captured: Some(Mutex::new(Vec::new())),
+                health: Mutex::default(),
+            }),
+        }
     }
 
     /// New settings, used from the next mail on. None, or settings that are not filled in, turn
@@ -201,6 +227,7 @@ impl Mailer {
         let (subject, text, html) = mail.render(language);
         if let Some(captured) = &self.inner.captured {
             captured.lock().push(Sent { to: to.to_string(), subject, text });
+            self.count(&Ok(()));
             return Ok(());
         }
         let Some(connection) = self.inner.connection.read().clone() else {
@@ -213,9 +240,46 @@ impl Mailer {
             .subject(subject)
             .multipart(MultiPart::alternative_plain_html(text, html))
             .map_err(|error| MailError::Send(error.to_string()))?;
-        connection.transport.send(message).await.map_err(|error| MailError::Send(error.to_string()))?;
+        let sent =
+            connection.transport.send(message).await.map(drop).map_err(|error| MailError::Send(error.to_string()));
+        self.count(&sent);
+        sent?;
         tracing::debug!(to, "mail sent");
         Ok(())
+    }
+
+    fn count(&self, result: &Result<(), MailError>) {
+        let mut health = self.inner.health.lock();
+        match result {
+            Ok(()) => {
+                health.sent += 1;
+                health.last_success = Some(unix_now());
+            }
+            Err(error) => {
+                health.errors += 1;
+                health.last_error = Some((unix_now(), error.to_string()));
+            }
+        }
+    }
+
+    /// How sending went since the start.
+    pub fn health(&self) -> MailHealth {
+        self.inner.health.lock().clone()
+    }
+
+    /// Whether the mail server takes a connection: connect, TLS, EHLO, login. Nothing is sent.
+    pub async fn test_connection(&self) -> Result<(), MailError> {
+        if self.inner.captured.is_some() {
+            return Ok(());
+        }
+        let Some(connection) = self.inner.connection.read().clone() else {
+            return Err(MailError::NotConfigured);
+        };
+        match connection.transport.test_connection().await {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(MailError::Send("the mail server did not answer as expected".into())),
+            Err(error) => Err(MailError::Send(error.to_string())),
+        }
     }
 
     /// Everything a capturing mailer was asked to send so far.

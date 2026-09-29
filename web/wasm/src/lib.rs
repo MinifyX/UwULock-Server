@@ -17,6 +17,7 @@ mod draft;
 mod files;
 mod health;
 mod keys;
+mod requests;
 mod transfer;
 mod view;
 
@@ -85,6 +86,8 @@ pub struct Unlocked {
     pub sends: Vec<wire::Send>,
     /// What the last password check keeps for the answers from Have I Been Pwned.
     pub report: Vec<health::Checked>,
+    /// The extras key (UwULock's own things, like the labels of file requests), once opened.
+    pub extras: Option<SymmetricKey>,
 }
 
 thread_local! {
@@ -167,6 +170,7 @@ fn unlock_with(email: &str, kdf: Kdf, protected_key: String, user_key: Symmetric
             attachments: HashMap::new(),
             sends: Vec::new(),
             report: Vec::new(),
+            extras: None,
         })
     });
 }
@@ -499,6 +503,51 @@ pub fn unlock_with_passkey(email: &str, kdf: &str, prf: &str, private_key: &str,
 #[wasm_bindgen(js_name = passwordReport)]
 pub fn password_report() -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&health::report(unlocked)))?)
+}
+
+// ── File requests ─────────────────────────────────────────
+
+/// What to do with the answer of `GET /uwu/v1/keys`; the extras key is kept from here on.
+#[wasm_bindgen(js_name = extrasKey)]
+pub fn extras_key(keys: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&requests::extras(unlocked, keys)?))?)
+}
+
+#[wasm_bindgen(js_name = sealFileRequest)]
+pub fn seal_file_request(draft: &str) -> Result<String, JsValue> {
+    let draft = serde_json::from_str(draft).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&requests::seal(unlocked, draft)?))?)
+}
+
+#[wasm_bindgen(js_name = openFileRequest)]
+pub fn open_file_request(request: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&requests::open(unlocked, request)?))?)
+}
+
+#[wasm_bindgen(js_name = openSubmission)]
+pub fn open_submission(submission: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&requests::open_submission(unlocked, submission)?))?)
+}
+
+#[wasm_bindgen(js_name = openSubmissionFile)]
+pub fn open_submission_file(submission: &str, file_id: &str, data: &[u8]) -> Result<Vec<u8>, JsValue> {
+    Ok(with_unlocked(|unlocked| requests::open_file(unlocked, submission, file_id, data))?)
+}
+
+#[wasm_bindgen(js_name = takeSubmissionFile)]
+pub fn take_submission_file(submission: &str, file_id: &str, item_id: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&requests::take(unlocked, submission, file_id, item_id)?))?)
+}
+
+#[wasm_bindgen(js_name = fileRequestPassword)]
+pub fn file_request_password(password: String, secret: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    Ok(requests::password_hash(&password, secret)?)
+}
+
+#[wasm_bindgen(js_name = fileRequestLink)]
+pub fn file_request_link(base: &str, access_id: &str, secret: &str, send_domain: bool) -> Result<String, JsValue> {
+    Ok(requests::link(base, access_id, secret, send_domain)?)
 }
 
 /// Which items' passwords were in a breach, from HIBP's answer for one prefix.

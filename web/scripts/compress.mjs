@@ -2,7 +2,7 @@
 // formats go. The server embeds them and hands out whichever a browser takes, so nothing is
 // compressed again per request.
 
-import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
@@ -36,3 +36,17 @@ for (const file of files(dist).filter((file) => shrinks.test(file))) {
 console.log(
   `compressed ${Math.round(before / 1024)} KiB to ${Math.round(after / 1024)} KiB (brotli)`,
 );
+
+// The server embeds dist/ when it is built, and Cargo only watches dist/ once it exists: a build
+// script that watched a missing path would run on every build. Touching the build script makes
+// the next cargo build take the new files in, the first time too.
+const buildScript = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../crates/uwulock-web/build.rs',
+);
+try {
+  const now = new Date();
+  utimesSync(buildScript, now, now);
+} catch {
+  // Not in the server's repository: nothing embeds these files.
+}

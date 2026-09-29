@@ -11,6 +11,9 @@ Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind z
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
 0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Als Nächstes: Tests auf echten Geräten, dann Stufe 4b (Betrieb und Sicherheit), 4c (Tresor-Komfort) und 4d (Familie), dann Stufe 5.
 
+Die Schnittstellen, die Server, Web-Tresor, UwULock-Client, Browsererweiterung, UwUSSH, UwURDP,
+UwUMail und UwUAuth für 0.6 gemeinsam umsetzen, stehen in [uwu-api.md](uwu-api.md).
+
 ## Leitlinien
 
 - **Zero-Knowledge wie bei Bitwarden.** Der Server sieht nie ein Passwort und nie einen Eintrag im
@@ -151,21 +154,21 @@ mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf 
 - [x] Passwortprüfung im Web-Tresor: schwach, mehrfach, ohne https, Datenlecks über den eigenen
       Server bei Have I Been Pwned (k-Anonymität, im Admin-Portal abschaltbar)
 
-### Stufe 4b — Betrieb und Sicherheit (vor Stufe 5)
+### Stufe 4b — Betrieb und Sicherheit (vor Stufe 5; fertig, kommt mit 0.6)
 
 Was ein Server für eine Familie oder ein kleines Büro braucht, bevor Firmen dazukommen. Kommt nach
 den Tests auf echten Geräten.
 
-- Backups auf anderen Systemen, wie bei UwUMail Server (dort `docs/backups.md`): SFTP (z. B. ein
-  NAS), S3 (MinIO, B2, Hetzner, Garage, …) oder ein eingehängter Ordner. Nächtlich und auf
-  Knopfdruck, dedupliziert, standardmäßig verschlüsselt (Wiederherstellungsschlüssel einmal im
-  Admin-Portal, später nach Passwort erneut), aufheben 7 Tage / 4 Wochen / 6 Monate (änderbar).
-  Enthält Datenbank, Anhänge, Send-Dateien und die Schlüssel des Servers. Zurückspielen über die
-  Kommandozeile auf einem neuen Server und im Admin-Portal wie die lokalen Backups; eine Warnung
-  (Admin-Portal, Mail, Metrik), wenn das letzte gelungene Backup zu alt ist. Die lokalen Backups
-  bleiben daneben.
-- Sicherheitshinweise für Nutzer, per Mail und als Liste im Web-Tresor (*Einstellungen →
-  Sicherheit*, mit Gerät, IP und Zeit), in der Sprache des Kontos:
+- [x] Backups auf anderen Systemen, wie bei UwUMail Server (dort `docs/backups.md`): SFTP (z. B. ein
+      NAS), S3 (MinIO, B2, Hetzner, Garage, …) oder ein eingehängter Ordner. Nächtlich und auf
+      Knopfdruck, dedupliziert, standardmäßig verschlüsselt (Wiederherstellungsschlüssel einmal im
+      Admin-Portal, später nach Passwort erneut), aufheben 7 Tage / 4 Wochen / 6 Monate (änderbar).
+      Enthält Datenbank, Anhänge, Send-Dateien und die Schlüssel des Servers. Zurückspielen über die
+      Kommandozeile auf einem neuen Server und im Admin-Portal wie die lokalen Backups; eine Warnung
+      (Admin-Portal, Mail, Metrik), wenn das letzte gelungene Backup zu alt ist. Die lokalen Backups
+      bleiben daneben. (Enthält auch die Dateien der Datei-Anfragen; `docs/backups.md`.)
+- [x] Sicherheitshinweise für Nutzer, per Mail und als Liste im Web-Tresor (*Einstellungen →
+      Sicherheit*, mit Gerät, IP und Zeit), in der Sprache des Kontos:
   - Fehlversuche: mehrere falsche Passwörter oder 2FA-Codes für das Konto
   - Konto-Änderungen: Master-Passwort, E-Mail, KDF, 2FA an oder aus, Schlüssel rotiert, API-Key
     erzeugt oder erneuert
@@ -174,14 +177,18 @@ den Tests auf echten Geräten.
   - Neues Gerät: die Mail gibt es schon, sie kommt mit in die Liste
   Mails werden gebündelt, damit ein Angriff nicht zur Mailflut wird; der Admin kann einzelne
   Arten abschalten. Das Ereignisprotokoll von Stufe 5 baut darauf auf.
-- Datei-Anfragen (Sends in umgekehrter Richtung): Ein Nutzer erstellt einen Link, über den
-  jemand ohne Konto Dateien und Text zu ihm hochlädt, z. B. Ausweis-Scans. Verschlüsselt wird im
-  Browser des Absenders mit dem öffentlichen Schlüssel des Kontos, der Server sieht nur
-  Verschlüsseltes. Einstellbar: Ablauf, Anzahl und Größe der Dateien, Passwort, ein Hinweistext.
-  Mail an den Nutzer, wenn etwas ankommt; ansehen und als Eintrag übernehmen in Web-Tresor und
-  UwULock-Client (die offiziellen Clients kennen das nicht). Rate-Limits gegen Missbrauch; läuft
-  auch unter den Send-Domains aus Stufe 6.
-- UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
+- [x] Datei-Anfragen (Sends in umgekehrter Richtung): Ein Nutzer erstellt einen Link, über den
+      jemand ohne Konto Dateien und Text zu ihm hochlädt, z. B. Ausweis-Scans. Verschlüsselt wird im
+      Browser des Absenders mit dem öffentlichen Schlüssel des Kontos, der Server sieht nur
+      Verschlüsseltes. Einstellbar: Ablauf, Anzahl und Größe der Dateien, Passwort, ein Hinweistext.
+      Mail an den Nutzer, wenn etwas ankommt; ansehen und als Eintrag übernehmen in Web-Tresor und
+      UwULock-Client (die offiziellen Clients kennen das nicht). Rate-Limits gegen Missbrauch; läuft
+      auch unter den Send-Domains aus Stufe 6. (Server und Web-Tresor fertig, mit dem
+      Extras-Schlüssel und `storagePerUserMb`; `docs/file-requests.md`. Die Seite unter `/r/<id>`
+      und die Regel, was eine Send-Domain beantwortet, stehen bereit. Die Live-Meldung an den
+      Besitzer und das Zählen im Delta-Sync kommen mit dem Echtzeit-Kanal und dem Delta-Sync;
+      die Seite im UwULock-Client mit dessen 0.3.)
+- [x] UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
   - Admin-Portal: Admins melden sich über UwUAuth an, auf Wunsch nur Mitglieder einer Gruppe
   - Tresor: „Mit SSO anmelden" in Erweiterung, Apps und Web-Tresor wie bei Vaultwarden (die
     SSO-Kennung der Clients ist egal); das Master-Passwort entsperrt den Tresor weiterhin, der
@@ -191,41 +198,49 @@ den Tests auf echten Geräten.
     entfernt Konten
   - Suite-Kopplung per Code, sobald UwUAuth sie hat (dort Stufe 4), statt Client-ID und
     Adressen von Hand einzutragen
-  Die Anmeldung per Einladung und Passwort bleibt daneben.
-- Notfallblatt als PDF, im Browser erzeugt (der Server bekommt es nie): Server-Adresse und
-  E-Mail als Text und QR-Code, ein leeres Feld für das Master-Passwort zum Eintragen von Hand, der
-  2FA-Wiederherstellungscode (nach dem Master-Passwort) und eine kurze Anleitung für Angehörige,
-  mit Hinweis auf eingerichtete Notfallzugriffe und ihre Wartezeit. Deutsch und Englisch.
-- Monitoring:
-  - `/metrics` für Prometheus, wie bei UwUMail Server (dort `docs/metrics.md`): abschaltbar,
-    mit Token oder nur auf einer eigenen Adresse; Anfragen und Latenzen, Anmeldungen (gelungen,
-    fehlgeschlagen), Sync-Dauer, Live-Verbindungen, Push-Relay- und Mail-Fehler, Größe der
-    Datenbank und der Dateien, Alter des letzten Backups, Ablauf des Zertifikats. Keine
-    Adressen oder anderen Nutzerdaten als Labels. Dazu Beispiel-Alarmregeln.
-  - Logs an Grafana Loki, wie bei UwUMail Server: im Admin-Portal einschaltbar, gleiches JSON
-    wie `log.format = json`, damit dieselben Abfragen für beide Wege gehen.
-- Admin-Benachrichtigungen zusätzlich zur Mail über ntfy, Gotify und Matrix: Backup
-  fehlgeschlagen oder zu alt, Zertifikat läuft bald ab, Update verfügbar, viele Fehlversuche,
-  Platte fast voll, Push-Relay oder Mailversand gestört. Pro Kanal wählbar, welche Ereignisse, mit
-  Test-Knopf; Zugangsdaten bleiben auf dem Server.
-- Server-Richtlinien für alle Konten, im Admin-Portal (Stufe 5 bringt dazu die pro Organisation):
-  - 2FA-Pflicht, mit Frist: Danach lassen sich Konten ohne 2FA nur noch im Web-Tresor anmelden,
-    um 2FA einzurichten; die Apps bekommen eine Meldung, was zu tun ist
-  - Mindest-KDF: Der Server sieht die KDF-Werte und lehnt schwächere ab; Konten darunter, etwa
-    alte PBKDF2-Konten aus Vaultwarden, bekommen einen Sicherheitshinweis und im Web-Tresor
-    einen Knopf zum Umstellen
-  - Stärke des Master-Passworts: kann nur der Client prüfen (der Server sieht das Passwort
-    nie); der Web-Tresor tut es bei Registrierung und Änderung. Ob die offiziellen Clients eine
-    serverweite Regel beachten, ist zu prüfen — bei Bitwarden hängen Richtlinien an
-    Organisationen.
-- Diagnose-Seite im Admin-Portal, auf Knopfdruck und nach jedem Update: Zertifikat und dessen
-  Ablauf, Uhrzeit (2FA-Codes hängen daran), Mailversand, Push-Relay, Backup-Ziel, freier
-  Speicher, und der Reverse-Proxy — kommen WebSockets durch, reicht das Upload-Limit für die
-  größte erlaubte Datei, wird die echte Client-IP übergeben, stimmt die öffentliche Adresse. Pro
-  Punkt, was zu tun ist (mit Beispielen für Caddy und nginx).
-- Admin-Portal nur aus bestimmten Netzen (Liste von CIDR, z. B. LAN und VPN), ausgewertet mit der
-  echten Client-IP (auch hinter einem Proxy); von anderswo antwortet `/admin` mit 404. Gilt auch
-  für die Anmeldung per UwUAuth. Tresor, Sends und Kommandozeile sind davon nicht betroffen.
+  Die Anmeldung per Einladung und Passwort bleibt daneben. (Fertig: Admin-Portal *Anmeldung*,
+  Kopplung mit UwUAuth 0.4 oder von Hand, SCIM 2.0 unter `/scim/v2`, das Client-Geheimnis
+  verschlüsselt unter `secret.key`; Admin-Recht per Gruppe oder UwUAuth-Rolle nur innerhalb der
+  Admin-Netze, nie dem letzten Admin weggenommen; `docs/sso.md`. Getestet mit einem OIDC-Anbieter
+  im Testprozess und im Browser; `bw login --sso` ist interaktiv und nicht automatisch getestet.)
+- [x] Notfallblatt als PDF, im Browser erzeugt (der Server bekommt es nie): Server-Adresse und
+      E-Mail als Text und QR-Code, ein leeres Feld für das Master-Passwort zum Eintragen von Hand, der
+      2FA-Wiederherstellungscode (nach dem Master-Passwort) und eine kurze Anleitung für Angehörige,
+      mit Hinweis auf eingerichtete Notfallzugriffe und ihre Wartezeit. Deutsch und Englisch.
+      (Unter *Einstellungen → Notfallzugriff*; ein kleiner eigener PDF-Schreiber mit den
+      Standardschriften, der QR-Code von `uqr` wie bei der Zwei-Schritt-Anmeldung.)
+- [x] Monitoring:
+  - [x] `/metrics` für Prometheus, wie bei UwUMail Server (dort `docs/metrics.md`): abschaltbar,
+        mit Token oder nur auf einer eigenen Adresse; Anfragen und Latenzen, Anmeldungen (gelungen,
+        fehlgeschlagen), Sync-Dauer, Live-Verbindungen, Push-Relay- und Mail-Fehler, Größe der
+        Datenbank und der Dateien, Alter des letzten Backups, Ablauf des Zertifikats. Keine
+        Adressen oder anderen Nutzerdaten als Labels. Dazu Beispiel-Alarmregeln.
+  - [x] Logs an Grafana Loki, wie bei UwUMail Server: im Admin-Portal einschaltbar, gleiches JSON
+        wie `log.format = json`, damit dieselben Abfragen für beide Wege gehen.
+- [x] Admin-Benachrichtigungen zusätzlich zur Mail über ntfy, Gotify und Matrix: Backup
+      fehlgeschlagen oder zu alt, Zertifikat läuft bald ab, Update verfügbar, viele Fehlversuche,
+      Platte fast voll, Push-Relay oder Mailversand gestört. Pro Kanal wählbar, welche Ereignisse, mit
+      Test-Knopf; Zugangsdaten bleiben auf dem Server.
+- [x] Server-Richtlinien für alle Konten, im Admin-Portal (Stufe 5 bringt dazu die pro Organisation):
+  - [x] 2FA-Pflicht, mit Frist: Danach lassen sich Konten ohne 2FA nur noch im Web-Tresor anmelden,
+        um 2FA einzurichten; die Apps bekommen eine Meldung, was zu tun ist
+  - [x] Mindest-KDF: Der Server sieht die KDF-Werte und lehnt schwächere ab; Konten darunter, etwa
+        alte PBKDF2-Konten aus Vaultwarden, bekommen einen Sicherheitshinweis und im Web-Tresor
+        einen Knopf zum Umstellen
+  - [x] Stärke des Master-Passworts: kann nur der Client prüfen (der Server sieht das Passwort
+        nie); der Web-Tresor tut es bei Registrierung und Änderung. Ob die offiziellen Clients eine
+        serverweite Regel beachten, ist zu prüfen — bei Bitwarden hängen Richtlinien an
+        Organisationen. Geprüft: ja, über `MasterPasswordPolicy` in der Antwort auf die Anmeldung.
+- [x] Diagnose-Seite im Admin-Portal, auf Knopfdruck und nach jedem Update: Zertifikat und dessen
+      Ablauf, Uhrzeit (2FA-Codes hängen daran), Mailversand, Push-Relay, Backup-Ziel, freier
+      Speicher, und der Reverse-Proxy — kommen WebSockets durch, reicht das Upload-Limit für die
+      größte erlaubte Datei, wird die echte Client-IP übergeben, stimmt die öffentliche Adresse. Pro
+      Punkt, was zu tun ist (mit Beispielen für Caddy und nginx). Das Backup-Ziel außer Haus
+      kommt mit den Backups auf anderen Systemen dazu.
+- [x] Admin-Portal nur aus bestimmten Netzen (Liste von CIDR, z. B. LAN und VPN), ausgewertet mit der
+      echten Client-IP (auch hinter einem Proxy); von anderswo antwortet `/admin` mit 404. Gilt auch
+      für die Anmeldung per UwUAuth (mit ihr). Tresor, Sends und Kommandozeile sind davon nicht
+      betroffen; `uwulock-server settings set adminNetworks '[]'` ist der Weg zurück.
 
 ### Stufe 4c — Tresor-Komfort (vor Stufe 5)
 

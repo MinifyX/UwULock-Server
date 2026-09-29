@@ -69,7 +69,11 @@ pub(crate) fn render_one(state: &AppState, attachment: &Attachment, seconds: i64
 
 /// An item the user may attach to: their own, or an organisation's they may change. Whose it
 /// is, and — for an organisation's — the collections it is in, for telling its members.
-async fn changeable(state: &AppState, session: &Session, id: &str) -> ApiResult<(Cipher, Owner, Vec<String>)> {
+pub(crate) async fn changeable(
+    state: &AppState,
+    session: &Session,
+    id: &str,
+) -> ApiResult<(Cipher, Owner, Vec<String>)> {
     match find(state, session, id).await? {
         Found::Own(cipher) => Ok((cipher, Owner::User(session.user.id.clone()), Vec::new())),
         Found::Org(item) => {
@@ -83,7 +87,12 @@ async fn changeable(state: &AppState, session: &Session, id: &str) -> ApiResult<
 }
 
 /// The item as the user sees it now, after a change to its attachments; its readers hear of it.
-async fn changed(state: &AppState, session: &Session, cipher: &Cipher, collections: &[String]) -> ApiResult<String> {
+pub(crate) async fn changed(
+    state: &AppState,
+    session: &Session,
+    cipher: &Cipher,
+    collections: &[String],
+) -> ApiResult<String> {
     match &cipher.organization_id {
         None => {
             notify::cipher(state, session, Kind::CipherUpdate, cipher);
@@ -174,6 +183,9 @@ async fn announce(
     }
     if data.file_name.len() > out::MAX_NOTE || data.key.len() > out::MAX_NOTE {
         return Err(ApiError::bad("The file name is too long."));
+    }
+    if let Owner::User(user_id) = &owner {
+        files::check_storage(&state, user_id, data.file_size).await?;
     }
     let attachment = Attachment {
         id: files::new_file_id(),

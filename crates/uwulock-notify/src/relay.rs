@@ -53,6 +53,22 @@ struct Token {
 #[derive(Clone, Default)]
 pub struct Relay {
     token: Arc<Mutex<Token>>,
+    health: Arc<Mutex<RelayHealth>>,
+}
+
+/// How talking to the relay goes, for the metrics, the admin alerts and the diagnosis.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RelayHealth {
+    /// Requests the relay did not take since the start.
+    pub errors: u64,
+    /// When the last one worked, as seconds since 1970.
+    pub last_success: Option<u64>,
+    /// When the last one did not, and why.
+    pub last_error: Option<(u64, String)>,
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |since| since.as_secs())
 }
 
 fn client() -> Result<&'static reqwest::Client, String> {
@@ -155,6 +171,24 @@ impl Relay {
     }
 
     async fn post(&self, settings: &RelaySettings, path: &str, body: Option<Value>) -> Result<(), String> {
+        let result = self.post_once(settings, path, body).await;
+        let mut health = self.health.lock();
+        match &result {
+            Ok(()) => health.last_success = Some(unix_now()),
+            Err(error) => {
+                health.errors += 1;
+                health.last_error = Some((unix_now(), error.clone()));
+            }
+        }
+        result
+    }
+
+    /// How talking to the relay went since the start.
+    pub fn health(&self) -> RelayHealth {
+        self.health.lock().clone()
+    }
+
+    async fn post_once(&self, settings: &RelaySettings, path: &str, body: Option<Value>) -> Result<(), String> {
         let token = self.token(settings).await?;
         let (relay, _) = settings.endpoints();
         let mut request = client()?.post(format!("{relay}{path}")).bearer_auth(token);

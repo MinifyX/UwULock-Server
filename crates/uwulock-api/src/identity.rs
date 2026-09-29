@@ -10,7 +10,7 @@
 
 use crate::auth::{self, ClientIp, refresh_days};
 use crate::errors::{ApiError, ApiResult};
-use crate::{AppState, two_factor};
+use crate::{AppState, notices, policies, two_factor};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -59,14 +59,24 @@ async fn token(
     Form(raw): Form<HashMap<String, String>>,
 ) -> ApiResult<Response> {
     let form = TokenForm::new(raw);
-    match form.get("granttype") {
-        Some("password") => password_login(&state, ip, &headers, &form).await,
-        Some("refresh_token") => refresh(&state, ip, &form).await,
-        Some("client_credentials") => api_key_login(&state, ip, &form).await,
-        Some("webauthn") => crate::passkeys::grant(&state, ip, &form).await,
-        Some("send_access") => crate::sends::grant(&state, ip, form.get("sendid"), form.get("passwordhashb64")).await,
-        _ => Err(ApiError::bad("Invalid type")),
-    }
+    let (grant, result) = match form.get("granttype") {
+        Some("password") => ("password", password_login(&state, ip, &headers, &form).await),
+        Some("refresh_token") => ("refresh_token", refresh(&state, ip, &form).await),
+        Some("client_credentials") => ("client_credentials", api_key_login(&state, ip, &form).await),
+        Some("webauthn") => ("webauthn", crate::passkeys::grant(&state, ip, &form).await),
+        Some("authorization_code") => ("authorization_code", crate::sso::grant(&state, ip, &headers, &form).await),
+        Some("send_access") => {
+            ("send_access", crate::sends::grant(&state, ip, form.get("sendid"), form.get("passwordhashb64")).await)
+        }
+        _ => return Err(ApiError::bad("Invalid type")),
+    };
+    let outcome = match &result {
+        Ok(_) => "success",
+        Err(error) if error.message().contains("\"TwoFactorProviders\"") => "two_factor",
+        Err(_) => "failure",
+    };
+    state.metrics.login(grant, outcome);
+    result
 }
 
 async fn password_login(
@@ -104,13 +114,23 @@ async fn password_login(
             .is_some_and(|request| request.user_id == found.id),
         (Some(_), None) => false,
         (None, _) => {
-            let known = user.as_ref().map(|user| user.password_hash.as_str());
+            // An account made through SSO has no master password until its owner sets one.
+            let known = user.as_ref().map(|user| user.password_hash.as_str()).filter(|hash| !hash.is_empty());
             let legacy_rounds = state.legacy_rounds.load(std::sync::atomic::Ordering::Relaxed);
             auth::verify_login(state.config.hash_cost, known, password, legacy_rounds).await
         }
     };
     if !passed {
         log(state, "login-failed", user.as_ref(), username, ip, device_type, "wrong email or password").await;
+        // Beside the answer, not before it: the time a refused login takes must not tell whether
+        // the address has an account.
+        if let Some(user) = user {
+            let (state, context) =
+                (state.clone(), notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) });
+            tokio::spawn(async move {
+                notices::failed(&state, &user, "failedLogins", "login-failed", &context, None).await;
+            });
+        }
         return Err(ApiError::bad("Username or password is incorrect. Try again"));
     }
     let user = user.expect("a password matched, so there is a user");
@@ -118,6 +138,7 @@ async fn password_login(
         log(state, "login-failed", Some(&user), username, ip, device_type, "account disabled").await;
         return Err(ApiError::bad("This account has been disabled."));
     }
+    crate::sso::password_allowed(state, &user)?;
     // A hash that came over from Vaultwarden becomes one of this server's now that the password
     // is here to make it from.
     if by_request.is_none() && auth::is_legacy(&user.password_hash) {
@@ -137,6 +158,9 @@ async fn password_login(
             Err(error) => {
                 if error.status == StatusCode::BAD_REQUEST && form.get("twofactortoken").is_some() {
                     log(state, "two-factor-failed", Some(&user), username, ip, device_type, "wrong code").await;
+                    let context = notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) };
+                    let provider = form.get("twofactorprovider").and_then(|value| value.trim().parse::<i64>().ok());
+                    notices::failed(state, &user, "failedTwoFactor", "two-factor-failed", &context, provider).await;
                 }
                 return Err(error);
             }
@@ -149,6 +173,7 @@ async fn password_login(
         known: known_device.is_some(),
         remember,
         by_request: by_request.is_some(),
+        sso: false,
     };
     let body = finish_login(state, &user, ip, form, login).await?;
     Ok(Json(body).into_response())
@@ -166,6 +191,8 @@ pub(crate) struct Login<'a> {
     /// Let in by another device: the mail goes out whatever the device and the setting, since
     /// an approval is all it took — the approving device's session may be a stolen one.
     pub by_request: bool,
+    /// Through SSO: the tokens say so, also after a refresh.
+    pub sso: bool,
 }
 
 /// Everything after the credentials were checked: the device logged in, the event written, a
@@ -177,7 +204,9 @@ pub(crate) async fn finish_login(
     form: &TokenForm,
     login: Login<'_>,
 ) -> ApiResult<Value> {
-    let Login { device_id, device_name, device_type, known, remember, by_request } = login;
+    let Login { device_id, device_name, device_type, known, remember, by_request, sso } = login;
+    let client_id = form.get("clientid").unwrap_or("undefined");
+    two_factor_policy(state, user, client_id).await?;
     let refresh_token = auth::random_token(64);
     let first_device = !known && state.store.devices(&user.id).await?.is_empty();
     let new = state
@@ -193,27 +222,53 @@ pub(crate) async fn finish_login(
             remember: remember
                 .as_ref()
                 .map(|token| (auth::sha256(token.as_bytes()), clock::in_seconds(auth::REMEMBER_DAYS * 86_400))),
+            sso,
         })
         .await?;
     log(state, "login", Some(user), &user.email, ip, device_type, device_name).await;
-    let wanted = by_request || (new && !first_device && state.settings().new_device_mail);
-    if wanted && state.mailer.enabled() {
-        let mail = Mail::NewDevice {
-            device: format!("{device_name} ({})", auth::device_type_name(device_type)),
-            ip: ip.to_string(),
-            time: format_time(&clock::now()),
-        };
-        send_later(state, &user.email, mail, Language::from_code(&user.language));
+    let context = notices::Context {
+        ip: Some(ip),
+        device_type: Some(device_type),
+        device_name: Some(device_name.to_string()),
+        app: Some(client_id.to_string()),
+    };
+    if (new && !first_device) || by_request {
+        let settings = state.settings();
+        let mail_off = settings.security_notices.mail_off.iter().any(|kind| kind == "newDevice");
+        let wanted = by_request || (settings.new_device_mail && !mail_off);
+        let mailed = wanted && state.mailer.enabled();
+        if mailed {
+            let mail = Mail::NewDevice {
+                device: format!("{device_name} ({})", auth::device_type_name(device_type)),
+                ip: ip.to_string(),
+                time: format_time(&clock::now()),
+            };
+            send_later(state, &user.email, mail, Language::from_code(&user.language));
+        }
+        if new && !first_device {
+            notices::record_mailed(state, user, "newDevice", &context, json!({ "app": client_id }), mailed).await;
+        }
     }
+    notices::kdf_below_minimum(state, user, &context).await;
 
-    let client_id = form.get("clientid").unwrap_or("undefined");
-    let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id);
+    let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id, sso);
     let mut body = login_response(user, access_token, expires_in);
+    body["MasterPasswordPolicy"] = state.settings().policies.master_password_policy();
     body["refresh_token"] = refresh_token.into();
     if let Some(remember) = remember {
         body["TwoFactorToken"] = remember.into();
     }
     Ok(body)
+}
+
+/// While two-step login is required, an account without it gets a token only for the web
+/// vault, which shows nothing but the setup until there is a second step (docs/uwu-api.md §20).
+async fn two_factor_policy(state: &AppState, user: &User, client_id: &str) -> ApiResult<()> {
+    if client_id == policies::WEB_VAULT || !state.settings().policies.two_factor_enforced() {
+        return Ok(());
+    }
+    let has = state.store.two_factors(&user.id).await?.iter().any(|factor| factor.enabled);
+    if has { Ok(()) } else { Err(policies::two_factor_required(&state.config.public)) }
 }
 
 /// The CLI's login with the API key: `client_id` is `user.<id>`, `client_secret` the key. Like
@@ -251,7 +306,7 @@ async fn api_key_login(state: &AppState, ip: std::net::IpAddr, form: &TokenForm)
         return Err(ApiError::bad("This account has been disabled."));
     }
     let known = state.store.device(&user.id, device_id).await?.is_some();
-    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false };
+    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false, sso: false };
     let mut body = finish_login(state, &user, ip, form, login).await?;
     // Like Bitwarden: the CLI logs in with its key again rather than refreshing.
     if let Some(body) = body.as_object_mut() {
@@ -262,7 +317,7 @@ async fn api_key_login(state: &AppState, ip: std::net::IpAddr, form: &TokenForm)
 }
 
 /// What a successful password login answers, Bitwarden's mix of casings and all.
-fn login_response(user: &User, access_token: String, expires_in: i64) -> Value {
+pub(crate) fn login_response(user: &User, access_token: String, expires_in: i64) -> Value {
     let kdf = json!({
         "KdfType": user.kdf.kind,
         "Iterations": user.kdf.iterations,
@@ -340,7 +395,9 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
         return Err(invalid_grant());
     }
     let client_id = form.get("clientid").unwrap_or("undefined");
-    let (access_token, expires_in) = state.tokens.access_token(&session.user, &device.id, device.kind, client_id);
+    two_factor_policy(state, &session.user, client_id).await?;
+    let (access_token, expires_in) =
+        state.tokens.access_token(&session.user, &device.id, device.kind, client_id, device.sso);
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
@@ -351,7 +408,7 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
     .into_response())
 }
 
-async fn log(
+pub(crate) async fn log(
     state: &AppState,
     kind: &str,
     user: Option<&User>,
@@ -523,27 +580,27 @@ impl KdfData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Keys {
-    encrypted_private_key: String,
-    public_key: String,
+pub(crate) struct Keys {
+    pub encrypted_private_key: String,
+    pub public_key: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MasterPasswordAuthentication {
-    kdf: KdfData,
-    salt: String,
+pub(crate) struct MasterPasswordAuthentication {
+    pub kdf: KdfData,
+    pub salt: String,
     #[serde(alias = "masterPasswordAuthenticationHash")]
-    hash: String,
+    pub hash: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MasterPasswordUnlock {
-    kdf: KdfData,
-    salt: String,
+pub(crate) struct MasterPasswordUnlock {
+    pub kdf: KdfData,
+    pub salt: String,
     #[serde(alias = "masterKeyWrappedUserKey")]
-    key: String,
+    pub key: String,
 }
 
 #[derive(Deserialize)]
@@ -629,6 +686,7 @@ async fn register_finish(
         }
     };
     let kdf = kdf.check()?;
+    state.settings().policies.check_kdf(&kdf)?;
     let name = data.name.map(|name| name.trim().to_string()).filter(|name| !name.is_empty());
     if name.as_ref().is_some_and(|name| name.len() > 50) {
         return Err(ApiError::bad("The field Name must be a string with a maximum length of 50."));

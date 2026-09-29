@@ -6,7 +6,10 @@ import { LoginScreen } from './components/LoginScreen';
 import { SettingsDialog, type SettingsSection } from './components/SettingsDialog';
 import { TitleBar } from './components/TitleBar';
 import { VaultScreen } from './components/VaultScreen';
+import { lacksTwoFactor, PolicyBanners, TwoFactorRequired } from './components/web/Policies';
 import { RegisterScreen } from './components/web/RegisterScreen';
+import { SetPasswordScreen, SsoForward } from './components/web/SetPasswordScreen';
+import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
 import { errorText } from './lib/errors';
 import { acceptContact } from './lib/features';
@@ -103,6 +106,17 @@ export function App() {
 
   const registering = route.path === '/finish-signup' || route.path === '/register';
   const sendLink = route.path.match(/^\/send\/([^/]+)\/([^/]+)$/);
+  // A file request's link: `#/request/<access id>/<secret>` here, `/r/<access id>#<secret>` on a
+  // send domain.
+  const requestLink =
+    route.path.match(/^\/request\/([^/]+)\/([^/]+)$/) ??
+    (() => {
+      const path = location.pathname.match(/^\/r\/([A-Za-z0-9_-]+)$/);
+      return path ? [path[0], path[1], location.hash.replace(/^#/, '')] : null;
+    })();
+  const fileRequest = route.path.match(/^\/file-requests\/([^/]+)$/)?.[1] ?? null;
+  // Bitwarden's extension, desktop app and CLI start their SSO login here.
+  const ssoForward = route.path === '/sso' && route.query.get('clientId') ? route.query : null;
 
   // The link from an emergency access invitation: accepted once the vault is open.
   useEffect(() => {
@@ -119,10 +133,24 @@ export function App() {
     );
   }, [route, unlocked]);
 
+  // The link in a security notice's mail: the list, once the vault is open.
+  useEffect(() => {
+    if (route.path !== '/settings/security' || !unlocked) return;
+    location.hash = '';
+    setSettingsOpen('security');
+  }, [route, unlocked]);
+
+  const unseen = unlocked ? (info?.securityNoticesUnseen ?? 0) : 0;
+  // Two-step login is required, the date has passed, and there is none: only its setup shows.
+  const mustSetUp = unlocked && info && lacksTwoFactor(info) && info.policy?.twoFactorEnforced;
+
   return (
     <div className="shell">
       <div className="background" ref={backgroundRef}>
-        <TitleBar onSettings={() => setSettingsOpen('appearance')}>
+        <TitleBar
+          badge={unseen}
+          onSettings={() => setSettingsOpen(unseen > 0 ? 'security' : 'appearance')}
+        >
           {info?.admin && (
             <a className="titlebar-link" href="/admin">
               <Icon name="shield" size={15} />
@@ -150,8 +178,12 @@ export function App() {
         </TitleBar>
 
         <main className="stage">
-          {sendLink ? (
+          {ssoForward ? (
+            <SsoForward query={ssoForward} />
+          ) : sendLink ? (
             <SendPage accessId={sendLink[1]!} urlKey={sendLink[2]!} />
+          ) : requestLink ? (
+            <RequestPage accessId={requestLink[1]!} secret={requestLink[2]!} />
           ) : registering ? (
             <RegisterScreen
               token={route.query.get('token') ?? ''}
@@ -163,6 +195,8 @@ export function App() {
             />
           ) : status === null ? null : status.state === 'logged-out' ? (
             <LoginScreen onDone={setStatus} />
+          ) : status.state === 'locked' && info?.hasMasterPassword === false ? (
+            <SetPasswordScreen status={status} info={info} onDone={setStatus} />
           ) : status.state === 'locked' ? (
             <LockScreen
               status={status}
@@ -170,8 +204,18 @@ export function App() {
               onLoggedOut={() => void vaultStatus().then(setStatus)}
               onAddAccount={() => undefined}
             />
+          ) : mustSetUp ? (
+            <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
           ) : (
-            <VaultScreen status={status} searchRef={searchRef} onAddAccount={() => undefined} />
+            <div className="vault-frame">
+              <PolicyBanners status={status} info={info} onSettings={setSettingsOpen} />
+              <VaultScreen
+                status={status}
+                searchRef={searchRef}
+                onAddAccount={() => undefined}
+                openRequest={fileRequest}
+              />
+            </div>
           )}
         </main>
       </div>

@@ -11,7 +11,15 @@ import {
   type Smtp,
 } from '../lib/admin';
 import { errorText } from '../lib/errors';
+import { ApiError } from '../lib/web/http';
 import { t, useLanguage } from '../lib/i18n';
+import {
+  LokiSettings,
+  MetricsSettings,
+  NetworkSettings,
+  NoticeMailSettings,
+  PolicySettings,
+} from './OperationsSettings';
 
 const EMPTY_PUSH: Push = { installationId: '', installationKey: '', region: 'eu' };
 
@@ -25,7 +33,10 @@ const EMPTY_SMTP: Smtp = {
   fromName: 'UwULock',
 };
 
-/** Mail, invitations and a few switches, kept in the database; `.env` only gave the start. */
+/**
+ * Mail, invitations, policies, who reaches the portal, metrics and logs — kept in the database;
+ * `.env` only gave the start.
+ */
 export function AdminSettings({ me }: { me: string }) {
   useLanguage();
   const [current, setCurrent] = useState<Settings | null>(null);
@@ -33,6 +44,8 @@ export function AdminSettings({ me }: { me: string }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result>(null);
   const [testTo, setTestTo] = useState(me);
+  /** Counts saves and discards: the text boxes that keep their own text start again then. */
+  const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     load().then(
@@ -59,9 +72,17 @@ export function AdminSettings({ me }: { me: string }) {
       const saved = await saveSettings(body);
       setCurrent(saved);
       setDraft(saved);
+      setGeneration((n) => n + 1);
       setResult({ tone: 'info', text: t('Gespeichert ✧') });
     } catch (e) {
-      setResult({ tone: 'error', text: errorText(e) });
+      const code = e instanceof ApiError ? (e.body as { code?: string } | null)?.code : null;
+      setResult({
+        tone: 'error',
+        text:
+          code === 'would_lock_out'
+            ? `${errorText(e)} ${t('Nichts gespeichert: Du hättest dich selbst ausgesperrt.')}`
+            : errorText(e),
+      });
     } finally {
       setBusy(false);
     }
@@ -281,6 +302,90 @@ export function AdminSettings({ me }: { me: string }) {
         />
       </Row>
 
+      <Row
+        label={t('Speicher pro Konto')}
+        description={t('Anhänge, Send-Dateien und Datei-Anfragen zusammen. Leer: keine Grenze.')}
+      >
+        <input
+          type="number"
+          min={1}
+          className="narrow-number"
+          placeholder={t('keine Grenze')}
+          aria-label={t('Speicher pro Konto in MB')}
+          value={draft.storagePerUserMb ?? ''}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              storagePerUserMb: e.target.value ? Math.max(1, Number(e.target.value)) : null,
+            })
+          }
+        />
+      </Row>
+
+      <h2 className="settings-heading">{t('Datei-Anfragen')}</h2>
+      <Row
+        label={t('Datei-Anfragen')}
+        description={t(
+          'Links, über die jemand ohne Konto Dateien und Text hochlädt, verschlüsselt für den, der den Link gemacht hat.',
+        )}
+      >
+        <Toggle
+          label={t('Datei-Anfragen')}
+          checked={draft.fileRequests.enabled}
+          onChange={(enabled) =>
+            setDraft({ ...draft, fileRequests: { ...draft.fileRequests, enabled } })
+          }
+        />
+      </Row>
+      <Row label={t('Anfragen pro Konto')}>
+        <input
+          type="number"
+          min={1}
+          max={1000}
+          className="narrow-number"
+          aria-label={t('Anfragen pro Konto')}
+          value={draft.fileRequests.perUser}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              fileRequests: { ...draft.fileRequests, perUser: Number(e.target.value) },
+            })
+          }
+        />
+      </Row>
+      <Row label={t('Längste Laufzeit in Tagen')}>
+        <input
+          type="number"
+          min={1}
+          max={365}
+          className="narrow-number"
+          aria-label={t('Längste Laufzeit in Tagen')}
+          value={draft.fileRequests.maxDays}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              fileRequests: { ...draft.fileRequests, maxDays: Number(e.target.value) },
+            })
+          }
+        />
+      </Row>
+      <Row label={t('Dateien pro Einsendung')}>
+        <input
+          type="number"
+          min={1}
+          max={100}
+          className="narrow-number"
+          aria-label={t('Dateien pro Einsendung')}
+          value={draft.fileRequests.maxFiles}
+          onChange={(e) =>
+            setDraft({
+              ...draft,
+              fileRequests: { ...draft.fileRequests, maxFiles: Number(e.target.value) },
+            })
+          }
+        />
+      </Row>
+
       <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
       <p className="settings-lead">
         {t(
@@ -357,6 +462,12 @@ export function AdminSettings({ me }: { me: string }) {
         </div>
       )}
 
+      <PolicySettings draft={draft} setDraft={setDraft} />
+      <NoticeMailSettings draft={draft} setDraft={setDraft} />
+      <NetworkSettings key={`networks-${generation}`} draft={draft} setDraft={setDraft} />
+      <MetricsSettings draft={draft} setDraft={setDraft} />
+      <LokiSettings key={`loki-${generation}`} draft={draft} setDraft={setDraft} dirty={dirty} />
+
       <div className="form-actions sticky-actions">
         <span className="inline-form">
           <input
@@ -385,7 +496,14 @@ export function AdminSettings({ me }: { me: string }) {
           </button>
         </span>
         <span className="spacer" />
-        <button disabled={busy || !dirty} onClick={() => setDraft(current)} data-secondary>
+        <button
+          disabled={busy || !dirty}
+          onClick={() => {
+            setDraft(current);
+            setGeneration((n) => n + 1);
+          }}
+          data-secondary
+        >
           {t('Verwerfen')}
         </button>
         <button className="primary" disabled={busy || !dirty} onClick={() => void save()}>

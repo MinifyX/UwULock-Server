@@ -110,6 +110,11 @@ impl Limiter<IpAddr> {
     }
 }
 
+/// The key of `ip`'s bucket, for a limiter that is asked before it is taken from.
+pub fn network_of(ip: IpAddr) -> IpAddr {
+    network(ip)
+}
+
 /// The address a bucket belongs to: an IPv4 address as it is, an IPv6 address by its /64.
 fn network(ip: IpAddr) -> IpAddr {
     match ip {
@@ -137,6 +142,12 @@ pub struct Limits {
     /// Questions to Have I Been Pwned, per account: a whole vault checked at once, but not a
     /// flood.
     pub hibp: Limiter<String>,
+    /// What clients report themselves, like an export: ten an hour per account.
+    pub reports: Limiter<String>,
+    /// Submissions to file requests, per address: ten an hour.
+    pub file_request_uploads: Limiter,
+    /// Requests to `/scim/v2` with a wrong token, per address: 30, then one every 30 seconds.
+    pub scim_refused: Limiter,
 }
 
 impl Default for Limits {
@@ -148,14 +159,23 @@ impl Default for Limits {
             password: Limiter::new(10, Duration::from_secs(60)),
             mail: Limiter::new(5, Duration::from_secs(5 * 60)),
             hibp: Limiter::new(2000, Duration::from_millis(200)),
+            reports: Limiter::new(10, Duration::from_secs(6 * 60)),
+            file_request_uploads: Limiter::new(10, Duration::from_secs(6 * 60)),
+            scim_refused: Limiter::new(30, Duration::from_secs(30)),
         }
     }
 }
 
 impl Limits {
-    /// The defaults, with `attempts` logins at once per address.
+    /// The defaults, with `attempts` logins at once per address. Many people behind one address
+    /// also make more requests without an account (prelogin, SSO, Sends), so that bucket grows
+    /// with it: five for each login, never fewer than the default 50.
     pub fn with_login_attempts(attempts: u32) -> Self {
-        Limits { login: Limiter::new(attempts, Duration::from_secs(60)), ..Limits::default() }
+        Limits {
+            login: Limiter::new(attempts, Duration::from_secs(60)),
+            anonymous: Limiter::new(attempts.saturating_mul(5).max(50), Duration::from_secs(60)),
+            ..Limits::default()
+        }
     }
 
     /// Limits no test runs into.
@@ -170,6 +190,9 @@ impl Limits {
             password: generous(),
             mail: generous(),
             hibp: generous(),
+            reports: generous(),
+            file_request_uploads: generous(),
+            scim_refused: generous(),
         }
     }
 }

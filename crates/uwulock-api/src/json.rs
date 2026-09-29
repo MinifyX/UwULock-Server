@@ -153,7 +153,8 @@ pub fn profile(user: &User, two_factor: bool, organizations: Vec<Value>) -> Valu
         "premiumFromOrganization": false,
         "culture": if user.language == "de" { "de-DE" } else { "en-US" },
         "twoFactorEnabled": two_factor,
-        "key": user.user_key,
+        // An account made through SSO has none until its master password is set.
+        "key": Some(&user.user_key).filter(|key| !key.is_empty()),
         "privateKey": user.private_key,
         "accountKeys": account_keys(user),
         "securityStamp": user.security_stamp,

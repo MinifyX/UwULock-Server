@@ -131,6 +131,21 @@ impl Store {
         .await
     }
 
+    /// What all attachments and all files of Sends weigh, in bytes.
+    pub async fn file_bytes(&self) -> Result<(i64, i64)> {
+        self.sqlite_read(|conn| {
+            conn.query_row(
+                &format!(
+                    "SELECT (SELECT coalesce(sum(size), 0) FROM attachments WHERE uploaded), \
+                     (SELECT coalesce(sum({SEND_FILE_BYTES}), 0) FROM sends WHERE type = 1 AND uploaded)"
+                ),
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+        })
+        .await
+    }
+
     /// A setting the server keeps for itself, like the mail server or a signing key.
     pub async fn setting(&self, key: &str) -> Result<Option<String>> {
         let key = key.to_string();
@@ -213,7 +228,12 @@ impl Store {
         self.sqlite_write(|tx| {
             let now = clock::now();
             tx.execute("DELETE FROM events WHERE time < ?1", [clock::in_seconds(-EVENT_DAYS * 86_400)])?;
+            tx.execute(
+                "DELETE FROM security_notices WHERE time < ?1",
+                [clock::in_seconds(-crate::NOTICE_DAYS * 86_400)],
+            )?;
             tx.execute("DELETE FROM codes WHERE expires < ?1", [&now])?;
+            crate::sso::sweep(tx, &now)?;
             tx.execute(
                 "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL WHERE refresh_expires < ?1",
                 [&now],
