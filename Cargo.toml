@@ -43,6 +43,9 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1-rustls-tls"] }
 libc = "0.2"
 parking_lot = "0.12"
+# Website icons: the registrable domain above a host (`example.com` for `account.example.com`), by
+# the Public Suffix List compiled in — nothing is fetched for it.
+psl = "2"
 # Health check, update check and the benchmark: rustls with `ring`, set up by hand, so nothing
 # pulls in a second crypto library.
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json", "http2"] }

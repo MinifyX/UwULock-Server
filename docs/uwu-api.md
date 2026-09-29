@@ -816,7 +816,19 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   "apple-touch-icon-precomposed">`, then `/favicon.ico`; the one nearest to 64 px that is at least
   32 px wins, else the largest. ICO, PNG, JPEG, GIF, WebP, SVG (rasterized) are read; the result is
   PNG. At most 8 fetches at a time server-wide, one per host.
-- Cache: on disk under the data directory, keyed by SHA-256 of the host, 30 days for an icon,
+- Base domain: when the host has no icon of its own (the page errors or cannot be reached, no
+  `<link>` and no `/favicon.ico`), the answer is the icon of its registrable domain by the Public
+  Suffix List compiled into the server (`account.example.com` → `example.com`,
+  `foo.example.co.uk` → `example.co.uk`; private rules count, so a user's site on a hoster's
+  shared domain has none above it). Hosts whose ending the list does not know, IP addresses and
+  refused names are never changed. The domain is fetched like any host — same checks, limits,
+  slots, and one more try of the asker's bucket when it is not cached — and cached under its own
+  name, so hosts below it share it; a host's "none" never hides its domain's icon. For a host
+  with a domain above it, a page whose final URL (after redirects) is on another registrable
+  domain counts as no icon (it would be a login provider's or a hoster's); the domain itself may
+  redirect anywhere.
+- Cache: on disk under the data directory (`icons/auto-2`; older layouts are deleted by the daily
+  clean-up and when the admin empties the cache), keyed by SHA-256 of the host, 30 days for an icon,
   3 days for "none" (a site that could not be reached counts as "none"). Entries past that are
   deleted once a day. At most 256 MiB and 100,000 files: past either, the oldest go until 80 %
   are left; nothing is kept while the disk is nearly full (less than a twentieth, or 256 MiB, free

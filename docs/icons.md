@@ -16,14 +16,31 @@ The Bitwarden apps and extensions ask a self-hosted server for icons at
 website's icon itself: the page's `<link rel="icon">` and `apple-touch-icon`, then `/favicon.ico`.
 It takes the one nearest to 64 pixels (at least 32), makes a PNG of at most 64 × 64 of it — from
 ICO, PNG, JPEG, GIF, WebP or SVG — and keeps it for 30 days. A site without an icon is asked again
-after 3 days. The website sees the server's address, never yours. The cache holds at most 256 MiB
+after 3 days.
+
+**No icon of its own? Then its site's.** Many addresses below a domain have none: a login page
+that answers `404` without a page, `/favicon.ico` missing too. Then the server takes the icon of
+the domain above it — `account.example.com` gets the one of `example.com`, `foo.example.co.uk`
+the one of `example.co.uk`. Which part is "the domain" comes from the
+[Public Suffix List](https://publicsuffix.org/), which is built into the server (it is not
+downloaded). The domain's icon is fetched once and kept for every address below it; IP addresses,
+names without a dot and the home network's names are never changed. The second fetch goes through
+exactly the same checks and limits as the first.
+
+**Another site's icon is not this one's.** When the page of an address below a domain ends up on
+another site after its redirects — the login page of a sign-in provider, a hoster's page, a
+parked domain — its icon is that other site's. The server does not take it and uses the domain's
+icon instead. A domain itself may send elsewhere (`example.net` to `example.com` is the same
+brand), and then it gets the icon of where it ends up. The website sees the server's address, never yours. The cache holds at most 256 MiB
 (100,000 sites); past that the oldest go, older entries are deleted once a day, and nothing is
 kept while the disk is nearly full.
 
 The admin switches it off under *Settings → Icons* in the admin portal (then every icon is
 "none", and the apps show their symbol), sees how much is kept, and empties the cache. The files
 are under `icons/` in the data directory; they can be deleted at any time and are not in the
-backups.
+backups. An update that changes how icons are chosen starts a new cache (`icons/auto-2` since
+0.6.0-beta.2): every site is fetched again when it is next asked for, and the old cache is
+deleted with the daily clean-up.
 
 ### What the server never does
 

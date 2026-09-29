@@ -30,8 +30,11 @@ async fn fake_web() -> (u16, Arc<AtomicUsize>) {
         async move {
             counted.fetch_add(1, Ordering::SeqCst);
             let host = headers.get("host").and_then(|host| host.to_str().ok()).unwrap_or("").split(':').next().unwrap_or("").to_string();
+            let port = headers.get("host").and_then(|host| host.to_str().ok()).and_then(|host| host.split(':').nth(1)).unwrap_or("80").to_string();
             let path = uri.path().to_string();
             let png = |bytes: Vec<u8>| ([("content-type", "image/png")], bytes).into_response();
+            let html = |body: String| ([("content-type", "text/html")], body).into_response();
+            let redirect = |to: String| (StatusCode::FOUND, [("location", to)]).into_response();
             match (host.as_str(), path.as_str()) {
                 ("shop.example.com", "/") => (
                     [("content-type", "text/html")],
@@ -45,6 +48,18 @@ async fn fake_web() -> (u16, Arc<AtomicUsize>) {
                 ("away.example.org", "/") => {
                     (StatusCode::FOUND, [("location", "http://169.254.169.254/latest/meta-data")]).into_response()
                 }
+                // Like account.elgato.com: a 404 without a body, no /favicon.ico either …
+                ("account.example.com" | "login.example.com", _) => StatusCode::NOT_FOUND.into_response(),
+                // … while the base domain sends to www, whose icons are on a CDN.
+                ("example.com", "/") => redirect(format!("http://www.example.com:{port}/")),
+                ("www.example.com", "/") => html(format!(
+                    r#"<html><head><link rel="icon" sizes="64x64" href="http://cdn.example.net:{port}/brand/favicon-64.png"></head></html>"#
+                )),
+                ("cdn.example.net", "/brand/favicon-64.png") => png(png_of(64)),
+                // A sub-host that sends to somebody's login page: that page's icon is not its own.
+                ("portal.example.com", "/") => redirect(format!("http://sso.example.net:{port}/login")),
+                ("sso.example.net", "/login") => html(r#"<html><head><link rel="icon" href="/sso.png"></head></html>"#.into()),
+                ("sso.example.net", "/sso.png" | "/favicon.ico") => png(png_of(48)),
                 ("library.example.com", "/index.json") => axum::Json(json!([
                     {"Name": "Nextcloud", "Reference": "nextcloud", "PNG": "Yes", "Light": "Yes", "Dark": "No"},
                     {"Name": "Broken", "Reference": "../../etc", "PNG": "Yes"},
@@ -70,11 +85,26 @@ async fn fake_web() -> (u16, Arc<AtomicUsize>) {
 fn upstream(port: u16, allow: bool) -> Upstream {
     let local: IpAddr = "127.0.0.1".parse().unwrap();
     let mut fixed = HashMap::new();
-    for name in ["shop.example.com", "plain.example.net", "away.example.org", "library.example.com"] {
+    // Every name the tests reach, base domains included: nothing is looked up in the real DNS.
+    for name in [
+        "shop.example.com",
+        "plain.example.net",
+        "away.example.org",
+        "library.example.com",
+        "account.example.com",
+        "login.example.com",
+        "portal.example.com",
+        "example.com",
+        "www.example.com",
+        "cdn.example.net",
+        "sso.example.net",
+        "example.net",
+        "example.org",
+    ] {
         fixed.insert(name.to_string(), vec![local]);
     }
     // One public address and one of the local network: refused, whatever the first is.
-    fixed.insert("rebind.example.com".into(), vec!["1.1.1.1".parse().unwrap(), "10.0.0.7".parse().unwrap()]);
+    fixed.insert("rebind.example.org".into(), vec!["1.1.1.1".parse().unwrap(), "10.0.0.7".parse().unwrap()]);
     Upstream {
         fixed,
         allowed: if allow { vec![local] } else { Vec::new() },
@@ -113,14 +143,14 @@ async fn a_site_s_icon_is_fetched_converted_and_kept() {
 
     let (status, cache, bytes) = icon(&server, "away.example.org").await;
     assert_eq!((status, cache.as_str(), bytes.len()), (StatusCode::NOT_FOUND, "public, max-age=86400", 0));
-    assert_eq!(icon(&server, "rebind.example.com").await.0, StatusCode::NOT_FOUND);
+    assert_eq!(icon(&server, "rebind.example.org").await.0, StatusCode::NOT_FOUND, "nor its base domain has one");
     for local in ["nas.local", "192.168.1.1", "localhost", "router", "printer.lan"] {
         assert_eq!(icon(&server, local).await.0, StatusCode::NOT_FOUND, "{local}");
     }
     let admin = server.account("admin@example.com").await;
     server.state.store.update_user(&admin.id, |user| user.admin = true).await.unwrap();
     let status = json(server.get_as(&admin.token, "/uwu/v1/admin/icons").await).await;
-    assert_eq!(status["cached"], 4, "two icons, two sites without one");
+    assert_eq!(status["cached"], 5, "two icons; away, rebind and their base domain without one");
     assert_eq!(
         server.call("DELETE", "/uwu/v1/admin/icons/cache", Some(&admin.token), json!({})).await.status(),
         StatusCode::OK
@@ -277,7 +307,7 @@ async fn the_2fa_directory_is_mirrored_for_accounts_only() {
 async fn the_cache_of_website_icons_has_a_ceiling_and_forgets_old_entries() {
     let data = tempfile::tempdir().unwrap();
     let icons = crate::icons::Icons::new(data.path(), Upstream::default()).with_limits(10, 1 << 20);
-    let auto = data.path().join("icons/auto");
+    let auto = data.path().join("icons").join(super::CACHE_DIR);
     for n in 0..10 {
         icons.keep(&format!("site{n}.example.com"), Some(&[n as u8; 100])).await;
     }
@@ -318,4 +348,59 @@ async fn the_admin_sees_the_cache_and_its_ceiling() {
     assert_eq!(status["cacheMaxBytes"], crate::icons::CACHE_MAX_BYTES);
     assert_eq!(status["cacheMaxFiles"], crate::icons::CACHE_MAX_FILES);
     assert_eq!(status["cached"], 0);
+}
+
+/// An address that answers 404 and names no icon gets its base domain's (by the Public Suffix
+/// List), fetched once for every host below it; each is cached under its own host.
+#[tokio::test]
+async fn a_host_without_an_icon_gets_its_base_domain_s() {
+    let (port, hits) = fake_web().await;
+    let server = TestServer::new().await.with_upstream(upstream(port, true));
+
+    let (status, cache, bytes) = icon(&server, "account.example.com").await;
+    assert_eq!((status, cache.as_str()), (StatusCode::OK, "public, max-age=604800"));
+    assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 64, "www.example.com's, from its CDN");
+    let asked = hits.load(Ordering::SeqCst);
+    assert_eq!(icon(&server, "account.example.com").await.0, StatusCode::OK);
+    assert_eq!(hits.load(Ordering::SeqCst), asked, "both from the cache");
+
+    // Another host below it: only its own page is asked, the base domain's icon is kept.
+    assert_eq!(icon(&server, "login.example.com").await.0, StatusCode::OK);
+    assert_eq!(hits.load(Ordering::SeqCst), asked + 2, "its page and its /favicon.ico, over http");
+    let (status, _, bytes) = icon(&server, "example.com").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 64);
+    assert_eq!(hits.load(Ordering::SeqCst), asked + 2);
+
+    // A host with an icon of its own keeps it; its base domain is not asked.
+    let (status, _, bytes) = icon(&server, "shop.example.com").await;
+    assert_eq!((status, image::load_from_memory(&bytes).unwrap().width()), (StatusCode::OK, 64));
+    let own = icon(&server, "plain.example.net").await;
+    assert_eq!(image::load_from_memory(&own.2).unwrap().width(), 32, "its own /favicon.ico, not the base domain's");
+
+    // A sub-host that ends up on another site's login page: not that site's icon, its base domain's.
+    let (status, _, bytes) = icon(&server, "portal.example.com").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(image::load_from_memory(&bytes).unwrap().width(), 64, "not the 48 px icon of sso.example.net");
+}
+
+/// 0.6.0-beta.1's cache is not used: its "none"s would keep the base domain away for days, its
+/// icons may be another site's. It goes once a day, or when the admin empties the cache.
+#[tokio::test]
+async fn the_cache_of_an_older_version_is_not_used() {
+    let (port, _) = fake_web().await;
+    let server = TestServer::new().await.with_upstream(upstream(port, true));
+    let icons = &server.state.icons;
+    let old = icons.dir().join("auto");
+    std::fs::create_dir_all(&old).unwrap();
+    let name = super::hex(&crate::auth::sha256(b"account.example.com"));
+    std::fs::write(old.join(format!("{name}.none")), b"").unwrap();
+
+    assert_eq!(icon(&server, "account.example.com").await.0, StatusCode::OK, "fetched anew");
+    crate::icons::daily(&server.state).await;
+    assert!(!old.exists(), "gone");
+    assert_eq!(icon(&server, "account.example.com").await.0, StatusCode::OK, "the new cache stays");
+    std::fs::create_dir_all(&old).unwrap();
+    icons.clear().await.unwrap();
+    assert!(!old.exists());
 }

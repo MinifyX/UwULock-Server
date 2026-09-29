@@ -35,6 +35,12 @@ pub const LIBRARY_SOURCES: [&str; 1] = ["selfhst"];
 pub const OWN_MAX_TEXT: usize = 96 * 1024;
 /// Own icons are at most this many pixels wide and high (the client makes them so).
 pub const OWN_PIXELS: u32 = 128;
+/// Where the cache of website icons is, under `icons/`. A new name whenever what is kept changes
+/// meaning: the older caches are deleted whole (once a day and when the admin empties the cache),
+/// and every host is fetched again when it is next asked for. `auto` was 0.6.0-beta.1's, which
+/// also kept icons of pages that had ended up on another site.
+const CACHE_DIR: &str = "auto-2";
+const OLD_CACHE_DIRS: [&str; 1] = ["auto"];
 /// How long a fetched icon is kept, and how long "this site has none".
 const ICON_DAYS: u64 = 30;
 const NONE_DAYS: u64 = 3;
@@ -142,7 +148,21 @@ impl Icons {
     }
 
     fn auto_dir(&self) -> PathBuf {
-        self.dir.join("auto")
+        self.dir.join(CACHE_DIR)
+    }
+
+    /// The caches of older versions, gone: what they hold was made by other rules.
+    async fn drop_old_caches(&self) {
+        for old in OLD_CACHE_DIRS {
+            let dir = self.dir.join(old);
+            if tokio::fs::try_exists(&dir).await.unwrap_or(false) {
+                match tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await {
+                    Ok(Ok(())) => tracing::info!("an older cache of website icons was deleted"),
+                    Ok(Err(error)) => tracing::warn!(%error, "an older cache of website icons could not be deleted"),
+                    Err(_) => {}
+                }
+            }
+        }
     }
 
     fn cached(&self, host: &str) -> (PathBuf, PathBuf) {
@@ -243,7 +263,12 @@ impl Icons {
 
     /// The website's icon, fetched now: the page's `<link rel="icon">`s and `/favicon.ico`,
     /// the one nearest to 64 pixels that has at least 32, else the largest.
-    async fn fetch_site(&self, host: &str) -> Result<Option<Vec<u8>>, ()> {
+    ///
+    /// With `own_site_only` (a host with a base domain to fall back to), a page that ends up on
+    /// another site after its redirects has none: what it shows is that other site's — a login
+    /// provider's, a hoster's, a parking page's — and not this host's. A base domain itself may
+    /// redirect anywhere (`example.net` to `example.com` is one brand).
+    async fn fetch_site(&self, host: &str, own_site_only: bool) -> Result<Option<Vec<u8>>, ()> {
         let client = self.client().ok_or(())?;
         let upstream = &self.upstream;
         let mut base = None;
@@ -253,6 +278,10 @@ impl Icons {
                 if port == default { format!("{scheme}://{host}/") } else { format!("{scheme}://{host}:{port}/") };
             let Ok(url) = url::Url::parse(&address) else { return Err(()) };
             if let Ok(page) = icon_fetch::get(client, upstream, url, icon_fetch::PAGE_BYTES).await {
+                let ended_on = page.url.host_str().map(icon_fetch::site);
+                if own_site_only && ended_on != Some(icon_fetch::site(host)) {
+                    return Ok(None);
+                }
                 if (200..300).contains(&page.status) {
                     candidates = icon_fetch::icon_links(&String::from_utf8_lossy(&page.bytes), &page.url);
                 }
@@ -301,9 +330,31 @@ impl Icons {
         Ok(best.map(|(png, _)| png))
     }
 
-    /// The website's icon: from the cache, or fetched now (and then kept). `Err` when this asker
-    /// may not start another fetch right now.
+    /// The website's icon: the host's own, else its base domain's (`example.com` for
+    /// `account.example.com`, by the Public Suffix List) — an address that answers 404 and names
+    /// no icon still gets its site's. Each is cached under its own host, so the base domain is
+    /// fetched once for all hosts below it, and a host's "none" does not keep its base domain's
+    /// icon away. `Err` when this asker may not start another fetch right now.
     async fn site_icon(&self, state: &AppState, host: &str, ip: std::net::IpAddr) -> Result<Option<Vec<u8>>, ()> {
+        let base = icon_fetch::base_domain(host);
+        if let Some(icon) = self.host_icon(state, host, base.is_some(), ip).await? {
+            return Ok(Some(icon));
+        }
+        match base {
+            Some(base) => self.host_icon(state, &base, false, ip).await,
+            None => Ok(None),
+        }
+    }
+
+    /// One host's own icon: from the cache, or fetched now (and then kept, "none" too). Every
+    /// fetch goes through the same checks, the same per-address tries and the same slots.
+    async fn host_icon(
+        &self,
+        state: &AppState,
+        host: &str,
+        own_site_only: bool,
+        ip: std::net::IpAddr,
+    ) -> Result<Option<Vec<u8>>, ()> {
         if let Some(cached) = self.cached_icon(host).await {
             return Ok(cached);
         }
@@ -316,7 +367,7 @@ impl Icons {
             return Ok(cached);
         }
         let _slot = self.slots.acquire().await.map_err(|_| ())?;
-        let fetched = tokio::time::timeout(icon_fetch::WHOLE, self.fetch_site(host)).await;
+        let fetched = tokio::time::timeout(icon_fetch::WHOLE, self.fetch_site(host, own_site_only)).await;
         let (icon, result) = match fetched {
             Ok(Ok(Some(png))) => (Some(png), "found"),
             Ok(Ok(None)) => (None, "none"),
@@ -330,6 +381,7 @@ impl Icons {
 
     /// Everything fetched so far, gone.
     pub async fn clear(&self) -> std::io::Result<()> {
+        self.drop_old_caches().await;
         let result = match tokio::fs::remove_dir_all(self.auto_dir()).await {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
             _ => Ok(()),
@@ -864,9 +916,10 @@ async fn admin_refresh(State(state): State<AppState>, admin: Admin) -> ApiResult
     Ok(StatusCode::ACCEPTED)
 }
 
-/// Once a day: website icons too old to be used go (and the oldest, past the ceiling), and the
-/// libraries' indexes are fetched again, if the library is on.
+/// Once a day: older versions' caches go, website icons too old to be used go (and the oldest,
+/// past the ceiling), and the libraries' indexes are fetched again, if the library is on.
 pub async fn daily(state: &AppState) {
+    state.icons.drop_old_caches().await;
     state.icons.evict(true).await;
     let settings = state.settings();
     if settings.icons.library

@@ -273,6 +273,11 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
     CDN. Im Eintrag wird es wie ein eigenes Icon verschlüsselt gespeichert, damit der Server
     nicht erfährt, welches Icon zu welchem Eintrag gehört.
   - Reihenfolge: eigenes Icon, sonst automatisches, sonst Standard-Symbol.
+  - Hat eine Adresse kein eigenes Icon (Fehlerseite, 404, kein Link, kein `/favicon.ico`), nimmt
+    der Server das der Domain darüber, bestimmt mit der eingebauten Public Suffix List
+    (`account.example.com` → `example.com`); IPs, Namen ohne Punkt und Heimnetz-Namen bleiben.
+    Landet die Seite einer Unteradresse nach Weiterleitungen auf einer fremden Website, zählt
+    deren Icon nicht. (Fertig in 0.6.0-beta.2; der Cache beginnt neu unter `icons/auto-2`.)
   (Fertig: `/icons/<host>/icon.png` mit Prüfung jeder aufgelösten Adresse, fester Verbindung
   zur geprüften, Grenzen für Zeit, Größe und Bildgröße; eigene Icons verschlüsselt unter
   `/uwu/v1/icons/own`; die Bibliothek sind selfh.st Icons, CC BY 4.0, geprüft am 2026-09-28 —
