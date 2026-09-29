@@ -1480,6 +1480,17 @@ old refresh token comes again. `invalid_grant` on refresh: the connection's `sta
   refresh token and `client_id`, best effort), deletes it here, notice `maskedDisconnected`.
   Addresses stay at UwUMail.
 
+Implementation notes (Stufe 6):
+
+- With no UwUMail server listed, §13.2 and §13.3 answer 404 `feature_off` — except
+  `GET`/`DELETE /uwu/v1/masked/connection` for an account that still has a connection from
+  before, so it can be seen and ended. A connection whose server the admin took off the list
+  answers 403 `server_not_allowed` on §13.3 and is not revoked at UwUMail when ended (the Lock
+  server no longer talks to that server).
+- Deleting the account (by the person, an admin or SCIM) ends its grant at UwUMail first, best
+  effort, like `DELETE /uwu/v1/masked/connection`.
+- UwUMail answering 429 is 429 here too (no change of `status`).
+
 ### 13.3 Addresses — auth `user`
 
 Without a connection: 409 `not_connected`; with `status: revoked`: 409 `revoked`. UwUMail
@@ -1513,6 +1524,11 @@ day (429).
   address.
 - `PATCH /uwu/v1/masked/addresses/{id}` — any of `{ "state": "enabled" | "disabled" | "deleted", "description", "forDomain", "cipherId" }`;
   a new `cipherId` (or `null`) also sets (or clears) `url` at UwUMail.
+- `GET /uwu/v1/masked/links` → `{ "<cipherId>": { "id": "x42", "email": "…", "state": "enabled" | … | null }, … }`:
+  the account's links from this server alone, without asking UwUMail (`state` as UwUMail last
+  said it). What the web vault shows at the items; the same map as `uwu.maskedLinks` (§4.4).
+- `POST /uwu/v1/masked/addresses` also takes `emailPrefix` (UwUMail's, optional). A `cipherId`
+  that already has an address: 409 `exists`; `domain` not one of the connection's: 400 `invalid`.
 - `DELETE /uwu/v1/masked/addresses/{id}` → `state: "deleted"` (UwUMail never reuses it; mail to it
   is refused).
 
@@ -1610,6 +1626,10 @@ origins (the Bitwarden desktop app's `bw-desktop-file://bundle`); extensions and
 
 A key works only on §13.4 and §13.5, never as a login.
 
+The `error` values of §13.4/§13.5: 401 `unauthorized`; 403 `not_connected`, `revoked`,
+`feature_off`, `server_not_allowed`, `forbidden` (UwUMail refused it, its limit included); 429
+`rate_limited`; 502 `upstream`; 404 `not_found` for any other path under the two bases.
+
 **Clients:** web vault (connect, manage, keys, generator, at the item), UwULock desktop and
 extension (generator and item, through §13.3 with their session), official clients (§13.4/§13.5).
 
@@ -1647,8 +1667,22 @@ server's).
 - `DELETE /uwu/v1/admin/send-domains/{id}` — Sends and file requests that chose it fall back to
   the main host; links under it stop working.
 - `POST /uwu/v1/admin/send-domains/{id}/check` → `{ "dns": { "ok": true, "addresses": ["203.0.113.5"] }, "https": { "ok": true, "error": null }, "routing": { "ok": true } }`
-  (the server resolves the host and fetches `https://<host>/alive` from itself).
+  (the server resolves the host and fetches `https://<host>/alive` from itself). `dns` also
+  carries `error` (text or `null`). `routing.ok` means the answer came from this very server: the
+  check puts a one-time token on the request (`/alive?probe=…`), which only this server answers
+  with a header.
 - Branding per domain: §14.4.
+
+Implementation notes (Stufe 6): the `sendDomain` object also has `url` (`https://send.example.com`,
+as in `/uwu/v1/info`). Send-domain URLs carry the main address's port when it has one (the same
+listener serves both names). `tls: "acme"` on a server with `UWULOCK_TLS=off` has
+`certificate.status: "failed"` with an `error` saying so; with `UWULOCK_TLS=files` or `acme` the
+server orders one certificate per name (TLS-ALPN-01, the same CA and contact as the main name,
+`UWULOCK_ACME_DIRECTORY`/`UWULOCK_ACME_EMAIL`) and serves it by SNI. Invalid host: 400; taken:
+409 `exists`. The branding of one domain: `GET|PUT|DELETE /uwu/v1/admin/send-domains/{id}/branding`
+(`DELETE` drops all of it, back to the server's), `…/branding/preview`,
+`PUT|DELETE …/branding/logo/{light|dark}`, `PUT|DELETE …/branding/favicon`, answering like the
+server's.
 
 **What a send domain answers** (by the `Host` header; `X-Forwarded-Host` only with
 `trust_forwarded`): the web vault's files (the Send and file-request pages, assets), `GET /<accessId>`
@@ -1677,6 +1711,12 @@ keep working and deleting a domain loses nothing.
 - `GET /uwu/v1/sends/domains` → `{ "<sendId>": "<sendDomainId>" | null, … }` (all the account's
   Sends; also in the sync as `uwu.sendDomains`).
 - File requests carry `sendDomainId` themselves (§11.4).
+
+Implementation notes (Stufe 6): `PUT /uwu/v1/account/send-domain` answers
+`{ "object": "sendDomainDefault", "sendDomainId" }`; an unknown id is 400 `invalid` (also on
+`PUT /uwu/v1/sends/{sendId}/domain`; a Send that is not the account's is 404). On a send domain,
+the download link of a Send's file (`url` of `/api/sends/access/file/{fileId}` and
+`/api/sends/{id}/access/file/{fileId}`) is under that domain, so its page can fetch it.
 
 The official clients build their links from their own server URL (the main host); their links
 work, they just do not use the send domain.
@@ -2615,7 +2655,7 @@ would shut out the IP making it is 400 `would_lock_out`. Escape hatch:
   }
   ```
 
-  `status`: `ok`, `warning`, `error`, `skipped`. Check ids: `certificate` (and each send domain's),
+  `status`: `ok`, `warning`, `error`, `skipped`. Check ids: `certificate` (and each send domain's, as `certificate.<host>`),
   `clock` (offset from the `Date` of the push relay's and GitHub's answers — `UWULOCK_TIME_SOURCE`
 names others or `off`, GitHub only while the update check is on; warning over 30 s, error over
 2 min; `skipped` when none answers),
