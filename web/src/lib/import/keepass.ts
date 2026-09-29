@@ -25,8 +25,8 @@ const textOf = (parent: Element | undefined, name: string) =>
 /** KDBX 4 keeps times as seconds since the year 1 (base64, 8 bytes); KDBX 3.1 as ISO text. */
 function time(value: string): string | null {
   if (!value) return null;
-  if (/^\d{4}-\d\d-\d\d/.test(value)) return new Date(value).toISOString();
   try {
+    if (/^\d{4}-\d\d-\d\d/.test(value)) return new Date(value).toISOString();
     const bytes = fromBase64(value);
     if (bytes.length !== 8) return null;
     const seconds = new DataView(bytes.buffer).getBigInt64(0, true);
@@ -212,7 +212,12 @@ export function readKeepassXml(doc: Document, collector: Collector) {
       ).length;
       return;
     }
-    for (const entry of children(group, 'Entry')) collector.add(readEntry(collector, entry), path);
+    for (const entry of children(group, 'Entry')) {
+      const title = children(entry, 'String').find((s) => textOf(s, 'Key') === 'Title');
+      collector.entry(title && textOf(title, 'Value'), () =>
+        collector.add(readEntry(collector, entry), path),
+      );
+    }
     for (const sub of children(group, 'Group')) {
       const name = textOf(sub, 'Name').trim() || '-';
       walk(sub, path ? `${path}/${name}` : name);

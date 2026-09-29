@@ -5,6 +5,7 @@
 
 import { t } from '../i18n';
 import { ImportError, inflate, Reader } from './bytes';
+import { MAX_UNPACKED_BYTES, MAX_ZIP_ENTRIES, unpacksTooMuch } from './limits';
 
 /** Files by name: a zip, or a single file standing in for one. */
 export type Archive = { names: string[]; read(name: string): Promise<Uint8Array> };
@@ -27,6 +28,13 @@ export class Zip implements Archive {
     }
     if (end < 0) throw broken();
     const count = view.getUint16(end + 10, true);
+    if (count > MAX_ZIP_ENTRIES) {
+      throw new ImportError(
+        t('Die ZIP-Datei hat mehr als {n} Einträge, das importiert UwULock nicht.', {
+          n: MAX_ZIP_ENTRIES,
+        }),
+      );
+    }
     const reader = new Reader(bytes, broken);
     reader.at = view.getUint32(end + 16, true);
     for (let i = 0; i < count; i++) {
@@ -74,7 +82,15 @@ export class Zip implements Archive {
     reader.take(skip);
     const data = reader.take(entry.size);
     if (entry.method === 0) return data;
-    if (entry.method === 8) return inflate(data, 'deflate-raw');
+    if (entry.method === 8) {
+      return inflate(data, 'deflate-raw', MAX_UNPACKED_BYTES, unpacksTooMuch).catch((error) =>
+        Promise.reject(
+          error instanceof ImportError
+            ? error
+            : new ImportError(t('Die ZIP-Datei ist beschädigt oder unvollständig.')),
+        ),
+      );
+    }
     throw new ImportError(
       t('Die ZIP-Datei ist in einer Art komprimiert, die UwULock nicht kennt.'),
     );

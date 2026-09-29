@@ -8,13 +8,14 @@
 import { N_, t } from '../i18n';
 import { readBitwardenCsv, readBitwardenJson } from './bitwarden';
 import { readAppleCsv, readChromeCsv, readFirefoxCsv } from './browsers';
-import { ImportError, text } from './bytes';
+import { ImportError, parseJson, text } from './bytes';
 import { Collector } from './collect';
 import { CsvTable } from './csv';
 import { detect, kindOf, sourceOfZip } from './detect';
-import { openKdbx } from './kdbx';
+import { openKdbx, parseXml } from './kdbx';
 import { readKeepassCsv, readKeepassXml } from './keepass';
 import { readLastPassCsv } from './lastpass';
+import { checkFileSize } from './limits';
 import { read1PasswordCsv, read1pux } from './onepassword';
 import { encrypted, readProtonCsv, readProtonJson, type ProtonExport } from './protonpass';
 import {
@@ -53,13 +54,31 @@ type Options = { credentials?: Credentials; kdf?: KdbxKdf };
 
 /**
  * Reads `file` as an export of `source` ('auto': whatever it looks like). Throws an
- * `ImportError` with a message for the user when the file doesn't fit or can't be opened.
+ * `ImportError` with a message for the user when the file doesn't fit or can't be opened; never
+ * the raw error of something that broke on the file's content, which could show part of it.
  */
 export async function readImport(
   file: ImportFile,
   source: Source | 'auto',
   options: Options = {},
 ): Promise<Parsed> {
+  try {
+    return await readFile(file, source, options);
+  } catch (error) {
+    // The WebAssembly module's failures (plain objects, not Errors) are worded by `errorText`.
+    if (error instanceof ImportError || !(error instanceof Error)) throw error;
+    throw new ImportError(
+      t('Die Datei ließ sich nicht lesen: Sie ist beschädigt oder anders aufgebaut als erwartet.'),
+    );
+  }
+}
+
+async function readFile(
+  file: ImportFile,
+  source: Source | 'auto',
+  options: Options,
+): Promise<Parsed> {
+  checkFileSize(file.bytes.length);
   const chosen = source === 'auto' ? detect(file.bytes) : source;
   if (!chosen) {
     throw new ImportError(
@@ -74,13 +93,7 @@ export async function readImport(
         app: t(SOURCES.find((s) => s.value === chosen)!.label),
       }),
     );
-  const json = () => {
-    try {
-      return JSON.parse(text(file.bytes)) as unknown;
-    } catch {
-      throw new ImportError(t('Die Datei ist kein gültiges JSON.'));
-    }
-  };
+  const json = (bytes = file.bytes) => parseJson(bytes);
   const done = (format: string, submit?: Parsed['submit']): Parsed => {
     const { data, warnings } = collector.result();
     submit ??= { format: 'json', text: JSON.stringify(data) };
@@ -118,10 +131,8 @@ export async function readImport(
         return done(version);
       }
       if (kind === 'xml') {
-        const doc = new DOMParser().parseFromString(text(file.bytes), 'application/xml');
-        if (doc.querySelector('parsererror') || /<!DOCTYPE|<!ENTITY/i.test(text(file.bytes))) {
-          throw wrong();
-        }
+        const doc = parseXml(text(file.bytes));
+        if (!doc) throw wrong();
         readKeepassXml(doc, collector);
         return done('XML');
       }
@@ -146,7 +157,7 @@ export async function readImport(
         if (sourceOfZip(zip) !== 'protonpass') throw wrong();
         if (zip.names.some((name) => name.endsWith('.pgp'))) throw encrypted();
         const name = zip.names.find((n) => /(^|\/)data\.json$/.test(n))!;
-        readProtonJson(JSON.parse(text(await zip.read(name))) as ProtonExport, collector);
+        readProtonJson(json(await zip.read(name)) as ProtonExport, collector);
         const files = zip.names.filter((n) => /(^|\/)files\/./.test(n)).length;
         if (files) collector.attachment(files);
         return done('ZIP');

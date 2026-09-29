@@ -13,6 +13,7 @@ import {
   type Source,
 } from '../../lib/import';
 import { wasmKdf } from '../../lib/import/kdf';
+import { checkFileSize } from '../../lib/import/limits';
 import { ItemType } from '../../lib/import/types';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
@@ -47,6 +48,8 @@ export function ImportSettings() {
     setResult(null);
     setBusy(true);
     try {
+      // Before the file is read into memory at all.
+      checkFileSize(chosen.size);
       const file = { name: chosen.name, bytes: new Uint8Array(await chosen.arrayBuffer()) };
       if (needsPassword(file.bytes) && (source === 'auto' || source === 'keepass')) {
         setLocked(file);
@@ -149,8 +152,14 @@ function KeepassPrompt({
 
   const pickKey = async (chosen: File | undefined) => {
     if (keyInput.current) keyInput.current.value = '';
-    if (chosen)
-      setKeyFile({ name: chosen.name, bytes: new Uint8Array(await chosen.arrayBuffer()) });
+    if (!chosen) return;
+    try {
+      checkFileSize(chosen.size);
+    } catch (e) {
+      setError(errorText(e));
+      return;
+    }
+    setKeyFile({ name: chosen.name, bytes: new Uint8Array(await chosen.arrayBuffer()) });
   };
 
   return (

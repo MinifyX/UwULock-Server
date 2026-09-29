@@ -12,7 +12,18 @@ import { ImportError } from './bytes';
 import { Collector, nameFromUrl, some } from './collect';
 import type { CsvTable } from './csv';
 
-const ANDROID = /^android:\/\/.*@([^/]+)\/?$/;
+/**
+ * The app of an Android password's address, "android://…@com.example.app/": what follows the
+ * last "@", without a slash but at the end. Read without a regex, which took quadratic time on
+ * a long address full of "@".
+ */
+export function androidApp(url: string): string | null {
+  if (!url.startsWith('android://')) return null;
+  const at = url.lastIndexOf('@');
+  if (at < 'android://'.length) return null;
+  const app = url.endsWith('/') ? url.slice(at + 1, -1) : url.slice(at + 1);
+  return app && !app.includes('/') ? app : null;
+}
 
 export function readChromeCsv(table: CsvTable, collector: Collector) {
   if (!table.has('url', 'username', 'password')) {
@@ -24,7 +35,7 @@ export function readChromeCsv(table: CsvTable, collector: Collector) {
   for (const row of table.rows) {
     const url = table.get(row, 'url');
     // Passwords of Android apps: android://…@com.example.app/ → androidapp://com.example.app
-    const app = url.match(ANDROID)?.[1];
+    const app = androidApp(url);
     const item = collector.login(table.get(row, 'name') || app || nameFromUrl(url));
     item.login.username = some(table.get(row, 'username'));
     item.login.password = some(table.get(row, 'password'));

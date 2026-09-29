@@ -120,7 +120,8 @@ function readForm(collector: Collector, item: ExportItem, extra: string) {
       fullName = value;
       continue;
     }
-    const target = mapping?.[key];
+    // Only the mapping's own keys: "constructor" or "toString" in a form is just a field.
+    const target = mapping && Object.hasOwn(mapping, key) ? mapping[key] : undefined;
     if (target && item.card) (item.card as Record<string, string | null>)[target] = value;
     else if (target && item.identity)
       (item.identity as Record<string, string | null>)[target] = value;
