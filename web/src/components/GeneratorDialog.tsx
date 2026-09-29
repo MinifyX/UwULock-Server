@@ -1,13 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
 import { copyGenerated, generatePassword, type GeneratorOptions } from '../lib/api';
-import { errorText } from '../lib/errors';
+import { useFeature } from '../lib/branding';
+import { errorText, maskedErrorText } from '../lib/errors';
 import { copiedText } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
+import {
+  createMasked,
+  defaultDomainOf,
+  forDomainOf,
+  reloadMaskedLinks,
+  useUsableMasked,
+  type MaskedConnection,
+} from '../lib/masked';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
 import { Icon } from './Icon';
 import { Colored } from './ItemDetail';
 import { Modal } from './Modal';
+import { Segmented } from './web/controls';
+import { MaskedDomainField } from './web/MaskedSettings';
 
 const KEY = 'uwulock.generator';
 
@@ -57,6 +68,10 @@ export function GeneratorDialog({
   useLanguage();
   const [options, setOptions] = useState<GeneratorOptions>(loadOptions);
   const [result, setResult] = useState<{ password: string; bits: number } | null>(null);
+  // Masked addresses, when UwUMail is connected — not from the editor's password field.
+  const masked = useUsableMasked(useFeature('masked-addresses') && !onUse);
+  const [mode, setMode] = useState<'password' | 'masked'>('password');
+  const maker = useMaskedMaker(masked);
 
   const roll = useCallback(async (next: GeneratorOptions) => {
     try {
@@ -100,6 +115,58 @@ export function GeneratorDialog({
     { key: 'symbols', label: '!@#$%^&*' },
   ];
 
+  if (masked && mode === 'masked') {
+    return (
+      <Modal
+        title={t('Maskierte Adresse')}
+        onCancel={onClose}
+        footer={
+          <>
+            <button className="quiet" onClick={onClose}>
+              {t('Schließen')}
+            </button>
+            <span className="spacer" />
+            <button disabled={maker.busy} onClick={() => void maker.create()}>
+              <Icon name="plus" size={15} />
+              {maker.made ? t('Noch eine anlegen') : t('Adresse anlegen')}
+            </button>
+            <button className="primary" disabled={!maker.made} onClick={() => void maker.copy()}>
+              <Icon name="copy" size={15} />
+              {t('Kopieren')}
+            </button>
+          </>
+        }
+      >
+        <div className="generator">
+          <ModeSwitch mode={mode} onChange={setMode} />
+          <output className="generated mono" aria-live="polite">
+            {maker.busy ? t('Einen Moment …') : (maker.made ?? '…')}
+          </output>
+          {maker.error && (
+            <p className="form-error" role="alert">
+              {maker.error}
+            </p>
+          )}
+          <MaskedDomainField connection={masked} value={maker.domain} onChange={maker.setDomain} />
+          <label className="field">
+            <span>{t('Für die Website (freiwillig)')}</span>
+            <input
+              value={maker.website}
+              spellCheck={false}
+              placeholder="shop.example.com"
+              onChange={(e) => maker.setWebsite(e.target.value)}
+            />
+          </label>
+          <p className="field-hint">
+            {t(
+              'UwUMail legt die Adresse beim Klick an; sie bekommt Mails, bis du sie unter Einstellungen → Maskierte Adressen abschaltest.',
+            )}
+          </p>
+        </div>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       title={t('Passwort-Generator')}
@@ -134,6 +201,7 @@ export function GeneratorDialog({
       }
     >
       <div className="generator">
+        {masked && <ModeSwitch mode={mode} onChange={setMode} />}
         <output className="generated" aria-live="polite">
           {result ? <Colored text={result.password} /> : '…'}
         </output>
@@ -185,4 +253,66 @@ export function GeneratorDialog({
       </div>
     </Modal>
   );
+}
+
+function ModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: 'password' | 'masked';
+  onChange: (mode: 'password' | 'masked') => void;
+}) {
+  useLanguage();
+  return (
+    <Segmented
+      label={t('Was erzeugen')}
+      value={mode}
+      onChange={onChange}
+      options={[
+        { value: 'password', label: t('Passwort') },
+        { value: 'masked', label: t('Maskierte Adresse (UwUMail)') },
+      ]}
+    />
+  );
+}
+
+/** A masked address as a username: made at UwUMail on the click, then ready to copy. */
+function useMaskedMaker(connection: MaskedConnection | null) {
+  const [domain, setDomain] = useState(defaultDomainOf(connection));
+  const [website, setWebsite] = useState('');
+  const [made, setMade] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const forDomain = forDomainOf(website);
+      const address = await createMasked({
+        forDomain,
+        description: forDomain.replace(/^https?:\/\//, ''),
+        domain: domain || null,
+        cipherId: null,
+      });
+      setMade(address.email);
+      void reloadMaskedLinks();
+    } catch (e) {
+      setError(maskedErrorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copy = async () => {
+    if (!made) return;
+    try {
+      await copyGenerated(made);
+      toast(t('Kopiert ✧'));
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
+  };
+
+  return { domain, setDomain, website, setWebsite, made, busy, error, create, copy };
 }

@@ -16,10 +16,18 @@ import {
   type Overview,
   type TotpCode,
 } from '../lib/api';
-import { errorText } from '../lib/errors';
+import { useFeature } from '../lib/branding';
+import { errorText, maskedErrorText } from '../lib/errors';
 import { charClasses, copiedText, spacedCode, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { IDENTITY_LABEL, KIND_LABEL } from '../lib/items';
+import {
+  reloadMaskedLinks,
+  STATE_LABEL,
+  updateMasked,
+  useMaskedLinks,
+  type MaskedLink,
+} from '../lib/masked';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
 import { Attachments } from './web/Attachments';
@@ -280,19 +288,63 @@ function Reprompt({ id, onPassed }: { id: string; onPassed: () => void }) {
   );
 }
 
+/**
+ * Before a masked address's item goes: switch the address off too (the default)? Not deleted —
+ * that could not be undone, and the item may come back out of the trash.
+ */
+export function MaskedOffCheck({
+  emails,
+  checked,
+  onChange,
+}: {
+  emails: string[];
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  useLanguage();
+  if (!emails.length) return null;
+  return (
+    <label className="check">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span>
+        {emails.length === 1
+          ? t('Maskierte Adresse {email} abschalten?', { email: emails[0]! })
+          : t('{n} maskierte Adressen abschalten?', { n: emails.length })}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * Switch off the masked addresses of items about to go. UwUMail not answering must not keep
+ * the items: that is said, and the deleting goes on.
+ */
+export async function switchOffMasked(links: MaskedLink[]): Promise<void> {
+  const results = await Promise.allSettled(
+    links.map((link) => updateMasked(link.id, { state: 'disabled' })),
+  );
+  const failed = results.find((result) => result.status === 'rejected');
+  if (failed) toast(maskedErrorText((failed as PromiseRejectedResult).reason), 'error');
+  void reloadMaskedLinks();
+}
+
 /** Asks before something is thrown away for good. */
 function ConfirmDelete({
   name,
   permanent,
+  masked,
   onCancel,
   onConfirm,
 }: {
   name: string;
   permanent: boolean;
+  /** The item's masked address, when it is on. */
+  masked: MaskedLink | null;
   onCancel: () => void;
-  onConfirm: () => void;
+  onConfirm: (switchOff: boolean) => void;
 }) {
   useLanguage();
+  const [switchOff, setSwitchOff] = useState(true);
   return (
     <Modal
       title={permanent ? t('Endgültig löschen?') : t('In den Papierkorb?')}
@@ -301,7 +353,11 @@ function ConfirmDelete({
       footer={
         <>
           <span className="spacer" />
-          <button className="danger" data-secondary onClick={onConfirm}>
+          <button
+            className="danger"
+            data-secondary
+            onClick={() => onConfirm(Boolean(masked) && switchOff)}
+          >
             {permanent ? t('Endgültig löschen') : t('In den Papierkorb')}
           </button>
           <button className="primary" data-autofocus onClick={onCancel}>
@@ -320,6 +376,11 @@ function ConfirmDelete({
               name,
             })}
       </p>
+      <MaskedOffCheck
+        emails={masked ? [masked.email] : []}
+        checked={switchOff}
+        onChange={setSwitchOff}
+      />
     </Modal>
   );
 }
@@ -342,6 +403,7 @@ export function ItemDetail({
   const [moving, setMoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const id = summary.id;
+  const link = useMaskedLinks(useFeature('masked-addresses'))[id] ?? null;
 
   const load = () => {
     vaultItem(id)
@@ -533,10 +595,14 @@ export function ItemDetail({
         <ConfirmDelete
           name={summary.name || t('(ohne Namen)')}
           permanent={asking === 'permanent'}
+          masked={link?.state === 'enabled' ? link : null}
           onCancel={() => setAsking(null)}
-          onConfirm={() =>
+          onConfirm={(switchOff) =>
             void act(
-              () => deleteItem(id, asking === 'permanent'),
+              async () => {
+                if (switchOff && link) await switchOffMasked([link]);
+                await deleteItem(id, asking === 'permanent');
+              },
               asking === 'permanent' ? t('Gelöscht.') : t('Im Papierkorb.'),
             )
           }
@@ -568,6 +634,17 @@ export function ItemDetail({
                   actions={<CopyButton id={id} field="username" label={t('Benutzername')} />}
                 >
                   {d.login.username}
+                  {link && (
+                    <span className="chip masked-chip">
+                      <Icon name="sparkles" size={12} />
+                      {link.state
+                        ? t('Maskierte Adresse · {state}', { state: t(STATE_LABEL[link.state]) })
+                        : t('Maskierte Adresse')}
+                      {/* The username was changed since: say which address it is. */}
+                      {link.email.toLowerCase() !== d.login.username.toLowerCase() &&
+                        ` · ${link.email}`}
+                    </span>
+                  )}
                 </Row>
               )}
               {d.login.hasPassword && <SecretRow id={id} field="password" label={t('Passwort')} />}

@@ -57,7 +57,5 @@
   "{what}, wie es jetzt ist": "{what}, as it is now",
   "Wieder UwULock ✧": "UwULock again ✧",
   "Zu wenig Kontrast: {light}:1 zu Weiß, {dark}:1 zum dunklen Hintergrund. Beide brauchen mindestens 3:1.": "Too little contrast: {light}:1 against white, {dark}:1 against the dark background. Both need at least 3:1.",
-  "Kommt bald ✧": "Coming soon ✧",
-  "Maskierte Adressen": "Masked addresses",
-  "Maskierte Adressen – für jede Website eine eigene Mail-Adresse von deinem UwUMail-Server – lassen sich hier bald verbinden und verwalten. Bis dahin ändert sich an deinem Tresor nichts.": "Masked addresses – an address of its own for every website, from your UwUMail server – can soon be connected and managed here. Until then, nothing changes in your vault."
+  "Maskierte Adressen": "Masked addresses"
 }

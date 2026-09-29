@@ -10,7 +10,8 @@ import {
   type ItemSummary,
   type Overview,
 } from '../lib/api';
-import { errorText } from '../lib/errors';
+import { useFeature } from '../lib/branding';
+import { errorText, maskedErrorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
 import {
   CARD_BRANDS,
@@ -20,11 +21,20 @@ import {
   KIND_LABEL,
   MATCH_LABEL,
 } from '../lib/items';
+import {
+  forDomainOf,
+  reloadMaskedLinks,
+  updateMasked,
+  useMaskedLinks,
+  useUsableMasked,
+  type MaskedAddress,
+} from '../lib/masked';
 import { toast } from '../lib/toast';
 import { useCloseGuard } from './CloseGuard';
 import { GeneratorDialog } from './GeneratorDialog';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
+import { NewMaskedDialog } from './web/MaskedSettings';
 
 /**
  * A value the editor may not have: a password, a card number, a hidden field.
@@ -343,6 +353,13 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
   const [generator, setGenerator] = useState<null | 'password'>(null);
   const [nextKey, setNextKey] = useState(1000);
   const id = summary?.id ?? null;
+  // A masked address as the username, when UwUMail is connected.
+  const maskedOn = useFeature('masked-addresses');
+  const masked = useUsableMasked(maskedOn && kind === 'login');
+  const linked = useMaskedLinks(maskedOn && kind === 'login' && Boolean(id))[id ?? ''];
+  const [maskedDialog, setMaskedDialog] = useState(false);
+  /** An address made for this new item: linked to it once it is saved and has an id. */
+  const [pendingLink, setPendingLink] = useState<string | null>(null);
 
   useEffect(() => {
     if (!summary) return;
@@ -380,6 +397,14 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
     setError(null);
     try {
       const saved = await saveItem(id, draftOf(form, kind));
+      if (pendingLink && !id) {
+        // The item is saved either way; the address just would not know it.
+        await updateMasked(pendingLink, { cipherId: saved }).then(
+          () => void reloadMaskedLinks(),
+          (e) => toast(maskedErrorText(e), 'error'),
+        );
+        setPendingLink(null);
+      }
       setInitial(JSON.stringify(form));
       toast(id ? t('Gespeichert ✧') : t('Angelegt ✧'));
       onSaved(saved);
@@ -462,14 +487,41 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
 
             {kind === 'login' && (
               <>
-                <Field label={t('Benutzername')}>
-                  <input
-                    type="text"
-                    value={form.username}
-                    autoComplete="off"
-                    onChange={(e) => set({ username: e.target.value })}
-                  />
-                </Field>
+                {masked ? (
+                  <div className="field">
+                    <span className="field-label-row">
+                      <span>{t('Benutzername')}</span>
+                      <span className="field-actions">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          onClick={() => setMaskedDialog(true)}
+                          title={t('Maskierte Adresse anlegen')}
+                          aria-label={t('Maskierte Adresse anlegen')}
+                          aria-haspopup="dialog"
+                        >
+                          <Icon name="sparkles" size={15} />
+                        </button>
+                      </span>
+                    </span>
+                    <input
+                      type="text"
+                      aria-label={t('Benutzername')}
+                      value={form.username}
+                      autoComplete="off"
+                      onChange={(e) => set({ username: e.target.value })}
+                    />
+                  </div>
+                ) : (
+                  <Field label={t('Benutzername')}>
+                    <input
+                      type="text"
+                      value={form.username}
+                      autoComplete="off"
+                      onChange={(e) => set({ username: e.target.value })}
+                    />
+                  </Field>
+                )}
                 <SecretField
                   label={t('Passwort')}
                   secret={form.password}
@@ -876,6 +928,41 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
           onUse={(password) => {
             set({ password: { mode: 'value', value: password } });
             setGenerator(null);
+          }}
+        />
+      )}
+      {maskedDialog && masked && (
+        <NewMaskedDialog
+          connection={masked}
+          forDomain={forDomainOf(form.uris.find((uri) => uri.uri.trim())?.uri)}
+          description={form.name.trim()}
+          // The item exists: the address knows it from the start. An address it had goes on
+          // existing at UwUMail, only no longer as this item's.
+          cipherId={id && !linked ? id : null}
+          note={
+            linked
+              ? t(
+                  'Dieser Eintrag hat schon die maskierte Adresse {email}; die neue tritt an ihre Stelle.',
+                  {
+                    email: linked.email,
+                  },
+                )
+              : undefined
+          }
+          onClose={() => setMaskedDialog(false)}
+          onCreated={async (made: MaskedAddress) => {
+            set({ username: made.email });
+            setMaskedDialog(false);
+            if (!id) setPendingLink(made.id);
+            else if (linked) {
+              try {
+                await updateMasked(linked.id, { cipherId: null });
+                await updateMasked(made.id, { cipherId: id });
+              } catch (e) {
+                toast(maskedErrorText(e), 'error');
+              }
+            }
+            toast(t('Maskierte Adresse angelegt ✧ Speichern nicht vergessen.'));
           }}
         />
       )}
