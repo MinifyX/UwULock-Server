@@ -204,9 +204,7 @@ impl Icons {
                     }
                 }
             };
-            let Ok(Some((png, size))) =
-                tokio::task::spawn_blocking(move || icon_fetch::to_png(&bytes, icon_fetch::AUTO_PIXELS)).await
-            else {
+            let Some((png, size)) = icon_fetch::decode(bytes, icon_fetch::AUTO_PIXELS).await else {
                 continue;
             };
             let better = match &best {
@@ -366,9 +364,7 @@ impl Icons {
             return Ok(None);
         }
         let bytes = fetched.bytes;
-        let Ok(Some((png, _))) =
-            tokio::task::spawn_blocking(move || icon_fetch::to_png(&bytes, icon_fetch::LIBRARY_PIXELS)).await
-        else {
+        let Some((png, _)) = icon_fetch::decode(bytes, icon_fetch::LIBRARY_PIXELS).await else {
             return Ok(None);
         };
         let _ = tokio::fs::create_dir_all(path.parent().unwrap_or(&self.dir)).await;

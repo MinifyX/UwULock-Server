@@ -224,6 +224,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   (2 million names, 128 MiB), and every run has a deadline (12 hours; listing the snapshots 10
   minutes): a hostile backup server can no longer fill the memory or hold the backup lock for
   ever.
+- SVG icons are parsed as XML before they are drawn, and refused when they would grow once drawn:
+  a `use` with a namespace prefix (`<s:use>`) slipped past the old text check, so a 1 KB icon
+  from any website cost a second of CPU and 150 MB. At most two icons are decoded at a time.
 
 ## 0.4.0-beta.2
 

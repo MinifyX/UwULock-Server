@@ -40,7 +40,9 @@ turned against its own network:
   `http` or `https` on the usual ports.
 - **Limits**: 5 seconds to connect, 10 seconds for everything, 512 KiB of a page and of an icon,
   images decoded only up to 2048 × 2048 pixels and 64 MiB (a small file that unpacks into a huge
-  image is refused), SVG drawn without text, fonts or anything it points to. At most 8 fetches at
+  image is refused), SVG drawn without text, fonts or anything it points to, and refused when it
+  would grow into more than 5,000 elements once drawn (nested `<use>`, clip paths used by many
+  elements). At most two images are decoded at once. At most 8 fetches at
   a time, one per host; each address may start 60 fetches, one more per second — icons from the
   cache cost nothing.
 - **No names in the logs or metrics.** `uwulock_icon_fetches_total` counts by result only.

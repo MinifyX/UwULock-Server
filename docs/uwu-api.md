@@ -808,8 +808,12 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   normalizes to nothing (local names) or an address refused above; a page's `<link>` may point to
   another host (a CDN), checked the same way. `data:` URLs in a `<link>` are read in place. A
   proxy from the environment is never used (it would resolve names past the checks). SVG is drawn
-  without text, fonts or anything the file points to; files with `<!ENTITY` or more than 16
-  `<use>` are refused. Raster images are decoded up to 2048 × 2048 pixels and 64 MiB.
+  without text, fonts or anything the file points to. It is parsed as XML first (no DTD, at most
+  20,000 nodes and 2,000 elements) and refused when it would grow when drawn: every `use`
+  (whatever its namespace prefix) and every `url(#…)` reference counts what it points to again,
+  and the total may be at most 5,000 elements; no cycles, no `marker`, no `feImage`, no `url(` in
+  `<style>` (at most 16 KiB of it). Raster images are decoded up to 2048 × 2048 pixels and
+  64 MiB. At most two images are decoded at a time, server-wide.
 - Log lines and metrics never name the host.
 
 ### 7.2 Icon library
