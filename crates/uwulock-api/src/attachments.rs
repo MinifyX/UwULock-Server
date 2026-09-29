@@ -184,9 +184,7 @@ async fn announce(
     if data.file_name.len() > out::MAX_NOTE || data.key.len() > out::MAX_NOTE {
         return Err(ApiError::bad("The file name is too long."));
     }
-    if let Owner::User(user_id) = &owner {
-        files::check_storage(&state, user_id, data.file_size).await?;
-    }
+    files::check_owner_storage(&state, &owner, data.file_size, None).await?;
     let attachment = Attachment {
         id: files::new_file_id(),
         cipher_id: cipher.id.clone(),
@@ -269,6 +267,10 @@ async fn upload_legacy(
         files::discard(&uploaded).await;
         return Err(ApiError::bad("No file name or no key for the attachment."));
     };
+    if let Err(error) = files::check_owner_storage(&state, &owner, uploaded.size, None).await {
+        files::discard(&uploaded).await;
+        return Err(error);
+    }
     files::keep(&uploaded, &path).await?;
     let attachment = Attachment {
         id: attachment_id,

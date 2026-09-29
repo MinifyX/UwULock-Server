@@ -147,7 +147,7 @@ impl Relay {
         .map(|(key, value)| format!("{key}={}", encode(value)))
         .collect::<Vec<_>>()
         .join("&");
-        let answer: Answer = client()?
+        let mut response = client()?
             .post(format!("{identity}/connect/token"))
             .header("content-type", "application/x-www-form-urlencoded")
             .body(form)
@@ -155,10 +155,16 @@ impl Relay {
             .await
             .map_err(|error| error.to_string())?
             .error_for_status()
-            .map_err(|error| format!("the relay refused the installation id or key: {error}"))?
-            .json()
-            .await
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| format!("the relay refused the installation id or key: {error}"))?;
+        // A token answer is a few hundred bytes: nothing past 64 KiB is read.
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+            if body.len() + chunk.len() > 64 * 1024 {
+                return Err("the relay answered with far too much".into());
+            }
+            body.extend_from_slice(&chunk);
+        }
+        let answer: Answer = serde_json::from_slice(&body).map_err(|error| error.to_string())?;
         let mut token = self.token.lock();
         token.value = answer.access_token.clone();
         token.until = Some(Instant::now() + Duration::from_secs(answer.expires_in / 2));

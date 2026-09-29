@@ -68,7 +68,7 @@ few minutes is plenty. Answers are never cached.
 | Metric | Type | Labels | What it is |
 | --- | --- | --- | --- |
 | `uwulock_build_info` | gauge | `version` | Always 1; the version that runs |
-| `uwulock_http_requests_total` | counter | `route`, `method`, `status` | Requests answered. `route` is the route's template, like `/api/ciphers/{id}`; the web vault's files and unknown paths are `other` |
+| `uwulock_http_requests_total` | counter | `route`, `method`, `status` | Requests answered. `route` is the route's template, like `/api/ciphers/{id}`; the web vault's files and unknown paths are `other`. `method` is one of the standard HTTP methods, anything else `other` |
 | `uwulock_http_request_duration_seconds` | histogram | `route`, `method` | How long they took to answer |
 | `uwulock_logins_total` | counter | `grant`: `password`, `refresh_token`, `client_credentials`, `webauthn`, `send_access`; `result`: `success`, `failure`, `two_factor` | Logins. `two_factor` is the answer that asks for the second step |
 | `uwulock_sync_duration_seconds` | histogram | `kind`: `bitwarden`, `full`, `delta` | How long a sync took: of the official clients (`/api/sync`), and of UwULock's own clients, whole or as a delta ([sync.md](sync.md)) |

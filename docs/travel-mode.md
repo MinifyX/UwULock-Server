@@ -15,8 +15,15 @@ extensions too, at their next sync — until you switch it off again.
 Switching it off needs the **master password and the second step of your login** (authenticator
 app, a code by mail, or a security key; not the recovery code). So travel mode needs two-step
 login. Five wrong tries, and the next one waits a few minutes; every wrong try is listed under
-*Settings → Security* and mailed to you. If two-step login is gone meanwhile — you used the
-recovery code, or an admin reset it — the master password alone switches it off.
+*Settings → Security* and mailed to you.
+
+While travel mode is on, two-step login stays exactly as it is: it cannot be switched off,
+replaced or set up anew, the authenticator key and the recovery code are not shown, and the
+recovery code does not work at login. Otherwise whoever holds your unlocked device and your master
+password could take the second step away and switch travel mode off. Lost the phone with the
+authenticator on the way? An admin can reset your two-step login (*Admin portal → Users*); after
+that, and after an emergency contact took the account over, the master password alone switches
+travel mode off. Keep the recovery code at home — it is for the day travel mode is off.
 
 While it is on:
 

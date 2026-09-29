@@ -239,8 +239,19 @@ async fn disable(
     }
     let factors = state.store.two_factors(&user.id).await?;
     let usable = usable(&state, &factors);
-    // Two-step login can go after the mode was switched on — the recovery code, an admin, an
-    // emergency takeover. Then the master password alone switches it off, or nothing ever would.
+    // Travel mode goes on only with two-step login, and while it is on, the account's sessions
+    // can neither change two-step login nor use the recovery code (two_factor.rs). It can still
+    // go from outside: an admin resets it, or an emergency contact takes the account over. Then
+    // the master password alone switches travel mode off, or nothing ever would. When a second
+    // step is still there but cannot be used (mail, and the server sends none any more), it is
+    // not given up: an admin resets two-step login first.
+    if factors.iter().any(|factor| factor.enabled) && usable.is_empty() {
+        state.limits.travel.give_back(&user.id);
+        return Err(ApiError::bad(
+            "Two-step login cannot be used on this server right now. Ask an admin to reset it, then switch travel mode off.",
+        )
+        .code("two_factor_unusable"));
+    }
     if !usable.is_empty() {
         if !usable.contains(&body.two_factor_provider) {
             return Err(failed(&state, &session, ip).await);

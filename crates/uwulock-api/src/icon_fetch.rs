@@ -516,6 +516,22 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
     head.contains("<svg")
 }
 
+/// Images decoded at once, server-wide, and how long an answer waits for one. The budgets in
+/// [`to_png`] keep each decode small; the permit goes with the work and is given back only when
+/// it is done, so an answer that stopped waiting does not let another decode start beside it.
+static DECODES: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+const DECODE_TIME: Duration = Duration::from_secs(5);
+
+/// [`to_png`] on a blocking thread, at most two at a time.
+pub async fn decode(bytes: Vec<u8>, pixels: u32) -> Option<(Vec<u8>, u32)> {
+    let permit = DECODES.acquire().await.ok()?;
+    let work = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        to_png(&bytes, pixels)
+    });
+    tokio::time::timeout(DECODE_TIME, work).await.ok()?.ok()?
+}
+
 /// An image, read and made a PNG of at most `pixels` × `pixels` (never made larger), with the
 /// size it had. None for anything that is not an image this reads, or too large to unpack.
 pub fn to_png(bytes: &[u8], pixels: u32) -> Option<(Vec<u8>, u32)> {
@@ -543,13 +559,114 @@ pub fn to_png(bytes: &[u8], pixels: u32) -> Option<(Vec<u8>, u32)> {
     Some((png, size))
 }
 
+/// Elements an SVG may have, and how many it may become once every `<use>` is replaced by what
+/// it points to: a favicon has a few dozen. Past these it is refused before usvg sees it.
+const SVG_ELEMENTS: usize = 2000;
+const SVG_EXPANDED: u64 = 5000;
+/// XML nodes of any kind (text, comments, attributes' neighbours) the parser reads at most.
+const SVG_NODES: u32 = 20_000;
+/// The text of `<style>` elements together: CSS is matched against every element.
+const SVG_STYLE_BYTES: usize = 16 * 1024;
+
+/// Whether an SVG stays small once drawn. Parsed with a real XML parser rather than searched as
+/// text, so a namespace prefix (`<s:use>`) does not hide an element: any element whose local name
+/// is `use` counts, whatever its namespace, and what it points to is counted as often as it is
+/// used — nested uses multiply. No DTD at all (entities), no markers (drawn once per vertex) and
+/// no `feImage` (another way to copy an element).
+fn svg_small(doc: &resvg::usvg::roxmltree::Document) -> bool {
+    use resvg::usvg::roxmltree::{Node, NodeId};
+    let elements: Vec<Node> = doc.descendants().filter(Node::is_element).collect();
+    if elements.len() > SVG_ELEMENTS {
+        return false;
+    }
+    let mut style = 0;
+    let mut ids: HashMap<&str, NodeId> = HashMap::new();
+    for element in &elements {
+        match element.tag_name().name() {
+            "marker" | "feImage" => return false,
+            "style" => {
+                let css = element.text().unwrap_or_default();
+                // A selector could hand a clip path or a pattern to every element at once.
+                if css.contains("url(") {
+                    return false;
+                }
+                style += css.len();
+            }
+            _ => {}
+        }
+        if let Some(id) = element.attribute("id") {
+            ids.entry(id).or_insert(element.id());
+        }
+    }
+    if style > SVG_STYLE_BYTES {
+        return false;
+    }
+    // What an element draws besides its children: a `use` its `href` (in any namespace:
+    // `xlink:href`, plain `href`), anything a clip path, mask, filter or pattern through
+    // `url(#…)` in an attribute (`style` included) — each drawn again for every element using it.
+    let targets = |node: Node| -> Vec<NodeId> {
+        let mut found = Vec::new();
+        for attribute in node.attributes() {
+            let value = attribute.value();
+            if attribute.name() == "href" && node.tag_name().name() == "use" {
+                found.extend(value.strip_prefix('#').and_then(|id| ids.get(id)));
+            }
+            let mut rest = value;
+            while let Some(at) = rest.find("url(") {
+                rest = &rest[at + 4..];
+                if let Some(id) = rest.trim_start_matches(['\'', '"', ' ']).strip_prefix('#') {
+                    let end = id.find([')', '\'', '"', ' ']).unwrap_or(id.len());
+                    found.extend(ids.get(&id[..end]));
+                }
+            }
+        }
+        found
+    };
+    // The size of the root once drawn, depth first with a stack of its own (no recursion on
+    // input), each element counted once and remembered; a cycle is refused.
+    let mut size: HashMap<NodeId, u64> = HashMap::new();
+    let mut open: std::collections::HashSet<NodeId> = std::collections::HashSet::new();
+    let root = doc.root_element();
+    let mut stack = vec![root.id()];
+    while let Some(&id) = stack.last() {
+        if size.contains_key(&id) {
+            stack.pop();
+            continue;
+        }
+        let node = doc.get_node(id).expect("a node of this document");
+        let parts: Vec<NodeId> =
+            node.children().filter(Node::is_element).map(|child| child.id()).chain(targets(node)).collect();
+        let missing: Vec<NodeId> = parts.iter().copied().filter(|part| !size.contains_key(part)).collect();
+        if missing.is_empty() {
+            let total = parts.iter().fold(1u64, |sum, part| sum.saturating_add(size[part]));
+            if total > SVG_EXPANDED {
+                return false;
+            }
+            size.insert(id, total);
+            open.remove(&id);
+            stack.pop();
+        } else {
+            open.insert(id);
+            for part in missing {
+                // Still being counted further down: it points to itself, through others.
+                if open.contains(&part) {
+                    return false;
+                }
+                stack.push(part);
+            }
+        }
+    }
+    true
+}
+
 /// An SVG drawn at `pixels` × `pixels`: without text, fonts or images it points to — nothing
 /// outside the file is read.
 fn svg(bytes: &[u8], pixels: u32) -> Option<image::DynamicImage> {
+    use resvg::usvg::roxmltree;
     let text = std::str::from_utf8(bytes).ok()?;
-    let lower = text.to_ascii_lowercase();
-    // Entities and `<use>` are how a small file becomes a huge drawing.
-    if lower.contains("<!entity") || lower.matches("<use").count() > 16 {
+    let parsing = roxmltree::ParsingOptions { allow_dtd: false, nodes_limit: SVG_NODES, ..Default::default() };
+    let doc = roxmltree::Document::parse_with_options(text, parsing).ok()?;
+    if !svg_small(&doc) {
         return None;
     }
     let options = resvg::usvg::Options {
@@ -560,7 +677,7 @@ fn svg(bytes: &[u8], pixels: u32) -> Option<image::DynamicImage> {
         },
         ..resvg::usvg::Options::default()
     };
-    let tree = resvg::usvg::Tree::from_str(text, &options).ok()?;
+    let tree = resvg::usvg::Tree::from_xmltree(&doc, &options).ok()?;
     let size = tree.size();
     let scale = pixels as f32 / size.width().max(size.height()).max(1.0);
     let (width, height) = (
@@ -718,10 +835,57 @@ mod tests {
         assert_eq!(image::load_from_memory(&png).unwrap().width(), 64);
         let outside = br#"<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="8" height="8"><image href="/etc/passwd" width="8" height="8"/></svg>"#;
         assert!(to_png(outside, 64).is_some(), "drawn, without what it points to");
-        let bomb = format!("<svg xmlns=\"http://www.w3.org/2000/svg\">{}</svg>", "<use href=\"#a\"/>".repeat(20));
-        assert!(to_png(bomb.as_bytes(), 64).is_none());
         assert!(to_png(b"<html>no image</html>", 64).is_none());
         assert!(to_png(b"\x89PNG\r\n\x1a\nbroken", 64).is_none());
+    }
+
+    /// A group used twice by the next one, `levels` deep: 2^levels copies of a square from a
+    /// file of a kilobyte. `prefix` names the SVG namespace's prefix for `use` (empty: none).
+    fn doubling(levels: usize, prefix: &str) -> String {
+        let (open, colon) = if prefix.is_empty() {
+            (String::new(), "")
+        } else {
+            (format!(" xmlns:{prefix}=\"http://www.w3.org/2000/svg\""), ":")
+        };
+        let mut svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"{open} xmlns:x=\"http://www.w3.org/1999/xlink\" width=\"64\" height=\"64\"><defs><g id=\"a0\"><rect width=\"1\" height=\"1\"/></g>"
+        );
+        for level in 1..=levels {
+            let below = level - 1;
+            svg += &format!(
+                "<g id=\"a{level}\"><{prefix}{colon}use x:href=\"#a{below}\"/><{prefix}{colon}use x:href=\"#a{below}\" x=\"1\"/></g>"
+            );
+        }
+        svg + &format!("</defs><{prefix}{colon}use x:href=\"#a{levels}\"/></svg>")
+    }
+
+    /// Review finding R3-1: `<s:use>` is a `use` element too, and what a use points to counts as
+    /// often as it is drawn. Refused before usvg does any of the work.
+    #[test]
+    fn an_svg_that_grows_when_drawn_is_refused() {
+        let started = std::time::Instant::now();
+        let prefixed = doubling(16, "s");
+        assert!(prefixed.len() < 1500 && !prefixed.contains("<use"), "the reproducer: {} bytes", prefixed.len());
+        assert!(to_png(prefixed.as_bytes(), 64).is_none());
+        assert!(to_png(doubling(16, "").as_bytes(), 64).is_none());
+        assert!(started.elapsed() < Duration::from_secs(2), "refused before the work: {:?}", started.elapsed());
+        assert!(to_png(doubling(3, "s").as_bytes(), 64).is_some(), "a few uses are fine");
+
+        let entities = r#"<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;">]><svg xmlns="http://www.w3.org/2000/svg"><text>&b;</text></svg>"#;
+        assert!(to_png(entities.as_bytes(), 64).is_none(), "no DTD");
+        let cycle = r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><g id="a"><use href="#b"/></g><g id="b"><use href="#a"/></g></svg>"##;
+        assert!(to_png(cycle.as_bytes(), 64).is_none());
+        let clip = format!(
+            r##"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><clipPath id="c">{}</clipPath>{}</svg>"##,
+            r#"<rect width="1" height="1"/>"#.repeat(100),
+            r#"<rect width="8" height="8" clip-path="url(#c)"/>"#.repeat(100),
+        );
+        assert!(to_png(clip.as_bytes(), 64).is_none(), "a clip path drawn for every element");
+        let css = r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><style>*{clip-path:url(#c)}</style><rect width="8" height="8"/></svg>"#;
+        assert!(to_png(css.as_bytes(), 64).is_none());
+        let many =
+            format!(r#"<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">{}</svg>"#, "<g/>".repeat(3000));
+        assert!(to_png(many.as_bytes(), 64).is_none());
     }
 
     #[test]

@@ -46,6 +46,40 @@ async fn a_backup_goes_to_a_folder_and_comes_back() {
     assert!(matches!(Repository::open_existing(storage, Some(RepoKey::generate())).await, Err(Error::WrongKey)));
 }
 
+/// An unencrypted backup leaves out the server's own keys: whoever reads the folder must not be
+/// able to forge a login, or open the secrets the server keeps for talking to others.
+#[tokio::test]
+async fn an_unencrypted_backup_leaves_the_server_keys_out() {
+    let server = Server::new().await;
+    server.store.set_setting("token_key", "the signing key").await.unwrap();
+    write(server.data(), "secret.key", b"thirty-two bytes of server key..");
+    let target = tempfile::tempdir().unwrap();
+    let repo = open(target.path(), None).await;
+    let done = server.backup(&repo, 1_000).await;
+    let manifest = repo.manifest(&done.snapshot).await.unwrap();
+    let paths: Vec<&str> = manifest.files.iter().map(|file| file.path.as_str()).collect();
+    assert!(paths.contains(&"attachments/c1/a1"), "{paths:?}");
+    assert!(!paths.iter().any(|path| *path == "secret.key" || path.starts_with("acme/")), "{paths:?}");
+    for entry in walk(target.path()) {
+        let bytes = std::fs::read(&entry).unwrap();
+        assert!(!bytes.windows(15).any(|window| window == b"the signing key"), "{}", entry.display());
+    }
+    let new = tempfile::tempdir().unwrap();
+    uwulock_backup::restore_into(&repo, &done.snapshot, new.path()).await.unwrap();
+    let store =
+        uwulock_store::Store::open_sqlite(&new.path().join("uwulock.db"), &uwulock_store::Options { readers: 1 })
+            .unwrap();
+    assert_eq!(store.setting("marker").await.unwrap().as_deref(), Some("first"));
+    assert_eq!(store.setting("token_key").await.unwrap(), None);
+
+    // Encrypted, they go along.
+    let sealed = tempfile::tempdir().unwrap();
+    let repo = open(sealed.path(), Some(RepoKey::generate())).await;
+    let done = server.backup(&repo, 1_000).await;
+    let manifest = repo.manifest(&done.snapshot).await.unwrap();
+    assert!(manifest.files.iter().any(|file| file.path == "secret.key"));
+}
+
 #[tokio::test]
 async fn old_snapshots_go_and_take_what_only_they_needed() {
     let server = Server::new().await;
@@ -97,4 +131,27 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
         }
     }
     found
+}
+
+/// A run that goes on and on is stopped at its deadline, and lets go of the lock that restores
+/// and the next nightly run need (review finding M2).
+#[tokio::test]
+async fn a_run_past_its_deadline_is_stopped() {
+    let server = Server::new().await;
+    let target = tempfile::tempdir().unwrap();
+    let offsite =
+        uwulock_backup::Offsite::with_deadline(server.store.clone(), server.data(), std::time::Duration::ZERO);
+    let settings = uwulock_backup::OffsiteSettings {
+        enabled: true,
+        target: Some(Target::Folder(FolderTarget { path: target.path().display().to_string() })),
+        key: Some(RepoKey::generate().recovery_text()),
+        ..Default::default()
+    };
+    offsite.save_settings(&settings).await.unwrap();
+    let error = offsite.run_now().await.unwrap_err();
+    assert!(error.to_string().contains("was stopped"), "{error}");
+    assert!(!offsite.is_running());
+    assert!(offsite.status().await.last_error.unwrap().contains("was stopped"));
+    let again = offsite.run_now().await.unwrap_err();
+    assert!(!matches!(again, Error::Busy(_)), "the lock is free again: {again}");
 }

@@ -47,6 +47,11 @@ const CONFIG_MAX: u64 = 64 * 1024;
 const MANIFEST_MAX: u64 = 256 * 1024 * 1024;
 /// What an object adds to its content: the header, the nonce and the tag.
 const OBJECT_OVERHEAD: u64 = 64;
+/// Names one listing may bring, and their bytes together: a server that says "there is more"
+/// for ever could otherwise fill the memory at every backup. A repository of a terabyte in
+/// 64 KiB chunks has about 16 million objects over 256 folders, some 65,000 each.
+pub(crate) const MAX_LISTED_NAMES: usize = 2_000_000;
+pub(crate) const MAX_LISTED_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -228,16 +233,25 @@ fn left_out(name: &str) -> bool {
     name.starts_with("uwulock.db") || name == "backups" || name == "icons" || name == TEMP_DIR
 }
 
+/// What an unencrypted backup leaves out besides: the server's own keys, which whoever reads the
+/// backup must not get. `secret.key` opens the secrets the server keeps for talking to others
+/// (an OpenID Connect client secret, UwUMail tokens); `acme` holds the Let's Encrypt account and
+/// certificate keys, which a restored server fetches anew.
+fn secret(name: &str) -> bool {
+    name == "secret.key" || name == "acme"
+}
+
 /// The files of the data directory a backup carries, with their sizes and times. Symbolic links
-/// and anything else that is not a plain file are left out.
-fn data_files(data_dir: &Path) -> Vec<(String, PathBuf, u64, i64)> {
+/// and anything else that is not a plain file are left out, and for an unencrypted backup the
+/// server's own keys.
+fn data_files(data_dir: &Path, plain: bool) -> Vec<(String, PathBuf, u64, i64)> {
     let mut found = Vec::new();
     let mut pending = vec![(String::new(), data_dir.to_path_buf())];
     while let Some((prefix, dir)) = pending.pop() {
         let Ok(entries) = std::fs::read_dir(&dir) else { continue };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if prefix.is_empty() && left_out(&name) {
+            if prefix.is_empty() && (left_out(&name) || (plain && secret(&name))) {
                 continue;
             }
             let relative = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
@@ -326,6 +340,14 @@ pub async fn backup(
     let copy = temp.join(format!("backup-{}.db", random_suffix()));
     let _ = tokio::fs::remove_file(&copy).await;
     source.store.backup_to(&copy).await?;
+    let plain = !repo.config.encrypted;
+    if plain {
+        let scrubbed = copy.clone();
+        tokio::task::spawn_blocking(move || uwulock_store::forget_secrets_in(&scrubbed))
+            .await
+            .map_err(|error| Error::Storage(error.to_string()))?
+            .map_err(Error::Config)?;
+    }
     let schema = uwulock_store::schema_of(&copy).map_err(Error::Config)?;
     let chunked = put_chunked(repo, copy.clone(), &mut known).await;
     let _ = tokio::fs::remove_file(&copy).await;
@@ -335,7 +357,7 @@ pub async fn backup(
     // The files: attachments, Sends, file requests, certificates and keys.
     let mut files = Vec::new();
     let mut files_size = 0;
-    for (path, full, size, modified) in data_files(source.data_dir) {
+    for (path, full, size, modified) in data_files(source.data_dir, plain) {
         if let Some(before) = previous.get(&path)
             && before.size == size
             && before.modified == modified

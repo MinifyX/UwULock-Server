@@ -49,8 +49,11 @@ pub async fn check(config: &Config) -> Result<(), String> {
     if !response.status().is_success() {
         return Err(format!("{url} answered {}", response.status()));
     }
+    let body = uwulock_api::outbound::read_limited(response, uwulock_api::outbound::JSON_BYTES)
+        .await
+        .map_err(|error| format!("{url} {error}"))?;
     let health: serde_json::Value =
-        response.json().await.map_err(|error| format!("{url} answered something else: {error}"))?;
+        serde_json::from_slice(&body).map_err(|error| format!("{url} answered something else: {error}"))?;
     if health["ok"] != true {
         return Err(format!("{url} says it is not well: {health}"));
     }

@@ -27,7 +27,7 @@ describe('the way back from UwUMail', () => {
   });
 
   it('names the reason, or unknown', () => {
-    for (const reason of ['denied', 'expired', 'invalid_state', 'upstream'])
+    for (const reason of ['denied', 'expired', 'invalid_state', 'upstream', 'busy'])
       expect(connectResultOf(new URLSearchParams(`result=error&reason=${reason}`))).toEqual({
         ok: false,
         reason,

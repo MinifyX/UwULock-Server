@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
@@ -15,6 +16,13 @@ const SETTINGS_KEY: &str = "offsite.settings";
 const STATUS_KEY: &str = "offsite.status";
 /// After a failed run, the next attempt waits this long.
 const RETRY_SECS: i64 = 3600;
+/// The longest a backup, or fetching a snapshot, may take. Each request to the backup server has
+/// its own timeout, but a server that answers just in time, slowly, for ever, would otherwise hold
+/// the lock that restores need, and skip every nightly run after it. A first backup of 100 GB
+/// at 5 MB/s takes under 6 hours.
+const RUN_DEADLINE: Duration = Duration::from_secs(12 * 3600);
+/// The longest listing the snapshots may take, for the portal.
+const LIST_DEADLINE: Duration = Duration::from_secs(10 * 60);
 /// The most of each kind of retention, and the latest a warning may come.
 const RETENTION_MAX: usize = 1000;
 const WARN_MAX_HOURS: u32 = 24 * 90;
@@ -74,9 +82,22 @@ impl OffsiteSettings {
         if self.enabled && self.target.is_none() {
             return Err(Error::Config("say where the backups go first".into()));
         }
+        if self.enabled && self.plain_elsewhere() {
+            return Err(Error::Config(PLAIN_ELSEWHERE.into()));
+        }
         Ok(())
     }
+
+    /// Backups without encryption to another machine: not any more. Only a folder of this
+    /// machine may take them unencrypted — it holds nothing the data directory does not.
+    /// Settings from before are kept, but do not run until they are saved with encryption.
+    pub fn plain_elsewhere(&self) -> bool {
+        self.key.is_none() && matches!(self.target, Some(Target::Sftp(_) | Target::S3(_)))
+    }
 }
+
+/// Why settings that send backups unencrypted to SFTP or S3 do not run.
+pub const PLAIN_ELSEWHERE: &str = "backups to SFTP or S3 are encrypted; save the settings again with encryption on (at a new place, since the backups there are not encrypted)";
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
@@ -102,6 +123,8 @@ struct Inner {
     busy: Arc<Mutex<()>>,
     /// Whether the one holding `busy` is a backup.
     backing_up: AtomicBool,
+    /// [`RUN_DEADLINE`], shorter in tests.
+    deadline: Duration,
 }
 
 /// The off-site backups of one server. Cheap to clone.
@@ -142,8 +165,17 @@ impl Offsite {
                 wakeup: Notify::new(),
                 busy: Arc::new(Mutex::new(())),
                 backing_up: AtomicBool::new(false),
+                deadline: RUN_DEADLINE,
             }),
         }
+    }
+
+    /// The same, with another deadline for a run: for tests.
+    #[doc(hidden)]
+    pub fn with_deadline(store: Store, data_dir: &Path, deadline: Duration) -> Offsite {
+        let mut offsite = Offsite::new(store, data_dir, "lock.example.com", "0.0.0-test");
+        Arc::get_mut(&mut offsite.inner).expect("not shared yet").deadline = deadline;
+        offsite
     }
 
     pub async fn settings(&self) -> Result<OffsiteSettings, Error> {
@@ -239,8 +271,11 @@ impl Offsite {
         status.finished = None;
         self.save_status(&status).await;
 
-        let result = async {
+        let run = async {
             let mut settings = self.settings().await?;
+            if settings.plain_elsewhere() {
+                return Err(Error::Config(PLAIN_ELSEWHERE.into()));
+            }
             let repo = self.open(&mut settings, true).await?;
             let source = Source {
                 store: &self.inner.store,
@@ -251,8 +286,9 @@ impl Offsite {
             let report = crate::backup(&source, &repo, settings.retention, now()).await;
             repo.storage.close().await;
             report
-        }
-        .await;
+        };
+        // Dropped at the deadline, the run lets go of the connection and the lock with it.
+        let result = within(self.inner.deadline, "the backup", run).await;
         let _ = tokio::fs::remove_dir_all(self.inner.data_dir.join(TEMP_DIR)).await;
         let finished = now();
         match &result {
@@ -275,11 +311,14 @@ impl Offsite {
 
     /// The snapshots in the repository, newest first.
     pub async fn snapshots(&self) -> Result<Vec<Manifest>, Error> {
-        let mut settings = self.settings().await?;
-        let repo = self.open(&mut settings, false).await?;
-        let listing = repo.listing().await;
-        repo.storage.close().await;
-        listing
+        within(LIST_DEADLINE.min(self.inner.deadline), "listing the snapshots", async {
+            let mut settings = self.settings().await?;
+            let repo = self.open(&mut settings, false).await?;
+            let listing = repo.listing().await;
+            repo.storage.close().await;
+            listing
+        })
+        .await
     }
 
     /// Fetches a snapshot's database for a restore into the running server.
@@ -290,8 +329,20 @@ impl Offsite {
             .clone()
             .try_lock_owned()
             .map_err(|_| Error::Busy("an off-site backup or restore is running already".into()))?;
+        within(self.inner.deadline, "fetching the snapshot", self.fetch_locked(snapshot, busy)).await
+    }
+
+    async fn fetch_locked(&self, snapshot: &str, busy: OwnedMutexGuard<()>) -> Result<Fetched, Error> {
         let mut settings = self.settings().await?;
         let repo = self.open(&mut settings, false).await?;
+        if !repo.config.encrypted {
+            repo.storage.close().await;
+            // Whoever can write there could have put any database there: without the key that
+            // seals every object, nothing ties a snapshot to this server.
+            return Err(Error::Config(
+                "an unencrypted backup goes back only with the command line, into a new server".into(),
+            ));
+        }
         let fetched = async {
             let manifest = repo.manifest(snapshot).await?;
             crate::fits_this_server(&manifest)?;
@@ -339,6 +390,17 @@ impl Offsite {
         let hours = (now - from) / 3600;
         (hours >= i64::from(settings.warn_after_hours)).then_some(hours)
     }
+}
+
+/// `work`, given up once `deadline` passed.
+async fn within<T>(
+    deadline: Duration,
+    what: &str,
+    work: impl std::future::Future<Output = Result<T, Error>>,
+) -> Result<T, Error> {
+    tokio::time::timeout(deadline, work).await.unwrap_or_else(|_| {
+        Err(Error::Storage(format!("{what} took longer than {} minutes and was stopped", deadline.as_secs() / 60)))
+    })
 }
 
 /// Says "a backup is running" for as long as it lives.
@@ -413,6 +475,20 @@ mod tests {
         assert!(OffsiteSettings { key: Some("nonsense".into()), ..settings() }.check().is_err());
         assert!(OffsiteSettings { target: None, ..settings() }.check().is_err());
         let key = RepoKey::generate().recovery_text();
-        assert!(OffsiteSettings { key: Some(key), ..settings() }.check().is_ok());
+        assert!(OffsiteSettings { key: Some(key.clone()), ..settings() }.check().is_ok());
+        // Unencrypted only into a folder of this machine.
+        let sftp = Target::Sftp(crate::SftpTarget {
+            host: "nas.example.com".into(),
+            port: 22,
+            user: "backup".into(),
+            path: "lock".into(),
+            login: crate::Login::Password { password: "pw".into() },
+            host_key: None,
+        });
+        let plain = OffsiteSettings { target: Some(sftp.clone()), ..settings() };
+        assert!(plain.plain_elsewhere() && plain.check().is_err());
+        assert!(OffsiteSettings { enabled: false, ..plain }.check().is_ok(), "kept, but it does not run");
+        assert!(OffsiteSettings { target: Some(sftp), key: Some(key), ..settings() }.check().is_ok());
+        assert!(!settings().plain_elsewhere());
     }
 }

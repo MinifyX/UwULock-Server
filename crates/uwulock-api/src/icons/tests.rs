@@ -270,3 +270,52 @@ async fn the_2fa_directory_is_mirrored_for_accounts_only() {
     crate::reports::daily(&server.state).await;
     assert_eq!(hits.load(Ordering::SeqCst), asked + 1);
 }
+
+/// Review finding R3-2: anonymous callers can have any host fetched, so the cache has a ceiling
+/// (the oldest go past it), old entries go once a day, and the admin sees both numbers.
+#[tokio::test]
+async fn the_cache_of_website_icons_has_a_ceiling_and_forgets_old_entries() {
+    let data = tempfile::tempdir().unwrap();
+    let icons = crate::icons::Icons::new(data.path(), Upstream::default()).with_limits(10, 1 << 20);
+    let auto = data.path().join("icons/auto");
+    for n in 0..10 {
+        icons.keep(&format!("site{n}.example.com"), Some(&[n as u8; 100])).await;
+    }
+    assert_eq!(icons.counted().await, (10, 1000));
+    // The first ones are the oldest.
+    let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    for n in 0..3 {
+        let (path, _) = icons.cached(&format!("site{n}.example.com"));
+        std::fs::File::options().write(true).open(path).unwrap().set_modified(old).unwrap();
+    }
+    icons.keep("one-more.example.com", None).await;
+    let (files, _) = icons.counted().await;
+    assert_eq!(files, 8, "down to 80 %");
+    assert_eq!(std::fs::read_dir(&auto).unwrap().count(), 8);
+    for n in 0..3 {
+        assert!(icons.cached_icon(&format!("site{n}.example.com")).await.is_none(), "the oldest went");
+    }
+    assert!(icons.cached_icon("one-more.example.com").await.is_some());
+    assert!(icons.bytes().await >= 700);
+
+    // Once a day: what is too old to be used goes.
+    let (path, _) = icons.cached("site9.example.com");
+    let month = std::time::SystemTime::now() - std::time::Duration::from_secs(31 * 86_400);
+    std::fs::File::options().write(true).open(path).unwrap().set_modified(month).unwrap();
+    icons.evict(true).await;
+    assert_eq!(icons.counted().await.0, 7);
+    icons.clear().await.unwrap();
+    assert_eq!(icons.counted().await, (0, 0));
+}
+
+#[tokio::test]
+async fn the_admin_sees_the_cache_and_its_ceiling() {
+    let server = TestServer::new().await;
+    let token = server.invite("admin@example.com", true).await;
+    server.call("POST", "/identity/accounts/register/finish", None, register_body("admin@example.com", &token)).await;
+    let admin = server.login("admin@example.com", "admin-device").await;
+    let status = json(server.get_as(&admin.token, "/uwu/v1/admin/icons").await).await;
+    assert_eq!(status["cacheMaxBytes"], crate::icons::CACHE_MAX_BYTES);
+    assert_eq!(status["cacheMaxFiles"], crate::icons::CACHE_MAX_FILES);
+    assert_eq!(status["cached"], 0);
+}

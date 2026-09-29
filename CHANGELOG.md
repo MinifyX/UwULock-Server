@@ -205,6 +205,50 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   The tests take about half the time (the crypto and SQLite are built optimised in the dev
   profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).
 
+**The security review of 0.6.** What it found high or medium is fixed:
+
+- While travel mode is on, two-step login stays as it is: no provider can be set up, replaced
+  or switched off, the authenticator key and the recovery code are not shown, and the recovery
+  code does not work at login. Before, the master password on a seized device was enough to take
+  the second step away and switch travel mode off. A second step that is set up but cannot be
+  used is no longer given up either; an admin resets it.
+- Off-site backups: every change to their settings, and forgetting the SFTP host key, asks for
+  the admin's master password, and switching encryption off drops the recovery key only when
+  confirmed. A stolen admin session could send the whole database, unencrypted, to a target of
+  its choosing.
+- Unencrypted off-site backups only into a folder of this machine, without the server's own keys
+  (token key, `secret.key`, Let's Encrypt keys), and never back into the running server from the
+  portal. Existing unencrypted SFTP/S3 setups stop and raise the "backup failed" alert until
+  they are saved again with encryption.
+- Off-site backups over SFTP read directory listings page by page with the same ceiling as S3
+  (2 million names, 128 MiB), and every run has a deadline (12 hours; listing the snapshots 10
+  minutes): a hostile backup server can no longer fill the memory or hold the backup lock for
+  ever.
+- SVG icons are parsed as XML before they are drawn, and refused when they would grow once drawn:
+  a `use` with a namespace prefix (`<s:use>`) slipped past the old text check, so a 1 KB icon
+  from any website cost a second of CPU and 150 MB. At most two icons are decoded at a time.
+- The cache of website icons has a ceiling (256 MiB, 100,000 files; the oldest go past it),
+  forgets old entries once a day, keeps nothing while the disk is nearly full, and the admin
+  portal shows the ceiling. Anybody could have filled the disk by asking for icons of made-up
+  hosts.
+- Masked addresses: one account can no longer spend UwUMail's limit of refused token requests
+  for everybody. Codes that are no codes are not sent on, refused ones are limited per account
+  and per UwUMail server, and when UwUMail asks to wait (429) its token endpoint is left alone
+  for 15 minutes.
+- Every answer the server reads from elsewhere has a ceiling (error texts 4 KiB, OAuth and JSON
+  answers 512 KiB, UwUMail 8 MiB): notification channels, Loki, the identity provider, UwUAuth
+  pairing, UwUMail and the push relay could each fill the memory with an endless answer.
+- The request metrics label only the standard HTTP methods; anything else is `other`. Requests
+  with invented methods made new counters that were never removed, metrics on or off.
+- Uploads to a file request: one at a time per file, four per request, never over a file that
+  arrived, counted per address, and the free-space check reserves the room of every upload on
+  its way. Parallel uploads to the same file could fill the disk past the guard.
+- The storage limit covers families: their attachments, versions and own icons count against
+  each confirmed owner, and attachments of family items (the old one-step upload too) and
+  moving items with files into a family are checked against it. Deleting an account also
+  deletes the families nobody else is in, with their items and files. Before, family files
+  counted against nobody.
+
 ## 0.4.0-beta.2
 
 **The rest of the security review.** 0.4.0-beta.1 fixed what the review before it found high

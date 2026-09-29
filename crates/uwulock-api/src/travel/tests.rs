@@ -168,3 +168,76 @@ async fn without_two_step_login_any_more_the_password_alone_switches_it_off() {
     let off = json(server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), bare).await).await;
     assert_eq!(off["enabled"], false);
 }
+
+/// R1-1: with the session and the master password alone, two-step login can neither be taken
+/// away, replaced nor read while travelling, so the second step keeps guarding the way back.
+#[tokio::test]
+async fn two_step_login_stays_as_it_is_while_travelling() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let folder = json(server.call("POST", "/api/folders", Some(&nyu.token), json!({"name": "2.f|f|f"})).await).await;
+    server.call("PUT", "/uwu/v1/travel/folders", Some(&nyu.token), json!({"folderIds": [folder["id"]]})).await;
+    server.state.store.set_two_factor(&nyu.id, 0, "JBSWY3DPEHPK3PXP".into(), "RECOVER".into()).await.unwrap();
+    assert_eq!(
+        server.call("POST", "/uwu/v1/travel/enable", Some(&nyu.token), json!({})).await.status(),
+        StatusCode::OK
+    );
+    let right = password_hash("nyu@example.com");
+    let secret = crate::totp::base32_decode("JBSWY3DPEHPK3PXP").unwrap();
+    let code = crate::totp::code(&secret, crate::auth::now_seconds() / 30);
+    let refused = [
+        ("POST", "/api/two-factor/get-recover", json!({"masterPasswordHash": right})),
+        ("POST", "/api/two-factor/get-authenticator", json!({"masterPasswordHash": right})),
+        ("POST", "/api/two-factor/disable", json!({"masterPasswordHash": right, "type": 0})),
+        ("PUT", "/api/two-factor/disable", json!({"masterPasswordHash": right, "type": "0"})),
+        (
+            "POST",
+            "/api/two-factor/authenticator",
+            json!({"masterPasswordHash": right, "key": "KRSXG5CTMVRXEZLUKRSXG5CTMVRXEZLU", "token": code}),
+        ),
+        ("DELETE", "/api/two-factor/authenticator", json!({"masterPasswordHash": right, "key": "JBSWY3DPEHPK3PXP"})),
+        ("POST", "/api/two-factor/get-email", json!({"masterPasswordHash": right})),
+        ("POST", "/api/two-factor/send-email", json!({"masterPasswordHash": right, "email": "taken@example.com"})),
+        (
+            "PUT",
+            "/api/two-factor/email",
+            json!({"masterPasswordHash": right, "email": "taken@example.com", "token": "1"}),
+        ),
+        ("POST", "/api/two-factor/get-webauthn-challenge", json!({"masterPasswordHash": right})),
+        ("DELETE", "/api/two-factor/webauthn", json!({"masterPasswordHash": right, "id": 1})),
+    ];
+    for (method, path, body) in refused {
+        let response = server.call(method, path, Some(&nyu.token), body).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{method} {path}");
+        let answer = json(response).await;
+        assert_eq!(answer["code"], "travel_active", "{method} {path}");
+        assert!(!answer.to_string().contains("JBSWY3DPEHPK3PXP") && !answer.to_string().contains("RECOVER"));
+    }
+    assert!(server.mails().iter().all(|mail| mail.to != "taken@example.com"), "no setup code went out");
+    assert_eq!(server.state.store.two_factors(&nyu.id).await.unwrap().len(), 1, "the authenticator is still there");
+    let listed = json(server.get_as(&nyu.token, "/api/two-factor").await).await;
+    assert_eq!(listed["data"].as_array().unwrap().len(), 1, "listing stays");
+
+    // The recovery code at login would remove two-step login: not while travelling.
+    let mut form = login_form("nyu@example.com", "d2");
+    form.extend([("twoFactorProvider", "8"), ("twoFactorToken", "RECOVER")]);
+    assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(server.state.store.two_factors(&nyu.id).await.unwrap().len(), 1);
+    let bare = json!({"masterPasswordHash": right});
+    let response = server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), bare.clone()).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST, "still needs the code");
+
+    // A second step that is set up but cannot be used is not given up either.
+    server.state.store.remove_two_factor(&nyu.id, None).await.unwrap();
+    server.state.store.set_two_factor(&nyu.id, 3, "{}".into(), "RECOVER".into()).await.unwrap();
+    let response = server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), bare.clone()).await;
+    assert_eq!(json(response).await["code"], "two_factor_unusable");
+    // An admin reset it: then the password alone.
+    server.state.store.remove_two_factor(&nyu.id, None).await.unwrap();
+    let off = json(server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), bare).await).await;
+    assert_eq!(off["enabled"], false);
+    let response = server
+        .call("POST", "/api/two-factor/get-authenticator", Some(&nyu.token), json!({"masterPasswordHash": right}))
+        .await;
+    assert_eq!(response.status(), StatusCode::OK, "back to normal once it is off");
+}

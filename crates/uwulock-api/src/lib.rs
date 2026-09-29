@@ -53,7 +53,7 @@ pub(crate) mod oidc;
 mod org_collections;
 mod org_members;
 mod organizations;
-pub(crate) mod outbound;
+pub mod outbound;
 mod palette;
 mod passkeys;
 pub mod policies;

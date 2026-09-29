@@ -34,6 +34,8 @@ pub(crate) struct Inner {
     pub addresses: Vec<Value>,
     /// The token endpoint answers 429.
     pub token_busy: bool,
+    /// Requests the token endpoint got.
+    pub token_requests: u32,
     /// The JMAP API answers 429.
     pub jmap_busy: bool,
     /// The discovery document leaves the scope out.
@@ -156,6 +158,7 @@ async fn register(State(inner): State<Arc<Mutex<Inner>>>, Json(body): Json<Value
 
 async fn token(State(inner): State<Arc<Mutex<Inner>>>, Form(form): Form<HashMap<String, String>>) -> Response {
     let mut inner = inner.lock();
+    inner.token_requests += 1;
     if inner.token_busy {
         return oauth_error(StatusCode::TOO_MANY_REQUESTS, "temporarily_unavailable");
     }

@@ -86,5 +86,6 @@
   "Zweiter Schritt": "Second step",
   "{name} wählen": "Choose {name}",
   "{n} ausgeblendete Ordner": "{n} hidden folders",
-  "{n} Websites im Cache ({size}), eigene Icons {own}.": "{n} websites in the cache ({size}), own icons {own}."
+  "Der Reisemodus ist an. Bis du ihn ausschaltest, bleibt die Zwei-Schritt-Anmeldung, wie sie ist: nichts lässt sich einrichten, ausschalten oder anzeigen.": "Travel mode is on. Until you switch it off, two-step login stays as it is: nothing can be set up, switched off or shown.",
+  "{n} Websites im Cache ({size}, höchstens {max}; darüber gehen die ältesten), eigene Icons {own}.": "{n} websites in the cache ({size}, at most {max}; past that the oldest go), own icons {own}."
 }

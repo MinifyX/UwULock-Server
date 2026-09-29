@@ -113,21 +113,12 @@ pub fn is_loopback(host: &str) -> bool {
 }
 
 /// Read an answer, at most [`MAX_ANSWER`] of it; refused when it is not a success.
-pub async fn read(mut response: reqwest::Response, what: &str) -> Result<Vec<u8>, String> {
+pub async fn read(response: reqwest::Response, what: &str) -> Result<Vec<u8>, String> {
     let status = response.status();
     if !status.is_success() {
         return Err(format!("{what} {}", outbound::refused(response).await));
     }
-    let mut bytes = Vec::new();
-    while let Some(chunk) =
-        response.chunk().await.map_err(|error| format!("{what}: {}", outbound::error_text(&error)))?
-    {
-        if bytes.len() + chunk.len() > MAX_ANSWER {
-            return Err(format!("{what} answered with far too much"));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(bytes)
+    outbound::read_limited(response, MAX_ANSWER).await.map_err(|error| format!("{what} {error}"))
 }
 
 async fn get_json<T: serde::de::DeserializeOwned>(url: &reqwest::Url, what: &str) -> Result<T, String> {

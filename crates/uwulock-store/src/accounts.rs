@@ -428,6 +428,13 @@ impl Store {
             .sqlite_write(move |tx| {
                 // The vault goes first: ciphers point at folders.
                 tx.execute("DELETE FROM ciphers WHERE user_id = ?1", [&owned])?;
+                // So do the families nobody else is in (not even invited): with their only member
+                // gone, nobody could reach them, and their items and files would stay for good.
+                tx.execute(
+                    "DELETE FROM organizations WHERE id IN (SELECT m.org_id FROM org_members m WHERE m.user_id = ?1 \
+                     AND NOT EXISTS (SELECT 1 FROM org_members x WHERE x.org_id = m.org_id AND x.id <> m.id))",
+                    [&owned],
+                )?;
                 Ok(tx.execute("DELETE FROM users WHERE id = ?1", [&owned])? > 0)
             })
             .await?;

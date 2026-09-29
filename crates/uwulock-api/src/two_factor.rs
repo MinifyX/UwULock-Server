@@ -78,6 +78,18 @@ fn recovery_code() -> String {
     totp::base32_encode(&auth::random_bytes(20))
 }
 
+/// While travel mode is on, two-step login stays as it is and keeps its secrets: it is what
+/// switches travel mode off, and a device taken at a border has the session and, often, the
+/// master password (docs/uwu-api.md §9.3). So no provider is set up, replaced or removed, and
+/// neither the authenticator key nor the recovery code is shown.
+async fn unchanged_while_travelling(state: &AppState, user: &User) -> ApiResult<()> {
+    if state.store.travelling(&user.id).await? {
+        return Err(ApiError::bad("Travel mode is on. Two-step login can be changed again once it is off.")
+            .code("travel_active"));
+    }
+    Ok(())
+}
+
 /// A security notice about a provider switched on or off, from this session.
 async fn noted(state: &AppState, session: &Session, ip: std::net::IpAddr, kind: &str, provider: i64) {
     let context = crate::notices::Context::of(state, session, ip).await;
@@ -184,6 +196,12 @@ pub(crate) async fn check_login(
                 });
                 if !right {
                     return Err(ApiError::bad("Recovery code is incorrect. Try again."));
+                }
+                // It would take two-step login away, and with it what switches travel mode off.
+                if state.store.travelling(&user.id).await? {
+                    return Err(ApiError::bad(
+                        "Travel mode is on, so the recovery code does not work now. Use the second step, or ask an admin.",
+                    ));
                 }
                 state.store.remove_two_factor(&user.id, None).await?;
                 let event = Event {
@@ -393,6 +411,7 @@ async fn get_recover(
     session: Session,
     Json(secret): Json<Secret>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, secret.master_password_hash.as_deref()).await?;
     Ok(Json(json!({ "code": session.user.recovery_code, "object": "twoFactorRecover" })))
 }
@@ -412,6 +431,7 @@ async fn disable(
     session: Session,
     Json(request): Json<Disable>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let kind: i64 = request.kind.parse().map_err(|_| ApiError::bad("Invalid two factor provider"))?;
     state.store.remove_two_factor(&session.user.id, Some(kind)).await?;
@@ -425,6 +445,7 @@ async fn get_authenticator(
     session: Session,
     Json(secret): Json<Secret>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, secret.master_password_hash.as_deref()).await?;
     let current =
         state.store.two_factors(&session.user.id).await?.into_iter().find(|factor| factor.kind == AUTHENTICATOR);
@@ -453,6 +474,7 @@ async fn activate_authenticator(
     session: Session,
     Json(request): Json<ActivateAuthenticator>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let secret = totp::base32_decode(&request.key).ok_or_else(|| ApiError::bad("Invalid totp secret"))?;
     if secret.len() != 20 {
@@ -481,6 +503,7 @@ async fn delete_authenticator(
     session: Session,
     Json(request): Json<DeleteAuthenticator>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let current =
         state.store.two_factors(&session.user.id).await?.into_iter().find(|factor| factor.kind == AUTHENTICATOR);
@@ -500,6 +523,7 @@ async fn get_email(
     session: Session,
     Json(secret): Json<Secret>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, secret.master_password_hash.as_deref()).await?;
     let current = state.store.two_factors(&session.user.id).await?.into_iter().find(|factor| factor.kind == EMAIL);
     Ok(Json(match current {
@@ -523,6 +547,7 @@ async fn send_setup_code(
     session: Session,
     Json(request): Json<SetupCode>,
 ) -> ApiResult<StatusCode> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     if !state.mailer.enabled() {
         return Err(ApiError::bad("This server cannot send mail, so two-step login by mail is not available."));
@@ -567,6 +592,7 @@ async fn activate_email(
     session: Session,
     Json(request): Json<ActivateEmail>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let address =
         match state.store.take_code(&session.user.id, SETUP_CODE, auth::sha256(request.token.trim().as_bytes())).await?
@@ -644,6 +670,7 @@ async fn webauthn_challenge(
     session: Session,
     Json(secret): Json<Secret>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, secret.master_password_hash.as_deref()).await?;
     let known: Vec<Vec<u8>> =
         keys_of(&state, &session.user).await?.iter().filter_map(|key| webauthn::unb64(&key.credential_id)).collect();
@@ -679,6 +706,7 @@ async fn activate_webauthn(
     session: Session,
     Json(request): Json<ActivateWebauthn>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let slot: i64 = request.id.parse().map_err(|_| ApiError::bad("Invalid key slot"))?;
     if !(1..=MAX_KEYS as i64).contains(&slot) {
@@ -725,6 +753,7 @@ async fn delete_webauthn(
     session: Session,
     Json(request): Json<DeleteWebauthn>,
 ) -> ApiResult<Json<Value>> {
+    unchanged_while_travelling(&state, &session.user).await?;
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let slot: i64 = request.id.parse().map_err(|_| ApiError::bad("Invalid key slot"))?;
     let mut keys = keys_of(&state, &session.user).await?;

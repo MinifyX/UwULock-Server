@@ -101,10 +101,48 @@ pub struct Metrics {
     icon_fetches: Mutex<BTreeMap<&'static str, u64>>,
 }
 
+/// Label combinations of the request counters, at most: a backstop. Routes are the router's
+/// templates and methods a fixed list, so this is only reached if that ever changes.
+const MOST_SERIES: usize = 20_000;
+
+/// A request's method as a label: the standard ones as they are, anything else — hyper takes any
+/// token as a method — as `other`, so nobody can grow the counters by inventing methods.
+fn method_label(method: &axum::http::Method) -> &'static str {
+    use axum::http::Method;
+    match *method {
+        Method::GET => "GET",
+        Method::HEAD => "HEAD",
+        Method::POST => "POST",
+        Method::PUT => "PUT",
+        Method::DELETE => "DELETE",
+        Method::PATCH => "PATCH",
+        Method::OPTIONS => "OPTIONS",
+        Method::CONNECT => "CONNECT",
+        Method::TRACE => "TRACE",
+        _ => "other",
+    }
+}
+
 impl Metrics {
-    fn request(&self, route: &str, method: &str, status: u16, seconds: f64) {
-        *self.requests.lock().entry((route.to_string(), method.to_string(), status)).or_default() += 1;
-        self.durations.lock().entry((route.to_string(), method.to_string())).or_default().observe(seconds);
+    fn request(&self, route: &str, method: &'static str, status: u16, seconds: f64) {
+        let mut requests = self.requests.lock();
+        let route = if requests.len() >= MOST_SERIES
+            && !requests.contains_key(&(route.to_string(), method.to_string(), status))
+        {
+            "other"
+        } else {
+            route
+        };
+        *requests.entry((route.to_string(), method.to_string(), status)).or_default() += 1;
+        drop(requests);
+        let mut durations = self.durations.lock();
+        let route =
+            if durations.len() >= MOST_SERIES && !durations.contains_key(&(route.to_string(), method.to_string())) {
+                "other"
+            } else {
+                route
+            };
+        durations.entry((route.to_string(), method.to_string())).or_default().observe(seconds);
     }
 
     /// A login with `grant` (`password`, `refresh_token`, …) ended as `result` (`success`,
@@ -128,13 +166,13 @@ impl Metrics {
 pub(crate) async fn track(State(state): State<AppState>, request: Request, next: Next) -> Response {
     let started = Instant::now();
     let route = request.extensions().get::<MatchedPath>().map_or("other", MatchedPath::as_str).to_string();
-    let method = request.method().as_str().to_string();
+    let method = method_label(request.method());
     let response = next.run(request).await;
     let seconds = started.elapsed().as_secs_f64();
     if route == "/api/sync" && response.status().is_success() {
         state.metrics.sync("bitwarden", seconds);
     }
-    state.metrics.request(&route, &method, response.status().as_u16(), seconds);
+    state.metrics.request(&route, method, response.status().as_u16(), seconds);
     response
 }
 
@@ -443,6 +481,33 @@ mod tests {
             request = request.header("authorization", format!("Bearer {token}"));
         }
         server.send(request.body(Body::empty()).unwrap()).await
+    }
+
+    /// Review finding R3-18: invented methods do not make new counters, whether metrics are on
+    /// or not.
+    #[tokio::test]
+    async fn invented_methods_are_counted_as_other() {
+        let server = TestServer::new().await;
+        for n in 0..50 {
+            let method = axum::http::Method::from_bytes(format!("XQ{n}").as_bytes()).unwrap();
+            let request = axum::http::Request::builder().method(method).uri("/x").body(Body::empty()).unwrap();
+            server.send(request).await;
+        }
+        server.get("/alive").await;
+        let requests = server.state.metrics.requests.lock();
+        let methods: std::collections::BTreeSet<&str> = requests.keys().map(|(_, method, _)| method.as_str()).collect();
+        assert_eq!(methods, ["GET", "other"].into_iter().collect(), "{methods:?}");
+        assert!(server.state.metrics.durations.lock().len() <= 2);
+    }
+
+    #[test]
+    fn the_counters_have_a_ceiling() {
+        let metrics = Metrics::default();
+        for n in 0..MOST_SERIES + 10 {
+            metrics.request(&format!("/route/{n}"), "GET", 200, 0.1);
+        }
+        assert_eq!(metrics.requests.lock().len(), MOST_SERIES + 1, "the rest under other");
+        assert_eq!(metrics.durations.lock().len(), MOST_SERIES + 1);
     }
 
     #[tokio::test]

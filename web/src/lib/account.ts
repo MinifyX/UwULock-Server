@@ -48,6 +48,8 @@ export type AccountInfo = {
   sendDomainId?: string | null;
   /** Whether masked addresses are connected to UwUMail (§13.2). */
   maskedConnected?: boolean;
+  /** Travel mode (§9): while it is on, two-step login cannot be changed. */
+  travel?: { enabled: boolean };
 };
 
 export type MinimumKdf = {

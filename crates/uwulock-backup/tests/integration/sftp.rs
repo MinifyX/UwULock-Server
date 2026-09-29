@@ -210,6 +210,15 @@ impl russh_sftp::server::Handler for Files {
 
     async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, StatusCode> {
         let (path, listed) = self.handles.get_mut(&handle).ok_or(StatusCode::Failure)?;
+        // A hostile server: names for ever, or pages with none, never the end.
+        if path.ends_with("/endless") {
+            self.next += 1;
+            let files = (0..10).map(|n| File::dummy(format!("{}-{n}", self.next))).collect();
+            return Ok(Name { id, files });
+        }
+        if path.ends_with("/stalling") {
+            return Ok(Name { id, files: Vec::new() });
+        }
         if *listed {
             return Err(StatusCode::Eof);
         }
@@ -287,7 +296,7 @@ async fn a_backup_goes_over_sftp_and_comes_back() {
     assert!(host_key.starts_with("SHA256:"), "{host_key}");
     let server = Server::new().await;
     let key = RepoKey::generate();
-    let repo = Repository::open(Storage::Sftp(first), Some(key.clone()), 1).await.unwrap();
+    let repo = Repository::open(Storage::Sftp(Box::new(first)), Some(key.clone()), 1).await.unwrap();
     let report = server.backup(&repo, 1_000).await;
     assert!(uwulock_backup::check(&repo, &report.snapshot).await.unwrap().is_empty());
     repo.storage.close().await;
@@ -302,9 +311,34 @@ async fn a_backup_goes_over_sftp_and_comes_back() {
     let password = target(Login::Password { password: "geheim".into() }, Some(host_key.clone()));
 
     let again = Sftp::connect(&password).await.unwrap();
-    let repo = Repository::open_existing(Storage::Sftp(again), Some(key)).await.unwrap();
+    let repo = Repository::open_existing(Storage::Sftp(Box::new(again)), Some(key)).await.unwrap();
     let new = tempfile::tempdir().unwrap();
     uwulock_backup::restore_into(&repo, &report.snapshot, new.path()).await.unwrap();
     repo.storage.close().await;
     check_restored(new.path()).await;
+}
+
+/// A backup server that lists without end does not get this one to collect names until the
+/// memory is gone (review finding M2).
+#[tokio::test]
+async fn an_endless_listing_is_cut_off() {
+    let (port, disk) = sftp_server(String::new()).await;
+    disk.lock().unwrap().dirs.extend(["/srv/endless".to_string(), "/srv/stalling".to_string()]);
+    let target = SftpTarget {
+        host: "127.0.0.1".into(),
+        port,
+        user: "backup".into(),
+        path: "/srv".into(),
+        login: Login::Password { password: "geheim".into() },
+        host_key: None,
+    };
+    let sftp = Sftp::connect(&target).await.unwrap();
+    let error = sftp.list_within("endless", 100, 1 << 20).await.unwrap_err();
+    assert!(error.to_string().contains("more than this reads"), "{error}");
+    let error = sftp.list_within("endless", 1_000_000, 500).await.unwrap_err();
+    assert!(error.to_string().contains("more than this reads"), "{error}");
+    let error = sftp.list("stalling").await.unwrap_err();
+    assert!(error.to_string().contains("never finished"), "{error}");
+    assert!(sftp.list("missing").await.unwrap().is_empty());
+    sftp.close().await;
 }

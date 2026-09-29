@@ -12,6 +12,8 @@ use serde_json::{Value, json};
 pub(crate) const CAPABILITY: &str = "https://www.fastmail.com/dev/maskedemail";
 /// The OAuth scope UwUMail has for them alone.
 pub(crate) const SCOPE: &str = "maskedemail";
+/// What an answer of UwUMail is read of, at most: 5,000 addresses with their texts fit.
+const ANSWER_BYTES: usize = 8 * 1024 * 1024;
 
 /// What went wrong with a call to UwUMail.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,7 +68,11 @@ async fn answer(response: reqwest::Response) -> Result<Value, Upstream> {
     if status.is_redirection() {
         return Err(Upstream::Failed(crate::outbound::refused(response).await));
     }
-    let bytes = response.bytes().await.map_err(|error| failed(&error))?;
+    // JMAP answers with a few thousand addresses are the largest; errors are a line.
+    let most = if status.is_success() { ANSWER_BYTES } else { crate::outbound::ERROR_BYTES * 16 };
+    let bytes = crate::outbound::read_limited(response, most)
+        .await
+        .map_err(|error| Upstream::Failed(format!("UwUMail {error}")))?;
     let body: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     if status.is_success() {
         return Ok(body);

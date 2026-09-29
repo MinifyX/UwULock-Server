@@ -802,14 +802,20 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   32 px wins, else the largest. ICO, PNG, JPEG, GIF, WebP, SVG (rasterized) are read; the result is
   PNG. At most 8 fetches at a time server-wide, one per host.
 - Cache: on disk under the data directory, keyed by SHA-256 of the host, 30 days for an icon,
-  3 days for "none" (a site that could not be reached counts as "none"). The admin portal switches
-  the feature and empties the cache (§21.10).
+  3 days for "none" (a site that could not be reached counts as "none"). Entries past that are
+  deleted once a day. At most 256 MiB and 100,000 files: past either, the oldest go until 80 %
+  are left; nothing is kept while the disk is nearly full (less than a twentieth, or 256 MiB, free
+  after it). The admin portal switches the feature and empties the cache (§21.10).
 - Redirects go only to `http`/`https` on the usual ports (80, 443), never to a name that
   normalizes to nothing (local names) or an address refused above; a page's `<link>` may point to
   another host (a CDN), checked the same way. `data:` URLs in a `<link>` are read in place. A
   proxy from the environment is never used (it would resolve names past the checks). SVG is drawn
-  without text, fonts or anything the file points to; files with `<!ENTITY` or more than 16
-  `<use>` are refused. Raster images are decoded up to 2048 × 2048 pixels and 64 MiB.
+  without text, fonts or anything the file points to. It is parsed as XML first (no DTD, at most
+  20,000 nodes and 2,000 elements) and refused when it would grow when drawn: every `use`
+  (whatever its namespace prefix) and every `url(#…)` reference counts what it points to again,
+  and the total may be at most 5,000 elements; no cycles, no `marker`, no `feImage`, no `url(` in
+  `<style>` (at most 16 KiB of it). Raster images are decoded up to 2048 × 2048 pixels and
+  64 MiB. At most two images are decoded at a time, server-wide.
 - Log lines and metrics never name the host.
 
 ### 7.2 Icon library
@@ -887,8 +893,8 @@ Endpoints (auth `user`; the cipher must be visible to the account and not hidden
   (those that exist and are visible).
 - `GET /uwu/v1/icons/own` → list of `ownIcon` **without** `data` for every item the account sees
   (added for the web vault, which uses `/api/sync` and not `uwu.icons` of §4.4).
-- `PUT` for a personal item counts toward `storagePerUserMb` (422 `quota`); the answer has no
-  `data`.
+- `PUT` counts toward `storagePerUserMb` (422 `quota`): a personal item's toward the account's,
+  a family item's toward every confirmed owner's. The answer has no `data`.
 - `DELETE /uwu/v1/icons/own/{cipherId}` → 200.
 
 Which ciphers have one comes with the sync (`uwu.icons`, §4.4).
@@ -1022,10 +1028,22 @@ everything, and the official clients drop them locally at their next sync.
   JSON object (the assertion itself). A wrong password on `send-email` and `webauthn-challenge`
   counts and is noticed the same way; both answer 400 `invalid` while the mode is off, and
   `send-email` 400 `invalid` without two-step login by mail (or without a mail server).
-  When the account has no usable second step any more (the recovery code was used, an admin
-  reset it), the master password alone switches the mode off — otherwise nothing ever could;
-  `twoFactorProvider`/`twoFactorToken` are then ignored. `GET /uwu/v1/versions` leaves out the
+  When the account has no second step any more (an admin reset it, an emergency contact took the
+  account over), the master password alone switches the mode off — otherwise nothing ever could;
+  `twoFactorProvider`/`twoFactorToken` are then ignored. When a second step is still set up but
+  cannot be used (mail only, and the server sends none any more): 400 `two_factor_unusable` (an
+  admin resets two-step login first). `GET /uwu/v1/versions` leaves out the
   versions of hidden items.
+
+### 9.3 Two-step login stays as it is while travelling
+
+Travel mode protects against a device that is taken and unlocked, with the master password forced
+out of its owner. So while it is on, the account's sessions cannot change two-step login or read
+its secrets: `POST /api/two-factor/get-recover`, `…/disable` (POST/PUT), `…/get-authenticator`,
+`…/authenticator` (POST/PUT/DELETE), `…/get-email`, `…/send-email`, `PUT …/email`,
+`…/get-webauthn-challenge` and `…/webauthn` (POST/PUT/DELETE) answer 400 `travel_active`, before
+the master password is checked. The recovery code is refused at login (400) — it would remove two-step
+login. `GET /api/two-factor` and `…/get-webauthn` (key names only) keep working.
 
 Switching on or off: sync epoch bumped (§4.3), the account's revision date bumped, notify
 `SyncVault` (Bitwarden `PushType` 5) to all devices including the one that did it, security
@@ -1205,7 +1223,10 @@ full requests are the same 404 `gone`, so a link cannot be probed.
 - `PUT <file url>` — `Authorization: Bearer <upload token>`, body `application/octet-stream`,
   exactly `size` bytes, first byte `0x02` (checked while streaming: more is 413 `too_large`, less
   400 `incomplete`). No body limit but this one (upload router). May be repeated until the
-  submission is complete.
+  file arrived (a failed upload leaves nothing); once it is there, 404 `gone` — a file is never
+  written again. One upload at a time per file (409 `conflict` for a second), four per request
+  (429), counted by the anonymous per-address limit like `complete`; the free-space check counts
+  the announced sizes of every upload on its way (400 when there is no room).
 - `POST /uwu/v1/public/file-requests/{accessId}/submissions/{id}/complete` — same token. 400
   `incomplete` while a file is missing. Then the submission is visible to the owner: the request's
   `submissionCount` goes up (a full request closes), realtime `notice` `fileRequest` to the owner,
@@ -1449,7 +1470,15 @@ them); nothing else may.
    (account id from `primaryAccounts["https://www.fastmail.com/dev/maskedemail"]`, `username`,
    domains and default domain), stores the connection, deletes the cookie, writes notice
    `maskedConnected`, and answers `303` to `<public>/#/settings/masked?result=connected` or
-   `?result=error&reason=denied|expired|invalid_state|upstream`.
+   `?result=error&reason=denied|expired|invalid_state|upstream|busy`.
+   UwUMail refuses every token request from one address after 30 refused ones in 15 minutes,
+   refreshes of other accounts included, so the Lock server guards that budget: a `code` that
+   is not 1–512 URL-safe characters is not sent on (`invalid_state`); codes UwUMail refuses count
+   per account (3, one back every 20 minutes) and per UwUMail server (10, one back every 90
+   seconds; a success gives its try back) — past either, `busy` without asking UwUMail. When
+   UwUMail answers a token request with 429, its token endpoint is left alone for 15 minutes:
+   connects and callbacks answer `busy`/429, refreshes 429 `rate_limited`; no connection is
+   marked broken for it.
 
 Tokens at rest: access and refresh token encrypted with AES-256-GCM under a server secret kept in
 a file in the data directory (made on first use, mode 0600, part of every backup of §21.2), with
@@ -2549,7 +2578,7 @@ defaults in brackets):
 | `metrics` | `{ enabled [false], tokenSet, listen [null] }` (§22); `token` write-only |
 | `loki` | `{ enabled [false], url, tenant, username, passwordSet, labels [{"job":"uwulock"}] }` (§21.7) |
 | `scim` | `{ onDelete ["disable"], tokenSet }` (§19.4) |
-| `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite; what would go past it is refused with 422 `quota` (announcing an attachment of an own item, a Send file, a file-request submission for its owner) |
+| `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite; a family's attachments, versions and own icons count fully for each of its confirmed owners. What would go past it is refused with 422 `quota` (announcing or uploading an attachment of an own or a family item, moving an item with attachments into a family, an own icon, a Send file, a file-request submission for its owner) |
 
 `metrics` is stored with `tokenHash` (hex SHA-256), which `GET` replaces by `tokenSet`; on `PUT`,
 `token` left out or `null` keeps it, `""` removes it, otherwise it needs 16 characters. `loki`
@@ -2566,7 +2595,7 @@ As UwUMail Server's (its `docs/backups.md` and `routes/backups.rs`; reuse the de
 a mounted folder; deduplicated; encrypted by default with a recovery key shown once; retention
 7 days / 4 weeks / 6 months. Contents: the database (an online SQLite backup, or `pg_dump` on
 PostgreSQL), the attachment, Send, file-request and icon directories, and the server's secret
-files (token key, the secret of §13.2). (As built: own icons are in the database; the `icons/`
+files (token key, the secret of §13.2; both left out of unencrypted backups). (As built: own icons are in the database; the `icons/`
 directory holds only what the server fetched from websites and the library, which it fetches
 again — and which would say which websites the accounts use — so it is left out.)
 
@@ -2579,8 +2608,14 @@ again — and which would say which websites the accounts use — so it is left 
   `target` as UwUMail's view: `{ "kind": "sftp", "host", "port", "user", "path", "method": "key" | "password", "publicKey", "passwordSet", "hostKey" }`,
   `{ "kind": "s3", "endpoint", "region", "bucket", "prefix", "accessKey", "secretKeySet", "pathStyle" }`,
   or `{ "kind": "folder", "path" }`.
-- `PUT /uwu/v1/admin/backups/offsite` — `{ enabled, hour, minute, retention, encrypted, warnAfterHours, target: { kind, …, password?, secretKey? } }`;
-  the first save with `encrypted: true` answers `recoveryKey` once (the `GET` body plus
+- `PUT /uwu/v1/admin/backups/offsite` — `{ enabled, hour, minute, retention, encrypted, warnAfterHours, target: { kind, …, password?, secretKey? }, masterPasswordHash, forgetKey? }`;
+  every save needs the admin's `masterPasswordHash` (400 without or wrong). `encrypted: false` only
+  for `kind: "folder"` (else 400 `encryption_required`); switching an encrypted setup to
+  unencrypted needs `forgetKey: true` (else 400 `key_would_be_forgotten`), since the recovery key
+  goes with it. Unencrypted snapshots leave out the token key, `secret.key` and `acme/`. The `GET`
+  body has `encryptionRequired: true` for settings from before that send unencrypted backups over
+  SFTP or S3; they do not run (each attempt fails, `backupFailed` alert) until saved again with
+  encryption. The first save with `encrypted: true` answers `recoveryKey` once (the `GET` body plus
   `recoveryKey`; `null` on every later save). `encrypted` is fixed once there are backups (400):
   once a backup succeeded and the target is still the same place. `encrypted` left out means
   `true`. `enabled` needs a target. For SFTP, `method: "key"` makes the server's own Ed25519 key
@@ -2588,7 +2623,8 @@ again — and which would say which websites the accounts use — so it is left 
   `authorized_keys`. The host key is kept while host and port stay the same. A folder must be an
   absolute path outside the data directory (400).
 - `POST …/offsite/test` → `{ "kind", "hostKey": "…" | null, "known": true }` (SFTP: first contact
-  shows and remembers the host key); `POST …/offsite/forget-host-key` → the `GET` body. The test
+  shows and remembers the host key); `POST …/offsite/forget-host-key` `{ "masterPasswordHash" }` →
+  the `GET` body. The test
   writes a small file there, reads it back and removes it.
 - `POST …/offsite/run` → 202; progress in `GET`. 409 `conflict` while one runs.
 - `GET …/offsite/snapshots` → list `{ id, date, bytes, version }`, newest first, each also with
@@ -2596,7 +2632,8 @@ again — and which would say which websites the accounts use — so it is left 
 - Errors of the target itself (unreachable, login refused, host key changed, damaged backup)
   are 502 `upstream` with the reason; settings that cannot work are 400.
 - `POST …/offsite/restore` — `{ "snapshot", "masterPasswordHash" }`: like the local restore (a
-  local backup first, only backups of this server, into the running server); bumps the server
+  local backup first, only encrypted backups of this server, into the running server; an
+  unencrypted one: 400, it goes back only with the command line); bumps the server
   epoch (§4.3). Answer `{ "restored", "before", "files" }` (`before`: the local backup of how it
   was; `files`: how many files came back). The off-site settings and status stay those from
   before the restore; so they do when a local backup goes back.
@@ -2711,8 +2748,8 @@ saved one — → 200 or 502.
 ### 21.10 Icons
 
 `DELETE /uwu/v1/admin/icons/cache` (automatic icons), `POST /uwu/v1/admin/icons/library/refresh`
-→ 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "ownBytes",
-"libraryUpdated", "libraryIcons" }` for the portal (added).
+→ 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "cacheMaxBytes",
+"cacheMaxFiles", "ownBytes", "libraryUpdated", "libraryIcons" }` for the portal (added).
 
 ### 21.11 Families and organizations
 

@@ -38,6 +38,11 @@ Every snapshot is complete on its own. The retention rules keep the newest snaps
 the last **7 days, 4 weeks and 6 months** (changeable), and remove what no remaining snapshot
 needs.
 
+A backup server that is not ours cannot have this one read without end: files, manifests and
+listings have ceilings (a directory listing at most 2 million names), and a run stops after 12
+hours (listing the snapshots in the portal after 10 minutes), letting go of the lock restores
+need.
+
 ## Encryption
 
 Backups are encrypted by default (ChaCha20-Poly1305, with keyed names, so the backup server sees
@@ -49,16 +54,32 @@ on paper. The portal shows it again after the master password.
 The vaults in the database are encrypted by the clients anyway. The recovery key protects the
 rest: who has an account, the server's signing key, the settings with their passwords.
 
-Unencrypted backups are possible for a target that encrypts by itself. The choice is fixed once
-there are backups at the target; for a change, use another folder or bucket.
+Unencrypted backups are possible only into a **folder** of this machine (a mounted disk that
+encrypts by itself, say); SFTP and S3 always get encrypted ones. An unencrypted backup leaves out
+the server's own keys: the key that signs access tokens, `secret.key` (it opens the OpenID Connect
+client secret and the UwUMail tokens of masked addresses) and the Let's Encrypt keys under
+`acme/`. After a restore from one, everybody logs in again, a new certificate is fetched, and SSO
+and masked addresses have to be set up anew. It goes back only with the command line, into a new
+server — never into the running one from the portal, since nothing ties its content to this
+server. The choice is fixed once there are backups at the target; for a change, use another
+folder or bucket.
+
+Settings from before 0.6 that send unencrypted backups over SFTP or S3 are kept, but do not run:
+each attempt fails with a message, which raises the "backup failed" alert, until they are saved
+again with encryption, at a new place. Older unencrypted snapshots still hold the signing key:
+delete them from the target.
+
+Every change to the settings asks for the admin's master password, and so does forgetting the
+SFTP server's host key: they decide where the whole database goes, and a session token that got
+away must not be enough to send it elsewhere. Switching encryption off (for a folder) drops the
+recovery key only when that is confirmed.
 
 Whether a backup is encrypted is this server's decision, by whether it has a recovery key, never
 the backup server's. A target that claims to hold an unencrypted backup while the server has a
 key is refused, and so is anything in an encrypted backup that is not encrypted, that sits under
 another object's name, or a snapshot stored under another snapshot's name. An unencrypted backup
 has no such protection: its content is checked against its names, which catches damage, but
-whoever controls the backup server can read it (the server's signing key included) and change
-both.
+whoever controls the folder can read it and change both.
 
 ## Where backups go
 
