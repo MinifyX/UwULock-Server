@@ -13,10 +13,7 @@ use uwulock_core::file_request::{
 use wasm_bindgen::prelude::*;
 
 fn extras_key(unlocked: &Unlocked) -> Result<&uwulock_core::crypto::SymmetricKey> {
-    unlocked
-        .extras
-        .as_ref()
-        .ok_or_else(|| Failure::new("extras", "UwULock's own key of this account is not open yet."))
+    unlocked.extras.as_ref().ok_or_else(|| Failure::new("extras", "UwULock's own key of this account is not open yet."))
 }
 
 /// What to do with the answer of `GET /uwu/v1/keys`: `open` (and maybe `rewrap`, for
@@ -304,6 +301,7 @@ mod tests {
             reprompt_ok: Default::default(),
             attachments: Default::default(),
             sends: Vec::new(),
+            send_auth: Default::default(),
             report: Vec::new(),
             extras: None,
         }
@@ -328,7 +326,10 @@ mod tests {
         assert_eq!(password_hash("cats", &secret).unwrap(), sealed["passwordHash"].as_str().unwrap());
 
         let shown = open(&owner, &sealed.to_string()).unwrap();
-        assert_eq!((shown["name"].as_str(), shown["title"].as_str()), (Some("Passport for the bank"), Some("Passport scan")));
+        assert_eq!(
+            (shown["name"].as_str(), shown["title"].as_str()),
+            (Some("Passport for the bank"), Some("Passport scan"))
+        );
         assert_eq!(shown["secret"].as_str(), Some(secret.as_str()));
 
         // The uploader, with nothing but the link.

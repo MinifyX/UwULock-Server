@@ -8,6 +8,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uwulock_core::crypto::{self, EncString, SymmetricKey};
+use uwulock_core::send;
 use uwulock_core::wire;
 use wasm_bindgen::prelude::*;
 
@@ -44,7 +45,8 @@ fn text_of(value: &Option<String>, key: &SymmetricKey) -> Result<Option<String>>
 
 /// The key an item's attachment keys are under: the item's own, or the one the item is under.
 pub(crate) fn item_key<'a>(unlocked: &'a Unlocked, item_id: &str) -> Result<&'a SymmetricKey> {
-    let item = unlocked.vault.item(item_id).ok_or_else(|| Failure::new("not-found", "This item isn't in the vault."))?;
+    let item =
+        unlocked.vault.item(item_id).ok_or_else(|| Failure::new("not-found", "This item isn't in the vault."))?;
     match &item.key {
         Some(key) => Ok(key),
         None => Ok(unlocked.vault.outer_key(item.organization_id.as_deref(), &unlocked.user_key)?),
@@ -131,6 +133,10 @@ pub struct SendView {
     max_access_count: Option<u32>,
     access_count: u32,
     has_password: bool,
+    /// Bitwarden's `authType`: 0 only the addresses, 1 a password, 2 anybody with the link.
+    auth_type: u8,
+    /// Who may open it, when `auth_type` is 0.
+    emails: Vec<String>,
     disabled: bool,
     hide_email: bool,
     revision_date: Option<String>,
@@ -140,8 +146,15 @@ pub struct SendView {
     url_key: String,
 }
 
-fn view(send: &wire::Send, user_key: &SymmetricKey) -> Result<SendView> {
+fn view(send: &wire::Send, auth: Option<&SendAuth>, user_key: &SymmetricKey) -> Result<SendView> {
     let seed = seed_of(send, user_key)?;
+    let emails = auth.map(|auth| auth.emails.clone()).unwrap_or_default();
+    let auth_type = match auth.and_then(|auth| auth.auth_type) {
+        Some(kind) => kind,
+        None if !emails.is_empty() => 0,
+        None if send.password.is_some() => 1,
+        None => 2,
+    };
     let key = crypto::send_key(&seed)?;
     Ok(SendView {
         id: send.id.clone(),
@@ -162,6 +175,8 @@ fn view(send: &wire::Send, user_key: &SymmetricKey) -> Result<SendView> {
         max_access_count: send.max_access_count,
         access_count: send.access_count.unwrap_or(0),
         has_password: send.password.is_some(),
+        auth_type,
+        emails,
         disabled: send.disabled.unwrap_or(false),
         hide_email: send.hide_email.unwrap_or(false),
         revision_date: send.revision_date.clone(),
@@ -173,7 +188,35 @@ fn view(send: &wire::Send, user_key: &SymmetricKey) -> Result<SendView> {
 
 /// The account's Sends, opened. One that does not open is left out.
 pub fn sends(unlocked: &Unlocked) -> Vec<SendView> {
-    unlocked.sends.iter().filter_map(|send| view(send, &unlocked.user_key).ok()).collect()
+    unlocked
+        .sends
+        .iter()
+        .filter_map(|send| view(send, unlocked.send_auth.get(&send.id), &unlocked.user_key).ok())
+        .collect()
+}
+
+/// What of a Send's sync entry `wire::Send` leaves out: who may open it.
+#[derive(Debug, Clone, Default)]
+pub struct SendAuth {
+    pub auth_type: Option<u8>,
+    pub emails: Vec<String>,
+}
+
+/// The addresses and `authType` of the Sends in a sync (lower-cased keys), by Send id.
+pub fn send_auth(sends: Option<&Value>) -> std::collections::HashMap<String, SendAuth> {
+    let Some(Value::Array(list)) = sends else { return Default::default() };
+    list.iter()
+        .filter_map(|send| {
+            let id = send.get("id")?.as_str()?.to_string();
+            let emails = send
+                .get("emails")
+                .and_then(Value::as_str)
+                .map(|list| list.split(',').map(str::trim).filter(|e| !e.is_empty()).map(String::from).collect())
+                .unwrap_or_default();
+            let auth_type = send.get("authtype").and_then(Value::as_u64).and_then(|n| u8::try_from(n).ok());
+            Some((id, SendAuth { auth_type, emails }))
+        })
+        .collect()
 }
 
 /// What the Send editor gives: the text or the file name, and the settings.
@@ -202,6 +245,26 @@ pub struct SendDraft {
     disabled: bool,
     #[serde(default)]
     hide_email: bool,
+    /// 0 only `emails`, 1 a password (the new one, or the one there is), 2 anybody.
+    #[serde(default)]
+    auth_type: Option<u8>,
+    #[serde(default)]
+    emails: Vec<String>,
+}
+
+/// The addresses of a Send as the server takes them: trimmed, lower case, comma-separated.
+fn address_list(emails: &[String]) -> Result<Option<String>> {
+    let emails: Vec<String> = emails.iter().map(|e| e.trim().to_lowercase()).filter(|e| !e.is_empty()).collect();
+    for email in &emails {
+        let ok = email.split_once('@').is_some_and(|(local, domain)| {
+            !local.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')
+        }) && !email.contains(char::is_whitespace)
+            && !email.contains(',');
+        if !ok {
+            return Err(Failure::new("invalid", format!("“{email}” is not an email address.")));
+        }
+    }
+    Ok((!emails.is_empty()).then(|| emails.join(",")))
 }
 
 /// A Send as the server takes it: a new one (`id` empty, with a fresh key) or a change to one.
@@ -232,6 +295,19 @@ pub fn seal_send(unlocked: &Unlocked, id: &str, draft: SendDraft, data: Option<&
         "password": draft.password.as_deref().filter(|password| !password.is_empty())
             .map(|password| crypto::send_password_hash(password, &seed)),
     });
+    if let Some(auth_type) = draft.auth_type {
+        body["authType"] = json!(auth_type);
+        match auth_type {
+            0 => {
+                let emails = address_list(&draft.emails)?
+                    .ok_or_else(|| Failure::new("invalid", "Name at least one address."))?;
+                body["emails"] = json!(emails);
+                body["password"] = Value::Null;
+            }
+            1 => {}
+            _ => body["password"] = Value::Null,
+        }
+    }
     let mut encrypted = Vec::new();
     if draft.kind == 0 {
         body["text"] = json!({ "text": encrypt(draft.text.as_deref().unwrap_or_default()), "hidden": draft.hidden });
@@ -247,6 +323,92 @@ pub fn seal_send(unlocked: &Unlocked, id: &str, draft: SendDraft, data: Option<&
         body["id"] = json!(id);
     }
     Ok(Sealed { meta: body.to_string(), data: encrypted })
+}
+
+// ── Sharing an item as a Send ─────────────────────────────
+
+/// The values of an item that can go into a Send, by uwulock-core's names (`username`,
+/// `password`, `uri:0`, `field:2`, …), each with the field's own name where it has one. Only
+/// those with a value; never the authenticator key.
+pub fn shareable(unlocked: &Unlocked, item_id: &str) -> Result<Vec<Value>> {
+    let item = crate::view::find(unlocked, item_id)?;
+    let mut names: Vec<String> = ["username", "password"].map(String::from).to_vec();
+    if let Some(login) = &item.login {
+        names.extend((0..login.uris.len()).map(|n| format!("uri:{n}")));
+    }
+    names.extend(["card-name", "card-number", "card-expiry", "card-code"].map(String::from));
+    names.extend(crate::view::IDENTITY_FIELDS.iter().map(|(name, _)| format!("identity:{name}")));
+    names.extend(["ssh-public", "ssh-private", "ssh-fingerprint"].map(String::from));
+    names.push("notes".into());
+    names.extend((0..item.fields.len()).map(|n| format!("field:{n}")));
+    Ok(names
+        .into_iter()
+        .filter(|name| send::shareable_value(item, name).is_some())
+        .map(|name| {
+            let label = name
+                .strip_prefix("field:")
+                .and_then(|n| n.parse::<usize>().ok())
+                .and_then(|n| item.fields.get(n)?.name.as_ref().map(|n| n.to_string()));
+            json!({ "name": name, "label": label })
+        })
+        .collect())
+}
+
+#[derive(Deserialize)]
+pub struct ShareField {
+    name: String,
+    label: String,
+}
+
+/// "Share as Send": which of an item's values, and the Send's settings.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareDraft {
+    item_id: String,
+    fields: Vec<ShareField>,
+    name: String,
+    #[serde(default)]
+    hidden: bool,
+    #[serde(default)]
+    max_access_count: Option<u32>,
+    deletion_date: String,
+    #[serde(default)]
+    expiration_date: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
+    #[serde(default)]
+    emails: Vec<String>,
+    #[serde(default)]
+    hide_email: bool,
+}
+
+/// A text Send of the chosen values of an item: `{ request, urlKey }`, the body of
+/// `POST /api/sends` and what goes after the access id in its link.
+pub fn share_item(unlocked: &Unlocked, draft: ShareDraft) -> Result<Value> {
+    let item = crate::view::find(unlocked, &draft.item_id)?;
+    let fields: Vec<(String, String)> = draft.fields.into_iter().map(|field| (field.name, field.label)).collect();
+    let text = send::share_text(item, &fields);
+    if text.as_str() == item.name.as_str() {
+        return Err(Failure::new("invalid", "Choose at least one field that has a value."));
+    }
+    let sealed = send::TextSend {
+        name: draft.name,
+        notes: None,
+        text,
+        hidden: draft.hidden,
+        max_access_count: draft.max_access_count,
+        deletion_date: draft.deletion_date,
+        expiration_date: draft.expiration_date,
+        password: draft.password.filter(|password| !password.is_empty()).map(zeroize::Zeroizing::new),
+        emails: draft.emails,
+        hide_email: draft.hide_email,
+    }
+    .seal(&unlocked.user_key)
+    .map_err(|error| match error {
+        uwulock_core::Error::Crypto(message) => Failure::new("invalid", message),
+        other => Failure::from(other),
+    })?;
+    Ok(json!({ "request": sealed.request, "urlKey": URL_SAFE_NO_PAD.encode(sealed.seed.as_ref()) }))
 }
 
 // ── For whoever has the link ──────────────────────────────

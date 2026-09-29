@@ -190,6 +190,7 @@ mod tests {
             reprompt_ok: Default::default(),
             attachments: Default::default(),
             sends: Vec::new(),
+            send_auth: Default::default(),
             report: Vec::new(),
             extras: Some(SymmetricKey::generate()),
         }

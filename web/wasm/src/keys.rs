@@ -11,9 +11,7 @@ use uwulock_core::vault::Vault;
 use uwulock_core::wire;
 
 pub fn public_key(text: &str) -> Result<(Vec<u8>, PublicKey)> {
-    let der = STANDARD
-        .decode(text.trim())
-        .map_err(|_| Failure::new("invalid", "The public key is not base64."))?;
+    let der = STANDARD.decode(text.trim()).map_err(|_| Failure::new("invalid", "The public key is not base64."))?;
     let key = PublicKey::from_der(&der)?;
     Ok((der, key))
 }
@@ -66,6 +64,7 @@ pub fn emergency_view(unlocked: &Unlocked, key_encrypted: &str, ciphers: &str) -
         reprompt_ok: Default::default(),
         attachments: Default::default(),
         sends: Vec::new(),
+        send_auth: Default::default(),
         report: Vec::new(),
         extras: None,
     };

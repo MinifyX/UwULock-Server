@@ -89,7 +89,8 @@ fn open_passkeys(passkeys: &[Value], key: &SymmetricKey) -> Result<Vec<Value>> {
 
 pub fn export(unlocked: &Unlocked, format: &str) -> Result<String> {
     // The trash stays behind, as at Bitwarden.
-    let items: Vec<&Item> = unlocked.vault.items.iter().filter(|item| !item.deleted && item.organization_id.is_none()).collect();
+    let items: Vec<&Item> =
+        unlocked.vault.items.iter().filter(|item| !item.deleted && item.organization_id.is_none()).collect();
     if let Some(broken) = items.iter().find(|item| item.broken) {
         return Err(Failure::new(
             "refused",
@@ -206,13 +207,20 @@ fn formula_back(value: String) -> String {
 }
 
 fn csv_cell(value: &str) -> String {
-    if value.contains([',', '"', '\n', '\r']) { format!("\"{}\"", value.replace('"', "\"\"")) } else { value.to_string() }
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
 }
 
 /// Bitwarden's CSV: logins and notes only, what the format has room for.
 fn export_csv(unlocked: &Unlocked, items: &[&Item]) -> String {
-    let folder_name: HashMap<&str, &str> = unlocked.vault.folders.iter().map(|f| (f.id.as_str(), f.name.as_str())).collect();
-    let mut out = String::from("folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n");
+    let folder_name: HashMap<&str, &str> =
+        unlocked.vault.folders.iter().map(|f| (f.id.as_str(), f.name.as_str())).collect();
+    let mut out = String::from(
+        "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n",
+    );
     for item in items.iter().filter(|item| matches!(item.kind, ItemKind::Login | ItemKind::Note)) {
         let login = item.login.as_ref();
         let fields = item
@@ -222,14 +230,20 @@ fn export_csv(unlocked: &Unlocked, items: &[&Item]) -> String {
             .collect::<Vec<_>>()
             .join("\n");
         let cells = [
-            not_a_formula(item.folder_id.as_deref().and_then(|id| folder_name.get(id)).copied().unwrap_or_default().to_string()),
+            not_a_formula(
+                item.folder_id.as_deref().and_then(|id| folder_name.get(id)).copied().unwrap_or_default().to_string(),
+            ),
             if item.favorite { "1".into() } else { String::new() },
             if item.kind == ItemKind::Login { "login".into() } else { "note".into() },
             not_a_formula(item.name.to_string()),
             not_a_formula(text(&item.notes).unwrap_or_default()),
             not_a_formula(fields),
             u8::from(item.reprompt).to_string(),
-            not_a_formula(login.map(|l| l.uris.iter().map(|u| u.uri.to_string()).collect::<Vec<_>>().join(",")).unwrap_or_default()),
+            not_a_formula(
+                login
+                    .map(|l| l.uris.iter().map(|u| u.uri.to_string()).collect::<Vec<_>>().join(","))
+                    .unwrap_or_default(),
+            ),
             login.and_then(|l| text(&l.username)).unwrap_or_default(),
             login.and_then(|l| text(&l.password)).unwrap_or_default(),
             login.and_then(|l| text(&l.totp)).unwrap_or_default(),
@@ -288,7 +302,10 @@ pub fn import(unlocked: &Unlocked, format: &str, text: &str, now: &str) -> Resul
         item.can_save().map_err(|error| Failure::new("invalid", format!("“{}”: {error}", item.name.as_str())))?;
         ciphers.push(item.seal(key)?);
     }
-    let folders = folder_names.iter().map(|name| json!({ "name": EncString::encrypt(name.as_bytes(), key).to_string() })).collect();
+    let folders = folder_names
+        .iter()
+        .map(|name| json!({ "name": EncString::encrypt(name.as_bytes(), key).to_string() }))
+        .collect();
     let folder_relationships = in_folder.iter().map(|(item, folder)| json!({ "key": item, "value": folder })).collect();
     Ok(Import { count: ciphers.len(), ciphers, folders, folder_relationships })
 }
@@ -296,9 +313,13 @@ pub fn import(unlocked: &Unlocked, format: &str, text: &str, now: &str) -> Resul
 type Read = (Vec<Item>, Vec<String>, Vec<(usize, usize)>);
 
 fn read_json(text: &str, now: &str) -> Result<Read> {
-    let value: Value = serde_json::from_str(text).map_err(|_| Failure::new("invalid", "This is not a Bitwarden JSON export."))?;
+    let value: Value =
+        serde_json::from_str(text).map_err(|_| Failure::new("invalid", "This is not a Bitwarden JSON export."))?;
     if value.get("encrypted").and_then(Value::as_bool) == Some(true) {
-        return Err(Failure::new("invalid", "This export is encrypted. Export again without a password (unencrypted JSON)."));
+        return Err(Failure::new(
+            "invalid",
+            "This export is encrypted. Export again without a password (unencrypted JSON).",
+        ));
     }
     let folders: Vec<(String, String)> = value
         .get("folders")
@@ -309,7 +330,10 @@ fn read_json(text: &str, now: &str) -> Result<Read> {
                 .collect()
         })
         .unwrap_or_default();
-    let list = value.get("items").and_then(Value::as_array).ok_or_else(|| Failure::new("invalid", "This is not a Bitwarden JSON export."))?;
+    let list = value
+        .get("items")
+        .and_then(Value::as_array)
+        .ok_or_else(|| Failure::new("invalid", "This is not a Bitwarden JSON export."))?;
     let mut items = Vec::new();
     let mut in_folder = Vec::new();
     for entry in list {
@@ -331,7 +355,8 @@ fn read_json(text: &str, now: &str) -> Result<Read> {
             current.username = some_text(login.get("username"));
             current.password = some_text(login.get("password"));
             current.totp = some_text(login.get("totp"));
-            current.password_revision_date = login.get("passwordRevisionDate").and_then(Value::as_str).map(str::to_string);
+            current.password_revision_date =
+                login.get("passwordRevisionDate").and_then(Value::as_str).map(str::to_string);
             current.uris = login
                 .get("uris")
                 .and_then(Value::as_array)
@@ -340,14 +365,19 @@ fn read_json(text: &str, now: &str) -> Result<Read> {
                         .filter_map(|u| {
                             Some(LoginUri {
                                 uri: some_text(u.get("uri"))?,
-                                match_kind: u.get("match").and_then(Value::as_u64).map(|m| m as u32).filter(|m| *m <= 5),
+                                match_kind: u
+                                    .get("match")
+                                    .and_then(Value::as_u64)
+                                    .map(|m| m as u32)
+                                    .filter(|m| *m <= 5),
                                 checksum: None,
                             })
                         })
                         .collect()
                 })
                 .unwrap_or_default();
-            current.passkeys = login.get("fido2Credentials").and_then(Value::as_array).filter(|keys| !keys.is_empty()).cloned();
+            current.passkeys =
+                login.get("fido2Credentials").and_then(Value::as_array).filter(|keys| !keys.is_empty()).cloned();
         }
         if let Some(card) = entry.get("card").filter(|_| kind == ItemKind::Card) {
             let current = item.card.as_mut().expect("a card has one");
@@ -462,8 +492,15 @@ fn read_csv(text: &str) -> Result<Read> {
     let mut rows = csv_rows(text).into_iter();
     let header = rows.next().ok_or_else(|| Failure::new("invalid", "The file is empty."))?;
     let column = |name: &str| header.iter().position(|h| h.trim().eq_ignore_ascii_case(name));
-    let name_column = column("name").ok_or_else(|| Failure::new("invalid", "This is not a Bitwarden CSV export (no name column)."))?;
-    let get = |row: &[String], name: &str| column(name).and_then(|index| row.get(index)).map(|cell| cell.trim()).filter(|cell| !cell.is_empty()).map(str::to_string);
+    let name_column = column("name")
+        .ok_or_else(|| Failure::new("invalid", "This is not a Bitwarden CSV export (no name column)."))?;
+    let get = |row: &[String], name: &str| {
+        column(name)
+            .and_then(|index| row.get(index))
+            .map(|cell| cell.trim())
+            .filter(|cell| !cell.is_empty())
+            .map(str::to_string)
+    };
     // The columns an export guards against spreadsheets with a `'`.
     let get_text = |row: &[String], name: &str| get(row, name).map(formula_back);
     let mut items = Vec::new();
@@ -475,7 +512,13 @@ fn read_csv(text: &str) -> Result<Read> {
             _ => ItemKind::Login,
         };
         let mut item = Item::new(kind);
-        item.name = Zeroizing::new(row.get(name_column).cloned().filter(|n| !n.trim().is_empty()).map(formula_back).unwrap_or_else(|| "?".into()));
+        item.name = Zeroizing::new(
+            row.get(name_column)
+                .cloned()
+                .filter(|n| !n.trim().is_empty())
+                .map(formula_back)
+                .unwrap_or_else(|| "?".into()),
+        );
         item.notes = get_text(&row, "notes").map(Zeroizing::new);
         item.favorite = get(&row, "favorite").as_deref() == Some("1");
         item.reprompt = get(&row, "reprompt").as_deref() == Some("1");

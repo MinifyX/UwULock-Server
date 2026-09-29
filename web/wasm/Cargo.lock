@@ -996,11 +996,14 @@ dependencies = [
 name = "uwulock-web-core"
 version = "0.1.0"
 dependencies = [
+ "aes",
+ "argon2",
  "base64",
  "getrandom",
  "serde",
  "serde_json",
  "sha1",
+ "sha2",
  "url",
  "uwulock-core",
  "wasm-bindgen",

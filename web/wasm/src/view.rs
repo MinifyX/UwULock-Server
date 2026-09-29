@@ -247,7 +247,8 @@ pub fn value_of(unlocked: &Unlocked, id: &str, field: &str, now: u64) -> Result<
     }
     let missing = || Failure::new("not-found", "This item has no such value.");
     let clone = |v: Option<&Secret>| v.filter(|v| !v.is_empty()).cloned().ok_or_else(missing);
-    let index = |prefix: &str| -> Result<usize> { field.strip_prefix(prefix).and_then(|n| n.parse().ok()).ok_or_else(missing) };
+    let index =
+        |prefix: &str| -> Result<usize> { field.strip_prefix(prefix).and_then(|n| n.parse().ok()).ok_or_else(missing) };
     let login = item.login.as_ref();
     let card = item.card.as_ref();
     let ssh = item.ssh_key.as_ref();

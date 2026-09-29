@@ -51,7 +51,8 @@ pub struct NewAccount {
 pub fn new_account(email: &str, password: &str, kdf: &Kdf, private_key: &str) -> Result<NewAccount> {
     let master = crypto::master_key(password, email, *kdf)?;
     let user_key = SymmetricKey::generate();
-    let private = STANDARD.decode(private_key).map_err(|_| Failure::new("invalid", "The private key is not base64."))?;
+    let private =
+        STANDARD.decode(private_key).map_err(|_| Failure::new("invalid", "The private key is not base64."))?;
     Ok(NewAccount {
         hash: crypto::master_password_hash(&master, password),
         key: EncString::encrypt(&user_key.to_bytes(), &SymmetricKey::stretch(&master)).to_string(),
@@ -72,7 +73,13 @@ pub struct Rewrapped {
 
 /// The user key wrapped again: under the master key of `new_password`, with `kdf` and `email`
 /// if they change.
-pub fn rewrap(unlocked: &Unlocked, current: &str, new_password: &str, kdf: Option<Kdf>, email: Option<&str>) -> Result<Rewrapped> {
+pub fn rewrap(
+    unlocked: &Unlocked,
+    current: &str,
+    new_password: &str,
+    kdf: Option<Kdf>,
+    email: Option<&str>,
+) -> Result<Rewrapped> {
     let current_hash = check_password(unlocked, current)?;
     let kdf = kdf.unwrap_or(unlocked.kdf);
     let email = email.map(crypto::normalize_email).unwrap_or_else(|| unlocked.email.clone());
@@ -150,7 +157,10 @@ pub fn rotate_with_key(
         if item.broken {
             return Err(Failure::new(
                 "refused",
-                format!("The item “{}” does not open completely, so the vault cannot get a new key.", item.name.as_str()),
+                format!(
+                    "The item “{}” does not open completely, so the vault cannot get a new key.",
+                    item.name.as_str()
+                ),
             ));
         }
         let mut item = item.clone();
