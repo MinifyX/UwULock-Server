@@ -327,11 +327,21 @@ pub fn seal_send(unlocked: &Unlocked, id: &str, draft: SendDraft, data: Option<&
 
 // ── Sharing an item as a Send ─────────────────────────────
 
+/// The item `id`, unless it asks for the master password and that prompt is unanswered: a Send
+/// of its values is a way to its secrets like any other (as `orgs::share` checks too).
+fn reprompted<'a>(unlocked: &'a Unlocked, id: &str) -> Result<&'a uwulock_core::vault::Item> {
+    let item = crate::view::find(unlocked, id)?;
+    if item.reprompt && !unlocked.reprompt_ok.contains(id) {
+        return Err(Failure::new("reprompt", "Enter your master password to open this item first."));
+    }
+    Ok(item)
+}
+
 /// The values of an item that can go into a Send, by uwulock-core's names (`username`,
 /// `password`, `uri:0`, `field:2`, …), each with the field's own name where it has one. Only
 /// those with a value; never the authenticator key.
 pub fn shareable(unlocked: &Unlocked, item_id: &str) -> Result<Vec<Value>> {
-    let item = crate::view::find(unlocked, item_id)?;
+    let item = reprompted(unlocked, item_id)?;
     let mut names: Vec<String> = ["username", "password"].map(String::from).to_vec();
     if let Some(login) = &item.login {
         names.extend((0..login.uris.len()).map(|n| format!("uri:{n}")));
@@ -385,7 +395,7 @@ pub struct ShareDraft {
 /// A text Send of the chosen values of an item: `{ request, urlKey }`, the body of
 /// `POST /api/sends` and what goes after the access id in its link.
 pub fn share_item(unlocked: &Unlocked, draft: ShareDraft) -> Result<Value> {
-    let item = crate::view::find(unlocked, &draft.item_id)?;
+    let item = reprompted(unlocked, &draft.item_id)?;
     let fields: Vec<(String, String)> = draft.fields.into_iter().map(|field| (field.name, field.label)).collect();
     let text = send::share_text(item, &fields);
     if text.as_str() == item.name.as_str() {
@@ -449,4 +459,65 @@ pub fn open_access(access: &str, url_key: &str) -> Result<Value> {
 /// A Send's file, opened with the key from the link.
 pub fn open_file(url_key: &str, data: &[u8]) -> Result<Vec<u8>> {
     Ok(crypto::decrypt_file(data, &link_key(url_key)?)?.to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uwulock_core::crypto::Kdf;
+    use uwulock_core::vault::{Item, ItemKind, Login, Vault};
+    use zeroize::Zeroizing;
+
+    /// An unlocked account with one login that asks for the master password first.
+    fn unlocked() -> Unlocked {
+        let user_key = SymmetricKey::generate();
+        let sync: wire::Sync = serde_json::from_value(wire::lowercase_keys(json!({
+            "profile": { "email": "nyu@example.com", "organizations": [] },
+            "collections": [],
+            "ciphers": [],
+        })))
+        .unwrap();
+        let vault = Vault::open(&sync, &user_key).unwrap();
+        let mut unlocked = Unlocked {
+            email: "nyu@example.com".into(),
+            kdf: Kdf::Pbkdf2 { iterations: 600_000 },
+            protected_key: String::new(),
+            user_key,
+            private_key: None,
+            vault,
+            reprompt_ok: Default::default(),
+            attachments: Default::default(),
+            sends: Vec::new(),
+            send_auth: Default::default(),
+            report: Vec::new(),
+            extras: None,
+        };
+        let mut item = Item::new(ItemKind::Login);
+        item.id = "bank".into();
+        item.name = Zeroizing::new("Bank".into());
+        item.reprompt = true;
+        item.login = Some(Login { password: Some(Zeroizing::new("geheim".into())), ..Login::default() });
+        unlocked.vault.items.push(item);
+        unlocked
+    }
+
+    fn draft() -> ShareDraft {
+        serde_json::from_value(json!({
+            "itemId": "bank",
+            "fields": [{ "name": "password", "label": "Passwort" }],
+            "name": "Bank",
+            "deletionDate": "2026-09-29T12:00:00.000Z",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn sharing_as_a_send_waits_for_the_master_password_re_prompt() {
+        let mut unlocked = unlocked();
+        assert_eq!(shareable(&unlocked, "bank").unwrap_err().kind, "reprompt");
+        assert_eq!(share_item(&unlocked, draft()).unwrap_err().kind, "reprompt");
+        unlocked.reprompt_ok.insert("bank".into());
+        assert_eq!(shareable(&unlocked, "bank").unwrap()[0]["name"], "password");
+        assert!(share_item(&unlocked, draft()).unwrap()["urlKey"].is_string());
+    }
 }
