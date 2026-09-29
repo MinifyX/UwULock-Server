@@ -16,6 +16,7 @@ import {
   type SsoSettings,
 } from '../lib/sso';
 import { copyGenerated } from '../lib/api';
+import { useSwitch } from '../lib/switches';
 import { ApiError } from '../lib/web/http';
 
 /**
@@ -24,6 +25,8 @@ import { ApiError } from '../lib/web/http';
  * and removes accounts.
  */
 export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
+  // SCIM is a feature switch of its own (the Features tab); switched off, its settings wait.
+  const scimOn = useSwitch('scim');
   useLanguage();
   const [current, setCurrent] = useState<SsoSettings | null>(null);
   const [draft, setDraft] = useState<SsoSettings | null>(null);
@@ -369,51 +372,55 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
         </button>
       </div>
 
-      <h2 className="settings-heading">{t('SCIM')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Darüber sperrt oder entfernt der Anbieter Konten und legt Adressen an, die sich anmelden dürfen. Adresse: {url}',
-          { url: current.scimUrl ?? '' },
-        )}
-      </p>
-      <Row
-        label={t('Wenn der Anbieter jemanden löscht')}
-        description={t(
-          'Sperren lässt den Tresor da (ein Admin kann ihn wieder freigeben); Löschen löscht Konto und Tresor. Das letzte Admin-Konto bleibt immer.',
-        )}
-      >
-        <select
-          aria-label={t('Wenn der Anbieter jemanden löscht')}
-          value={current.scimOnDelete ?? 'disable'}
-          onChange={(e) => void onDelete(e.target.value as 'disable' | 'delete')}
-          disabled={busy}
-        >
-          <option value="disable">{t('Konto sperren')}</option>
-          <option value="delete">{t('Konto und Tresor löschen')}</option>
-        </select>
-      </Row>
-      <Row
-        label={t('SCIM-Token')}
-        description={
-          current.scimTokenSet
-            ? t('Es gibt eines. Ein neues ersetzt es.')
-            : t('Noch keines. Beim Koppeln mit UwUAuth kommt es von selbst.')
-        }
-      >
-        <button type="button" onClick={() => void makeScimToken()} disabled={busy}>
-          {current.scimTokenSet ? t('Neues Token') : t('Token erzeugen')}
-        </button>
-      </Row>
-      {scimToken && (
-        <div className="field">
-          <span>{t('Das Token – nur jetzt zu sehen:')}</span>
-          <div className="form-actions">
-            <code className="send-link">{scimToken}</code>
-            <button type="button" onClick={() => void copyGenerated(scimToken)}>
-              {t('Kopieren')}
+      {scimOn && (
+        <>
+          <h2 className="settings-heading">{t('SCIM')}</h2>
+          <p className="settings-lead">
+            {t(
+              'Darüber sperrt oder entfernt der Anbieter Konten und legt Adressen an, die sich anmelden dürfen. Adresse: {url}',
+              { url: current.scimUrl ?? '' },
+            )}
+          </p>
+          <Row
+            label={t('Wenn der Anbieter jemanden löscht')}
+            description={t(
+              'Sperren lässt den Tresor da (ein Admin kann ihn wieder freigeben); Löschen löscht Konto und Tresor. Das letzte Admin-Konto bleibt immer.',
+            )}
+          >
+            <select
+              aria-label={t('Wenn der Anbieter jemanden löscht')}
+              value={current.scimOnDelete ?? 'disable'}
+              onChange={(e) => void onDelete(e.target.value as 'disable' | 'delete')}
+              disabled={busy}
+            >
+              <option value="disable">{t('Konto sperren')}</option>
+              <option value="delete">{t('Konto und Tresor löschen')}</option>
+            </select>
+          </Row>
+          <Row
+            label={t('SCIM-Token')}
+            description={
+              current.scimTokenSet
+                ? t('Es gibt eines. Ein neues ersetzt es.')
+                : t('Noch keines. Beim Koppeln mit UwUAuth kommt es von selbst.')
+            }
+          >
+            <button type="button" onClick={() => void makeScimToken()} disabled={busy}>
+              {current.scimTokenSet ? t('Neues Token') : t('Token erzeugen')}
             </button>
-          </div>
-        </div>
+          </Row>
+          {scimToken && (
+            <div className="field">
+              <span>{t('Das Token – nur jetzt zu sehen:')}</span>
+              <div className="form-actions">
+                <code className="send-link">{scimToken}</code>
+                <button type="button" onClick={() => void copyGenerated(scimToken)}>
+                  {t('Kopieren')}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
       <ResultLine result={result} />
     </div>

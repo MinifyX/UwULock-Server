@@ -5,6 +5,7 @@ import { backups, createBackup, downloadBackup, restoreBackup, type Backup } fro
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
+import { useSwitch } from '../lib/switches';
 import { toast } from '../lib/toast';
 import { Offsite } from './Offsite';
 
@@ -29,6 +30,8 @@ function stampText(stamp: string | null): string {
  */
 export function Backups() {
   useLanguage();
+  // Backups elsewhere are a feature switch; the ones on this server are always there.
+  const offsiteOn = useSwitch('offsite-backups');
   const [list, setList] = useState<Backup[] | null>(null);
   const [busy, setBusy] = useState(false);
   /** The backup the master password is being asked for. */
@@ -41,7 +44,7 @@ export function Backups() {
 
   return (
     <>
-      <Offsite />
+      {offsiteOn && <Offsite />}
       <h2 className="settings-heading">{t('Backups auf diesem Server')}</h2>
       <p className="settings-lead">
         {t(

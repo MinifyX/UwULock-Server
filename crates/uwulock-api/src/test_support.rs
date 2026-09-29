@@ -55,6 +55,8 @@ impl TestServer {
             hibp_url: hibp_url.into(),
             login_attempts: 10,
             start_settings: settings,
+            // The tests of each feature need it on; tests of the switches turn them off.
+            start_features: crate::Features::all(),
             certificate_probe: None,
             time_sources: Vec::new(),
         };
@@ -62,6 +64,21 @@ impl TestServer {
         state.mailer = Mailer::capturing();
         state.limits = Arc::new(crate::Limits::generous());
         Self { router: router(state.clone()), state, _dir: dir }
+    }
+
+    /// An admin account, `admin@example.com`, logged in.
+    pub(crate) async fn admin(&self) -> Account {
+        let token = self.invite("admin@example.com", true).await;
+        let response = self
+            .call("POST", "/identity/accounts/register/finish", None, register_body("admin@example.com", &token))
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        self.login("admin@example.com", "admin-device").await
+    }
+
+    /// `feature` switched on or off, as the admin portal would (without the event).
+    pub(crate) fn switch(&self, feature: crate::Feature, on: bool) {
+        self.state.apply_features(self.state.features().with(feature, on));
     }
 
     /// With `limits` instead of ones nobody runs into, for tests of the limits themselves.

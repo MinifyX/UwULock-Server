@@ -34,6 +34,7 @@ services:
       UWULOCK_CHANNEL: ${UWULOCK_VERSION:-latest}
       # Where a new server starts; the admin portal changes them later, in the database.
       UWULOCK_LANGUAGE: ${UWULOCK_LANGUAGE:-}
+      UWULOCK_FEATURES: ${UWULOCK_FEATURES:-}
       UWULOCK_SMTP_HOST: ${UWULOCK_SMTP_HOST:-}
       UWULOCK_SMTP_PORT: ${UWULOCK_SMTP_PORT:-}
       UWULOCK_SMTP_SECURITY: ${UWULOCK_SMTP_SECURITY:-}

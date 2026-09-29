@@ -1191,6 +1191,7 @@ mod tests {
             hibp_url: "http://127.0.0.1:9".into(),
             login_attempts: 10,
             start_settings: uwulock_api::Settings::default(),
+            start_features: uwulock_api::Features::all(),
             certificate_probe: None,
             time_sources: Vec::new(),
         };

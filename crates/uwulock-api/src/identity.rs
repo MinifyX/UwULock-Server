@@ -202,7 +202,7 @@ pub(crate) fn check_scope(state: &AppState, client_id: &str, scope: Option<&str>
         });
     }
     if suite {
-        if !state.settings().suite.enabled {
+        if !state.feature(crate::Feature::Suite) {
             return Err(invalid_client());
         }
         if scope.is_some() && asked != [crate::suite::SCOPE, "offline_access"].into() {
@@ -454,7 +454,7 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
         None if crate::suite::space_of_client(asked).is_some() => return Err(invalid_grant()),
         None => asked,
     };
-    if stored_suite.is_some() && !state.settings().suite.enabled {
+    if stored_suite.is_some() && !state.feature(crate::Feature::Suite) {
         return Err(invalid_grant());
     }
     two_factor_policy(state, &session.user, client_id).await?;

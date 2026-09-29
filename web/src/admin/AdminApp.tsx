@@ -12,6 +12,8 @@ import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { go, useRoute } from '../lib/route';
+import { useServerInfo } from '../lib/branding';
+import { switchedOff, type SwitchId } from '../lib/switches';
 import { ADMIN_SHORTCUTS, singleKey } from '../lib/shortcuts';
 import { AdminSettings } from './AdminSettings';
 import { Backups } from './Backups';
@@ -19,6 +21,7 @@ import { Branding } from './Branding';
 import { Diagnosis } from './Diagnosis';
 import { Events } from './Events';
 import { Families } from './Families';
+import { Features } from './Features';
 import { Invitations } from './Invitations';
 import { Logs } from './Logs';
 import { Notifications } from './Notifications';
@@ -27,19 +30,26 @@ import { SendDomains } from './SendDomains';
 import { SsoPage } from './SsoPage';
 import { Users } from './Users';
 
-const PAGES: { path: string; label: string; icon: IconName }[] = [
+/** The portal's pages; one that `needs` a feature switch is there only while it is on. */
+const PAGES: { path: string; label: string; icon: IconName; needs?: SwitchId }[] = [
   { path: '/', label: N_('Übersicht'), icon: 'house' },
   { path: '/users', label: N_('Nutzer'), icon: 'user' },
   { path: '/invitations', label: N_('Einladungen'), icon: 'sparkles' },
-  { path: '/families', label: N_('Familien'), icon: 'house' },
+  { path: '/families', label: N_('Familien'), icon: 'house', needs: 'families' },
+  { path: '/features', label: N_('Funktionen'), icon: 'grid' },
   { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
-  { path: '/login', label: N_('Anmeldung'), icon: 'key' },
+  { path: '/login', label: N_('Anmeldung'), icon: 'key', needs: 'sso' },
   { path: '/branding', label: N_('Aussehen'), icon: 'eye' },
-  { path: '/send-domains', label: N_('Send-Domains'), icon: 'globe' },
+  { path: '/send-domains', label: N_('Send-Domains'), icon: 'globe', needs: 'send-domains' },
   { path: '/events', label: N_('Ereignisse'), icon: 'history' },
   { path: '/logs', label: N_('Log'), icon: 'terminal' },
   { path: '/backups', label: N_('Backups'), icon: 'drive' },
-  { path: '/notifications', label: N_('Benachrichtigungen'), icon: 'bell' },
+  {
+    path: '/notifications',
+    label: N_('Benachrichtigungen'),
+    icon: 'bell',
+    needs: 'admin-notifications',
+  },
   { path: '/diagnosis', label: N_('Diagnose'), icon: 'lifebuoy' },
 ];
 
@@ -67,7 +77,10 @@ export function AdminApp() {
     account().then(setInfo, () => setInfo('none'));
   }, [status]);
 
-  const page = PAGES.find((p) => p.path === route.path) ?? PAGES[0]!;
+  // Pages of switched-off features are not there (docs/features.md).
+  const serverInfo = useServerInfo();
+  const pages = PAGES.filter((p) => !p.needs || !switchedOff(serverInfo, p.needs));
+  const page = pages.find((p) => p.path === route.path) ?? pages[0]!;
   const portal = Boolean(status && status.state !== 'logged-out' && info && info !== 'none');
   const modalOpen = appearance || shortcuts;
 
@@ -89,17 +102,18 @@ export function AdminApp() {
       }
       if (!singleKey(event)) return;
       const key = event.key.toLowerCase();
-      const index = PAGES.indexOf(page);
+      const index = pages.indexOf(page);
       if (key === '?') setShortcuts(true);
-      else if (portal && /^[1-9]$/.test(key) && !event.shiftKey) go(PAGES[Number(key) - 1]!.path);
+      else if (portal && /^[1-9]$/.test(key) && !event.shiftKey && pages[Number(key) - 1])
+        go(pages[Number(key) - 1]!.path);
       else if (portal && (key === 'j' || key === 'k'))
-        go(PAGES[(index + (key === 'j' ? 1 : -1) + PAGES.length) % PAGES.length]!.path);
+        go(pages[(index + (key === 'j' ? 1 : -1) + pages.length) % pages.length]!.path);
       else return;
       event.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [page, portal]);
+  }, [page, pages, portal]);
 
   let body;
   if (status === null) body = null;
@@ -149,7 +163,7 @@ export function AdminApp() {
     body = (
       <div className="admin">
         <nav className="admin-nav" aria-label={t('Admin-Portal')}>
-          {PAGES.map((p, index) => (
+          {pages.map((p, index) => (
             <button
               key={p.path}
               type="button"
@@ -170,6 +184,7 @@ export function AdminApp() {
           {page.path === '/users' && <Users me={status.email ?? ''} />}
           {page.path === '/invitations' && <Invitations />}
           {page.path === '/families' && <Families />}
+          {page.path === '/features' && <Features />}
           {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
           {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
           {page.path === '/branding' && <Branding />}

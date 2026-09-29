@@ -24,6 +24,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0014_send_domains.sql"),
     include_str!("../migrations/sqlite/0015_masked.sql"),
     include_str!("../migrations/sqlite/0016_extras_private_wrap.sql"),
+    include_str!("../migrations/sqlite/0021_feature_switches.sql"),
 ];
 
 /// The schema this build writes.
@@ -99,6 +100,94 @@ mod tests {
         conn.execute("DELETE FROM ciphers WHERE id = 'c'", []).unwrap();
         let left: i64 = conn.query_row("SELECT count(*) FROM attachments", [], |row| row.get(0)).unwrap();
         assert_eq!(left, 0, "and the attachment still goes with its item");
+    }
+
+    /// The schema up to the step before the feature switches.
+    fn before_switches() -> (Connection, usize) {
+        let conn = Connection::open_in_memory().unwrap();
+        let step = STEPS.iter().position(|step| step.starts_with("-- Feature switches")).unwrap();
+        for step in &STEPS[..step] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.pragma_update(None, "user_version", step as i64).unwrap();
+        (conn, step)
+    }
+
+    fn switches(conn: &Connection) -> Option<serde_json::Value> {
+        use rusqlite::OptionalExtension;
+        conn.query_row("SELECT value FROM server WHERE key = 'features'", [], |row| row.get::<_, String>(0))
+            .optional()
+            .unwrap()
+            .map(|json| serde_json::from_str(&json).unwrap())
+    }
+
+    /// A new server gets no switches from the step: it starts with its configuration's.
+    #[test]
+    fn a_new_server_gets_no_switches() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run(&mut conn).unwrap();
+        assert_eq!(switches(&conn), None);
+    }
+
+    /// A server that was running keeps what is in use, set up or asked for, and nothing else.
+    #[test]
+    fn an_updated_server_keeps_on_what_is_in_use() {
+        let (mut conn, _) = before_switches();
+        conn.execute_batch(
+            "INSERT INTO users (id, email, password_hash, user_key, kdf_type, kdf_iterations, security_stamp, language, \
+             created, updated, revision) VALUES ('u', 'nyu@example.com', 'h', 'k', 0, 600000, 's', 'de', 't', 't', 't');
+             INSERT INTO organizations (id, name, created, revision) VALUES ('o', 'Vaultwarden', 't', 't');
+             INSERT INTO suite_spaces (user_id, space, id, key, seq, created, revision) VALUES ('u', 'ssh', 's', 'k', 0, 't', 't');
+             INSERT INTO folders (id, user_id, name, created, revision, travel) VALUES ('f', 'u', 'n', 't', 't', 1);
+             INSERT INTO server (key, value) VALUES ('settings',
+                 '{\"masked\":{\"servers\":[{\"url\":\"https://mail.example.com\",\"name\":\"Mail\"}]},\"suite\":{\"enabled\":false}}');
+             INSERT INTO server (key, value) VALUES ('offsite.settings', '{\"enabled\":false,\"target\":{\"kind\":\"folder\"}}');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let on = switches(&conn).unwrap();
+        let expected = serde_json::json!({
+            // An organisation, even one moved in from Vaultwarden.
+            "families": true,
+            // A UwUMail server listed.
+            "masked-addresses": true,
+            // A folder marked for travel.
+            "travel-mode": true,
+            // A target set up.
+            "offsite-backups": true,
+            // In use, but the admin had it switched off.
+            "suite": false,
+            // Nothing of these; mail to the admins does not count.
+            "file-requests": false, "send-domains": false, "versions": false, "reminders": false,
+            "emergency-sheet": false, "own-icons": false, "icon-library": false, "twofa-directory": false,
+            "sso": false, "scim": false, "admin-notifications": false,
+        });
+        assert_eq!(on, expected);
+    }
+
+    /// A server that ran, with nothing of the extras: all off.
+    #[test]
+    fn an_updated_server_without_extras_has_them_off() {
+        let (mut conn, _) = before_switches();
+        conn.execute_batch(
+            "INSERT INTO users (id, email, password_hash, user_key, kdf_type, kdf_iterations, security_stamp, language, \
+             created, updated, revision) VALUES ('u', 'nyu@example.com', 'h', 'k', 0, 600000, 's', 'de', 't', 't', 't');
+             INSERT INTO server (key, value) VALUES ('settings', '{\"sso\":{\"enabled\":true,\"issuer\":\"https://auth.example.com\"}}');
+             INSERT INTO notification_channels (id, kind, name, enabled, events, config, created) VALUES
+                 ('n', 'ntfy', 'Phone', 1, '[]', '{}', 't');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let on = switches(&conn).unwrap();
+        let mut names: Vec<&str> = on
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, on)| on.as_bool() == Some(true))
+            .map(|(name, _)| name.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, ["admin-notifications", "sso"]);
     }
 
     /// Extras keys from before `privateKeyWrapped`: the old RSA wrap goes; one that still has

@@ -451,6 +451,7 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For`. Only behind a proxy that sets it. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
 | `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. Requests without an account (prelogin, SSO, Sends) get five times as many, at least 50. |
+| `UWULOCK_FEATURES` | — (only the vault and icons) | The extras a new server starts with: `all`, `none` or ids like `families,file-requests` ([features.md](features.md)). Start value; *Admin portal → Features* changes them. |
 | `UWULOCK_LANGUAGE` | `de` | Invitations, and new accounts until their owner picks: `de` or `en`. Start value; the admin portal changes it. |
 | `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |
 | `UWULOCK_LOG_FORMAT` | `text` | `json` for one JSON object a line, the same the server sends to Loki. |

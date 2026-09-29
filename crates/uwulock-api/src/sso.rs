@@ -45,20 +45,31 @@ pub const CALLBACK: &str = "/identity/connect/oidc-signin";
 /// What UwULock's clients may call their own login when they are not a Bitwarden client.
 const SUITE_CLIENTS: [&str; 5] = ["cli", "uwussh", "uwurdp", "uwumail", "uwusuite"];
 
+/// What Bitwarden's clients ask around a login whether or not there is SSO: they get the same
+/// answers as from a server without it while the `sso` switch is off.
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/api/organizations/domain/sso/verified", post(verified_domains))
-        .route("/identity/sso/prevalidate", get(prevalidate))
-        .route("/identity/connect/authorize", get(authorize))
-        .route(CALLBACK, get(signin))
         .route("/api/accounts/set-password", post(set_password))
         .route("/api/organizations/{id}/auto-enroll-status", get(auto_enroll_status))
         .route("/api/organizations/{id}/policies/master-password", get(master_password_policy))
+}
+
+/// The login through the provider, and its settings: the `sso` switch.
+pub(crate) fn sso_routes() -> Router<AppState> {
+    Router::new()
+        .route("/identity/sso/prevalidate", get(prevalidate))
+        .route("/identity/connect/authorize", get(authorize))
+        .route(CALLBACK, get(signin))
         .route("/uwu/v1/admin/sso", get(get_settings).put(put_settings))
         .route("/uwu/v1/admin/sso/test", post(test))
         .route("/uwu/v1/admin/sso/pair", post(pair))
         .route("/uwu/v1/admin/sso/pairing", delete(unpair))
-        .route("/uwu/v1/admin/scim/token", post(scim_token))
+}
+
+/// The SCIM token: the `scim` switch, with `/scim/v2`.
+pub(crate) fn scim_routes() -> Router<AppState> {
+    Router::new().route("/uwu/v1/admin/scim/token", post(scim_token))
 }
 
 // ── Settings ──────────────────────────────────────────────
@@ -206,11 +217,19 @@ fn settings_json(state: &AppState) -> Value {
     value
 }
 
+/// Whether logging in through the provider works: the `sso` switch on, and SSO set up enough.
+/// With the switch off, everything is as on a server without SSO — passwords work again for
+/// everybody, whatever "only SSO" said.
+pub(crate) fn active(state: &AppState, settings: &crate::Settings) -> bool {
+    state.feature(crate::Feature::Sso) && settings.sso.active()
+}
+
 /// A password (or passkey) login, while SSO is the only way in: only admins that may.
 pub(crate) fn password_allowed(state: &AppState, user: &User) -> ApiResult<()> {
+    let switched_on = state.feature(crate::Feature::Sso);
     let settings = state.settings.read();
     let sso = &settings.sso;
-    if !sso.active() || !sso.only || (user.admin && !sso.admins_only_with_sso) {
+    if !switched_on || !sso.active() || !sso.only || (user.admin && !sso.admins_only_with_sso) {
         return Ok(());
     }
     Err(ApiError::bad("Log in with SSO.").code("sso_required"))
@@ -236,7 +255,7 @@ async fn verified_domains(
     let settings = state.settings();
     let email = body.map(|Json(body)| body.email).unwrap_or_default();
     let domain = email.rsplit_once('@').map(|(_, domain)| normalize_email(domain)).unwrap_or_default();
-    let data = if settings.sso.active() {
+    let data = if active(&state, &settings) {
         vec![json!({
             "object": "verifiedOrganizationDomainSsoDetails",
             "organizationIdentifier": settings.sso.identifier,
@@ -253,7 +272,7 @@ async fn prevalidate(State(state): State<AppState>, ClientIp(ip): ClientIp) -> A
     if !state.limits.anonymous.check(ip) {
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
     }
-    if !state.settings().sso.active() {
+    if !active(&state, &state.settings()) {
         return Err(ApiError::bad("SSO is not enabled on this server."));
     }
     Ok(Json(json!({ "token": state.tokens.sso_token() })))
@@ -417,7 +436,7 @@ async fn authorize(
     }
     let settings = state.settings();
     let sso = &settings.sso;
-    if !sso.active() {
+    if !active(&state, &settings) {
         return Err(ApiError::bad("SSO is not enabled on this server."));
     }
     let get = |name: &str| query.get(name).map(|value| value.trim()).filter(|value| !value.is_empty());
@@ -561,7 +580,7 @@ async fn signin(
         return back(Some("The login provider sent no code."), None);
     };
     let settings = state.settings();
-    if !settings.sso.active() {
+    if !active(&state, &settings) {
         return back(Some("SSO is not enabled on this server."), None);
     }
     if let Some(iss) = &query.iss

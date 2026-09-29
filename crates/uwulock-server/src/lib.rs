@@ -41,6 +41,7 @@ pub async fn app_state(config: &Config, store: Store, logs: Arc<LogBuffer>) -> R
         hibp_url: "https://api.pwnedpasswords.com".into(),
         login_attempts: config.login_attempts,
         start_settings: config.start_settings.clone(),
+        start_features: config.start_features.clone(),
         certificate_probe: config.certificate_probe(),
         time_sources: config.time_sources.clone(),
     };

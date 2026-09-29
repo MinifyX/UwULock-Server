@@ -311,6 +311,8 @@ jobs:
             echo "UWULOCK_TLS_CERT=$tls/cert.pem"
             echo "UWULOCK_TLS_KEY=$tls/key.pem"
             echo "UWULOCK_UPDATE_CHECK=off"
+            # A new server starts with only the vault and icons; the scripts try every extra.
+            echo "UWULOCK_FEATURES=all"
             # The browser and the CLI log in more often in a few minutes than a person would.
             echo "UWULOCK_LOGIN_ATTEMPTS=200"
             echo "NODE_EXTRA_CA_CERTS=$tls/ca.pem"

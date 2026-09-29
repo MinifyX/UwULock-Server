@@ -43,6 +43,8 @@ pub(crate) async fn start_for(emails: &[&str]) -> (Running, Vec<String>) {
     let mut config = uwulock_server::Config { data_dir: dir.path().to_path_buf(), ..Default::default() };
     config.listen = "127.0.0.1:0".parse().unwrap();
     config.update_check = false;
+    // The tests go through the extras too, which a new server starts without.
+    config.start_features = uwulock_api::Features::all();
     // A cheap key derivation keeps the test fast; the server's minimum would refuse it.
     config.start_settings.policies.minimum_kdf.pbkdf2_iterations = 100_000;
     let store = uwulock_server::open_store(&config).unwrap();

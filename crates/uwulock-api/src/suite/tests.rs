@@ -335,9 +335,8 @@ async fn a_new_key_makes_a_new_space_id_and_older_pulls_start_over() {
 
 #[tokio::test]
 async fn a_server_without_the_suite_says_so() {
-    let mut settings = crate::Settings::default();
-    settings.suite.enabled = false;
-    let server = TestServer::with_settings(settings).await;
+    let server = TestServer::new().await;
+    server.switch(crate::Feature::Suite, false);
     let nyu = server.account("nyu@example.com").await;
     let response = server.form("/identity/connect/token", &suite_form("nyu@example.com", "ssh-1", "uwussh")).await;
     assert_eq!(json(response).await["error"], "invalid_client");

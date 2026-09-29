@@ -610,7 +610,8 @@ impl FromRequestParts<AppState> for Admin {
         if !session.user.admin {
             return Err(ApiError::forbidden("Only admins can do this."));
         }
-        let only_sso = {
+        // With the `sso` switch off, admins log in with their password like everybody.
+        let only_sso = state.feature(crate::Feature::Sso) && {
             let settings = state.settings.read();
             settings.sso.enabled && settings.sso.admins_only_with_sso
         };

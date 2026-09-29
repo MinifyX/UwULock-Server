@@ -108,8 +108,9 @@ A message without a named code carries the one of its status in the table above 
 any other status); the Bitwarden-shaped bodies of `/identity` (`invalid_grant` and friends) carry
 none. Named so far: `would_lock_out` (§21.4), `kdf_too_weak` (§20), `upstream`.
 
-"Not yours" is always 404, never 403, so ids cannot be probed. A switched-off feature (admin
-setting) answers 404 `feature_off` on all its endpoints, and `/uwu/v1/info` says it is off.
+"Not yours" is always 404, never 403, so ids cannot be probed. A switched-off feature (feature
+switch, [features.md](features.md)) answers 404 `feature_off` on all its endpoints, for everybody,
+and `/uwu/v1/info` says it is off.
 
 ### 1.4 Encryption notation
 
@@ -163,8 +164,14 @@ host and on every send domain; on a send domain it contains only `name`, `versio
     "delta-sync", "realtime", "suite", "icons", "own-icons", "icon-library", "versions",
     "travel-mode", "reminders", "file-requests", "security-notices", "masked-addresses",
     "send-domains", "send-emails", "families", "organizations", "secrets-manager",
-    "directory-connector", "sso", "health-report", "twofa-directory"
+    "directory-connector", "sso", "health-report", "twofa-directory", "emergency-sheet"
   ],
+  "switches": {
+    "families": true, "file-requests": true, "send-domains": true, "masked-addresses": true,
+    "versions": true, "reminders": true, "travel-mode": true, "emergency-sheet": true,
+    "own-icons": true, "icon-library": true, "twofa-directory": true, "sso": true, "scim": false,
+    "offsite-backups": true, "admin-notifications": false, "suite": true
+  },
   "sendDomains": [
     { "id": "5b0c…", "url": "https://send.example.com" }
   ],
@@ -199,6 +206,12 @@ host and on every send domain; on a send domain it contains only `name`, `versio
 - `features`: a name is present only when the server has the feature **and** it is switched on.
   `masked-addresses` means an admin allowed at least one UwUMail server; whether *this* account
   is connected is in §13.2. `send-emails` needs mail. `sso` needs an OIDC provider (§19).
+- `switches` (0.6.0-beta.2): every feature switch of [features.md](features.md), `true` when it
+  is on together with what it needs (`icon-library` with `own-icons`, `scim` with `sso`). A
+  switch that is off leaves its name out of `features`; a switch that is on may still miss there
+  when it is not set up (`masked-addresses` without a UwUMail server, `sso` without a provider,
+  `versions` with `perItem` 0). A server without `switches` is older: its `features` say it all.
+  Not on a send domain.
 - `sendDomains`: the admin's send domains (§14.1), without the main host. Empty list when none.
 - `icons.url`: where the official clients and ours get automatic icons (§7.1). `automatic:false`
   means `/icons/…` answers 404 for everything.
@@ -2597,10 +2610,10 @@ defaults in brackets):
 | --- | --- |
 | `versions` | `{ perItem [20], days [365] }` (§8); `perItem` 0–100, `days` 0–3650 |
 | `icons` | `{ automatic [true], library [true], sources [["selfhst"]] }` (§7) |
-| `fileRequests` | `{ enabled [true], perUser [50], maxDays [90], maxFiles [20] }` (§11) |
+| `fileRequests` | `{ perUser [50], maxDays [90], maxFiles [20] }` (§11); on or off is a feature switch (§21.12) |
 | `families` / `organizations` | `{ whoMayCreate, maxMembers, perUser }` (§16.4) |
 | `secretsManager` | `{ enabled [true] }` (§17) |
-| `suite` | `{ enabled [true], maxRecords [50000], maxMb [256] }` (§6) |
+| `suite` | `{ maxRecords [50000], maxMb [256] }` (§6); on or off is a feature switch (§21.12) |
 | `securityNotices` | `{ mailOff [[]] }` — kinds not mailed (§12) |
 | `policies` | §20 |
 | `adminNetworks` | `["192.0.2.0/24", "2001:db8::/32"]` [[] = everywhere] (§21.4) |
@@ -2786,6 +2799,36 @@ saved one — → 200 or 502.
 `GET /uwu/v1/admin/organizations` → list `{ "id", "name", "kind": "family" | "organization", "members", "owners": ["a@example.com"], "secretsManager", "creationDate" }`;
 `DELETE /uwu/v1/admin/organizations/{id}` — `{ "masterPasswordHash" }` (the admin's). Admins see
 no vault content.
+
+### 21.12 Feature switches
+
+Which extras this server offers ([features.md](features.md)). Kept apart from the settings, under
+their own key; switching never deletes anything.
+
+`GET /uwu/v1/admin/features` →
+
+```json
+{
+  "object": "features",
+  "features": [
+    { "id": "families", "group": "sharing", "on": true, "works": true, "requires": null, "inUse": true },
+    { "id": "icon-library", "group": "vault", "on": true, "works": false, "requires": "own-icons", "inUse": false }
+  ]
+}
+```
+
+All sixteen, in a fixed order. `group` is `sharing`, `vault`, `sign-in`, `operations` or `apps`;
+`on` is the switch, `works` is on with what it `requires`; `inUse` says data is kept for it or
+it is set up (what the portal asks about before switching it off).
+
+`PUT /uwu/v1/admin/features` — `{ "reminders": false, "families": true }`: only the names given
+change; answers like `GET`. An unknown name or a value that is not a boolean is 400 `invalid`;
+switching `travel-mode` off while an account travels is 400 `travelling`. A change is written to
+the event log (`switched features: reminders off, families on`), takes effect at once (routes,
+jobs, send domains) and sends the realtime `info` message (§5).
+
+`uwulock-server features [list | on <id>… | off <id>…]` does the same on the command line, and
+`UWULOCK_FEATURES` (`all`, `none` or a list) is what a server starts with until the first switch.
 
 ---
 

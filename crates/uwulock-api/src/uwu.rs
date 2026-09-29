@@ -1,9 +1,9 @@
 //! `/uwu/v1`: UwULock's own API, for the web vault and UwULock's clients. The official
 //! Bitwarden clients never call it.
 
-use crate::AppState;
 use crate::auth::{ClientIp, Session, device_type_name};
 use crate::errors::{ApiError, ApiResult};
+use crate::{AppState, Feature};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::routing::{delete, get, post, put};
@@ -30,6 +30,7 @@ async fn info(
     headers: axum::http::HeaderMap,
 ) -> Json<Value> {
     let settings = state.settings();
+    let switches = state.features();
     let (loaded, base) = crate::branding::for_request_at(&state, &headers).await;
     let branding = loaded.json(&base);
     if send_host.is_some() {
@@ -38,7 +39,7 @@ async fn info(
         if state.mailer.enabled() {
             features.push("send-emails");
         }
-        if settings.file_requests.enabled {
+        if switches.on(Feature::FileRequests) {
             features.push("file-requests");
         }
         return Json(json!({
@@ -59,9 +60,6 @@ async fn info(
         "attachments",
         "sends",
         "emergency-access",
-        // Families are there even when nobody may make a new one: whether this account may is
-        // `families.mayCreate` of `/uwu/v1/account`.
-        "families",
         "two-factor-authenticator",
         "two-factor-email",
         "two-factor-webauthn",
@@ -70,43 +68,51 @@ async fn info(
         "api-key",
         "admin",
         "security-notices",
-        "own-icons",
-        "travel-mode",
-        "reminders",
-        "twofa-directory",
         "health-report",
     ];
+    // The switches (docs/features.md): on, and where it takes more, set up too.
+    // Families are there even when nobody may make a new one: whether this account may is
+    // `families.mayCreate` of `/uwu/v1/account`.
+    for feature in [
+        Feature::Families,
+        Feature::OwnIcons,
+        Feature::TravelMode,
+        Feature::Reminders,
+        Feature::TwofaDirectory,
+        Feature::EmergencySheet,
+        Feature::FileRequests,
+        Feature::Suite,
+    ] {
+        if switches.on(feature) {
+            features.push(feature.id());
+        }
+    }
     if settings.icons.automatic {
         features.push("icons");
     }
-    let library = settings.icons.library && !settings.icons.sources.is_empty();
+    let library = switches.on(Feature::IconLibrary) && settings.icons.library && !settings.icons.sources.is_empty();
     if library {
         features.push("icon-library");
     }
-    if settings.versions.per_item > 0 {
+    if switches.on(Feature::Versions) && settings.versions.per_item > 0 {
         features.push("versions");
     }
     if settings.hibp {
         features.push("hibp");
     }
-    if settings.file_requests.enabled {
-        features.push("file-requests");
-    }
-    if settings.sso.active() {
+    let sso = crate::sso::active(&state, &settings);
+    if sso {
         features.push("sso");
     }
     if state.mailer.enabled() {
         features.push("send-emails");
     }
     features.extend(["delta-sync", "realtime"]);
-    if settings.suite.enabled {
-        features.push("suite");
-    }
     let send_domains = crate::send_domains::for_info(&state);
     if !send_domains.is_empty() {
         features.push("send-domains");
     }
-    if !settings.masked.servers.is_empty() {
+    if switches.on(Feature::MaskedAddresses) && !settings.masked.servers.is_empty() {
         features.push("masked-addresses");
     }
     let rules = &settings.policies.master_password;
@@ -119,11 +125,12 @@ async fn info(
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
         "features": features,
+        "switches": switches.working_json(),
         "sendDomains": send_domains,
         "branding": branding,
         "sso": {
-            "enabled": settings.sso.active(),
-            "only": settings.sso.active() && settings.sso.only,
+            "enabled": sso,
+            "only": sso && settings.sso.only,
             "identifier": settings.sso.identifier,
             "label": settings.sso.label,
         },
@@ -206,7 +213,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "admin": session.user.admin,
         "hasMasterPassword": !session.user.user_key.is_empty(),
         "sso": session.sso,
-        "adminNeedsSso": settings.sso.active() && settings.sso.admins_only_with_sso,
+        "adminNeedsSso": crate::sso::active(&state, &settings) && settings.sso.admins_only_with_sso,
         "language": session.user.language,
         "mail": state.mailer.enabled(),
         "passwordHints": settings.password_hints,

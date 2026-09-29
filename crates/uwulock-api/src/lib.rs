@@ -27,6 +27,7 @@ pub mod diagnosis;
 pub mod emergency;
 mod errors;
 mod families;
+pub mod features;
 pub mod file_requests;
 pub mod files;
 mod folders;
@@ -82,6 +83,7 @@ mod webauthn;
 pub use admin::{Invited, invite};
 pub use auth::{HashCost, LEGACY_HASH, Tokens};
 pub use errors::{ApiError, ApiResult};
+pub use features::{Feature, Features};
 pub use limits::Limits;
 pub use logs::{LogBuffer, LogLine};
 pub use settings::Settings;
@@ -120,6 +122,9 @@ pub struct ApiConfig {
     pub login_attempts: u32,
     /// The settings a new server starts with, until an admin saves others.
     pub start_settings: Settings,
+    /// The feature switches a new server starts with (`UWULOCK_FEATURES`), until an admin
+    /// switches one.
+    pub start_features: Features,
     /// Where the diagnosis and the metrics look at the certificate clients get; none for a
     /// server at an http address.
     pub certificate_probe: Option<certificate::Probe>,
@@ -153,6 +158,8 @@ pub struct AppState {
     pub tokens: Arc<Tokens>,
     pub mailer: Mailer,
     pub settings: Arc<RwLock<Settings>>,
+    /// Which extras are switched on (docs/features.md).
+    pub features: Arc<RwLock<Features>>,
     pub limits: Arc<Limits>,
     pub logs: Arc<LogBuffer>,
     pub update: Arc<RwLock<UpdateInfo>>,
@@ -215,6 +222,7 @@ impl AppState {
         logs: Arc<LogBuffer>,
     ) -> Result<Self, String> {
         let settings = Settings::load(&store, &config.start_settings).await?;
+        let features = Features::load(&store, &config.start_features).await?;
         let mailer = Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
         let tokens = Tokens::load(&store, &config.public).await?;
         let party = webauthn::Party::from_public(&config.public);
@@ -225,7 +233,7 @@ impl AppState {
         let offsite = uwulock_backup::Offsite::new(store.clone(), &config.data, &host, version);
         let alerts = Arc::new(alerts::Alerts::default());
         let config_data = config.data.clone();
-        store.set_version_rule(settings.versions.rule());
+        store.set_version_rule(settings.versions.rule(features.on(Feature::Versions)));
         let icons = Arc::new(icons::Icons::new(&config.data, icon_fetch::Upstream::default()));
         if let Some(success) = offsite.status().await.last_success {
             alerts.offsite_succeeded(success.max(0) as u64);
@@ -237,6 +245,7 @@ impl AppState {
             tokens: Arc::new(tokens),
             mailer,
             settings: Arc::new(RwLock::new(settings)),
+            features: Arc::new(RwLock::new(features)),
             limits,
             logs,
             update: Arc::default(),
@@ -273,7 +282,7 @@ impl AppState {
     /// Settings an admin saved, or a restore brought, take effect everywhere.
     pub fn apply_settings(&self, settings: Settings) {
         self.logs.loki().configure(&settings.loki);
-        self.store.set_version_rule(settings.versions.rule());
+        self.store.set_version_rule(settings.versions.rule(self.feature(Feature::Versions)));
         *self.settings.write() = settings;
         self.settings_changed.notify_one();
         // `/uwu/v1/info` says something else now.
@@ -291,6 +300,25 @@ impl AppState {
 
     pub fn settings(&self) -> Settings {
         self.settings.read().clone()
+    }
+
+    /// Switches an admin changed, or a restore brought, take effect everywhere.
+    pub fn apply_features(&self, features: Features) {
+        let versions = features.on(Feature::Versions);
+        *self.features.write() = features;
+        self.store.set_version_rule(self.settings.read().versions.rule(versions));
+        // What runs beside the requests looks again, and `/uwu/v1/info` says something else now.
+        self.settings_changed.notify_one();
+        self.realtime.broadcast(uwulock_notify::realtime::Live::Info);
+    }
+
+    pub fn features(&self) -> Features {
+        self.features.read().clone()
+    }
+
+    /// Whether `feature` is switched on (and what it needs is too).
+    pub fn feature(&self, feature: Feature) -> bool {
+        self.features.read().on(feature)
     }
 
     /// The host part of the public address, the way people know the server.
@@ -314,13 +342,15 @@ pub fn router(state: AppState) -> Router {
     // plain http for it again: a first visit by http is where a network could slip in a vault
     // page of its own that reads the master password.
     let https = state.config.public.starts_with("https://");
+    // The extras, each answered only while its switch is on (docs/features.md).
+    let with = |routes: Router<AppState>, feature: Feature| features::only_with(routes, &state, feature);
     let whole_vault = Router::new()
         .merge(ciphers::vault_routes())
         .merge(accounts::vault_routes())
-        .merge(suite::rekey_routes())
+        .merge(with(suite::rekey_routes(), Feature::Suite))
         .layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT));
     // A suite push brings up to 500 records with 8 MiB of sealed data, which is more in base64.
-    let suite_push = suite::push_routes().layer(DefaultBodyLimit::max(suite::MAX_PUSH_BODY));
+    let suite_push = with(suite::push_routes(), Feature::Suite).layer(DefaultBodyLimit::max(suite::MAX_PUSH_BODY));
     // Almost everything: small bodies, and an answer within a minute.
     let quick = Router::new()
         .merge(health::routes())
@@ -336,6 +366,7 @@ pub fn router(state: AppState) -> Router {
         .merge(notifications::routes())
         .merge(organizations::routes())
         .merge(families::routes())
+        .merge(with(families::family_routes(), Feature::Families))
         .merge(org_members::routes())
         .merge(org_collections::routes())
         .merge(folders::routes())
@@ -345,24 +376,30 @@ pub fn router(state: AppState) -> Router {
         .merge(invitations::routes())
         .merge(notices::routes())
         .merge(admin::routes())
-        .merge(alerts::routes())
+        .merge(features::routes())
+        .merge(with(alerts::routes(), Feature::AdminNotifications))
         .merge(diagnosis::routes())
-        .merge(offsite::routes())
+        .merge(with(offsite::routes(), Feature::OffsiteBackups))
         .merge(keys::routes())
-        .merge(file_requests::routes())
+        .merge(with(file_requests::routes(), Feature::FileRequests))
         .merge(sso::routes())
-        .merge(scim::routes())
+        .merge(with(sso::sso_routes(), Feature::Sso))
+        .merge(with(sso::scim_routes(), Feature::Scim))
+        .merge(with(scim::routes(), Feature::Scim))
         .merge(icons::routes())
-        .merge(versions::routes())
-        .merge(travel::routes())
-        .merge(reminders::routes())
+        .merge(with(icons::own_routes(), Feature::OwnIcons))
+        .merge(with(icons::library_routes(), Feature::IconLibrary))
+        .merge(with(versions::routes(), Feature::Versions))
+        .merge(with(travel::routes(), Feature::TravelMode))
+        .merge(with(reminders::routes(), Feature::Reminders))
         .merge(branding::routes())
         .merge(reports::routes())
+        .merge(with(reports::directory_routes(), Feature::TwofaDirectory))
         .merge(sync::routes())
         .merge(realtime::routes())
-        .merge(suite::routes())
-        .merge(send_domains::routes())
-        .merge(masked::routes())
+        .merge(with(suite::routes(), Feature::Suite))
+        .merge(with(send_domains::routes(), Feature::SendDomains))
+        .merge(with(masked::routes(), Feature::MaskedAddresses))
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(suite_push)
@@ -375,7 +412,7 @@ pub fn router(state: AppState) -> Router {
         .merge(attachments::upload_routes())
         .merge(sends::upload_routes())
         .merge(diagnosis::upload_routes())
-        .merge(file_requests::upload_routes())
+        .merge(with(file_requests::upload_routes(), Feature::FileRequests))
         .layer(DefaultBodyLimit::disable());
     let router = Router::new()
         .merge(quick)

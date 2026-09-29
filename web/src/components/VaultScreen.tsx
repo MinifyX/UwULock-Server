@@ -37,6 +37,7 @@ import { HealthReport } from './web/HealthReport';
 import { BackToList, Panes } from './panes';
 import { FamilyView, NewFamilyDialog } from './web/FamilyView';
 import { FileRequestsView } from './web/FileRequestsView';
+import { useSwitch } from '../lib/switches';
 import { SendsView } from './web/SendsView';
 import {
   STATUS,
@@ -203,6 +204,9 @@ export function VaultScreen({
   /** Deleting for good: switch the ticked items' masked addresses off first. */
   const [switchOff, setSwitchOff] = useState(true);
   const maskedLinks = useMaskedLinks(useFeature('masked-addresses'));
+  // Extras the server may have switched off (docs/features.md).
+  const requestsOn = useSwitch('file-requests');
+  const familiesOn = useSwitch('families');
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const detailRef = useRef<HTMLElement>(null);
 
@@ -486,16 +490,18 @@ export function VaultScreen({
                 <span className="nav-label">{t('Sends')}</span>
               </button>
             </li>
-            <li>
-              <button
-                className="nav-row"
-                aria-current={filter.kind === 'requests' ? 'true' : undefined}
-                onClick={() => pick({ kind: 'requests' })}
-              >
-                <Icon name="download" size={16} />
-                <span className="nav-label">{t('Datei-Anfragen')}</span>
-              </button>
-            </li>
+            {requestsOn && (
+              <li>
+                <button
+                  className="nav-row"
+                  aria-current={filter.kind === 'requests' ? 'true' : undefined}
+                  onClick={() => pick({ kind: 'requests' })}
+                >
+                  <Icon name="download" size={16} />
+                  <span className="nav-label">{t('Datei-Anfragen')}</span>
+                </button>
+              </li>
+            )}
             <li>
               <button
                 className="nav-row"
@@ -658,7 +664,8 @@ export function VaultScreen({
                           counts.collection(c.id),
                         ),
                       )}
-                    {nav({ kind: 'family', id: org.id }, 'user', t('Mitglieder & Sammlungen'), 0)}
+                    {familiesOn &&
+                      nav({ kind: 'family', id: org.id }, 'user', t('Mitglieder & Sammlungen'), 0)}
                   </>
                 )}
               </ul>
@@ -679,7 +686,7 @@ export function VaultScreen({
           <AccountCard status={status} onAddAccount={onAddAccount} />
         </nav>
 
-        {filter.kind === 'family' ? (
+        {filter.kind === 'family' && familiesOn ? (
           <FamilyView
             key={filter.id}
             orgId={filter.id}
@@ -690,7 +697,7 @@ export function VaultScreen({
           />
         ) : filter.kind === 'sends' ? (
           <SendsView />
-        ) : filter.kind === 'requests' ? (
+        ) : filter.kind === 'requests' && requestsOn ? (
           <FileRequestsView open={requestShown} />
         ) : filter.kind === 'health' ? (
           <HealthReport

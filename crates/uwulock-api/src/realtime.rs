@@ -145,7 +145,7 @@ async fn authenticate(state: &AppState, token: &str) -> Result<Session, Message>
     let session = Session::from_any_token(state, token)
         .await
         .map_err(|_| close(4401, "The token is not (or no longer) valid."))?;
-    if session.is_suite() && !state.settings().suite.enabled {
+    if session.is_suite() && !state.feature(crate::Feature::Suite) {
         return Err(close(4403, "The suite vault is switched off."));
     }
     Ok(session)

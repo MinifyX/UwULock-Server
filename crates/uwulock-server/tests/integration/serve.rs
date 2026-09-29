@@ -72,6 +72,37 @@ async fn plain_http_answers_and_is_healthy() {
     server.stop().await;
 }
 
+/// A new server has the vault and the website icons, and none of the extras until an admin
+/// switches them on (or `UWULOCK_FEATURES` says so).
+#[tokio::test]
+async fn a_new_server_starts_with_only_the_vault_and_icons() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = config_in(dir.path());
+    config.start_features = uwulock_api::Features::parse_list("reminders").unwrap();
+    let server = start(config).await;
+    let client = reqwest::Client::new();
+    let info: serde_json::Value =
+        client.get(format!("http://{}/uwu/v1/info", server.addr)).send().await.unwrap().json().await.unwrap();
+    let features = info["features"].as_array().unwrap();
+    for there in ["vault", "sends", "attachments", "emergency-access", "icons", "reminders"] {
+        assert!(features.iter().any(|feature| feature == there), "{there}");
+    }
+    for gone in ["families", "file-requests", "travel-mode", "versions", "own-icons", "suite"] {
+        assert!(!features.iter().any(|feature| feature == gone), "{gone}");
+    }
+    let switched_on: Vec<&String> = info["switches"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .filter(|(_, on)| on.as_bool() == Some(true))
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(switched_on, ["reminders"]);
+    let request = client.get(format!("http://{}/uwu/v1/public/file-requests/AAAAAAAAAAAAAAAAAAAAAA", server.addr));
+    assert_eq!(request.send().await.unwrap().status(), reqwest::StatusCode::NOT_FOUND);
+    server.stop().await;
+}
+
 #[tokio::test]
 async fn tls_from_files_serves_that_certificate() {
     let dir = tempfile::tempdir().unwrap();
@@ -190,6 +221,7 @@ async fn a_send_domain_certificate_from_an_acme_ca() {
     };
     config.send_domain_acme = uwulock_server::config::Acme { domain: String::new(), ..acme.clone() };
     config.tls = TlsMode::Acme(acme);
+    config.start_features = uwulock_api::Features::none().with(uwulock_api::Feature::SendDomains, true);
     uwulock_server::open_store(&config).unwrap().add_send_domain("send.uwulock.test", "acme").await.unwrap();
     let server = start(config.clone()).await;
     config.listen = server.addr;

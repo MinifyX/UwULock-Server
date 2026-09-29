@@ -13,7 +13,6 @@
   "Speicher pro Konto in MB": "Storage per account in MB",
   "Stand: {when}": "As of {when}",
   "Suite-Tresor": "Suite vault",
-  "UwUSSH und UwURDP speichern ihre Hosts, Schlüssel und Verbindungen verschlüsselt hier, mit demselben Konto. Ausgeschaltet werden ihre Anmeldungen abgelehnt; die Daten bleiben.": "UwUSSH and UwURDP keep their hosts, keys and connections here, encrypted, with the same account. Switched off, their logins are refused; the data stays.",
   "Was UwUSSH und UwURDP hier speichern. Öffnen können es nur die Apps; hier siehst du, wie viel es ist.": "What UwUSSH and UwURDP keep here. Only the apps can open it; here you see how much there is.",
   "{app} hat sich angemeldet und kann seine Daten im Suite-Tresor lesen.": "{app} logged in and can read its data in the suite vault.",
   "{count} Einträge · {size}": "{count} entries · {size}",

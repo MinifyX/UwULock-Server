@@ -48,8 +48,8 @@ device has to log in again; the apps offer that once they have it.
   (*Admin portal → Settings → Suite vault*, `suite.maxRecords` / `suite.maxMb`). The suite counts
   towards the account's storage limit as well. Over it, the push is refused as a whole.
 - Deleted records stay as tombstones for 90 days, so that every device hears of the deletion.
-- *Admin portal → Settings → Suite vault* switches the whole suite vault off: suite logins are
-  refused and the spaces answer "switched off" (their data stays).
+- The suite vault is a feature switch (*Admin portal → Features*, [features.md](features.md)).
+  Off, suite logins are refused and the spaces answer 404 `feature_off` (their data stays).
 - Deleting a space is for the account itself — in the web vault, with the master password —
   never for an app. Starting the extras key over (*Settings → Security*) deletes every space with
   it.

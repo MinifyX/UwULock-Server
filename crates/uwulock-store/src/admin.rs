@@ -183,6 +183,46 @@ impl Store {
         .await
     }
 
+    /// The feature switches (docs/features.md) something is kept for in the database: accounts'
+    /// data, not the admin's settings. By their names on the wire, like `file-requests`.
+    pub async fn features_with_data(&self) -> Result<Vec<&'static str>> {
+        const CHECKS: [(&str, &str); 13] = [
+            ("families", "SELECT 1 FROM organizations"),
+            ("file-requests", "SELECT 1 FROM file_requests"),
+            ("send-domains", "SELECT 1 FROM send_domains"),
+            (
+                "masked-addresses",
+                "SELECT 1 FROM masked_connections UNION ALL SELECT 1 FROM masked_links \
+                 UNION ALL SELECT 1 FROM masked_api_keys",
+            ),
+            ("versions", "SELECT 1 FROM cipher_versions"),
+            ("reminders", "SELECT 1 FROM reminders"),
+            ("travel-mode", "SELECT 1 FROM travel UNION ALL SELECT 1 FROM folders WHERE travel"),
+            ("own-icons", "SELECT 1 FROM own_icons"),
+            ("twofa-directory", "SELECT 1 FROM health_reports"),
+            ("sso", "SELECT 1 FROM sso_identities"),
+            ("scim", "SELECT 1 FROM scim_provisioned UNION ALL SELECT 1 FROM scim_groups"),
+            ("admin-notifications", "SELECT 1 FROM notification_channels WHERE kind <> 'mail'"),
+            ("suite", "SELECT 1 FROM suite_spaces"),
+        ];
+        self.sqlite_read(|conn| {
+            let mut found = Vec::new();
+            for (name, query) in CHECKS {
+                let used: bool = conn.query_row(&format!("SELECT EXISTS ({query})"), [], |row| row.get(0))?;
+                if used {
+                    found.push(name);
+                }
+            }
+            Ok(found)
+        })
+        .await
+    }
+
+    /// How many accounts are travelling right now (travel mode on).
+    pub async fn travelling_count(&self) -> Result<i64> {
+        self.sqlite_read(|conn| conn.query_row("SELECT count(*) FROM travel", [], |row| row.get(0))).await
+    }
+
     pub async fn log_event(&self, event: Event) -> Result<()> {
         self.sqlite_write(move |tx| {
             tx.prepare_cached(

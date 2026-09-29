@@ -17,6 +17,7 @@ import {
   type Contact,
 } from '../../lib/features';
 import { N_, t, useLanguage } from '../../lib/i18n';
+import { useSwitch } from '../../lib/switches';
 import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
@@ -48,6 +49,7 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
   const [trusted, setTrusted] = useState<Contact[]>([]);
   const [granted, setGranted] = useState<Contact[]>([]);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const sheet = useSwitch('emergency-sheet');
 
   const reload = useCallback(async () => {
     try {
@@ -82,14 +84,18 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
         )}
       </p>
 
-      <Row
-        label={t('Notfallblatt')}
-        description={t(
-          'Ein PDF für deine Angehörigen, mit Server-Adresse, E-Mail, einem Feld für das Master-Passwort, dem Wiederherstellungscode und deinen Notfallkontakten – im Browser erstellt.',
-        )}
-      >
-        <button onClick={() => setDialog({ kind: 'sheet' })}>{t('Notfallblatt erstellen')}</button>
-      </Row>
+      {sheet && (
+        <Row
+          label={t('Notfallblatt')}
+          description={t(
+            'Ein PDF für deine Angehörigen, mit Server-Adresse, E-Mail, einem Feld für das Master-Passwort, dem Wiederherstellungscode und deinen Notfallkontakten – im Browser erstellt.',
+          )}
+        >
+          <button onClick={() => setDialog({ kind: 'sheet' })}>
+            {t('Notfallblatt erstellen')}
+          </button>
+        </Row>
+      )}
 
       <h3 className="settings-heading">{t('Meine Vertrauenspersonen')}</h3>
       {trusted.map((contact) => (
