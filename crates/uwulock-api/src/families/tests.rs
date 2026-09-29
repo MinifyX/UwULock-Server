@@ -233,6 +233,9 @@ async fn seats_owners_and_who_may_make_one() {
     assert_eq!(again.status(), StatusCode::BAD_REQUEST, "one family per account");
     let me = json(server.get_as(&owner.token, "/uwu/v1/account").await).await;
     assert_eq!(me["families"], json!({ "mayCreate": false, "maxMembers": 2, "owned": 1, "perUser": 1 }));
+    // What the clients look at first (the move from Bitwarden makes families only then).
+    let info = json(server.get("/uwu/v1/info").await).await;
+    assert!(info["features"].as_array().unwrap().contains(&json!("families")), "{info}");
 
     let path = format!("/api/organizations/{org}/users/invite");
     let two = json!({ "emails": ["a@example.com", "b@example.com"], "type": 2 });
