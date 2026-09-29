@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   revealField,
   saveItem,
@@ -32,8 +32,8 @@ import {
 import { toast } from '../lib/toast';
 import { useCloseGuard } from './CloseGuard';
 import { GeneratorDialog } from './GeneratorDialog';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
+import { Button, Callout, Checkbox, Field, FieldGroup, FormRow, IconButton, RepeatRow } from './ui';
 import { NewMaskedDialog } from './web/MaskedSettings';
 
 /**
@@ -41,10 +41,11 @@ import { NewMaskedDialog } from './web/MaskedSettings';
  * `keep` means the item's own value stays — the editor never saw it, and it
  * never goes through the window unless someone asks to see it.
  */
-type Sec = { mode: 'keep' | 'value'; value: string };
+type Sec = { mode: 'keep' | 'value'; value: string; had?: boolean };
 
+// `had`: the item has a value here, so an empty field empties it (and says so).
 const keep = (has: boolean): Sec =>
-  has ? { mode: 'keep', value: '' } : { mode: 'value', value: '' };
+  has ? { mode: 'keep', value: '', had: true } : { mode: 'value', value: '' };
 const sent = (secret: Sec): string | null => (secret.mode === 'keep' ? null : secret.value);
 
 type UriRow = { key: number; uri: string; match: number | null };
@@ -211,20 +212,11 @@ function draftOf(form: Form, kind: ItemKind): Draft {
   return draft;
 }
 
-function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      {children}
-      {hint && <small className="field-hint">{hint}</small>}
-    </label>
-  );
-}
-
 /**
  * A field for a value the editor may not have. It shows dots until someone
  * asks to see it; typing replaces it, the cross empties it, and an empty field
- * that was never touched leaves the item's value alone.
+ * that was never touched leaves the item's value alone. Its tools (the eye,
+ * the dice, the way back) sit inside the field.
  */
 function SecretField({
   label,
@@ -234,6 +226,7 @@ function SecretField({
   field,
   multiline,
   hint,
+  hideLabel,
   children,
 }: {
   label: string;
@@ -244,16 +237,18 @@ function SecretField({
   field?: string;
   multiline?: boolean;
   hint?: string;
+  /** In a row of a list, where the row names the field. */
+  hideLabel?: boolean;
   children?: ReactNode;
 }) {
   useLanguage();
   const kept = secret.mode === 'keep';
-  const cleared = secret.mode === 'value' && secret.value === '' && Boolean(itemId && field);
+  const cleared = secret.mode === 'value' && secret.value === '' && Boolean(secret.had);
 
   const reveal = async () => {
     if (!itemId || !field) return;
     try {
-      onChange({ mode: 'value', value: await revealField(itemId, field) });
+      onChange({ ...secret, mode: 'value', value: await revealField(itemId, field) });
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -262,73 +257,60 @@ function SecretField({
   const type = (value: string) => {
     // Deleting what was typed goes back to leaving the value alone.
     if (value === '' && kept) return;
-    onChange({ mode: 'value', value });
+    onChange({ ...secret, mode: 'value', value });
   };
 
-  const input = multiline ? (
-    <textarea
-      className="mono"
-      rows={4}
-      aria-label={label}
-      value={secret.value}
-      placeholder={kept ? '••••••••••••' : undefined}
-      spellCheck={false}
-      onChange={(e) => type(e.target.value)}
-    />
-  ) : (
-    <input
-      type="text"
-      className="mono"
-      aria-label={label}
-      value={secret.value}
-      placeholder={kept ? '••••••••••••' : undefined}
-      spellCheck={false}
-      autoComplete="off"
-      onChange={(e) => type(e.target.value)}
-    />
-  );
+  const tools = [
+    kept && itemId && field && (
+      <IconButton
+        key="reveal"
+        icon="eye"
+        label={t('{label} zeigen', { label })}
+        title={t('Zeigen')}
+        onClick={() => void reveal()}
+      />
+    ),
+    children && <Fragment key="more">{children}</Fragment>,
+    !kept && itemId && field && (
+      <IconButton
+        key="keep"
+        icon="history"
+        label={t('{label} unverändert lassen', { label })}
+        title={t('Unverändert lassen')}
+        onClick={() => onChange(keep(true))}
+      />
+    ),
+  ];
 
   return (
-    <div className="field">
-      <span className="field-label-row">
-        <span>{label}</span>
-        <span className="field-actions">
-          {kept && itemId && field && (
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => void reveal()}
-              title={t('Zeigen')}
-              aria-label={t('{label} zeigen', { label })}
-            >
-              <Icon name="eye" size={15} />
-            </button>
-          )}
-          {children}
-          {!kept && itemId && field && (
-            <button
-              type="button"
-              className="icon-button"
-              onClick={() => onChange(keep(true))}
-              title={t('Unverändert lassen')}
-              aria-label={t('{label} unverändert lassen', { label })}
-            >
-              <Icon name="history" size={15} />
-            </button>
-          )}
-        </span>
-      </span>
-      {input}
-      {kept ? (
-        <small className="field-hint">{t('Bleibt, wie es ist.')}</small>
-      ) : cleared ? (
-        <small className="field-hint" data-tone="warn">
-          {t('Wird beim Speichern geleert.')}
-        </small>
+    <Field
+      label={label}
+      hideLabel={hideLabel}
+      tools={tools}
+      hint={kept ? t('Bleibt, wie es ist.') : cleared ? t('Wird beim Speichern geleert.') : hint}
+      hintTone={cleared ? 'warn' : 'default'}
+    >
+      {multiline ? (
+        <textarea
+          className="mono"
+          rows={4}
+          value={secret.value}
+          placeholder={kept ? '••••••••••••' : undefined}
+          spellCheck={false}
+          onChange={(e) => type(e.target.value)}
+        />
       ) : (
-        hint && <small className="field-hint">{hint}</small>
+        <input
+          type="text"
+          className="mono"
+          value={secret.value}
+          placeholder={kept ? '••••••••••••' : undefined}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => type(e.target.value)}
+        />
       )}
-    </div>
+    </Field>
   );
 }
 
@@ -434,18 +416,18 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
         onCancel={guard.request}
         footer={
           <>
-            <button type="button" className="quiet" data-secondary onClick={guard.request}>
-              {t('Abbrechen')}
-            </button>
             <span className="spacer" />
-            <button
+            <Button data-secondary onClick={guard.request}>
+              {t('Abbrechen')}
+            </Button>
+            <Button
               type="submit"
               form="item-editor"
-              className="primary"
+              variant="primary"
               disabled={busy || loading || locked || !form.name.trim()}
             >
               {busy ? t('Speichert …') : t('Speichern')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -459,7 +441,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
               </p>
             )}
 
-            <div className="editor-row">
+            <FormRow>
               <Field label={t('Name')}>
                 <input
                   type="text"
@@ -483,45 +465,30 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   ))}
                 </select>
               </Field>
-            </div>
+            </FormRow>
 
             {kind === 'login' && (
               <>
-                {masked ? (
-                  <div className="field">
-                    <span className="field-label-row">
-                      <span>{t('Benutzername')}</span>
-                      <span className="field-actions">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          onClick={() => setMaskedDialog(true)}
-                          title={t('Maskierte Adresse anlegen')}
-                          aria-label={t('Maskierte Adresse anlegen')}
-                          aria-haspopup="dialog"
-                        >
-                          <Icon name="sparkles" size={15} />
-                        </button>
-                      </span>
-                    </span>
-                    <input
-                      type="text"
-                      aria-label={t('Benutzername')}
-                      value={form.username}
-                      autoComplete="off"
-                      onChange={(e) => set({ username: e.target.value })}
-                    />
-                  </div>
-                ) : (
-                  <Field label={t('Benutzername')}>
-                    <input
-                      type="text"
-                      value={form.username}
-                      autoComplete="off"
-                      onChange={(e) => set({ username: e.target.value })}
-                    />
-                  </Field>
-                )}
+                <Field
+                  label={t('Benutzername')}
+                  tools={
+                    masked && (
+                      <IconButton
+                        icon="sparkles"
+                        label={t('Maskierte Adresse anlegen')}
+                        onClick={() => setMaskedDialog(true)}
+                        aria-haspopup="dialog"
+                      />
+                    )
+                  }
+                >
+                  <input
+                    type="text"
+                    value={form.username}
+                    autoComplete="off"
+                    onChange={(e) => set({ username: e.target.value })}
+                  />
+                </Field>
                 <SecretField
                   label={t('Passwort')}
                   secret={form.password}
@@ -529,15 +496,11 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   itemId={id}
                   field="password"
                 >
-                  <button
-                    type="button"
-                    className="icon-button"
+                  <IconButton
+                    icon="dice"
+                    label={t('Passwort-Generator')}
                     onClick={() => setGenerator('password')}
-                    title={t('Passwort-Generator')}
-                    aria-label={t('Passwort-Generator')}
-                  >
-                    <Icon name="dice" size={15} />
-                  </button>
+                  />
                 </SecretField>
                 <SecretField
                   label={t('Einmal-Code (TOTP)')}
@@ -548,10 +511,24 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   hint={t('Der Schlüssel aus der App: Base32 oder eine otpauth://-Adresse.')}
                 />
 
-                <fieldset className="editor-list">
-                  <legend>{t('Websites')}</legend>
+                <FieldGroup
+                  title={t('Websites')}
+                  actions={
+                    <Button
+                      variant="quiet"
+                      icon="plus"
+                      onClick={() =>
+                        set({
+                          uris: [...form.uris, { key: key(), uri: '', match: null }],
+                        })
+                      }
+                    >
+                      {t('Website hinzufügen')}
+                    </Button>
+                  }
+                >
                   {form.uris.map((uri, index) => (
-                    <div className="editor-row" key={uri.key}>
+                    <RepeatRow key={uri.key} aux="narrow">
                       <input
                         type="text"
                         value={uri.uri}
@@ -589,42 +566,25 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                           </option>
                         ))}
                       </select>
-                      <button
-                        type="button"
-                        className="icon-button"
+                      <IconButton
+                        icon="trash"
+                        label={t('Adresse {n} entfernen', { n: index + 1 })}
                         title={t('Entfernen')}
-                        aria-label={t('Adresse {n} entfernen', {
-                          n: index + 1,
-                        })}
                         onClick={() =>
                           set({
                             uris: form.uris.filter((row) => row.key !== uri.key),
                           })
                         }
-                      >
-                        <Icon name="trash" size={15} />
-                      </button>
-                    </div>
+                      />
+                    </RepeatRow>
                   ))}
-                  <button
-                    type="button"
-                    className="quiet add-row"
-                    onClick={() =>
-                      set({
-                        uris: [...form.uris, { key: key(), uri: '', match: null }],
-                      })
-                    }
-                  >
-                    <Icon name="plus" size={14} />
-                    {t('Website hinzufügen')}
-                  </button>
-                </fieldset>
+                </FieldGroup>
               </>
             )}
 
             {kind === 'card' && (
               <>
-                <div className="editor-row">
+                <FormRow>
                   <Field label={t('Karteninhaber')}>
                     <input
                       type="text"
@@ -645,7 +605,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                       )}
                     </select>
                   </Field>
-                </div>
+                </FormRow>
                 <SecretField
                   label={t('Kartennummer')}
                   secret={form.number}
@@ -653,7 +613,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   itemId={id}
                   field="card-number"
                 />
-                <div className="editor-row">
+                <FormRow min="narrow">
                   <Field label={t('Gültig bis (Monat)')}>
                     <select
                       value={form.expMonth}
@@ -683,12 +643,12 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                     itemId={id}
                     field="card-code"
                   />
-                </div>
+                </FormRow>
               </>
             )}
 
             {kind === 'identity' && (
-              <div className="editor-grid">
+              <FormRow>
                 {IDENTITY_FIELDS.map((field) =>
                   field.sensitive ? (
                     <SecretField
@@ -723,16 +683,16 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                     </Field>
                   ),
                 )}
-              </div>
+              </FormRow>
             )}
 
             {kind === 'ssh-key' && (
               <>
-                <p className="dialog-lead">
+                <Callout>
                   {t(
                     'Ein SSH-Schlüssel braucht alle drei Teile – privater Schlüssel, öffentlicher Schlüssel und Fingerprint. Der Server wirft den Eintrag sonst weg.',
                   )}
-                </p>
+                </Callout>
                 <SecretField
                   label={t('Privater Schlüssel')}
                   secret={form.privateKey}
@@ -774,10 +734,37 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
               />
             </Field>
 
-            <fieldset className="editor-list">
-              <legend>{t('Eigene Felder')}</legend>
+            <FieldGroup
+              title={t('Eigene Felder')}
+              actions={(['text', 'hidden', 'boolean'] as FieldKind[]).map((fieldKind) => (
+                <Button
+                  key={fieldKind}
+                  variant="quiet"
+                  icon="plus"
+                  onClick={() =>
+                    set({
+                      fields: [
+                        ...form.fields,
+                        {
+                          key: key(),
+                          name: '',
+                          kind: fieldKind,
+                          value: {
+                            mode: 'value',
+                            value: fieldKind === 'boolean' ? 'false' : '',
+                          },
+                          from: null,
+                        },
+                      ],
+                    })
+                  }
+                >
+                  {t(FIELD_KIND_LABEL[fieldKind])}
+                </Button>
+              ))}
+            >
               {form.fields.map((field, index) => (
-                <div className="editor-row" key={field.key}>
+                <RepeatRow key={field.key}>
                   <input
                     type="text"
                     value={field.name}
@@ -796,31 +783,26 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                       {t('verknüpft mit einem anderen Feld')}
                     </span>
                   ) : field.kind === 'boolean' ? (
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={field.value.value === 'true'}
-                        onChange={(e) =>
-                          set({
-                            fields: form.fields.map((row) =>
-                              row.key === field.key
-                                ? {
-                                    ...row,
-                                    value: {
-                                      mode: 'value',
-                                      value: e.target.checked ? 'true' : 'false',
-                                    },
-                                  }
-                                : row,
-                            ),
-                          })
-                        }
-                      />
-                      <span>{field.value.value === 'true' ? t('Ja') : t('Nein')}</span>
-                    </label>
+                    <Checkbox
+                      label={field.value.value === 'true' ? t('Ja') : t('Nein')}
+                      checked={field.value.value === 'true'}
+                      onChange={(checked) =>
+                        set({
+                          fields: form.fields.map((row) =>
+                            row.key === field.key
+                              ? {
+                                  ...row,
+                                  value: { mode: 'value', value: checked ? 'true' : 'false' },
+                                }
+                              : row,
+                          ),
+                        })
+                      }
+                    />
                   ) : field.kind === 'hidden' ? (
                     <SecretField
                       label={t('Wert')}
+                      hideLabel
                       secret={field.value}
                       itemId={id}
                       field={field.from === null ? undefined : `field:${field.from}`}
@@ -854,69 +836,31 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                       }
                     />
                   )}
-                  <button
-                    type="button"
-                    className="icon-button"
+                  <IconButton
+                    icon="trash"
+                    label={t('Feld {n} entfernen', { n: index + 1 })}
                     title={t('Entfernen')}
-                    aria-label={t('Feld {n} entfernen', { n: index + 1 })}
                     onClick={() =>
                       set({
                         fields: form.fields.filter((row) => row.key !== field.key),
                       })
                     }
-                  >
-                    <Icon name="trash" size={15} />
-                  </button>
-                </div>
+                  />
+                </RepeatRow>
               ))}
-              <div className="add-kinds">
-                {(['text', 'hidden', 'boolean'] as FieldKind[]).map((fieldKind) => (
-                  <button
-                    key={fieldKind}
-                    type="button"
-                    className="quiet add-row"
-                    onClick={() =>
-                      set({
-                        fields: [
-                          ...form.fields,
-                          {
-                            key: key(),
-                            name: '',
-                            kind: fieldKind,
-                            value: {
-                              mode: 'value',
-                              value: fieldKind === 'boolean' ? 'false' : '',
-                            },
-                            from: null,
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    <Icon name="plus" size={14} />
-                    {t(FIELD_KIND_LABEL[fieldKind])}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
+            </FieldGroup>
 
-            <div className="editor-switches">
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={form.favorite}
-                  onChange={(e) => set({ favorite: e.target.checked })}
-                />
-                <span>{t('Favorit')}</span>
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={form.reprompt}
-                  onChange={(e) => set({ reprompt: e.target.checked })}
-                />
-                <span>{t('Vor dem Anzeigen nach dem Master-Passwort fragen')}</span>
-              </label>
+            <div className="checks">
+              <Checkbox
+                label={t('Favorit')}
+                checked={form.favorite}
+                onChange={(favorite) => set({ favorite })}
+              />
+              <Checkbox
+                label={t('Vor dem Anzeigen nach dem Master-Passwort fragen')}
+                checked={form.reprompt}
+                onChange={(reprompt) => set({ reprompt })}
+              />
             </div>
           </form>
         )}
@@ -926,7 +870,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
         <GeneratorDialog
           onClose={() => setGenerator(null)}
           onUse={(password) => {
-            set({ password: { mode: 'value', value: password } });
+            set({ password: { ...form.password, mode: 'value', value: password } });
             setGenerator(null);
           }}
         />

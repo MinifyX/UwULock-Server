@@ -9,7 +9,7 @@ a {
 
 /* "Alle Einträge 3": the count a little apart from its title. */
 .list-title {
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 /* ── The bar ───────────────────────────────────────────── */
@@ -20,9 +20,9 @@ a {
 }
 
 .titlebar-area {
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   font-weight: 700;
-  padding: 2px 9px;
+  padding: 2px var(--uwu-space-2);
   border-radius: var(--uwu-radius-pill);
   background: var(--uwu-pink-tint);
   color: var(--uwu-pink-ink);
@@ -32,12 +32,12 @@ a {
   align-self: center;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-right: 6px;
-  padding: 5px 11px;
+  gap: var(--uwu-space-2);
+  margin-right: var(--uwu-space-2);
+  padding: var(--uwu-space-1) var(--uwu-space-3);
   border-radius: var(--uwu-radius-control);
   color: var(--uwu-muted);
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
   font-weight: 600;
   text-decoration: none;
 }
@@ -47,75 +47,49 @@ a {
   color: var(--uwu-ink);
 }
 
-.button-link {
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 14px;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
-  font-weight: 600;
-  font-size: 13px;
-  text-decoration: none;
-}
-
 /* ── Forms ─────────────────────────────────────────────── */
-
-.form-note {
-  margin: 0;
-  font-size: 13px;
-  color: var(--uwu-muted);
-}
-
-.field input[readonly] {
-  color: var(--uwu-muted);
-}
 
 .field-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--uwu-space-3);
 }
 
 .field-grid.wide {
   grid-template-columns: 2fr 1fr 1.4fr;
-  margin-top: 8px;
+  margin-top: var(--uwu-space-2);
 }
 
+/* A field and its button on one line: the name, an invitation. */
 .inline-form {
   display: inline-flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: var(--uwu-space-2);
   align-items: center;
+  max-width: 100%;
 }
 
 .inline-form input {
-  font: inherit;
-  padding: 7px 10px;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
-  min-width: 0;
-  width: 170px;
+  width: 180px;
+  max-width: 100%;
 }
 
 .advanced summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   font-weight: 600;
   color: var(--uwu-muted);
-  margin-bottom: 8px;
+  margin-bottom: var(--uwu-space-2);
 }
 
 .advanced .field-hint {
   display: block;
-  margin-top: 6px;
+  margin-top: var(--uwu-space-2);
 }
 
 .strength {
   display: grid;
-  gap: 4px;
+  gap: var(--uwu-space-1);
 }
 
 .strength-bar {
@@ -142,36 +116,17 @@ a {
 }
 
 .strength small {
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
 /* ── Settings ──────────────────────────────────────────── */
 
-.settings-heading {
-  margin: 22px 0 2px;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--uwu-muted);
-}
-
-.danger-text {
-  color: var(--uwu-alarm);
-}
-
-.settings-lead {
-  margin: 0 0 8px;
-  line-height: 1.5;
-  color: var(--uwu-muted);
-}
-
 .qr {
   width: 200px;
   height: 200px;
-  margin: 4px auto;
-  padding: 8px;
+  margin: var(--uwu-space-1) auto;
+  padding: var(--uwu-space-2);
   border-radius: var(--uwu-radius-card);
   background: #ffffff;
 }
@@ -186,7 +141,7 @@ a {
   text-align: center;
   font-size: 15px;
   letter-spacing: 0.06em;
-  padding: 8px;
+  padding: var(--uwu-space-2);
   border-radius: var(--uwu-radius-control);
   background: var(--uwu-canvas);
   user-select: all;
@@ -194,30 +149,30 @@ a {
 }
 
 .secret-key.big {
-  font-size: 18px;
-  margin-top: 12px;
+  font-size: var(--uwu-text-lg);
+  margin-top: var(--uwu-space-3);
 }
 
 .device-list {
   list-style: none;
-  margin: 8px 0 0;
+  margin: var(--uwu-space-2) 0 0;
   padding: 0;
   display: grid;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .device {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: var(--uwu-space-3);
+  padding: var(--uwu-space-3) var(--uwu-space-3);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
 }
 
 .device-list.compact .device {
-  padding: 6px 10px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
 }
 
 .device-text {
@@ -227,31 +182,27 @@ a {
   min-width: 0;
 }
 
+/* The name and a badge after it; the badge starts the next line when the name fills this one. */
+.device-text b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--uwu-space-2);
+}
+
+.device-text b > .badge {
+  margin-left: 0;
+}
+
 .device-text small {
   color: var(--uwu-muted);
   font-weight: 500;
 }
 
-.badge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 8px;
-  border-radius: var(--uwu-radius-pill);
-  background: var(--uwu-pink-tint);
-  color: var(--uwu-pink-ink);
-  font-size: 11px;
-  font-weight: 700;
-  vertical-align: 1px;
-}
-
-.badge.alarm {
-  background: color-mix(in srgb, var(--uwu-alarm) 18%, transparent);
-  color: var(--uwu-alarm);
-}
-
 .empty-note {
+  margin: 0;
   color: var(--uwu-muted);
-  padding: 12px 0;
+  padding: var(--uwu-space-3) 0;
   list-style: none;
 }
 
@@ -479,15 +430,9 @@ a {
 }
 
 .invite-form input[type='email'] {
-  font: inherit;
   flex: 1;
-  min-width: 240px;
+  min-width: min(240px, 100%);
   max-width: 420px;
-  padding: 8px 10px;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
 }
 
 .invite-made {
@@ -719,11 +664,21 @@ a {
 
   .settings {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--uwu-space-4);
   }
 
+  /* The sections as one row of tabs that scrolls sideways. */
   .settings-nav {
     flex-direction: row;
     overflow-x: auto;
+    margin-inline: calc(-1 * var(--uwu-dialog-pad));
+    padding-inline: var(--uwu-dialog-pad);
+    scrollbar-width: none;
+  }
+
+  .settings-nav button {
+    white-space: nowrap;
   }
 }
 
@@ -776,10 +731,10 @@ a {
 .bulk-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--uwu-space-1);
   min-height: 28px;
-  padding: 0 4px;
-  font-size: 13px;
+  padding: 0 var(--uwu-space-1);
+  font-size: var(--uwu-text-md);
 }
 
 .bulk-count {
@@ -787,8 +742,8 @@ a {
 }
 
 .bulk-bar .select {
-  padding: 4px 8px;
-  font-size: 12.5px;
+  padding: var(--uwu-space-1) var(--uwu-space-2);
+  font-size: var(--uwu-text-sm);
 }
 
 /* ── Attachments, Sends, the password check ────────────── */
@@ -796,23 +751,36 @@ a {
 .attachment-name {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--uwu-space-2);
+}
+
+/* Buttons without a frame in a card: their words on the line of the text above them. */
+.attachment-add,
+.comfort-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--uwu-space-1);
+}
+
+.attachment-add,
+.detail-card > .comfort-actions:has(> button.quiet:first-child) {
+  margin-left: calc(-1 * var(--uwu-space-3));
 }
 
 .attachment-add {
-  padding: 6px 12px 8px;
+  padding-block: var(--uwu-space-1);
 }
 
 .detail-line {
   margin: 0;
-  padding: 8px 16px;
-  font-size: 13px;
+  padding: var(--uwu-space-2) 0;
+  font-size: var(--uwu-text-md);
+  line-height: var(--uwu-leading);
   color: var(--uwu-muted);
 }
 
-.detail-card > button.quiet {
-  justify-self: start;
-  margin: 2px 8px 8px;
+.detail-line + .detail-line {
+  padding-top: 0;
 }
 
 .multiline {
@@ -820,19 +788,19 @@ a {
 }
 
 .send-link {
-  font-size: 12.5px;
+  font-size: var(--uwu-text-sm);
   user-select: all;
 }
 
 .send-text {
   margin: 0;
-  padding: 12px 14px;
+  padding: var(--uwu-space-3) var(--uwu-space-4);
   max-height: 50vh;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--uwu-mono);
-  font-size: 13.5px;
+  font-size: var(--uwu-text-md);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-canvas);
@@ -841,7 +809,7 @@ a {
 .send-file {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--uwu-space-2);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -849,7 +817,7 @@ a {
 .field-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: var(--uwu-space-3);
 }
 
 /* The password check spans the list and the detail column. */
@@ -857,7 +825,7 @@ a {
   grid-column: 2 / -1;
   min-width: 0;
   overflow: auto;
-  padding: 20px 24px;
+  padding: var(--uwu-space-5) var(--uwu-space-6);
 }
 
 .report-pane .detail {
@@ -865,10 +833,18 @@ a {
   margin: 0 auto;
 }
 
+/* On a phone the vault has one column; the report fills it, and its detail brings the padding. */
+@media (max-width: 760px) {
+  .report-pane {
+    grid-column: 1;
+    padding: 0;
+  }
+}
+
 /* Fingerprint phrases: read out word by word, so large and spaced. */
 .fingerprint {
-  margin: 4px 0 8px;
-  padding: 12px 14px;
+  margin: var(--uwu-space-1) 0 var(--uwu-space-2);
+  padding: var(--uwu-space-3) var(--uwu-space-4);
   text-align: center;
   font-family: var(--uwu-mono);
   font-size: 15px;
@@ -883,8 +859,8 @@ a {
 .login-other {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding-top: 10px;
+  gap: var(--uwu-space-2);
+  padding-top: var(--uwu-space-3);
   border-top: 1px solid var(--uwu-hairline);
 }
 
@@ -895,13 +871,13 @@ a {
 .copy-field {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .copy-field code {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   overflow-wrap: anywhere;
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
@@ -913,7 +889,7 @@ a {
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 8px;
+  gap: var(--uwu-space-2);
   max-height: 55vh;
   overflow: auto;
 }
@@ -921,7 +897,7 @@ a {
 .emergency-items li {
   display: grid;
   gap: 2px;
-  padding: 10px 12px;
+  padding: var(--uwu-space-3) var(--uwu-space-3);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
@@ -930,13 +906,13 @@ a {
 
 .detail-card > .field-hint {
   margin: 0;
-  padding: 0 16px 6px;
+  padding: 0 0 var(--uwu-space-2);
 }
 
 /* Who gets the new key when the vault is encrypted anew, and their phrase. */
 .rotation-contact strong {
   display: block;
-  margin-top: 8px;
+  margin-top: var(--uwu-space-2);
 }
 
 /* ── Policies, notices, alerts, diagnosis (0.6) ────────── */
@@ -973,7 +949,7 @@ a {
   right: -4px;
   min-width: 16px;
   height: 16px;
-  padding: 0 4px;
+  padding: 0 var(--uwu-space-1);
   border-radius: var(--uwu-radius-pill);
   background: var(--uwu-pink-solid);
   color: var(--uwu-on-pink);
@@ -1010,7 +986,7 @@ a {
 .policy-banner {
   flex: none;
   flex-wrap: wrap;
-  margin: 10px 14px;
+  margin: var(--uwu-space-3) var(--uwu-space-4);
   border-color: var(--uwu-pink);
   background: var(--uwu-pink-tint);
 }
@@ -1359,7 +1335,7 @@ a {
   }
 
   .policy-banner {
-    margin: 8px;
+    margin: var(--uwu-space-2);
   }
 }
 
@@ -1400,8 +1376,8 @@ code.wrap {
 
 .picked-files {
   display: grid;
-  gap: 4px;
-  margin: 6px 0 0;
+  gap: var(--uwu-space-1);
+  margin: var(--uwu-space-2) 0 0;
   padding: 0;
   list-style: none;
   font-size: 0.9rem;
@@ -1410,7 +1386,7 @@ code.wrap {
 .picked-files li {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--uwu-space-2);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -1419,9 +1395,11 @@ code.wrap {
   color: var(--uwu-alarm);
 }
 
+/* A heading between the cards of the details ("Angekommen", "Rolle"). */
 .detail-subhead {
-  margin: 18px 0 8px;
-  font-size: 1rem;
+  margin: var(--uwu-space-2) 0 0;
+  font-size: var(--uwu-text-base);
+  font-weight: 700;
 }
 
 /* ── Icons, reminders and versions of an item ───────────── */
@@ -1429,7 +1407,7 @@ code.wrap {
 .comfort-icon-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--uwu-space-4);
 }
 
 .comfort-icon-row .field-hint {
@@ -1437,23 +1415,20 @@ code.wrap {
 }
 
 .comfort-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  margin-top: var(--uwu-space-2);
 }
 
 .comfort-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--uwu-space-2);
   margin: 0;
 }
 
 .comfort-form {
   display: grid;
-  gap: 10px;
-  margin-top: 6px;
+  gap: var(--uwu-space-3);
+  margin-top: var(--uwu-space-2);
 }
 
 .chip.chip-due {
@@ -1535,20 +1510,14 @@ code.wrap {
 
 .travel-folders {
   list-style: none;
-  margin: 0 0 12px;
+  margin: var(--uwu-space-2) 0 var(--uwu-space-3);
   padding: 0;
   display: grid;
-  gap: 6px;
-}
-
-.travel-folders label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: var(--uwu-space-2);
 }
 
 .travel-off {
-  margin-top: 12px;
+  margin-top: var(--uwu-space-3);
 }
 
 /* ── Who may open a Send ───────────────────────────────── */
@@ -1562,8 +1531,8 @@ fieldset.send-access {
 
 fieldset.send-access > legend {
   padding: 0;
-  margin-bottom: 6px;
-  font-size: 12px;
+  margin-bottom: var(--uwu-space-2);
+  font-size: var(--uwu-text-sm);
   font-weight: 600;
   color: var(--uwu-muted);
 }
@@ -1571,17 +1540,13 @@ fieldset.send-access > legend {
 .radio-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: var(--uwu-space-2) var(--uwu-space-4);
 }
 
 .share-fields {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 6px 16px;
-}
-
-.button-link {
-  gap: 6px;
+  gap: var(--uwu-space-2) var(--uwu-space-4);
 }
 
 /* ── Branding (admin portal) ───────────────────────────── */
@@ -1688,12 +1653,12 @@ fieldset.send-access > legend {
 .import-key-file {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--uwu-space-2);
   flex-wrap: wrap;
 }
 
 .import-key-name {
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
   overflow-wrap: anywhere;
 }
 
@@ -1703,13 +1668,13 @@ fieldset.send-access > legend {
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  font-size: 13px;
+  gap: var(--uwu-space-2) var(--uwu-space-4);
+  font-size: var(--uwu-text-md);
 }
 
 .import-folders {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
   overflow-wrap: anywhere;
 }
 
@@ -1719,10 +1684,10 @@ fieldset.send-access > legend {
 
 .import-warnings {
   margin: 0;
-  padding: 8px 12px 8px 28px;
+  padding: var(--uwu-space-2) var(--uwu-space-3) var(--uwu-space-2) var(--uwu-space-6);
   border-radius: var(--uwu-radius-control);
   background: var(--uwu-elevated);
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
   line-height: 1.5;
 }
 
@@ -1739,9 +1704,9 @@ fieldset.send-access > legend {
 .import-list li {
   display: grid;
   grid-template-columns: 1fr auto;
-  column-gap: 8px;
+  column-gap: var(--uwu-space-2);
   align-items: center;
-  padding: 6px 10px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   border-bottom: 1px solid var(--uwu-hairline);
 }
 
@@ -1756,7 +1721,7 @@ fieldset.send-access > legend {
 
 .import-item-detail {
   grid-column: 1;
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
   overflow-wrap: anywhere;
 }
@@ -1768,37 +1733,27 @@ fieldset.send-access > legend {
 
 .import-item-more {
   color: var(--uwu-muted);
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
 }
 
 /* ── Families (Stufe 4d) ─────────────────────────────────── */
 
-.list-head .segmented[role='tablist'] {
-  margin-top: 8px;
-}
-
-.segmented button[aria-selected='true'] {
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
-  box-shadow: 0 1px 2px rgba(20, 16, 22, 0.12);
-}
-
 .segmented button .badge {
-  margin-left: 6px;
+  margin-left: var(--uwu-space-2);
 }
 
 .family-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: var(--uwu-space-2);
+  padding: var(--uwu-space-3) var(--uwu-space-3);
   border-top: 1px solid var(--uwu-hairline);
 }
 
 .family-save {
   display: flex;
   justify-content: flex-end;
-  margin: 12px 0;
+  margin: var(--uwu-space-3) 0;
 }
 
 .detail-row .select {
@@ -1807,24 +1762,24 @@ fieldset.send-access > legend {
 }
 
 .family-invitation {
-  margin: 6px 8px;
-  padding: 10px 12px;
+  margin: var(--uwu-space-2) var(--uwu-space-2);
+  padding: var(--uwu-space-3) var(--uwu-space-3);
   border-radius: var(--uwu-radius-card);
   background: var(--uwu-pink-tint);
 }
 
 .family-invitation p {
-  margin: 0 0 8px;
-  font-size: 13px;
+  margin: 0 0 var(--uwu-space-2);
+  font-size: var(--uwu-text-md);
 }
 
 .family-invitation .buttons {
   display: flex;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .nav-note {
-  margin: 2px 12px 6px;
-  font-size: 12.5px;
+  margin: 2px var(--uwu-space-3) var(--uwu-space-2);
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }

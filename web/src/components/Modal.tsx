@@ -1,15 +1,23 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { t, useLanguage } from '../lib/i18n';
+import { Icon } from './Icon';
 
 type ModalProps = {
   title: string;
   /** Security warnings get their own look, so they never blend in with routine dialogs. */
   tone?: 'default' | 'warning';
-  /** Settings need room for a section list next to the content. */
+  /** Room for more: the item editor, the settings with their list of sections. Full screen on a phone. */
   size?: 'default' | 'wide';
   onCancel: () => void;
   children: ReactNode;
+  /**
+   * The buttons: `<span className="spacer" />`, then the safe choice (`data-secondary`), then the
+   * main one (`primary`, or `danger` in a warning). A destructive extra goes before the spacer.
+   */
   footer?: ReactNode;
+  /** A × in the title bar, for dialogs without a footer (the settings). */
+  closable?: boolean;
 };
 
 const FOCUSABLE =
@@ -39,8 +47,11 @@ export function Modal({
   onCancel,
   children,
   footer,
+  closable,
 }: ModalProps) {
+  useLanguage();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   // Escape calls the latest onCancel, not the one from when the dialog
   // opened: a form that asks before closing only knows once something changed.
   const cancelRef = useRef(onCancel);
@@ -118,6 +129,38 @@ export function Modal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A hairline under the title and over the buttons, only while the body scrolls beneath them.
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const update = () => {
+      const scrolled = body.scrollTop > 0;
+      const more = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
+      body.toggleAttribute('data-scrolled', scrolled);
+      body.toggleAttribute('data-more', more);
+    };
+    update();
+    body.addEventListener('scroll', update, { passive: true });
+    if (typeof ResizeObserver === 'undefined') {
+      return () => body.removeEventListener('scroll', update);
+    }
+    // The body's own size and its content's: a field added below grows the content only.
+    const sizes = new ResizeObserver(update);
+    const watch = () => {
+      sizes.disconnect();
+      sizes.observe(body);
+      for (const child of body.children) sizes.observe(child);
+    };
+    watch();
+    const children = new MutationObserver(watch);
+    children.observe(body, { childList: true });
+    return () => {
+      body.removeEventListener('scroll', update);
+      sizes.disconnect();
+      children.disconnect();
+    };
+  }, []);
+
   // Straight into <body>: a dialog opened from inside another one (the export
   // from Settings) otherwise lives in the outer dialog's scroll box, which
   // moves it about when a field inside gets focus.
@@ -135,11 +178,27 @@ export function Modal({
         aria-labelledby={titleId}
         tabIndex={-1}
       >
-        <h2 id={titleId} className="modal-title">
-          {title}
-        </h2>
-        <div className="modal-body">{children}</div>
+        <div className="modal-head">
+          <h2 id={titleId} className="modal-title">
+            {title}
+          </h2>
+        </div>
+        <div ref={bodyRef} className="modal-body">
+          {children}
+        </div>
         {footer && <div className="modal-footer">{footer}</div>}
+        {/* Last in the Tab order, as before; drawn in the title bar. */}
+        {closable && (
+          <button
+            type="button"
+            className="icon-button modal-close"
+            onClick={onCancel}
+            aria-label={t('Schließen')}
+            title={t('Schließen')}
+          >
+            <Icon name="close" size={16} />
+          </button>
+        )}
       </div>
     </div>,
     document.body,

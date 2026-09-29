@@ -122,10 +122,8 @@ export function GeneratorDialog({
         onCancel={onClose}
         footer={
           <>
-            <button className="quiet" onClick={onClose}>
-              {t('Schließen')}
-            </button>
             <span className="spacer" />
+            <button onClick={onClose}>{t('Schließen')}</button>
             <button disabled={maker.busy} onClick={() => void maker.create()}>
               <Icon name="plus" size={15} />
               {maker.made ? t('Noch eine anlegen') : t('Adresse anlegen')}
@@ -173,10 +171,8 @@ export function GeneratorDialog({
       onCancel={onClose}
       footer={
         <>
-          <button className="quiet" onClick={onClose}>
-            {t('Schließen')}
-          </button>
           <span className="spacer" />
+          <button onClick={onClose}>{t('Schließen')}</button>
           <button onClick={() => void roll(options)}>
             <Icon name="dice" size={15} />
             {t('Neu würfeln')}

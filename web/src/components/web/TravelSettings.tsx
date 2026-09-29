@@ -13,6 +13,7 @@ import { errorText } from '../../lib/errors';
 import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { PasswordInput } from '../PasswordInput';
+import { Badge } from '../ui';
 import { Row, ResultLine, type Result } from './controls';
 
 /**
@@ -72,9 +73,7 @@ export function TravelSettings({ info }: { info: AccountInfo | null }) {
           'Markierte Ordner verschwinden samt ihren Einträgen von allen Geräten, auch aus den offiziellen Bitwarden-Apps beim nächsten Sync. Einschalten geht überall, ausschalten nur mit Master-Passwort und Zwei-Schritt-Anmeldung. Der Server kennt nur die Ordner-IDs, nie ihre Namen.',
         )}
       >
-        <span className="chip" data-on={state.enabled || undefined}>
-          {state.enabled ? t('An') : t('Aus')}
-        </span>
+        <Badge tone={state.enabled ? 'ok' : 'neutral'}>{state.enabled ? t('An') : t('Aus')}</Badge>
       </Row>
       {state.enabled && (
         <p className="notice">
@@ -94,7 +93,7 @@ export function TravelSettings({ info }: { info: AccountInfo | null }) {
       <ul className="travel-folders">
         {folders.map((folder) => (
           <li key={folder.id}>
-            <label>
+            <label className="check">
               <input
                 type="checkbox"
                 checked={marked.has(folder.id)}

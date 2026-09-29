@@ -19,6 +19,26 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   is next shown, and the old cache — with its "none"s that would now keep the domain's icon away,
   and icons of other sites — is deleted with the daily clean-up.
 
+**Web vault: even spacing and one set of building blocks.**
+
+- Spacing, type sizes, radii and control heights come from tokens (`web/src/styles/tokens.css`):
+  fields, selects and buttons are one height again, so a field and its button line up, and the
+  focus ring no longer squares the corners of a field.
+- The item editor lines up: labels no longer grow when a field has buttons (they sit inside the
+  field now), card expiry and identity fields share one row height, websites and fields of one's
+  own are groups with the same heading and add buttons, and website rows stack on a phone. A
+  field that never had a value no longer says it will be cleared.
+- Dialogs have even padding, a close button in the title bar where they had one, hairlines when
+  their content scrolls, and one footer order (cancel, then the main action, at the end).
+- Settings: each section starts at the top with the same heading, rows put their control below
+  the text on a phone, and the section list scrolls sideways there instead of wrapping.
+- Item details: the icon, the rows and the notes keep one inset from the card's edge; a long
+  title wraps instead of breaking inside words on a phone. The password check fills the screen
+  on a phone instead of starting halfway across.
+- One set of components for the web vault and, next, the admin portal: buttons, icon buttons,
+  fields, selects, check boxes, toggles, form rows, field groups, cards, sections, tabs, badges,
+  callouts, tables and the dialog ([docs/ui.md](docs/ui.md)). No behaviour changed.
+
 ## 0.6.0-beta.1
 
 **Families, the UwU extras, and a server that looks after itself.** Stages 4b, 4c, 4d and 6 of
