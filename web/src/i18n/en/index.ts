@@ -15,6 +15,7 @@ import requests from './requests.json';
 import settings from './settings.json';
 import sharing from './sharing.json';
 import sso from './sso.json';
+import suite from './suite.json';
 import vault from './vault.json';
 import web from './web.json';
 
@@ -31,6 +32,7 @@ export const EN: Readonly<Record<string, string>> = {
   ...settings,
   ...sharing,
   ...sso,
+  ...suite,
   ...vault,
   ...web,
 };

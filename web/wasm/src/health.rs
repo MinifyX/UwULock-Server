@@ -5,7 +5,7 @@
 //! characters of each password's SHA-1 to ask Have I Been Pwned about (through the server), and
 //! hands the answers back in; which suffix belongs to which item stays in here.
 
-use crate::Unlocked;
+use crate::{Failure, Unlocked};
 use serde::Serialize;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
@@ -106,4 +106,19 @@ pub fn breaches(unlocked: &Unlocked, prefix: &str, range: &str) -> Vec<(String, 
             (count > 0).then(|| (checked.id.clone(), count))
         })
         .collect()
+}
+
+/// The last report as the server keeps it (docs/uwu-api.md §15): its JSON under the extras key,
+/// so it survives an official client's key rotation. The extras key has to be open.
+pub fn seal(unlocked: &Unlocked, report: &str) -> crate::Result<String> {
+    let key = crate::requests::extras_key(unlocked)?;
+    Ok(uwulock_core::crypto::EncString::encrypt(report.as_bytes(), key).to_string())
+}
+
+/// A report [`seal`] made, as its JSON again.
+pub fn open(unlocked: &Unlocked, data: &str) -> crate::Result<String> {
+    let key = crate::requests::extras_key(unlocked)?;
+    let sealed: uwulock_core::crypto::EncString = data.parse()?;
+    let bytes = sealed.decrypt(key)?;
+    String::from_utf8(bytes.to_vec()).map_err(|_| Failure::new("report", "The saved report is not text."))
 }

@@ -208,6 +208,8 @@ export type Settings = {
   icons: { automatic: boolean; library: boolean; sources: string[] };
   /** Families (§16.4): who may make one, its size, how many one account may own. */
   families: OrgRules;
+  /** The suite vault of UwUSSH and UwURDP (§6): on/off, and what one account may keep. */
+  suite: { enabled: boolean; maxRecords: number; maxMb: number };
 };
 
 export type OrgRules = {

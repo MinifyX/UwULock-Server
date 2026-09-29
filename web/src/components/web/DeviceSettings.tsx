@@ -1,13 +1,22 @@
 import { useCallback, useEffect, useState } from 'react';
-import { devices, forgetDevice, type Device } from '../../lib/account';
+import {
+  deleteSuiteSpace,
+  devices,
+  forgetDevice,
+  suiteSpaces,
+  type Device,
+  type SuiteSpace,
+} from '../../lib/account';
 import { logout } from '../../lib/api';
 import { errorText } from '../../lib/errors';
-import { ago } from '../../lib/format';
+import { ago, bytes } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
+import { suiteAppName } from '../../lib/notices';
 import { Icon, type IconName } from '../Icon';
-import { ResultLine, type Result } from './controls';
+import { PasswordPrompt, ResultLine, type Result } from './controls';
 
-function iconOf(type: number): IconName {
+function iconOf(type: number, app: string | null): IconName {
+  if (app) return 'terminal';
   if (type <= 1 || type === 15) return 'grid';
   if ([2, 3, 4, 5, 19, 20].includes(type)) return 'layers';
   if ([6, 7, 8].includes(type)) return 'monitor';
@@ -36,10 +45,11 @@ export function DeviceSettings({ onClose }: { onClose: () => void }) {
       <ul className="device-list">
         {list?.map((device) => (
           <li key={device.id} className="device">
-            <Icon name={iconOf(device.type)} size={20} />
+            <Icon name={iconOf(device.type, device.app)} size={20} />
             <span className="device-text">
               <b>
-                {device.name} <small>· {device.typeName}</small>
+                {device.name}{' '}
+                <small>· {device.app ? suiteAppName(device.app) : device.typeName}</small>
                 {device.current && <span className="badge">{t('dieser Browser')}</span>}
               </b>
               <small>
@@ -75,6 +85,84 @@ export function DeviceSettings({ onClose }: { onClose: () => void }) {
         ))}
         {list?.length === 0 && <li className="empty-note">{t('Keine Geräte.')}</li>}
       </ul>
+      <SuiteSpaces />
+    </>
+  );
+}
+
+/** A suite space by its name (docs/suite.md): whose records it holds. */
+function spaceName(space: string): string {
+  const apps: Record<string, string> = { ssh: 'uwussh', rdp: 'uwurdp', mail: 'uwumail' };
+  return apps[space] ? suiteAppName(apps[space]) : t('Andere UwU-Apps');
+}
+
+/**
+ * The suite vault's spaces: what UwUSSH and UwURDP keep here. Only the apps can open the records;
+ * the account can see how much there is and delete a space. Hidden while it has none, or while
+ * the admin switched the suite vault off.
+ */
+function SuiteSpaces() {
+  useLanguage();
+  const [spaces, setSpaces] = useState<SuiteSpace[]>([]);
+  const [deleting, setDeleting] = useState<SuiteSpace | null>(null);
+  const [result, setResult] = useState<Result>(null);
+  const load = useCallback(() => {
+    suiteSpaces().then(setSpaces, () => setSpaces([]));
+  }, []);
+  useEffect(load, [load]);
+  if (spaces.length === 0) return <ResultLine result={result} />;
+
+  return (
+    <>
+      <h3 className="settings-heading">{t('Suite-Tresor')}</h3>
+      <p className="settings-lead">
+        {t(
+          'Was UwUSSH und UwURDP hier speichern. Öffnen können es nur die Apps; hier siehst du, wie viel es ist.',
+        )}
+      </p>
+      <ResultLine result={result} />
+      <ul className="device-list">
+        {spaces.map((space) => (
+          <li key={space.space} className="device">
+            <Icon name="terminal" size={20} />
+            <span className="device-text">
+              <b>{spaceName(space.space)}</b>
+              <small>
+                {t('{count} Einträge · {size}', {
+                  count: space.records,
+                  size: bytes(space.bytes),
+                })}
+                {' · '}
+                {t('Zuletzt {when}', { when: ago(Date.parse(space.revisionDate) / 1000) })}
+              </small>
+            </span>
+            <button className="danger" onClick={() => setDeleting(space)}>
+              {t('Löschen')}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {deleting && (
+        <PasswordPrompt
+          title={t('{name} im Suite-Tresor löschen?', { name: spaceName(deleting.space) })}
+          lead={t(
+            'Alle {count} Einträge sind danach vom Server fort, für jedes Gerät. Lösche den Bereich nur, wenn die App sie nicht mehr braucht.',
+            { count: deleting.records },
+          )}
+          confirm={t('Löschen')}
+          tone="warning"
+          onCancel={() => setDeleting(null)}
+          action={async (password) => {
+            await deleteSuiteSpace(deleting.space, password);
+            setResult({
+              tone: 'info',
+              text: t('{name} ist gelöscht.', { name: spaceName(deleting.space) }),
+            });
+            setDeleting(null);
+            load();
+          }}
+        />
+      )}
     </>
   );
 }

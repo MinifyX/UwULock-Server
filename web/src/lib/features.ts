@@ -5,6 +5,7 @@
  */
 
 import { currentProfile, sync } from './api';
+import { openExtras } from './requests';
 import { call, callJson } from './web/core';
 import { deviceId, fetchBytes, request, upload } from './web/http';
 import * as webauthn from './web/webauthn';
@@ -555,4 +556,37 @@ export async function passwordReport(
     breachesChecked: breaches,
     breachesIncomplete: incomplete,
   };
+}
+
+/** The last report, as this account's clients saved it on the server. */
+export type SavedReport = { report: Report; date: string };
+
+type StoredReport = { object: 'healthReport'; data: string | null; revisionDate: string | null };
+
+/**
+ * The report the last check saved (docs/uwu-api.md §15), opened with the extras key; `null` when
+ * there is none, or when it does not open any more (the extras key started over).
+ */
+export async function savedReport(): Promise<SavedReport | null> {
+  await openExtras();
+  const stored = await request<StoredReport>('/uwu/v1/reports/health');
+  if (!stored.data || !stored.revisionDate) return null;
+  const data = stored.data;
+  try {
+    const report = await callJson<Report>((core) => core.openReport(data));
+    return Array.isArray(report.findings) ? { report, date: stored.revisionDate } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep `report` on the server, encrypted under the extras key: the server cannot read it. */
+export async function saveReport(report: Report): Promise<string> {
+  await openExtras();
+  const data = await call((core) => core.sealReport(JSON.stringify(report)));
+  const stored = await request<StoredReport>('/uwu/v1/reports/health', {
+    method: 'PUT',
+    body: { data },
+  });
+  return stored.revisionDate ?? new Date().toISOString();
 }

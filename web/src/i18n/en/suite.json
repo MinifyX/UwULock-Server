@@ -1,0 +1,22 @@
+{
+  "Alle {count} Einträge sind danach vom Server fort, für jedes Gerät. Lösche den Bereich nur, wenn die App sie nicht mehr braucht.": "All {count} entries are then gone from the server, for every device. Only delete the space if the app no longer needs them.",
+  "Andere UwU-Apps": "Other UwU apps",
+  "Anmeldung einer UwU-App (UwUSSH, UwURDP)": "A UwU app logged in (UwUSSH, UwURDP)",
+  "Der Schlüssel für die UwU-Extras wurde angelegt.": "The key for the UwU extras was created.",
+  "Der Schlüssel für die UwU-Extras wurde für die neuen Kontoschlüssel eingepackt.": "The key for the UwU extras was wrapped for the account's new keys.",
+  "Die Schlüssel des Kontos wurden ohne den Schlüssel für die UwU-Extras erneuert; was darunter lag, öffnet sich nicht mehr.": "The account's keys were renewed without the key for the UwU extras; what was kept under it no longer opens.",
+  "Eine UwU-App": "A UwU app",
+  "Einträge pro Konto": "Entries per account",
+  "Schlüssel für die UwU-Extras angelegt": "Key for the UwU extras created",
+  "Schlüssel für die UwU-Extras neu eingepackt": "Key for the UwU extras wrapped again",
+  "Schlüssel für die UwU-Extras verloren": "Key for the UwU extras lost",
+  "Speicher pro Konto in MB": "Storage per account in MB",
+  "Stand: {when}": "As of {when}",
+  "Suite-Tresor": "Suite vault",
+  "UwUSSH und UwURDP speichern ihre Hosts, Schlüssel und Verbindungen verschlüsselt hier, mit demselben Konto. Ausgeschaltet werden ihre Anmeldungen abgelehnt; die Daten bleiben.": "UwUSSH and UwURDP keep their hosts, keys and connections here, encrypted, with the same account. Switched off, their logins are refused; the data stays.",
+  "Was UwUSSH und UwURDP hier speichern. Öffnen können es nur die Apps; hier siehst du, wie viel es ist.": "What UwUSSH and UwURDP keep here. Only the apps can open it; here you see how much there is.",
+  "{app} hat sich angemeldet und kann seine Daten im Suite-Tresor lesen.": "{app} logged in and can read its data in the suite vault.",
+  "{count} Einträge · {size}": "{count} entries · {size}",
+  "{name} im Suite-Tresor löschen?": "Delete {name} in the suite vault?",
+  "{name} ist gelöscht.": "{name} is deleted."
+}

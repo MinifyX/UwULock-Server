@@ -500,9 +500,30 @@ export type Device = {
   lastIp: string | null;
   current: boolean;
   remembered: boolean;
+  /** The UwU app behind a suite login (`uwussh`, `uwurdp`), `null` for everything else. */
+  app: string | null;
 };
 
 export const devices = () => request<Device[]>('/uwu/v1/devices');
+
+// ── Suite vault (docs/suite.md) ───────────────────────────
+
+export type SuiteSpace = {
+  space: string;
+  id: string;
+  records: number;
+  bytes: number;
+  revisionDate: string;
+};
+
+export const suiteSpaces = async () =>
+  (await request<{ data: SuiteSpace[] }>('/uwu/v1/suite/spaces')).data;
+
+export const deleteSuiteSpace = async (space: string, password: string) =>
+  request(`/uwu/v1/suite/spaces/${encodeURIComponent(space)}`, {
+    method: 'DELETE',
+    body: await secret(password),
+  });
 
 export const forgetDevice = (id: string) =>
   request(`/uwu/v1/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });

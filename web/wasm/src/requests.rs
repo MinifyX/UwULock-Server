@@ -12,7 +12,7 @@ use uwulock_core::file_request::{
 };
 use wasm_bindgen::prelude::*;
 
-fn extras_key(unlocked: &Unlocked) -> Result<&uwulock_core::crypto::SymmetricKey> {
+pub(crate) fn extras_key(unlocked: &Unlocked) -> Result<&uwulock_core::crypto::SymmetricKey> {
     unlocked.extras.as_ref().ok_or_else(|| Failure::new("extras", "UwULock's own key of this account is not open yet."))
 }
 

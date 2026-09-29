@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { account } from '../../lib/account';
 import { errorText } from '../../lib/errors';
 import { vaultItems } from '../../lib/api';
-import { passwordReport, type Finding, type Report } from '../../lib/features';
+import {
+  passwordReport,
+  saveReport,
+  savedReport,
+  type Finding,
+  type Report,
+} from '../../lib/features';
 import {
   missingTwoFactor,
   twofaDirectory,
@@ -34,6 +40,8 @@ export function HealthReport({ onOpen }: Props) {
     );
   }, []);
   const [report, setReport] = useState<Report | null>(null);
+  // When the report shown was made: the last check, kept encrypted on the server.
+  const [savedAt, setSavedAt] = useState<string | null>(null);
   const [twofa, setTwofa] = useState<{
     missing: MissingTwoFactor[];
     source: TwofaDirectory['source'];
@@ -42,23 +50,48 @@ export function HealthReport({ onOpen }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The list of sites with two-step login, beside the report; without it the rest still counts.
+  const checkDirectory = useCallback(
+    () =>
+      Promise.all([twofaDirectory(), vaultItems()]).then(
+        ([list, items]) => {
+          setTwofa({ missing: missingTwoFactor(items, list.entries), source: list.source });
+          setTwofaError(false);
+        },
+        () => setTwofaError(true),
+      ),
+    [],
+  );
+
+  // The last check's report, if one was saved: shown until the next check.
+  useEffect(() => {
+    let current = true;
+    savedReport().then(
+      (saved) => {
+        if (!current || !saved) return;
+        setReport((shown) => shown ?? saved.report);
+        setSavedAt((shown) => shown ?? saved.date);
+        void checkDirectory();
+      },
+      () => undefined,
+    );
+    return () => {
+      current = false;
+    };
+  }, [checkDirectory]);
+
   const run = async (breaches: boolean) => {
     setError(null);
     setBusy(t('Prüft …'));
-    // The list of sites with two-step login comes alongside; without it the rest still counts.
-    const directory = Promise.all([twofaDirectory(), vaultItems()]).then(
-      ([list, items]) => {
-        setTwofa({ missing: missingTwoFactor(items, list.entries), source: list.source });
-        setTwofaError(false);
-      },
-      () => setTwofaError(true),
-    );
+    const directory = checkDirectory();
     try {
-      setReport(
-        await passwordReport(breaches, (done, total) =>
-          setBusy(t('Fragt Have I Been Pwned … {done} von {total}', { done, total })),
-        ),
+      const fresh = await passwordReport(breaches, (done, total) =>
+        setBusy(t('Fragt Have I Been Pwned … {done} von {total}', { done, total })),
       );
+      setReport(fresh);
+      setSavedAt(new Date().toISOString());
+      // Kept for next time; a report that could not be saved is still shown.
+      saveReport(fresh).then(setSavedAt, () => undefined);
       await directory;
     } catch (e) {
       setError(errorText(e));
@@ -118,6 +151,11 @@ export function HealthReport({ onOpen }: Props) {
             <p className="chips">
               {report && (
                 <span className="chip">{t('{n} Passwörter geprüft', { n: report.checked })}</span>
+              )}
+              {report && savedAt && (
+                <span className="chip">
+                  {t('Stand: {when}', { when: new Date(savedAt).toLocaleString() })}
+                </span>
               )}
             </p>
           </div>
