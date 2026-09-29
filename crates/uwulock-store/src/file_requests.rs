@@ -234,8 +234,9 @@ impl Store {
         .await
     }
 
-    /// The extras key goes, and what was under it: the labels and link secrets of file
-    /// requests (their links keep working; the owner just cannot show them again).
+    /// The extras key goes, and what was under it: own icons, the stored health report, the
+    /// labels and link secrets of file requests (their links keep working; the owner just cannot
+    /// show them again).
     pub async fn delete_extras_key(&self, user_id: &str) -> Result<()> {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {
@@ -244,6 +245,7 @@ impl Store {
                 "DELETE FROM own_icons WHERE key_type = 'extras' AND cipher_id IN (SELECT id FROM ciphers WHERE user_id = ?1)",
                 [&user_id],
             )?;
+            tx.execute("DELETE FROM health_reports WHERE user_id = ?1", [&user_id])?;
             tx.execute(
                 "UPDATE file_requests SET name = NULL, link_secret = NULL, revision = ?2 WHERE user_id = ?1",
                 params![user_id, clock::now()],

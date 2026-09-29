@@ -30,13 +30,16 @@ pub struct Send {
     pub hide_email: bool,
     /// For a file Send, whether its file arrived.
     pub uploaded: bool,
+    /// Only these may open it, with a code mailed to them: lower case, comma-separated. Excludes
+    /// a password.
+    pub emails: Option<String>,
 }
 
 pub const TEXT: i64 = 0;
 pub const FILE: i64 = 1;
 
 const COLUMNS: &str = "id, user_id, type, name, notes, data, key, password_hash, max_access_count, access_count, \
-     created, revision, expiration, deletion, disabled, hide_email, uploaded";
+     created, revision, expiration, deletion, disabled, hide_email, uploaded, emails";
 
 fn send_from(row: &Row<'_>) -> rusqlite::Result<Send> {
     Ok(Send {
@@ -57,6 +60,7 @@ fn send_from(row: &Row<'_>) -> rusqlite::Result<Send> {
         disabled: row.get(14)?,
         hide_email: row.get(15)?,
         uploaded: row.get(16)?,
+        emails: row.get(17)?,
     })
 }
 
@@ -79,11 +83,11 @@ impl Send {
 
 pub(crate) fn write_send(tx: &rusqlite::Transaction<'_>, send: &Send) -> rusqlite::Result<usize> {
     tx.prepare_cached(&format!(
-        "INSERT INTO sends ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17) \
+        "INSERT INTO sends ({COLUMNS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18) \
          ON CONFLICT (id) DO UPDATE SET name = excluded.name, notes = excluded.notes, data = excluded.data, \
          key = excluded.key, password_hash = excluded.password_hash, max_access_count = excluded.max_access_count, \
          revision = excluded.revision, expiration = excluded.expiration, deletion = excluded.deletion, \
-         disabled = excluded.disabled, hide_email = excluded.hide_email, uploaded = excluded.uploaded \
+         disabled = excluded.disabled, hide_email = excluded.hide_email, uploaded = excluded.uploaded, emails = excluded.emails \
          WHERE sends.user_id = excluded.user_id"
     ))?
     .execute(params![
@@ -104,6 +108,7 @@ pub(crate) fn write_send(tx: &rusqlite::Transaction<'_>, send: &Send) -> rusqlit
         send.disabled,
         send.hide_email,
         send.uploaded,
+        send.emails,
     ])
 }
 
@@ -257,6 +262,7 @@ pub(crate) mod tests {
             disabled: false,
             hide_email: false,
             uploaded: false,
+            emails: None,
         }
     }
 

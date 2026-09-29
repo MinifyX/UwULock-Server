@@ -11,7 +11,7 @@
 
 mod templates;
 
-pub use templates::{Mail, NoticeLine, alert_text};
+pub use templates::{Brand, Mail, NoticeLine, alert_text};
 
 use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;
@@ -157,6 +157,8 @@ struct Inner {
     /// In tests: what would have been sent, instead of sending it.
     captured: Option<Mutex<Vec<Sent>>>,
     health: Mutex<MailHealth>,
+    /// The server's name and colour, for every mail.
+    brand: RwLock<Brand>,
 }
 
 /// How sending goes, for the metrics, the admin alerts and the diagnosis.
@@ -180,13 +182,20 @@ fn unix_now() -> u64 {
 struct Connection {
     transport: AsyncSmtpTransport<Tokio1Executor>,
     from: Mailbox,
+    /// Whether the admin gave the sender a name of its own.
+    named: bool,
 }
 
 impl Mailer {
     /// A mailer for these settings; none means mail is off.
     pub fn new(settings: Option<&SmtpSettings>) -> Result<Self, MailError> {
         let mailer = Mailer {
-            inner: Arc::new(Inner { connection: RwLock::new(None), captured: None, health: Mutex::default() }),
+            inner: Arc::new(Inner {
+                connection: RwLock::new(None),
+                captured: None,
+                health: Mutex::default(),
+                brand: RwLock::default(),
+            }),
         };
         mailer.configure(settings)?;
         Ok(mailer)
@@ -199,6 +208,7 @@ impl Mailer {
                 connection: RwLock::new(None),
                 captured: Some(Mutex::new(Vec::new())),
                 health: Mutex::default(),
+                brand: RwLock::default(),
             }),
         }
     }
@@ -209,7 +219,8 @@ impl Mailer {
         let connection = match settings.filter(|settings| settings.is_set()) {
             Some(settings) => {
                 let from = settings.sender()?;
-                Some(Connection { transport: settings.transport()?, from })
+                let named = settings.from_name.as_ref().is_some_and(|name| !name.trim().is_empty());
+                Some(Connection { transport: settings.transport()?, from, named })
             }
             None => None,
         };
@@ -222,9 +233,26 @@ impl Mailer {
         self.inner.captured.is_some() || self.inner.connection.read().is_some()
     }
 
+    /// The server's name and colour, from the next mail on.
+    pub fn set_brand(&self, brand: Brand) {
+        *self.inner.brand.write() = brand;
+    }
+
     /// Write `mail` in `language` and send it to `to`.
     pub async fn send(&self, to: &str, mail: &Mail, language: Language) -> Result<(), MailError> {
-        let (subject, text, html) = mail.render(language);
+        self.send_branded(to, mail, language, None).await
+    }
+
+    /// The same, in `brand`'s look instead of the server's: a send domain's own (Stufe 6).
+    pub async fn send_branded(
+        &self,
+        to: &str,
+        mail: &Mail,
+        language: Language,
+        brand: Option<&Brand>,
+    ) -> Result<(), MailError> {
+        let brand = brand.cloned().unwrap_or_else(|| self.inner.brand.read().clone());
+        let (subject, text, html) = mail.render_branded(language, &brand);
         if let Some(captured) = &self.inner.captured {
             captured.lock().push(Sent { to: to.to_string(), subject, text });
             self.count(&Ok(()));
@@ -234,8 +262,13 @@ impl Mailer {
             return Err(MailError::NotConfigured);
         };
         let recipient: Mailbox = to.parse().map_err(|_| MailError::Send(format!("{to} is not an address")))?;
+        // Without a sender name of its own, the mail comes from the server's name.
+        let mut from = connection.from.clone();
+        if brand.custom_name && !connection.named {
+            from.name = Some(brand.name.clone());
+        }
         let message = Message::builder()
-            .from(connection.from.clone())
+            .from(from)
             .to(recipient)
             .subject(subject)
             .multipart(MultiPart::alternative_plain_html(text, html))

@@ -224,6 +224,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
                 tracing::warn!(%error, "old versions of items were not swept up");
             }
             uwulock_api::icons::daily(&state).await;
+            uwulock_api::reports::daily(&state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");

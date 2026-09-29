@@ -63,6 +63,31 @@ pub enum Mail {
     ReminderDue { count: usize, link: String },
     /// To the admins: something on the server needs looking at (`resolved`: is fine again).
     AdminAlert { event: String, detail: String, resolved: bool, server: String },
+    /// The code that opens a Send only given addresses may open.
+    SendCode { code: String },
+}
+
+/// How the server's mail looks: its name, and the colour of the heading and the button. The
+/// default is UwULock's own.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Brand {
+    pub name: String,
+    /// `#rrggbb`: readable with white text on it.
+    pub color: String,
+    /// Whether the admin changed the name: then the mails say it instead of "UwULock".
+    pub custom_name: bool,
+}
+
+impl Default for Brand {
+    fn default() -> Self {
+        Brand { name: "UwULock".into(), color: "#8b5cf6".into(), custom_name: false }
+    }
+}
+
+/// Only `#rrggbb` goes into the HTML's styles.
+fn plain_color(color: &str) -> &str {
+    let ok = color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit());
+    if ok { color } else { "#8b5cf6" }
 }
 
 /// One notice in a [`Mail::SecurityNotices`].
@@ -196,9 +221,23 @@ struct Text {
 }
 
 impl Mail {
-    /// Subject, plain text and HTML.
+    /// Subject, plain text and HTML, in UwULock's own look.
     pub fn render(&self, language: Language) -> (String, String, String) {
-        let text = self.text(language);
+        self.render_branded(language, &Brand::default())
+    }
+
+    /// Subject, plain text and HTML, with the server's name and colour.
+    pub fn render_branded(&self, language: Language, brand: &Brand) -> (String, String, String) {
+        let mut text = self.text(language);
+        if brand.custom_name {
+            text.subject = text.subject.replace("UwULock", &brand.name);
+            text.footer = if language == Language::De {
+                format!("Diese Mail kommt von {}.", brand.name)
+            } else {
+                format!("This mail comes from {}.", brand.name)
+            };
+        }
+        let color = plain_color(&brand.color);
         let mut plain = String::new();
         let mut html = String::new();
         for line in &text.lines {
@@ -219,7 +258,7 @@ impl Mail {
                 plain.push_str("\n\n");
                 html.push_str(&format!(
                     "<p style=\"margin:0 0 16px\"><a href=\"{link}\" style=\"display:inline-block;padding:12px 20px;\
-                     border-radius:10px;background:#8b5cf6;color:#ffffff;text-decoration:none;font-weight:600\">{label}</a></p>\
+                     border-radius:10px;background:{color};color:#ffffff;text-decoration:none;font-weight:600\">{label}</a></p>\
                      <p style=\"margin:0 0 16px;font-size:13px;color:#6b7280;word-break:break-all\">{link}</p>",
                     link = escape(link),
                     label = escape(label)
@@ -233,9 +272,10 @@ impl Mail {
             "<!doctype html><html><body style=\"margin:0;padding:24px;background:#f5f3ff;\
              font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2937;line-height:1.5\">\
              <div style=\"max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;padding:28px\">\
-             <p style=\"margin:0 0 20px;font-weight:700;font-size:18px;color:#7c3aed\">UwULock</p>{html}\
+             <p style=\"margin:0 0 20px;font-weight:700;font-size:18px;color:{color}\">{name}</p>{html}\
              <p style=\"margin:24px 0 0;font-size:12px;color:#9ca3af\">{}</p></div></body></html>",
-            escape(&text.footer)
+            escape(&text.footer),
+            name = escape(&brand.name),
         );
         (text.subject, plain, html)
     }
@@ -612,6 +652,30 @@ impl Mail {
                 .into());
                 Text { subject: title, lines, highlight: None, button: None, footer }
             }
+            Mail::SendCode { code } => Text {
+                subject: if de {
+                    format!("Dein Code für den Send: {code}")
+                } else {
+                    format!("Your Send verification code is {code}")
+                },
+                lines: vec![
+                    if de {
+                        "Jemand hat dir einen Send geschickt, den nur du öffnen darfst. Gib diesen Code auf der Seite ein:"
+                    } else {
+                        "Somebody sent you a Send only you may open. Enter this code on its page:"
+                    }
+                    .into(),
+                    if de {
+                        "Der Code gilt 5 Minuten und nur einmal. Hast du nichts geöffnet? Dann lösch diese Mail einfach."
+                    } else {
+                        "The code works for 5 minutes, once. Didn't open anything? Just delete this mail."
+                    }
+                    .into(),
+                ],
+                highlight: Some(code.clone()),
+                button: None,
+                footer,
+            },
         }
     }
 }
@@ -699,11 +763,27 @@ mod tests {
                 resolved: false,
                 server: "vault.example.com".into(),
             },
+            Mail::SendCode { code: "123456".into() },
         ];
         for mail in mails {
             let (de, _, _) = mail.render(Language::De);
             let (en, _, _) = mail.render(Language::En);
             assert_ne!(de, en, "{mail:?}");
         }
+    }
+
+    #[test]
+    fn a_brand_names_the_server_and_colours_the_mail() {
+        let brand = Brand { name: "Post & Co".into(), color: "#0369a1".into(), custom_name: true };
+        let (subject, text, html) = Mail::Test.render_branded(Language::En, &brand);
+        assert_eq!(subject, "Test mail from Post & Co");
+        assert!(text.ends_with("This mail comes from Post & Co.\n"));
+        assert!(html.contains("color:#0369a1\">Post &amp; Co</p>"));
+        // Nothing but a colour gets into the styles.
+        let odd = Brand { color: "red;background:url(x)".into(), ..brand };
+        let (_, _, html) = Mail::Test.render_branded(Language::En, &odd);
+        assert!(!html.contains("url(x)"));
+        let (_, plain, _) = Mail::SendCode { code: "123456".into() }.render(Language::En);
+        assert!(plain.contains("\n\n123456\n\n"));
     }
 }
