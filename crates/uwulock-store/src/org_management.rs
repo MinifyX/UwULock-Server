@@ -447,14 +447,28 @@ impl Store {
     }
 
     /// Confirm an accepted member with the organisation key wrapped for them. The member's
-    /// revision moves, and everybody's who sees the organisation.
-    pub async fn confirm_member(&self, org_id: &str, id: &str, key: String) -> Result<Refused<(Member, Vec<String>)>> {
+    /// revision moves, and everybody's who sees the organisation. One invited as an owner counts
+    /// against their `most` owned organisations of this kind, as when made one later.
+    pub async fn confirm_member(
+        &self,
+        org_id: &str,
+        id: &str,
+        key: String,
+        most: i64,
+    ) -> Result<Refused<(Member, Vec<String>)>> {
         let (org_id, id) = (org_id.to_string(), id.to_string());
         let done = self
             .sqlite_write(move |tx| {
                 let Some(member) = member_in(tx, &org_id, &id)? else { return Ok(Err(OrgRefusal::NotFound)) };
-                if member.status != ACCEPTED || member.user_id.is_none() {
+                let Some(user) = member.user_id.as_deref().filter(|_| member.status == ACCEPTED) else {
                     return Ok(Err(OrgRefusal::State));
+                };
+                if member.kind == OWNER {
+                    let plan: i64 =
+                        tx.query_row("SELECT plan_type FROM organizations WHERE id = ?1", [&org_id], |row| row.get(0))?;
+                    if owned(tx, user, plan)? >= most {
+                        return Ok(Err(OrgRefusal::Owned));
+                    }
                 }
                 tx.execute(
                     "UPDATE org_members SET status = ?2, key = ?3, revision = ?4 WHERE id = ?1",
@@ -741,13 +755,13 @@ mod tests {
 
         let keys = store.member_public_keys(&org.id, vec![id.clone()]).await.unwrap();
         assert_eq!(keys.len(), 1);
-        let (confirmed, users) = store.confirm_member(&org.id, &id, "4.forMio".into()).await.unwrap().unwrap();
+        let (confirmed, users) = store.confirm_member(&org.id, &id, "4.forMio".into(), 1).await.unwrap().unwrap();
         assert_eq!(confirmed.status, CONFIRMED);
         assert!(users.contains(&mio.id) && users.contains(&owner.id));
         let theirs = store.org_vault(&mio.id).await.unwrap();
         assert_eq!(theirs.collections.len(), 1);
         assert!(theirs.collections[0].1.read_only);
-        assert_eq!(store.confirm_member(&org.id, &id, "4.again".into()).await.unwrap(), Err(OrgRefusal::State));
+        assert_eq!(store.confirm_member(&org.id, &id, "4.again".into(), 1).await.unwrap(), Err(OrgRefusal::State));
 
         let details = store.member_details(&org.id).await.unwrap();
         assert_eq!(details.len(), 2);
@@ -770,7 +784,7 @@ mod tests {
             .id
             .clone();
         store.accept_member(&org.id, &id, &mio.id, &mio.email).await.unwrap().unwrap();
-        store.confirm_member(&org.id, &id, "4.k".into()).await.unwrap().unwrap();
+        store.confirm_member(&org.id, &id, "4.k".into(), 1).await.unwrap().unwrap();
         assert_eq!(store.sole_owner_of(&owner.id).await.unwrap(), vec!["Familie".to_string()]);
 
         // Handing it over: the member becomes an owner, then the first one may go.

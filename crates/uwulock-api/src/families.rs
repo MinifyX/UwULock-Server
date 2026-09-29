@@ -303,6 +303,10 @@ pub(crate) fn check_name(name: &str) -> ApiResult<String> {
     if name.is_empty() || name.chars().count() > 50 {
         return Err(ApiError::bad("The name is from 1 to 50 characters long."));
     }
+    // It goes into mails' subjects, and into other people's vaults.
+    if name.chars().any(char::is_control) {
+        return Err(ApiError::bad("The name has characters that do not belong in a name."));
+    }
     Ok(name.to_string())
 }
 

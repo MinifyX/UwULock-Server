@@ -410,3 +410,29 @@ async fn the_admin_portal_lists_and_deletes_families() {
     let notices = json(server.get_as(&owner.token, "/uwu/v1/security/notices").await).await;
     assert_eq!(notices["data"][0]["kind"], "organizationRemoved");
 }
+
+#[tokio::test]
+async fn an_owner_by_invitation_counts_too() {
+    let server = TestServer::new().await;
+    let owner = server.account("nyu@example.com").await;
+    let mio = server.account("mio@example.com").await;
+    let (org, _) = family(&server, &owner).await;
+    family(&server, &mio).await;
+    let body = json!({ "emails": ["mio@example.com"], "type": 0 });
+    server.call("POST", &format!("/api/organizations/{org}/users/invite"), Some(&owner.token), body).await;
+    let pending = json(server.get_as(&mio.token, "/uwu/v1/organizations/invitations").await).await;
+    let id = pending["data"][0]["id"].as_str().unwrap().to_string();
+    let path = format!("/api/organizations/{org}/users/{id}/accept");
+    assert_eq!(server.call("POST", &path, Some(&mio.token), json!({})).await.status(), StatusCode::OK);
+    let path = format!("/api/organizations/{org}/users/{id}/confirm");
+    let response = server.call("POST", &path, Some(&owner.token), json!({ "key": type4() })).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST, "mio owns one family already");
+
+    let mut body = new_family("Zeile\nBcc: x@example.com");
+    body["name"] = "Zeile\nBcc: x@example.com".into();
+    let rin = server.account("rin@example.com").await;
+    assert_eq!(
+        server.call("POST", "/api/organizations", Some(&rin.token), body).await.status(),
+        StatusCode::BAD_REQUEST
+    );
+}

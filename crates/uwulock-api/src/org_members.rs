@@ -55,8 +55,9 @@ fn access_json(id: &str, access: &Access) -> Value {
     json!({ "id": id, "readOnly": access.read_only, "hidePasswords": access.hide_passwords, "manage": access.manage })
 }
 
-/// `organizationUserUserDetails`.
-fn member_json(details: &MemberDetails, with_collections: bool) -> Value {
+/// `organizationUserUserDetails`. An owner sees everything; a member who else is in it, not
+/// what they reach or whether they use two-step login.
+fn member_json(details: &MemberDetails, owner: bool, with_collections: bool) -> Value {
     let member = &details.member;
     json!({
         "id": member.id,
@@ -67,9 +68,9 @@ fn member_json(details: &MemberDetails, with_collections: bool) -> Value {
         "name": details.name,
         "email": details.email,
         "avatarColor": details.avatar_color,
-        "twoFactorEnabled": details.two_factor,
+        "twoFactorEnabled": owner && details.two_factor,
         "accessAll": member.access_all,
-        "collections": if with_collections {
+        "collections": if owner && with_collections {
             details.collections.iter().map(|(id, access)| access_json(id, access)).collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -120,8 +121,8 @@ async fn list(
     let (org, me) = as_member(&state, &session, &org).await?;
     let owner = me.kind == OWNER;
     let details = state.store.member_details(&org.id).await?;
-    let collections = owner && query.include_collections.unwrap_or(false);
-    Ok(Json(out::list(details.iter().map(|details| member_json(details, collections)).collect())))
+    let collections = query.include_collections.unwrap_or(false);
+    Ok(Json(out::list(details.iter().map(|details| member_json(details, owner, collections)).collect())))
 }
 
 async fn one(
@@ -132,7 +133,7 @@ async fn one(
     let (org, _) = as_owner(&state, &session, &org).await?;
     let details = state.store.member_details(&org.id).await?;
     let found = details.iter().find(|details| details.member.id == id).ok_or_else(not_found)?;
-    Ok(Json(member_json(found, true)))
+    Ok(Json(member_json(found, true, true)))
 }
 
 #[derive(Deserialize)]
@@ -416,10 +417,13 @@ async fn confirm(state: &AppState, session: &Session, org: &Organization, id: &s
     if !crate::keys::enc_string(&key, 4, 1100) {
         return Err(ApiError::bad("The key has to be wrapped for the member's public key."));
     }
-    let (member, users) = state.store.confirm_member(&org.id, id, key).await?.map_err(|refusal| match refusal {
-        OrgRefusal::State => ApiError::bad("Only a member who accepted can be confirmed."),
-        other => refused(other),
-    })?;
+    let most = Rules::of(state, org).per_user();
+    let (member, users) =
+        state.store.confirm_member(&org.id, id, key, most).await?.map_err(|refusal| match refusal {
+            OrgRefusal::State => ApiError::bad("Only a member who accepted can be confirmed."),
+            OrgRefusal::Owned => ApiError::bad("This person owns as many families as they may already."),
+            other => refused(other),
+        })?;
     let Some(user_id) = &member.user_id else { return Ok(()) };
     tell(state, Some(session), std::slice::from_ref(user_id), Kind::OrgKeys);
     tell(state, Some(session), &users.into_iter().filter(|user| user != user_id).collect::<Vec<_>>(), Kind::Vault);
