@@ -753,10 +753,18 @@ async fn own_one(
 
 /// The key an item's own icon is under: the extras key for a personal item, the organisation's
 /// for an organisation's. Refused (404) unless the account may change the item.
-async fn writable_key_type(state: &AppState, session: &Session, cipher: &str) -> ApiResult<&'static str> {
+/// Under which key an item's own icon is, and whose storage it counts against.
+async fn writable_key_type(
+    state: &AppState,
+    session: &Session,
+    cipher: &str,
+) -> ApiResult<(&'static str, uwulock_store::Owner)> {
     match visible(state, session, cipher).await? {
-        Found::Own(_) => Ok("extras"),
-        Found::Org(item) if !item.access.read_only => Ok("organization"),
+        Found::Own(_) => Ok(("extras", uwulock_store::Owner::User(session.user.id.clone()))),
+        Found::Org(item) if !item.access.read_only => match item.cipher.organization_id.clone() {
+            Some(org) => Ok(("organization", uwulock_store::Owner::Org(org))),
+            None => Err(crate::ciphers::not_visible()),
+        },
         Found::Org(_) => Err(crate::ciphers::not_visible()),
     }
 }
@@ -774,7 +782,7 @@ async fn own_put(
     Path(cipher): Path<String>,
     Json(body): Json<OwnData>,
 ) -> ApiResult<Json<Value>> {
-    let key_type = writable_key_type(&state, &session, &cipher).await?;
+    let (key_type, owner) = writable_key_type(&state, &session, &cipher).await?;
     if body.data.len() > OWN_MAX_TEXT {
         return Err(ApiError::new(StatusCode::PAYLOAD_TOO_LARGE, "The icon is too large.").code("too_large"));
     }
@@ -784,10 +792,8 @@ async fn own_put(
     if body.key_type != key_type {
         return Err(ApiError::bad(format!("This item's icon is under the {key_type} key.")).code("invalid"));
     }
-    if key_type == "extras" {
-        let previous = state.store.own_icon(&cipher).await?.and_then(|icon| icon.data).map_or(0, |data| data.len());
-        crate::files::check_storage(&state, &session.user.id, body.data.len().saturating_sub(previous) as i64).await?;
-    }
+    let previous = state.store.own_icon(&cipher).await?.and_then(|icon| icon.data).map_or(0, |data| data.len());
+    crate::files::check_owner_storage(&state, &owner, body.data.len().saturating_sub(previous) as i64, None).await?;
     let icon = state.store.put_own_icon(&cipher, key_type, body.data).await?;
     icon_changed(&state, &session, &cipher).await;
     let mut answer = own_json(&icon);

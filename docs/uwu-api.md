@@ -893,8 +893,8 @@ Endpoints (auth `user`; the cipher must be visible to the account and not hidden
   (those that exist and are visible).
 - `GET /uwu/v1/icons/own` → list of `ownIcon` **without** `data` for every item the account sees
   (added for the web vault, which uses `/api/sync` and not `uwu.icons` of §4.4).
-- `PUT` for a personal item counts toward `storagePerUserMb` (422 `quota`); the answer has no
-  `data`.
+- `PUT` counts toward `storagePerUserMb` (422 `quota`): a personal item's toward the account's,
+  a family item's toward every confirmed owner's. The answer has no `data`.
 - `DELETE /uwu/v1/icons/own/{cipherId}` → 200.
 
 Which ciphers have one comes with the sync (`uwu.icons`, §4.4).
@@ -2578,7 +2578,7 @@ defaults in brackets):
 | `metrics` | `{ enabled [false], tokenSet, listen [null] }` (§22); `token` write-only |
 | `loki` | `{ enabled [false], url, tenant, username, passwordSet, labels [{"job":"uwulock"}] }` (§21.7) |
 | `scim` | `{ onDelete ["disable"], tokenSet }` (§19.4) |
-| `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite; what would go past it is refused with 422 `quota` (announcing an attachment of an own item, a Send file, a file-request submission for its owner) |
+| `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite; a family's attachments, versions and own icons count fully for each of its confirmed owners. What would go past it is refused with 422 `quota` (announcing or uploading an attachment of an own or a family item, moving an item with attachments into a family, an own icon, a Send file, a file-request submission for its owner) |
 
 `metrics` is stored with `tokenHash` (hex SHA-256), which `GET` replaces by `tokenSet`; on `PUT`,
 `token` left out or `null` keeps it, `""` removes it, otherwise it needs 16 characters. `loki`

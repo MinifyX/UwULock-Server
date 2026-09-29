@@ -267,6 +267,44 @@ pub async fn check_storage(state: &AppState, user_id: &str, adding: i64) -> ApiR
     Ok(())
 }
 
+/// Whether `adding` more bytes fit where an item's files count: the account's own storage for a
+/// personal item, every confirmed owner's for a family's (a family counts against its owners).
+/// `already_counted` is an account the bytes count for already (moving an own item into a
+/// family it owns). A family without an owner stores nothing more while there is a limit.
+pub async fn check_owner_storage(
+    state: &AppState,
+    owner: &uwulock_store::Owner,
+    adding: i64,
+    already_counted: Option<&str>,
+) -> ApiResult<()> {
+    let org_id = match owner {
+        uwulock_store::Owner::User(user_id) => {
+            let adding = if already_counted == Some(user_id.as_str()) { 0 } else { adding };
+            return check_storage(state, user_id, adding).await;
+        }
+        uwulock_store::Owner::Org(org_id) => org_id,
+    };
+    let Some(limit) = state.settings().storage_limit() else { return Ok(()) };
+    let owners = state.store.org_owners(org_id).await?;
+    let full = || {
+        ApiError::new(
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            format!("The family's storage on this server is full (its owners have {} each).", size_name(limit)),
+        )
+        .code("quota")
+    };
+    if owners.is_empty() {
+        return Err(full());
+    }
+    for user_id in owners {
+        let adding = if already_counted == Some(user_id.as_str()) { 0 } else { adding };
+        if state.store.storage_used(&user_id).await?.saturating_add(adding) > limit {
+            return Err(full());
+        }
+    }
+    Ok(())
+}
+
 /// The file at `path`, streamed.
 pub async fn serve(path: &Path) -> ApiResult<Response> {
     let file = tokio::fs::File::open(path).await.map_err(|_| ApiError::not_found("The file is not there."))?;

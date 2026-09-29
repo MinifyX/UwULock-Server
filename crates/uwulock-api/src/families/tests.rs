@@ -442,3 +442,40 @@ async fn an_owner_by_invitation_counts_too() {
         StatusCode::BAD_REQUEST
     );
 }
+
+#[tokio::test]
+async fn a_family_s_files_count_against_its_owner_and_go_with_its_only_member() {
+    let server = TestServer::with_settings(Settings { storage_per_user_mb: Some(1), ..Settings::default() }).await;
+    let owner = server.account("nyu@example.com").await;
+    let (org, collection) = family(&server, &owner).await;
+    let item = json!({ "type": 2, "name": type2(), "notes": null, "secureNote": { "type": 0 }, "folderId": null, "organizationId": null });
+    let personal = json(server.call("POST", "/api/ciphers", Some(&owner.token), item.clone()).await).await;
+    let personal = personal["id"].as_str().unwrap().to_string();
+    let shared = json(server.call("POST", "/api/ciphers", Some(&owner.token), item.clone()).await).await;
+    let shared_id = shared["id"].as_str().unwrap().to_string();
+    let mut moved = item;
+    moved["organizationId"] = org.clone().into();
+    let body = json!({ "cipher": moved, "collectionIds": [collection] });
+    let response = server.call("PUT", &format!("/api/ciphers/{shared_id}/share"), Some(&owner.token), body).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+
+    let announce = |size: i64| json!({ "key": type2(), "fileName": type2(), "fileSize": size });
+    // More than the owner's storage, on the family's item: refused like on an own one.
+    let path = format!("/api/ciphers/{shared_id}/attachment/v2");
+    let refused = server.call("POST", &path, Some(&owner.token), announce(1_500_000)).await;
+    assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json(refused).await["code"], "quota");
+    // What the family holds counts against its owner's own storage.
+    let response = server.call("POST", &path, Some(&owner.token), announce(700_000)).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+    assert_eq!(server.state.store.storage_used(&owner.id).await.unwrap(), 700_000);
+    let own = format!("/api/ciphers/{personal}/attachment/v2");
+    let refused = server.call("POST", &own, Some(&owner.token), announce(700_000)).await;
+    assert_eq!(json(refused).await["code"], "quota");
+
+    // The family's only member goes: so does the family, with its items and their files.
+    let secret = json!({"masterPasswordHash": password_hash("nyu@example.com")});
+    assert_eq!(server.call("DELETE", "/api/accounts", Some(&owner.token), secret).await.status(), StatusCode::OK);
+    assert!(server.state.store.organization(&org).await.unwrap().is_none());
+    assert!(server.state.store.attachments(&shared_id).await.unwrap().is_empty());
+}

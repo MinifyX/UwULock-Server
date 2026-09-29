@@ -162,6 +162,12 @@ async fn share_one(state: &AppState, session: &Session, id: &str, data: Share) -
         state.store.cipher(&session.user.id, id).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
     let org = data.cipher.organization_id().ok_or_else(|| ApiError::bad("Organization id not provided"))?;
     check_collections(state, session, &org, &data.collection_ids).await?;
+    // Its files count against the family's owners from now on.
+    let bytes: i64 = state.store.attachments(&current.id).await?.iter().map(|file| file.size).sum();
+    if bytes > 0 {
+        let owner = uwulock_store::Owner::Org(org.clone());
+        crate::files::check_owner_storage(state, &owner, bytes, Some(&session.user.id)).await?;
+    }
     let keys = data.cipher.attachment_keys();
     let mut moved = apply(data.cipher, current, Some(&org))?;
     moved.organization_id = Some(org);

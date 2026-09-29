@@ -237,6 +237,19 @@ impl Store {
         self.sqlite_read(move |conn| owned(conn, &user_id, plan_type)).await
     }
 
+    /// The accounts of an organisation's confirmed owners: what it stores counts against theirs.
+    pub async fn org_owners(&self, org_id: &str) -> Result<Vec<String>> {
+        let org_id = org_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached(
+                "SELECT user_id FROM org_members WHERE org_id = ?1 AND type = 0 AND status = 2 AND user_id IS NOT NULL",
+            )?
+            .query_map([&org_id], |row| row.get(0))?
+            .collect()
+        })
+        .await
+    }
+
     /// Organisations `user_id` is the only confirmed owner of while others are in them: an
     /// account that goes would leave them without anybody to manage them. Their names.
     pub async fn sole_owner_of(&self, user_id: &str) -> Result<Vec<String>> {

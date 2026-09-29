@@ -243,6 +243,11 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - Uploads to a file request: one at a time per file, four per request, never over a file that
   arrived, counted per address, and the free-space check reserves the room of every upload on
   its way. Parallel uploads to the same file could fill the disk past the guard.
+- The storage limit covers families: their attachments, versions and own icons count against
+  each confirmed owner, and attachments of family items (the old one-step upload too) and
+  moving items with files into a family are checked against it. Deleting an account also
+  deletes the families nobody else is in, with their items and files. Before, family files
+  counted against nobody.
 
 ## 0.4.0-beta.2
 

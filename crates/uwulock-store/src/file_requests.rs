@@ -114,9 +114,10 @@ fn request_from(row: &Row<'_>) -> rusqlite::Result<FileRequest> {
     })
 }
 
-/// What a file request needs of the account's storage beside everything else: attachments of
-/// its own items, the files of its Sends, and every file uploaded (or on its way) to its
-/// requests.
+/// What counts against the account's storage limit: attachments of its own items, the files of
+/// its Sends, every file uploaded (or on its way) to its requests, versions, own icons, suite
+/// records, and everything of the families it owns (confirmed owner): their items' attachments,
+/// versions and own icons. A family with two owners counts fully for both.
 const USER_BYTES: &str = "SELECT \
      (SELECT coalesce(sum(a.size), 0) FROM attachments a JOIN ciphers c ON c.id = a.cipher_id WHERE c.user_id = ?1) \
      + (SELECT coalesce(sum(CAST(coalesce(json_extract(data, '$.size'), 0) AS INTEGER)), 0) FROM sends \
@@ -127,7 +128,13 @@ const USER_BYTES: &str = "SELECT \
      + (SELECT coalesce(sum(size), 0) FROM cipher_versions WHERE user_id = ?1) \
      + (SELECT coalesce(sum(length(i.data)), 0) FROM own_icons i JOIN ciphers c ON c.id = i.cipher_id \
         WHERE c.user_id = ?1) \
-     + (SELECT coalesce(sum(length(blob) + length(nonce)), 0) FROM suite_records WHERE user_id = ?1)";
+     + (SELECT coalesce(sum(length(blob) + length(nonce)), 0) FROM suite_records WHERE user_id = ?1) \
+     + (SELECT coalesce(sum(a.size), 0) FROM attachments a JOIN ciphers c ON c.id = a.cipher_id \
+        WHERE c.organization_id IN (SELECT org_id FROM org_members WHERE user_id = ?1 AND status = 2 AND type = 0)) \
+     + (SELECT coalesce(sum(size), 0) FROM cipher_versions WHERE user_id IS NULL \
+        AND organization_id IN (SELECT org_id FROM org_members WHERE user_id = ?1 AND status = 2 AND type = 0)) \
+     + (SELECT coalesce(sum(length(i.data)), 0) FROM own_icons i JOIN ciphers c ON c.id = i.cipher_id \
+        WHERE c.organization_id IN (SELECT org_id FROM org_members WHERE user_id = ?1 AND status = 2 AND type = 0))";
 
 fn files_of(conn: &rusqlite::Connection, submission_id: &str) -> rusqlite::Result<Vec<RequestFile>> {
     conn.prepare_cached(
