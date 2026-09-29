@@ -2703,13 +2703,20 @@ again — and which would say which websites the accounts use — so it is left 
   on the first save and keeps it whatever the target; the view shows its `publicKey` line for
   `authorized_keys`. The host key is kept while host and port stay the same. A folder must be an
   absolute path outside the data directory (400).
-- `POST …/offsite/test` → `{ "kind", "hostKey": "…" | null, "known": true }` (SFTP: first contact
-  shows and remembers the host key); `POST …/offsite/forget-host-key` `{ "masterPasswordHash" }` →
+- `POST …/offsite/test` (body `{}` or `{ "hostKey": "SHA256:…" }`) →
+  `{ "kind", "hostKey": "…" | null, "known": true, "confirmed": true }`. SFTP without a confirmed
+  host key (since 0.6.0-beta.2): the server is only asked for its key, the connection ends before
+  any login, nothing is saved, and the answer is `"confirmed": false` with the key; testing again
+  with that `hostKey` trusts it for the test and remembers it once the test worked. Backups,
+  listings and restores refuse an SFTP target without a confirmed key.
+  `POST …/offsite/forget-host-key` `{ "masterPasswordHash" }` →
   the `GET` body. The test
   writes a small file there, reads it back and removes it.
 - `POST …/offsite/run` → 202; progress in `GET`. 409 `conflict` while one runs.
 - `GET …/offsite/snapshots` → list `{ id, date, bytes, version }`, newest first, each also with
-  `hostname` (the public host of the server that made it) and `uploaded`.
+  `hostname` (the public host of the server that made it) and `uploaded`; beside `data`,
+  `lastWritten` (the last snapshot this server wrote, or `null`) and `lastWrittenMissing` (it is not
+  listed: whoever keeps the storage hid it; the portal warns).
 - Errors of the target itself (unreachable, login refused, host key changed, damaged backup)
   are 502 `upstream` with the reason; settings that cannot work are 400.
 - `POST …/offsite/restore` — `{ "snapshot", "masterPasswordHash" }`: like the local restore (a
@@ -2717,12 +2724,17 @@ again — and which would say which websites the accounts use — so it is left 
   unencrypted one: 400, it goes back only with the command line); bumps the server
   epoch (§4.3). Answer `{ "restored", "before", "files" }` (`before`: the local backup of how it
   was; `files`: how many files came back). The off-site settings and status stay those from
-  before the restore; so they do when a local backup goes back.
+  before the restore; so they do when a local backup goes back. When putting back the files
+  fails after the database was replaced, the steps after a restore still run and the audit log
+  says so; then the error is answered.
 - `POST …/offsite/recovery-key` — `{ "masterPasswordHash" }` → `{ "recoveryKey" }`.
 - Command line (not HTTP): `uwulock-server backup restore --sftp … | --s3 … | --folder … --into /data`
   for a new machine, keys from the environment (`UWULOCK_BACKUP_KEY`,
   `UWULOCK_BACKUP_SFTP_PASSWORD`, `UWULOCK_BACKUP_S3_ACCESS_KEY`, `UWULOCK_BACKUP_S3_SECRET_KEY`);
-  `--list`, `--snapshot`, `--host-key`, `--ssh-key`, `--endpoint`, `--region`, `--path-style`. It
+  `--list`, `--snapshot`, `--host-key`, `--ssh-key`, `--endpoint`, `--region`, `--path-style`.
+  SFTP needs `--host-key`: without it the command shows the server's key and stops before logging
+  in. The recovery key is read without echo. Without `--snapshot` it shows the newest snapshot with
+  its date and asks before putting it back (not at a terminal: `--snapshot` is needed). It
   switches the off-site backups off in the restored database. `uwulock-server backup offsite`
   and `backup list` back up and list with the portal's settings ([backups.md](backups.md)).
 - Too old (`warnAfterHours`): an alert (§21.3), a warning on the overview, the metric of §22.

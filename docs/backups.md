@@ -91,9 +91,10 @@ whoever controls the folder can read it and change both.
   Put that line into `~/.ssh/authorized_keys` of the backup user on the NAS.
 - **A password**, for systems that offer only that.
 
-*Test connection* shows the backup server's host key and remembers it. If it changes later,
-backups stop with an error until you press *Forget* beside it and test again — as `ssh` would
-warn. The backup server needs an Ed25519 or ECDSA host key.
+*Test connection* shows the backup server's host key first and asks you to compare it with the
+server's own (`ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` there); only once you trust it
+does UwULock log in there, and it remembers the key. If it changes later, backups stop with an
+error until you press *Forget* beside it and test again — as `ssh` would warn. The backup server needs an Ed25519 or ECDSA host key.
 
 ### An S3 bucket
 
@@ -148,9 +149,10 @@ cd /opt/uwulock
 # A folder (mounted into the container):
 sudo docker compose run --rm -v /mnt/nas/uwulock:/backup uwulock \
   backup restore --folder /backup
-# An SFTP server, with the old server's key (or UWULOCK_BACKUP_SFTP_PASSWORD):
+# An SFTP server, with the old server's key (or UWULOCK_BACKUP_SFTP_PASSWORD) and its host key:
 sudo docker compose run --rm -v "$PWD/backup_key:/key:ro" uwulock \
-  backup restore --sftp backup@nas.example.com:/volume1/backups/uwulock --ssh-key /key
+  backup restore --sftp backup@nas.example.com:/volume1/backups/uwulock --ssh-key /key \
+  --host-key SHA256:…
 # An S3 bucket; the keys come from the environment, never from the command line:
 sudo docker compose run --rm -e UWULOCK_BACKUP_S3_ACCESS_KEY=… -e UWULOCK_BACKUP_S3_SECRET_KEY=… uwulock \
   backup restore --s3 s3://my-bucket/uwulock --endpoint https://s3.eu-central-1.amazonaws.com \
@@ -158,9 +160,12 @@ sudo docker compose run --rm -e UWULOCK_BACKUP_S3_ACCESS_KEY=… -e UWULOCK_BACK
 sudo docker compose up -d
 ```
 
-The command asks for the recovery key, or reads `UWULOCK_BACKUP_KEY`; leave it empty for
-unencrypted backups. `--list` shows the snapshots there instead, `--snapshot <name>` takes another
-one than the newest, `--host-key SHA256:…` checks the SFTP server's key, `--path-style` is for
+The command asks for the recovery key without showing it, or reads `UWULOCK_BACKUP_KEY`; leave it
+empty for unencrypted backups. Without `--snapshot` it shows the newest snapshot with its date and
+asks before putting it back — if a newer one should be there, answer no: whoever keeps the storage
+could have hidden it. `--list` shows the snapshots there instead, `--snapshot <name>` takes
+another one, `--host-key SHA256:…` is needed for SFTP (without it the command shows the server's
+key and stops before logging in), `--path-style` is for
 MinIO, `--into <dir>` restores somewhere else than the server's data directory.
 
 Afterwards everybody logs in again, and **the off-site backups are switched off** on the new
