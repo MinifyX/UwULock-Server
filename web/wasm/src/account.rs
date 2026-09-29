@@ -51,7 +51,8 @@ pub struct NewAccount {
 pub fn new_account(email: &str, password: &str, kdf: &Kdf, private_key: &str) -> Result<NewAccount> {
     let master = crypto::master_key(password, email, *kdf)?;
     let user_key = SymmetricKey::generate();
-    let private = STANDARD.decode(private_key).map_err(|_| Failure::new("invalid", "The private key is not base64."))?;
+    let private =
+        STANDARD.decode(private_key).map_err(|_| Failure::new("invalid", "The private key is not base64."))?;
     Ok(NewAccount {
         hash: crypto::master_password_hash(&master, password),
         key: EncString::encrypt(&user_key.to_bytes(), &SymmetricKey::stretch(&master)).to_string(),
@@ -72,7 +73,13 @@ pub struct Rewrapped {
 
 /// The user key wrapped again: under the master key of `new_password`, with `kdf` and `email`
 /// if they change.
-pub fn rewrap(unlocked: &Unlocked, current: &str, new_password: &str, kdf: Option<Kdf>, email: Option<&str>) -> Result<Rewrapped> {
+pub fn rewrap(
+    unlocked: &Unlocked,
+    current: &str,
+    new_password: &str,
+    kdf: Option<Kdf>,
+    email: Option<&str>,
+) -> Result<Rewrapped> {
     let current_hash = check_password(unlocked, current)?;
     let kdf = kdf.unwrap_or(unlocked.kdf);
     let email = email.map(crypto::normalize_email).unwrap_or_else(|| unlocked.email.clone());
@@ -113,6 +120,16 @@ struct PasskeyHolder {
 /// whose keys hang on it, the private key wrapped again, the new user key under the master key
 /// and for everybody in `holders`. The body of `rotate-user-account-keys`.
 pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Holders) -> Result<Value> {
+    Ok(rotate_with_key(unlocked, password, public_key, holders)?.0)
+}
+
+/// [`rotate`], and the new user key, for what UwULock re-encrypts beside it.
+pub fn rotate_with_key(
+    unlocked: &Unlocked,
+    password: &str,
+    public_key: &str,
+    holders: Holders,
+) -> Result<(Value, SymmetricKey)> {
     let current_hash = check_password(unlocked, password)?;
     let private = unlocked
         .private_key
@@ -140,7 +157,10 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Ho
         if item.broken {
             return Err(Failure::new(
                 "refused",
-                format!("The item “{}” does not open completely, so the vault cannot get a new key.", item.name.as_str()),
+                format!(
+                    "The item “{}” does not open completely, so the vault cannot get a new key.",
+                    item.name.as_str()
+                ),
             ));
         }
         let mut item = item.clone();
@@ -224,7 +244,7 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Ho
         .map(|folder| json!({ "id": folder.id, "name": EncString::encrypt(folder.name.as_bytes(), &new_key).to_string() }))
         .collect();
     let kdf = numbers(unlocked.kdf);
-    Ok(json!({
+    let body = json!({
         "oldMasterKeyAuthenticationHash": current_hash,
         "accountUnlockData": {
             "masterPasswordUnlockData": {
@@ -245,5 +265,6 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Ho
             "accountPublicKey": public_key,
         },
         "accountData": { "ciphers": ciphers, "folders": folders, "sends": sends },
-    }))
+    });
+    Ok((body, new_key))
 }

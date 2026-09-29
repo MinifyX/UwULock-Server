@@ -316,7 +316,8 @@ async fn download(
         return Err(ApiError::unauthorized());
     }
     let found = state.store.attachment(&id, &attachment).await?.filter(|found| found.uploaded);
-    if found.is_none() {
+    // A link from before travel mode was switched on does not open a hidden item's files.
+    if found.is_none() || state.store.hidden_from_owner(&id).await? {
         return Err(ApiError::not_found("Attachment doesn't exist"));
     }
     files::serve(&files::attachment_path(&state, &id, &attachment)?).await

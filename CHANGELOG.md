@@ -5,6 +5,60 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Comfort in the vault (Stufe 4c).**
+
+- **Import from other password managers**, read in the browser — the server only ever sees what
+  it encrypted: KeePass and KeePassXC (KDBX 4 and 3.1 with the file's password and key file,
+  Argon2 or AES-KDF, AES or ChaCha20; and their CSV), 1Password (1PUX and CSV), Chrome and Edge,
+  Firefox, Apple Passwords, Proton Pass (JSON or its zip) and LastPass. A preview shows what comes
+  and into which folders, TOTP keys come along, and whatever has no place of its own becomes a
+  custom field instead of getting lost ([docs/import.md](docs/import.md)).
+- **Share an item as a Send**: tick the values — never the authenticator key — and the item's
+  name with them becomes a text Send that goes after a day and opens once, unless you say
+  otherwise. An ordinary Send, visible in every app.
+- **Sends only for given addresses**, Bitwarden's "Send with email verification": whoever opens
+  the link gives their address and gets a code by mail. The answer is the same for addresses on
+  and off the list, codes last five minutes, five wrong ones end a code, and mails are limited per
+  Send and address. Needs mail on the server; the newest Bitwarden apps open such Sends too
+  ([docs/sharing.md](docs/sharing.md)).
+- **"2FA possible, not set up"** in the password check: logins for sites that offer authenticator
+  codes, without one stored, with a link to the site's instructions. The list is
+  [2FA Directory](https://2fa.directory/)'s (MIT), mirrored by the server once somebody asks and
+  then daily; the comparison happens in the browser, so the server never learns which sites are
+  in a vault. The last report can be kept, encrypted, under `/uwu/v1/reports/health`.
+- **Branding** in the admin portal: a name, an accent colour (checked for contrast, with its
+  shades for both themes worked out as in UwUMail), logos for light and dark and a favicon — for
+  the web vault, the login, Send and file-request pages and the mails. Pictures, SVG included,
+  are drawn again as PNG by the server, so nothing but pixels survives
+  ([docs/branding.md](docs/branding.md)).
+- **Accessibility** in the web vault and the admin portal: everything by keyboard, with
+  shortcuts and an overview of them (`?`), lists that move with the arrow keys, a skip link,
+  messages that screen readers announce, errors tied to their fields, and a high-contrast mode
+  (or the system's). Aiming at WCAG 2.2 AA; axe-core checks each main page in the browser tests
+  ([docs/accessibility.md](docs/accessibility.md)).
+- `#/settings/masked`, where the UwULock app links for masked addresses, answers with a friendly
+  "coming soon" until they arrive.
+- **Icons for items**: `/icons/<host>/icon.png`, where the Bitwarden apps and extensions ask, now
+  answers with the website's icon, fetched by the server — every resolved address checked (also
+  after redirects, against DNS rebinding), nothing in the local network ever asked, with time,
+  size and image limits — converted to PNG and kept for 30 days. **Own icons**: uploaded, picked
+  from the [selfh.st Icons](https://selfh.st/icons/) library (CC BY 4.0, mirrored by the server)
+  or fetched from a device in the home network by the browser, and stored encrypted with the item.
+  The admin portal switches both off and empties the cache ([docs/icons.md](docs/icons.md)).
+- **Travel mode**: folders marked "hide while travelling" disappear from every device — the
+  Bitwarden apps too — while it is on. On from any device; off only with the master password and
+  the second step of the login, every failed try noticed
+  ([docs/travel-mode.md](docs/travel-mode.md)).
+- **Earlier versions of items**: every change keeps the state before, encrypted; list, show and
+  bring back in the web vault. How many and how long is the admin's choice; they count toward the
+  storage.
+- **Reminders to renew a password**, per item after some months or on a day, with a mail that
+  names no item and a *Due* section in the web vault.
+- **New keys** from the web vault go through `POST /uwu/v1/accounts/rotate-keys` and take the
+  extras key and the versions along; a rotation by a Bitwarden app drops the versions.
+- The Send page opens Sends the way Bitwarden's newest clients do: a token from the identity
+  endpoint first. Database schema 10.
+
 **Running it and keeping it safe (Stufe 4b, first part).**
 
 - **Security notices** for everybody, under *Settings → Security* in the web vault and by mail in

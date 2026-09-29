@@ -16,6 +16,8 @@ export type ThemeSetting = 'system' | 'light' | 'dark';
 export type LanguageSetting = 'system' | 'de' | 'en';
 /** Animations: follow the system's reduced-motion setting, or override it. */
 export type MotionSetting = 'system' | 'on' | 'off';
+/** High contrast: follow the system's "more contrast" wish, or override it. */
+export type ContrastSetting = 'system' | 'normal' | 'high';
 /** Beta gets pre-releases (tags like v0.1.0-beta.1) before everyone else. */
 export type UpdateChannel = 'stable' | 'beta';
 /** Minutes without activity before the vault locks; 0 = only by hand or on restart. */
@@ -27,11 +29,19 @@ export type Settings = {
   language: LanguageSetting;
   theme: ThemeSetting;
   motion: MotionSetting;
+  contrast: ContrastSetting;
+  /**
+   * Shortcuts of a single key (`?`, `/`, `N`, …) outside text fields. They can get in the way of
+   * speech input and some screen readers, so they can be switched off (WCAG 2.1.4).
+   */
+  singleKeys: boolean;
   updateChannel: UpdateChannel;
   autoLock: AutoLock;
   clipboardClear: ClipboardClear;
   /** Items in the trash show up in their own section only. */
   showTrash: boolean;
+  /** Websites' icons in the list, fetched by this server. */
+  showIcons: boolean;
   /** Where the last login went, to fill the login form next time. Not secret. */
   lastServerKind: 'bitwarden-us' | 'bitwarden-eu' | 'self-hosted';
   lastServerUrl: string;
@@ -42,11 +52,14 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'system',
   theme: 'dark',
   motion: 'system',
+  contrast: 'system',
+  singleKeys: true,
   // Someone who installed a beta wants the next beta too.
   updateChannel: pkg.version.includes('-') ? 'beta' : 'stable',
   autoLock: 15,
   clipboardClear: 30,
   showTrash: true,
+  showIcons: true,
   lastServerKind: 'self-hosted',
   lastServerUrl: '',
   lastEmail: '',
@@ -68,10 +81,13 @@ export function sanitize(raw: unknown): Settings {
     language: oneOf(input.language, ['system', 'de', 'en'] as const, d.language),
     theme: oneOf(input.theme, ['system', 'light', 'dark'] as const, d.theme),
     motion: oneOf(input.motion, ['system', 'on', 'off'] as const, d.motion),
+    contrast: oneOf(input.contrast, ['system', 'normal', 'high'] as const, d.contrast),
+    singleKeys: bool(input.singleKeys, d.singleKeys),
     updateChannel: oneOf(input.updateChannel, ['stable', 'beta'] as const, d.updateChannel),
     autoLock: oneOf(input.autoLock, [0, 1, 5, 15, 30, 60, 240] as const, d.autoLock),
     clipboardClear: oneOf(input.clipboardClear, [0, 10, 30, 60, 120] as const, d.clipboardClear),
     showTrash: bool(input.showTrash, d.showTrash),
+    showIcons: bool(input.showIcons, d.showIcons),
     lastServerKind: oneOf(
       input.lastServerKind,
       ['bitwarden-us', 'bitwarden-eu', 'self-hosted'] as const,
@@ -119,6 +135,7 @@ export function useSettings(): Settings {
 
 const darkQuery = () => window.matchMedia('(prefers-color-scheme: dark)');
 const reducedQuery = () => window.matchMedia('(prefers-reduced-motion: reduce)');
+const contrastQuery = () => window.matchMedia('(prefers-contrast: more)');
 
 /** Whether animations should play right now, by setting and system. */
 export function motionAllowed(): boolean {
@@ -126,7 +143,15 @@ export function motionAllowed(): boolean {
   return motion === 'on' || (motion === 'system' && !reducedQuery().matches);
 }
 
-/** Puts theme and motion on <html>, now and whenever the setting or the system changes. */
+/** Whether the high-contrast colours apply right now, by setting and system. */
+export function highContrast(): boolean {
+  const { contrast } = current;
+  return contrast === 'high' || (contrast === 'system' && contrastQuery().matches);
+}
+
+/**
+ * Puts theme, contrast and motion on <html>, now and whenever the setting or the system changes.
+ */
 export function applyAppearance() {
   const apply = () => {
     const { theme } = current;
@@ -135,9 +160,12 @@ export function applyAppearance() {
     document.documentElement.lang = language(current);
     if (motionAllowed()) delete document.documentElement.dataset.motion;
     else document.documentElement.dataset.motion = 'reduced';
+    if (highContrast()) document.documentElement.dataset.contrast = 'high';
+    else delete document.documentElement.dataset.contrast;
   };
   apply();
   subscribeSettings(apply);
   darkQuery().addEventListener('change', apply);
   reducedQuery().addEventListener('change', apply);
+  contrastQuery().addEventListener('change', apply);
 }

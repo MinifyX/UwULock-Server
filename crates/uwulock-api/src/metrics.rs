@@ -98,6 +98,7 @@ pub struct Metrics {
     durations: Mutex<BTreeMap<(String, String), Histogram>>,
     logins: Mutex<BTreeMap<(&'static str, &'static str), u64>>,
     syncs: Mutex<BTreeMap<&'static str, Histogram>>,
+    icon_fetches: Mutex<BTreeMap<&'static str, u64>>,
 }
 
 impl Metrics {
@@ -110,6 +111,11 @@ impl Metrics {
     /// `failure`, `two_factor`).
     pub fn login(&self, grant: &'static str, result: &'static str) {
         *self.logins.lock().entry((grant, result)).or_default() += 1;
+    }
+
+    /// A website's icon was fetched: `found`, `none`, `refused` or `error`.
+    pub fn icon_fetch(&self, result: &'static str) {
+        *self.icon_fetches.lock().entry(result).or_default() += 1;
     }
 
     /// A sync of `kind` (`bitwarden`, `full`, `delta`) took `seconds`.
@@ -288,6 +294,15 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
         &[("kind", "file_requests")],
         state.store.file_request_bytes().await.unwrap_or(0),
     );
+    out.sample(
+        "uwulock_files_bytes",
+        &[("kind", "icons")],
+        state.icons.bytes().await as i64 + state.store.own_icon_bytes().await.unwrap_or(0),
+    );
+    out.head("uwulock_icon_fetches_total", "counter", "Websites' icons fetched, by result.");
+    for (result, count) in state.metrics.icon_fetches.lock().iter() {
+        out.sample("uwulock_icon_fetches_total", &[("result", result)], count);
+    }
 
     out.head("uwulock_accounts", "gauge", "Accounts.");
     out.sample("uwulock_accounts", &[], stats.users);

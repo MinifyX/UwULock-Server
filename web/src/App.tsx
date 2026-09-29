@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GeneratorDialog } from './components/GeneratorDialog';
 import { Icon } from './components/Icon';
 import { LockScreen } from './components/LockScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SettingsDialog, type SettingsSection } from './components/SettingsDialog';
-import { TitleBar } from './components/TitleBar';
+import { ShortcutsDialog } from './components/ShortcutsDialog';
+import { SkipLink, TitleBar } from './components/TitleBar';
+import { Toasts } from './components/Toasts';
 import { VaultScreen } from './components/VaultScreen';
 import { lacksTwoFactor, PolicyBanners, TwoFactorRequired } from './components/web/Policies';
 import { RegisterScreen } from './components/web/RegisterScreen';
@@ -20,7 +22,7 @@ import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
 import { useSettings } from './lib/settings';
-import { useToast } from './lib/toast';
+import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
 
 /** The web vault: login or unlock, the vault, the settings — and registering by invitation. */
 export function App() {
@@ -31,9 +33,9 @@ export function App() {
   const [info, setInfo] = useState<AccountInfo | null>(null);
   const [settingsOpen, setSettingsOpen] = useState<SettingsSection | null>(null);
   const [generator, setGenerator] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const backgroundRef = useRef<HTMLDivElement>(null);
-  const current = useToast();
 
   // ── Vault state ──────────────────────────────────────────
   useEffect(() => {
@@ -71,15 +73,22 @@ export function App() {
     };
   }, []);
 
-  const modalOpen = Boolean(settingsOpen || generator);
+  const modalOpen = Boolean(settingsOpen || generator || shortcuts);
 
-  useEffect(() => {
+  // Before the dialog's own effects run: a closing dialog hands focus back to its opener in the
+  // background, and an element that is still inert does not take it.
+  useLayoutEffect(() => {
     if (backgroundRef.current) backgroundRef.current.inert = modalOpen;
   }, [modalOpen]);
 
   // ── Keyboard ─────────────────────────────────────────────
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (event.key === '?' && singleKey(event)) {
+        event.preventDefault();
+        setShortcuts(true);
+        return;
+      }
       const mod = event.ctrlKey || event.metaKey;
       if (!mod || event.altKey) return;
       const key = event.key.toLowerCase();
@@ -133,11 +142,23 @@ export function App() {
     );
   }, [route, unlocked]);
 
-  // The link in a security notice's mail: the list, once the vault is open.
+  // Links into the settings — a security notice's mail, the desktop app's travel mode button —
+  // once the vault is open.
   useEffect(() => {
-    if (route.path !== '/settings/security' || !unlocked) return;
+    const section = route.path.match(/^\/settings(?:\/([a-z-]+))?$/);
+    if (!section || !unlocked) return;
     location.hash = '';
-    setSettingsOpen('security');
+    const known: SettingsSection[] = [
+      'security',
+      'travel',
+      'account',
+      'two-factor',
+      'devices',
+      'transfer',
+      'masked',
+    ];
+    const wanted = (section[1] ?? 'appearance') as SettingsSection;
+    setSettingsOpen(known.includes(wanted) ? wanted : 'appearance');
   }, [route, unlocked]);
 
   const unseen = unlocked ? (info?.securityNoticesUnseen ?? 0) : 0;
@@ -147,6 +168,7 @@ export function App() {
   return (
     <div className="shell">
       <div className="background" ref={backgroundRef}>
+        <SkipLink />
         <TitleBar
           badge={unseen}
           onSettings={() => setSettingsOpen(unseen > 0 ? 'security' : 'appearance')}
@@ -154,14 +176,23 @@ export function App() {
           {info?.admin && (
             <a className="titlebar-link" href="/admin">
               <Icon name="shield" size={15} />
-              {t('Admin-Portal')}
+              <span className="titlebar-link-text">{t('Admin-Portal')}</span>
             </a>
           )}
+          <button
+            className="titlebar-action"
+            onClick={() => setShortcuts(true)}
+            title={t('Tastenkürzel (?)')}
+            aria-label={t('Tastenkürzel')}
+          >
+            <Icon name="keyboard" size={17} />
+          </button>
           <button
             className="titlebar-action"
             onClick={() => setGenerator(true)}
             title={t('Passwort-Generator (Strg+G)')}
             aria-label={t('Passwort-Generator')}
+            aria-keyshortcuts="Control+G"
           >
             <Icon name="dice" size={17} />
           </button>
@@ -171,13 +202,14 @@ export function App() {
               onClick={() => void lock()}
               title={t('Sperren (Strg+L)')}
               aria-label={t('Sperren')}
+              aria-keyshortcuts="Control+L"
             >
               <Icon name="lock" size={17} />
             </button>
           )}
         </TitleBar>
 
-        <main className="stage">
+        <main className="stage" id="main" tabIndex={-1}>
           {ssoForward ? (
             <SsoForward query={ssoForward} />
           ) : sendLink ? (
@@ -214,19 +246,20 @@ export function App() {
                 searchRef={searchRef}
                 onAddAccount={() => undefined}
                 openRequest={fileRequest}
+                openDue={route.path === '/vault' && route.query.get('due') === '1'}
               />
             </div>
           )}
         </main>
       </div>
 
-      {current && (
-        <div className="toast" data-tone={current.tone} role="status" key={current.id}>
-          {current.text}
-        </div>
-      )}
+      <Toasts />
 
       {generator && <GeneratorDialog onClose={() => setGenerator(false)} />}
+
+      {shortcuts && (
+        <ShortcutsDialog groups={VAULT_SHORTCUTS} onClose={() => setShortcuts(false)} />
+      )}
 
       {settingsOpen && status && (
         <SettingsDialog

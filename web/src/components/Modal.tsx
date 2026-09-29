@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 type ModalProps = {
@@ -12,7 +12,8 @@ type ModalProps = {
   footer?: ReactNode;
 };
 
-const FOCUSABLE = 'input, button, textarea, select, [href], [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE =
+  'input, button, textarea, select, summary, [href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
 /**
  * Open dialogs, innermost last. A dialog can open another (the host form opens
@@ -46,11 +47,13 @@ export function Modal({
   cancelRef.current = onCancel;
   // Dialogs stack (the host form opens the vault): each needs its own title id.
   const titleId = useId();
+  // Where focus was when the dialog opened, taken while drawing it: by the time the effect runs
+  // (twice, in development) focus may already be inside.
+  const [previous] = useState(() => document.activeElement as HTMLElement | null);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const previous = document.activeElement as HTMLElement | null;
 
     // An explicit [data-autofocus] wins — warnings point it at the safe choice.
     // Otherwise the first field, or the first button not marked secondary.
@@ -73,8 +76,14 @@ export function Modal({
       if (event.key !== 'Tab') return;
 
       // Keep Tab inside the dialog.
+      // Only what Tab really reaches: nothing disabled, nothing out of sight (a closed
+      // <details>, a hidden panel), nothing taken out of the order.
       const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-        (el) => !el.hasAttribute('disabled') && !el.hidden,
+        (el) =>
+          !el.hasAttribute('disabled') &&
+          el.tabIndex >= 0 &&
+          el.getClientRects().length > 0 &&
+          getComputedStyle(el).visibility !== 'hidden',
       );
       if (focusable.length === 0) {
         event.preventDefault();
@@ -96,7 +105,15 @@ export function Modal({
     return () => {
       window.removeEventListener('keydown', onKey);
       stack.splice(stack.indexOf(dialog), 1);
-      previous?.focus();
+      // Back where it was. When that is gone (the row of a deleted item, the menu that opened
+      // the dialog), to the dialog below, or to the page's content rather than to nowhere.
+      if (previous?.isConnected && previous !== document.body) previous.focus();
+      else
+        (
+          stack[stack.length - 1] ??
+          document.querySelector<HTMLElement>('[data-main-content]') ??
+          document.getElementById('main')
+        )?.focus();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

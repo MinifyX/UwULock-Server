@@ -14,6 +14,7 @@ import { PasskeySettings } from './web/PasskeySettings';
 import { InviteSettings } from './web/InviteSettings';
 import { SecurityNotices } from './web/SecurityNotices';
 import { TransferSettings } from './web/TransferSettings';
+import { TravelSettings } from './web/TravelSettings';
 import { TwoFactorSettings } from './web/TwoFactorSettings';
 
 export type SettingsSection =
@@ -24,8 +25,10 @@ export type SettingsSection =
   | 'passkeys'
   | 'emergency'
   | 'devices'
+  | 'travel'
   | 'invite'
   | 'transfer'
+  | 'masked'
   | 'about';
 
 const SECTIONS: { id: SettingsSection; label: string; needsLogin: boolean }[] = [
@@ -36,8 +39,10 @@ const SECTIONS: { id: SettingsSection; label: string; needsLogin: boolean }[] = 
   { id: 'passkeys', label: N_('Passkeys'), needsLogin: true },
   { id: 'emergency', label: N_('Notfallzugriff'), needsLogin: true },
   { id: 'devices', label: N_('Geräte'), needsLogin: true },
+  { id: 'travel', label: N_('Reisemodus'), needsLogin: true },
   { id: 'invite', label: N_('Einladen'), needsLogin: true },
   { id: 'transfer', label: N_('Import & Export'), needsLogin: true },
+  { id: 'masked', label: N_('Maskierte Adressen'), needsLogin: true },
   { id: 'about', label: N_('Über UwULock'), needsLogin: false },
 ];
 
@@ -49,7 +54,8 @@ type Props = {
   onClose: () => void;
 };
 
-function Appearance() {
+/** How things look; the admin portal shows it on its own, without what only the vault has. */
+export function Appearance({ vault = true }: { vault?: boolean }) {
   const settings = useSettings();
   return (
     <>
@@ -93,15 +99,60 @@ function Appearance() {
         />
       </Row>
       <Row
-        label={t('Papierkorb zeigen')}
-        description={t('Gelöschte Einträge in einem eigenen Bereich der Seitenleiste.')}
+        label={t('Kontrast')}
+        description={t(
+          '„Hoch“ macht Schrift, Ränder und den Fokus kräftiger. „System“ folgt dem Wunsch des Systems nach mehr Kontrast.',
+        )}
       >
-        <Toggle
-          label={t('Papierkorb zeigen')}
-          checked={settings.showTrash}
-          onChange={(showTrash) => updateSettings({ showTrash })}
+        <Segmented
+          label={t('Kontrast')}
+          value={settings.contrast}
+          onChange={(contrast) => updateSettings({ contrast })}
+          options={[
+            { value: 'system', label: t('System') },
+            { value: 'normal', label: t('Normal') },
+            { value: 'high', label: t('Hoch') },
+          ]}
         />
       </Row>
+      <Row
+        label={t('Kürzel mit einer Taste')}
+        description={t(
+          'Etwa ? für die Übersicht der Tastenkürzel. Schalte sie aus, wenn sie deiner Spracheingabe oder deinem Screenreader in die Quere kommen.',
+        )}
+      >
+        <Toggle
+          label={t('Kürzel mit einer Taste')}
+          checked={settings.singleKeys}
+          onChange={(singleKeys) => updateSettings({ singleKeys })}
+        />
+      </Row>
+      {vault && (
+        <>
+          <Row
+            label={t('Papierkorb zeigen')}
+            description={t('Gelöschte Einträge in einem eigenen Bereich der Seitenleiste.')}
+          >
+            <Toggle
+              label={t('Papierkorb zeigen')}
+              checked={settings.showTrash}
+              onChange={(showTrash) => updateSettings({ showTrash })}
+            />
+          </Row>
+          <Row
+            label={t('Website-Icons zeigen')}
+            description={t(
+              'Holt dieser Server von den Websites deiner Einträge. Eigene Icons zeigt der Tresor immer.',
+            )}
+          >
+            <Toggle
+              label={t('Website-Icons zeigen')}
+              checked={settings.showIcons}
+              onChange={(showIcons) => updateSettings({ showIcons })}
+            />
+          </Row>
+        </>
+      )}
     </>
   );
 }
@@ -168,6 +219,25 @@ function Security({ onClose, onSeen }: { onClose: () => void; onSeen: () => void
   );
 }
 
+/**
+ * Masked addresses: the desktop app links here already; the web vault's side comes with a later
+ * version. A friendly word instead of nothing.
+ */
+function Coming() {
+  useLanguage();
+  return (
+    <div className="about" role="status">
+      <Nyu size={72} mood="happy" title="" />
+      <p className="about-name">{t('Kommt bald ✧')}</p>
+      <p className="about-text">
+        {t(
+          'Maskierte Adressen – für jede Website eine eigene Mail-Adresse von deinem UwUMail-Server – lassen sich hier bald verbinden und verwalten. Bis dahin ändert sich an deinem Tresor nichts.',
+        )}
+      </p>
+    </div>
+  );
+}
+
 function About() {
   useLanguage();
   const open = (page: ProjectPage) => void openProjectPage(page).catch(() => undefined);
@@ -203,7 +273,11 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   const [section, setSection] = useState<SettingsSection>(initial);
   const loggedIn = status.state === 'unlocked';
   const sections = SECTIONS.filter(
-    (s) => (loggedIn || !s.needsLogin) && (s.id !== 'invite' || info?.mayInvite),
+    (s) =>
+      (loggedIn || !s.needsLogin) &&
+      (s.id !== 'invite' || info?.mayInvite) &&
+      // Only through the apps' link, until the feature is here.
+      (s.id !== 'masked' || initial === 'masked'),
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (
@@ -243,8 +317,10 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
           {section === 'passkeys' && loggedIn && <PasskeySettings />}
           {section === 'emergency' && loggedIn && <EmergencySettings mail={info?.mail ?? false} />}
           {section === 'devices' && loggedIn && <DeviceSettings onClose={onClose} />}
+          {section === 'travel' && loggedIn && <TravelSettings info={info} />}
           {section === 'invite' && loggedIn && <InviteSettings />}
           {section === 'transfer' && loggedIn && <TransferSettings />}
+          {section === 'masked' && loggedIn && <Coming />}
           {section === 'about' && <About />}
         </div>
       </div>

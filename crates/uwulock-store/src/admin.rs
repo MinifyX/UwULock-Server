@@ -123,7 +123,10 @@ impl Store {
                 "SELECT user_id, sum(bytes) FROM ( \
                  SELECT c.user_id AS user_id, a.size AS bytes FROM attachments a JOIN ciphers c ON c.id = a.cipher_id \
                  WHERE a.uploaded AND c.user_id IS NOT NULL \
-                 UNION ALL SELECT user_id, {SEND_FILE_BYTES} FROM sends WHERE type = 1 AND uploaded) GROUP BY user_id"
+                 UNION ALL SELECT user_id, {SEND_FILE_BYTES} FROM sends WHERE type = 1 AND uploaded \
+                 UNION ALL SELECT user_id, size FROM cipher_versions WHERE user_id IS NOT NULL \
+                 UNION ALL SELECT c.user_id, length(i.data) FROM own_icons i JOIN ciphers c ON c.id = i.cipher_id \
+                 WHERE c.user_id IS NOT NULL) GROUP BY user_id"
             ))?
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
             .collect()

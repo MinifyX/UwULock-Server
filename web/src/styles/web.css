@@ -729,20 +729,43 @@ a {
 
 /* ── Several items at once ─────────────────────────────── */
 
+/* A box to tick with the mouse: 24 px to hit, 16 px to see. The keyboard ticks with Space. */
 .item-check {
   flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 0 -4px 0 0;
-  accent-color: var(--uwu-pink-solid);
+  width: 24px;
+  height: 24px;
+  margin: -4px -8px -4px -4px;
+  display: grid;
+  place-items: center;
   opacity: 0;
   transition: opacity 120ms ease;
   cursor: pointer;
 }
 
+.item-check::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--uwu-control);
+  border-radius: 4px;
+  background: var(--uwu-surface);
+}
+
+.item-check .icon {
+  grid-area: 1 / 1;
+  position: relative;
+  color: var(--uwu-on-pink);
+  stroke-width: 3;
+}
+
+.item-row[data-checked] .item-check::before {
+  border-color: var(--uwu-pink-solid);
+  background: var(--uwu-pink-solid);
+}
+
 .item-row:hover .item-check,
-.item-check:focus-visible,
-.item-list:has(.item-check:checked) .item-check {
+.item-list:has(.item-row[data-checked]) .item-check {
   opacity: 1;
 }
 
@@ -1341,4 +1364,351 @@ code.wrap {
 .detail-subhead {
   margin: 18px 0 8px;
   font-size: 1rem;
+}
+
+/* ── Icons, reminders and versions of an item ───────────── */
+
+.comfort-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.comfort-icon-row .field-hint {
+  margin: 0;
+}
+
+.comfort-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.comfort-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.comfort-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.chip.chip-due {
+  color: var(--uwu-on-pink);
+  background: var(--uwu-pink-solid);
+}
+
+.library-grid {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.library-icon {
+  display: grid;
+  gap: 4px;
+}
+
+.library-icon > button {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border-radius: var(--uwu-radius-control);
+}
+
+.library-picture {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+}
+
+.library-picture img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.library-name {
+  font-size: 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.library-credit a {
+  color: inherit;
+}
+
+.version-values {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.version-values > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 30%) 1fr;
+  gap: 10px;
+}
+
+.version-values dt {
+  color: var(--uwu-muted);
+}
+
+.version-values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.item-due {
+  color: var(--uwu-pink-ink);
+}
+
+.travel-folders {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.travel-folders label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.travel-off {
+  margin-top: 12px;
+}
+
+/* ── Who may open a Send ───────────────────────────────── */
+
+fieldset.send-access {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+fieldset.send-access > legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--uwu-muted);
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.share-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px 16px;
+}
+
+.button-link {
+  gap: 6px;
+}
+
+/* ── Branding (admin portal) ───────────────────────────── */
+
+.brand-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.brand-swatch {
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--uwu-surface);
+  box-shadow: 0 0 0 1px var(--uwu-border);
+}
+
+.brand-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--uwu-ink);
+}
+
+.brand-hex {
+  width: 96px;
+  font-family: var(--uwu-mono);
+}
+
+.brand-preview {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.brand-contrast {
+  margin: 0;
+  font-size: 13px;
+}
+
+.brand-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.brand-sample {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--uwu-radius-card);
+  border: 1px solid var(--uwu-border);
+  font-weight: 600;
+}
+
+.brand-sample[data-sample='light'] {
+  background: #ffffff;
+  color: #1c1420;
+}
+
+.brand-sample[data-sample='dark'] {
+  background: #1c171f;
+  color: #f8f2f6;
+}
+
+.brand-sample-button {
+  padding: 6px 12px;
+  border-radius: var(--uwu-radius-control);
+}
+
+.brand-sample-tint {
+  width: 28px;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.brand-image {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 40px;
+  padding: 4px 8px;
+  border-radius: var(--uwu-radius-control);
+  border: 1px dashed var(--uwu-border);
+  background: #ffffff;
+  color: #716672;
+  font-size: 12px;
+}
+
+.brand-image[data-dark] {
+  background: #1c171f;
+  color: #b3a8b3;
+}
+
+.brand-image img {
+  max-height: 32px;
+  max-width: 140px;
+}
+
+/* ── Import from other password managers ───────────────── */
+
+.import-key-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.import-key-name {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.import-counts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 13px;
+}
+
+.import-folders {
+  margin: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.import-folders span {
+  font-weight: 600;
+}
+
+.import-warnings {
+  margin: 0;
+  padding: 8px 12px 8px 28px;
+  border-radius: var(--uwu-radius-control);
+  background: var(--uwu-elevated);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.import-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--uwu-hairline);
+  border-radius: var(--uwu-radius-control);
+}
+
+.import-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--uwu-hairline);
+}
+
+.import-list li:last-child {
+  border-bottom: 0;
+}
+
+.import-item-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.import-item-detail {
+  grid-column: 1;
+  font-size: 12px;
+  color: var(--uwu-muted);
+  overflow-wrap: anywhere;
+}
+
+.import-list .chip {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.import-item-more {
+  color: var(--uwu-muted);
+  font-size: 13px;
 }

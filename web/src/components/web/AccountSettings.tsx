@@ -31,7 +31,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import { PasswordPrompt, ResultLine, Row, Segmented, type Result } from './controls';
+import { PasswordPrompt, radioArrows, ResultLine, Row, Segmented, type Result } from './controls';
 
 type Props = {
   status: Status;
@@ -322,7 +322,7 @@ function Rotate({ onCancel, onDone }: { onCancel: () => void; onDone: () => void
         <>
           <p>
             {t(
-              'Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel. Alle Geräte müssen sich danach neu anmelden.',
+              'Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel, frühere Versionen deiner Einträge auch. Alle Geräte müssen sich danach neu anmelden.',
             )}
           </p>
           <p>
@@ -496,13 +496,19 @@ function NewKdf({
         onDone();
       }}
     >
-      <div className="segmented wide" role="radiogroup" aria-label={t('Schlüsselableitung')}>
+      <div
+        className="segmented wide"
+        role="radiogroup"
+        aria-label={t('Schlüsselableitung')}
+        onKeyDown={radioArrows}
+      >
         {(['argon2id', 'pbkdf2'] as const).map((kind) => (
           <button
             key={kind}
             type="button"
             role="radio"
             aria-checked={kdf.kind === kind}
+            tabIndex={kdf.kind === kind ? 0 : -1}
             onClick={() => setKdf(kind === current.kind ? current : DEFAULT_KDFS[kind])}
           >
             {kind === 'argon2id' ? 'Argon2id' : 'PBKDF2'}

@@ -1,5 +1,6 @@
 /** The admin portal's API (`/uwu/v1/admin`): what the server says, typed. */
 
+import type { Branding } from './account';
 import { prelogin } from './api';
 import { N_, t } from './i18n';
 import { call } from './web/core';
@@ -201,6 +202,19 @@ export type Settings = {
   fileRequests: { enabled: boolean; perUser: number; maxDays: number; maxFiles: number };
   /** How much an account may keep in files; null: no limit. */
   storagePerUserMb: number | null;
+  /** Earlier states of items: how many per item (0: none), how many days (0: no limit). */
+  versions: { perItem: number; days: number };
+  /** Websites' icons fetched by the server, and the icon library. */
+  icons: { automatic: boolean; library: boolean; sources: string[] };
+};
+
+/** What the server keeps of icons. */
+export type IconStatus = {
+  cached: number;
+  cacheBytes: number;
+  ownBytes: number;
+  libraryUpdated: string | null;
+  libraryIcons: number;
 };
 
 /** One day of the numbers over time. */
@@ -235,6 +249,32 @@ export type UserAction =
 
 const base = '/uwu/v1/admin';
 
+// ── Branding ──────────────────────────────────────────────
+
+export type BrandingAdmin = Branding & {
+  nameSet: boolean;
+  colorSet: boolean;
+  contrast: { light: number; dark: number; ok: boolean } | null;
+};
+
+export type BrandingPreview = {
+  light: Record<string, string>;
+  dark: Record<string, string>;
+  contrast: { light: number; dark: number; ok: boolean };
+};
+
+export type BrandingImage = 'logo/light' | 'logo/dark' | 'favicon';
+
+export const branding = () => request<BrandingAdmin>(`${base}/branding`);
+export const saveBranding = (name: string | null, color: string | null) =>
+  request<BrandingAdmin>(`${base}/branding`, { method: 'PUT', body: { name, color } });
+export const brandingPreview = (color: string) =>
+  request<BrandingPreview>(`${base}/branding/preview?color=${encodeURIComponent(color)}`);
+export const uploadBrandingImage = (image: BrandingImage, file: Blob) =>
+  request<BrandingAdmin>(`${base}/branding/${image}`, { method: 'PUT', raw: file });
+export const removeBrandingImage = (image: BrandingImage) =>
+  request<BrandingAdmin>(`${base}/branding/${image}`, { method: 'DELETE' });
+
 export const overview = () => request<Overview>(`${base}/overview`);
 export const users = () => request<User[]>(`${base}/users`);
 export const userAction = (id: string, action: UserAction) =>
@@ -261,6 +301,9 @@ export const invite = (email: string, admin: boolean) =>
 export const uninvite = (email: string) =>
   request(`${base}/invitations/${encodeURIComponent(email)}`, { method: 'DELETE' });
 export const settings = () => request<Settings>(`${base}/settings`);
+export const iconStatus = () => request<IconStatus>(`${base}/icons`);
+export const clearIconCache = () => request(`${base}/icons/cache`, { method: 'DELETE' });
+export const refreshIconLibrary = () => request(`${base}/icons/library/refresh`, { body: {} });
 export const saveSettings = (next: Settings) =>
   request<Settings>(`${base}/settings`, { method: 'PUT', body: next });
 export const testMail = (to: string) => request(`${base}/settings/test-mail`, { body: { to } });

@@ -5,6 +5,7 @@
 //! step, which is how the clients learn that there is something new to fetch.
 
 use crate::accounts::bump_revision;
+use crate::travel::{hidden_folders, is_hidden};
 use crate::{Result, Store, clock};
 use rusqlite::{OptionalExtension, Row, Transaction, params};
 
@@ -135,6 +136,31 @@ pub struct Rotation {
     /// Organisations the account is enrolled in account recovery with, and the new user key
     /// wrapped for each. An enrolment left out ends: its key is of the old user key.
     pub recovery: Vec<(String, String)>,
+    /// What happens to UwULock's own things under the user key.
+    pub extras: RotationExtras,
+}
+
+/// UwULock's side of a key rotation (docs/uwu-api.md §3).
+#[derive(Debug, Clone, Default)]
+pub enum RotationExtras {
+    /// Bitwarden's rotation, by any client: the personal versions go, and the extras key's wrap
+    /// under the old user key.
+    #[default]
+    Official,
+    /// UwULock's own: the extras key wrapped again (`userKeyWrapped`, `publicKeyWrapped`; none
+    /// when the account has none), and the personal versions re-encrypted — every one of them,
+    /// by id, with its new content — or (none) dropped.
+    Own { extras_key: Option<(String, String)>, versions: Option<Vec<(String, String)>> },
+}
+
+/// How a key rotation went.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotationOutcome {
+    Done,
+    /// It left out something that is under the user key: nothing was written.
+    Incomplete,
+    /// The personal versions are not the ones the client re-encrypted: nothing was written.
+    VersionsChanged,
 }
 
 /// What a change to several items at once does to each.
@@ -155,13 +181,16 @@ impl Store {
     pub async fn vault(&self, user_id: &str) -> Result<VaultContents> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
+            let hidden = hidden_folders(conn, &user_id)?;
             let folders = conn
                 .prepare_cached("SELECT id, user_id, name, created, revision FROM folders WHERE user_id = ?1")?
                 .query_map([&user_id], folder_from)?
+                .filter(|folder| folder.as_ref().map_or(true, |folder| !hidden.contains(&folder.id)))
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let ciphers = conn
                 .prepare_cached(&format!("SELECT {CIPHER_COLUMNS} FROM ciphers WHERE user_id = ?1"))?
                 .query_map([&user_id], cipher_from)?
+                .filter(|cipher| cipher.as_ref().map_or(true, |cipher| !in_hidden(&hidden, cipher)))
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(VaultContents { folders, ciphers })
         })
@@ -173,8 +202,10 @@ impl Store {
     pub async fn folders(&self, user_id: &str) -> Result<Vec<Folder>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
+            let hidden = hidden_folders(conn, &user_id)?;
             conn.prepare_cached("SELECT id, user_id, name, created, revision FROM folders WHERE user_id = ?1")?
-                .query_map([user_id], folder_from)?
+                .query_map([&user_id], folder_from)?
+                .filter(|folder| folder.as_ref().map_or(true, |folder| !hidden.contains(&folder.id)))
                 .collect()
         })
         .await
@@ -184,6 +215,9 @@ impl Store {
     pub async fn folder(&self, user_id: &str, id: &str) -> Result<Option<Folder>> {
         let (user_id, id) = (user_id.to_string(), id.to_string());
         self.sqlite_read(move |conn| {
+            if hidden_folders(conn, &user_id)?.contains(&id) {
+                return Ok(None);
+            }
             conn.prepare_cached(
                 "SELECT id, user_id, name, created, revision FROM folders WHERE id = ?1 AND user_id = ?2",
             )?
@@ -201,6 +235,9 @@ impl Store {
                 let now = clock::now();
                 let id = match id {
                     Some(id) => {
+                        if hidden_folders(tx, &owned)?.contains(&id) {
+                            return Ok(None);
+                        }
                         let changed = tx.execute(
                             "UPDATE folders SET name = ?3, revision = ?4 WHERE id = ?1 AND user_id = ?2",
                             params![id, owned, name, now],
@@ -237,6 +274,9 @@ impl Store {
         let (owned, id) = (user_id.to_string(), id.to_string());
         let deleted = self
             .sqlite_write(move |tx| {
+                if hidden_folders(tx, &owned)?.contains(&id) {
+                    return Ok(false);
+                }
                 let now = clock::now();
                 tx.execute(
                     "UPDATE ciphers SET folder_id = NULL, revision = ?3 WHERE folder_id = ?1 AND user_id = ?2",
@@ -259,9 +299,12 @@ impl Store {
     pub async fn cipher(&self, user_id: &str, id: &str) -> Result<Option<Cipher>> {
         let (user_id, id) = (user_id.to_string(), id.to_string());
         self.sqlite_read(move |conn| {
-            conn.prepare_cached(&format!("SELECT {CIPHER_COLUMNS} FROM ciphers WHERE id = ?1 AND user_id = ?2"))?
+            let hidden = hidden_folders(conn, &user_id)?;
+            Ok(conn
+                .prepare_cached(&format!("SELECT {CIPHER_COLUMNS} FROM ciphers WHERE id = ?1 AND user_id = ?2"))?
                 .query_row([id, user_id], cipher_from)
-                .optional()
+                .optional()?
+                .filter(|cipher| !in_hidden(&hidden, cipher)))
         })
         .await
     }
@@ -269,8 +312,10 @@ impl Store {
     pub async fn ciphers(&self, user_id: &str) -> Result<Vec<Cipher>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
+            let hidden = hidden_folders(conn, &user_id)?;
             conn.prepare_cached(&format!("SELECT {CIPHER_COLUMNS} FROM ciphers WHERE user_id = ?1"))?
-                .query_map([user_id], cipher_from)?
+                .query_map([&user_id], cipher_from)?
+                .filter(|cipher| cipher.as_ref().map_or(true, |cipher| !in_hidden(&hidden, cipher)))
                 .collect()
         })
         .await
@@ -289,19 +334,19 @@ impl Store {
         attachments: Vec<crate::AttachmentKey>,
     ) -> Result<Option<Cipher>> {
         let user_id = cipher.user_id.clone();
+        let rule = self.version_rule();
         let saved = self
             .sqlite_write(move |tx| {
                 if !folder_is_theirs(tx, &cipher.user_id, cipher.folder_id.as_deref())? {
                     return Ok(None);
                 }
-                let owner: Option<String> = tx
-                    .query_row("SELECT user_id FROM ciphers WHERE id = ?1", [&cipher.id], |row| row.get(0))
-                    .optional()?;
-                if owner.is_some_and(|owner| owner != cipher.user_id) {
+                let before = crate::versions::current(tx, &cipher.id)?;
+                if before.as_ref().is_some_and(|before| before.user_id != cipher.user_id) {
                     return Ok(None);
                 }
                 cipher.revision = clock::now();
                 write_cipher(tx, &cipher)?;
+                crate::versions::changed(tx, rule, before.as_ref(), &cipher)?;
                 crate::attachments::set_keys(tx, &cipher.id, &attachments)?;
                 bump_revision(tx, &cipher.user_id)?;
                 Ok(Some(cipher))
@@ -352,6 +397,9 @@ impl Store {
                 let mut statement = tx.prepare_cached(sql)?;
                 let mut done = Vec::with_capacity(ids.len());
                 for id in ids {
+                    if is_hidden(tx, &owned, &id)? {
+                        continue;
+                    }
                     if statement.execute(params![id, owned, now])? > 0 {
                         done.push(id);
                     }
@@ -387,6 +435,9 @@ impl Store {
                 )?;
                 let mut moved = 0;
                 for id in ids {
+                    if is_hidden(tx, &owned, &id)? {
+                        continue;
+                    }
                     moved += statement.execute(params![id, owned, folder_id, now])?;
                 }
                 drop(statement);
@@ -416,11 +467,12 @@ impl Store {
     /// every emergency contact's key and every passkey that unlocks. Refused (`false`) unless
     /// all of them are there — a rotation that missed one would leave it under a key nobody has
     /// any more.
-    pub async fn rotate_keys(&self, rotation: Rotation) -> Result<bool> {
+    pub async fn rotate_keys(&self, rotation: Rotation) -> Result<RotationOutcome> {
         let user_id = rotation.user.id.clone();
         let done = self
             .sqlite_write(move |tx| {
-                let Rotation { user, folders, ciphers, attachments, sends, emergency, passkeys, recovery } = rotation;
+                let Rotation { user, folders, ciphers, attachments, sends, emergency, passkeys, recovery, extras } =
+                    rotation;
                 let have = |sql: &str| -> rusqlite::Result<Vec<String>> {
                     let mut ids = tx
                         .prepare(sql)?
@@ -436,24 +488,24 @@ impl Store {
                 };
                 let given = sorted(folders.iter().map(|(id, _)| id.clone()).collect());
                 if have("SELECT id FROM folders WHERE user_id = ?1")? != given {
-                    return Ok(false);
+                    return Ok(RotationOutcome::Incomplete);
                 }
                 // Every item stays in one of the user's own folders, or in none.
                 if ciphers
                     .iter()
                     .any(|cipher| cipher.folder_id.as_ref().is_some_and(|id| given.binary_search(id).is_err()))
                 {
-                    return Ok(false);
+                    return Ok(RotationOutcome::Incomplete);
                 }
                 if have("SELECT id FROM ciphers WHERE user_id = ?1")?
                     != sorted(ciphers.iter().map(|cipher| cipher.id.clone()).collect())
                 {
-                    return Ok(false);
+                    return Ok(RotationOutcome::Incomplete);
                 }
                 if have("SELECT id FROM sends WHERE user_id = ?1")?
                     != sorted(sends.iter().map(|send| send.id.clone()).collect())
                 {
-                    return Ok(false);
+                    return Ok(RotationOutcome::Incomplete);
                 }
                 // Only the passkeys that unlock hold the user key; one that could but was not set
                 // up for it has nothing to wrap again.
@@ -461,10 +513,16 @@ impl Store {
                     "SELECT id FROM passkeys WHERE user_id = ?1 AND supports_prf AND encrypted_user_key IS NOT NULL",
                 )? != sorted(passkeys.iter().map(|(id, _, _)| id.clone()).collect())
                 {
-                    return Ok(false);
+                    return Ok(RotationOutcome::Incomplete);
+                }
+                if let RotationExtras::Own { versions: Some(versions), .. } = &extras
+                    && have("SELECT id FROM cipher_versions WHERE user_id = ?1")?
+                        != sorted(versions.iter().map(|(id, _)| id.clone()).collect())
+                {
+                    return Ok(RotationOutcome::VersionsChanged);
                 }
                 if !crate::emergency::rotate_keys(tx, &user.id, &emergency)? {
-                    return Ok(false);
+                    return Ok(RotationOutcome::Incomplete);
                 }
                 let now = clock::now();
                 for (id, name) in &folders {
@@ -496,9 +554,35 @@ impl Store {
                     )?;
                 }
                 tx.execute("UPDATE org_members SET reset_password_key = NULL WHERE user_id = ?1", [&user.id])?;
-                // The extras key's wrap under the old user key opens nothing any more; the one
-                // for the key pair stays, and the next UwULock client wraps it again.
-                tx.execute("UPDATE extras_keys SET user_key_wrapped = NULL WHERE user_id = ?1", [&user.id])?;
+                match &extras {
+                    // The extras key's wrap under the old user key opens nothing any more; the
+                    // one for the key pair stays, and the next UwULock client wraps it again.
+                    RotationExtras::Official | RotationExtras::Own { extras_key: None, .. } => {
+                        tx.execute("UPDATE extras_keys SET user_key_wrapped = NULL WHERE user_id = ?1", [&user.id])?;
+                    }
+                    RotationExtras::Own { extras_key: Some((user_wrapped, public_wrapped)), .. } => {
+                        tx.execute(
+                            "UPDATE extras_keys SET user_key_wrapped = ?2, public_key_wrapped = ?3, revision = ?4 \
+                             WHERE user_id = ?1",
+                            params![user.id, user_wrapped, public_wrapped, now],
+                        )?;
+                    }
+                }
+                // The personal versions are under the old user key: re-encrypted by UwULock's
+                // clients, or gone, since nobody could open them again (docs/uwu-api.md §3).
+                match &extras {
+                    RotationExtras::Own { versions: Some(versions), .. } => {
+                        for (id, content) in versions {
+                            tx.execute(
+                                "UPDATE cipher_versions SET content = ?3, size = ?4 WHERE id = ?1 AND user_id = ?2",
+                                params![id, user.id, content, content.len() as i64],
+                            )?;
+                        }
+                    }
+                    _ => {
+                        tx.execute("DELETE FROM cipher_versions WHERE user_id = ?1", [&user.id])?;
+                    }
+                }
                 for (org_id, key) in &recovery {
                     tx.execute(
                         "UPDATE org_members SET reset_password_key = ?3 WHERE user_id = ?1 AND org_id = ?2",
@@ -516,12 +600,17 @@ impl Store {
                      remember_expires = NULL WHERE user_id = ?1",
                     [&user.id],
                 )?;
-                Ok(true)
+                Ok(RotationOutcome::Done)
             })
             .await?;
         self.forget_session_of(&user_id);
         Ok(done)
     }
+}
+
+/// Whether `cipher` lies in one of the folders travel mode hides.
+fn in_hidden(hidden: &std::collections::HashSet<String>, cipher: &Cipher) -> bool {
+    cipher.folder_id.as_ref().is_some_and(|folder| hidden.contains(folder))
 }
 
 fn folder_is_theirs(tx: &Transaction<'_>, user_id: &str, folder_id: Option<&str>) -> rusqlite::Result<bool> {
@@ -648,13 +737,17 @@ pub(crate) mod tests {
             emergency: Vec::new(),
             passkeys: Vec::new(),
             recovery: Vec::new(),
+            extras: RotationExtras::Official,
         };
-        assert!(!store.rotate_keys(rotation(rotated.clone(), vec![a.clone()])).await.unwrap());
+        assert_eq!(
+            store.rotate_keys(rotation(rotated.clone(), vec![a.clone()])).await.unwrap(),
+            RotationOutcome::Incomplete
+        );
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().user_key, user.user_key, "nothing changed");
 
         let mut b = cipher(&user.id, "b", None);
         b.name = "new".into();
-        assert!(store.rotate_keys(rotation(rotated, vec![a, b])).await.unwrap());
+        assert_eq!(store.rotate_keys(rotation(rotated, vec![a, b])).await.unwrap(), RotationOutcome::Done);
         assert_eq!(store.user(&user.id).await.unwrap().unwrap().user_key, "new key");
         assert!(store.ciphers(&user.id).await.unwrap().iter().all(|cipher| cipher.name == "new"));
         assert_eq!(store.folder(&user.id, &folder.id).await.unwrap().unwrap().name, "new");
@@ -687,6 +780,7 @@ pub(crate) mod tests {
             emergency: Vec::new(),
             passkeys: Vec::new(),
             recovery,
+            extras: RotationExtras::Official,
         };
         let recovery_key = |store: Store, member: String| async move {
             store
@@ -698,9 +792,12 @@ pub(crate) mod tests {
                 .await
                 .unwrap()
         };
-        assert!(store.rotate_keys(rotation(vec![("org".into(), "4.new".into())])).await.unwrap());
+        assert_eq!(
+            store.rotate_keys(rotation(vec![("org".into(), "4.new".into())])).await.unwrap(),
+            RotationOutcome::Done
+        );
         assert_eq!(recovery_key(store.clone(), member.clone()).await.as_deref(), Some("4.new"));
-        assert!(store.rotate_keys(rotation(Vec::new())).await.unwrap());
+        assert_eq!(store.rotate_keys(rotation(Vec::new())).await.unwrap(), RotationOutcome::Done);
         assert_eq!(recovery_key(store.clone(), member.clone()).await, None, "left out: the enrolment ends");
     }
 

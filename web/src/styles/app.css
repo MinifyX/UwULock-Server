@@ -726,3 +726,26 @@ button.quiet {
   min-height: 0;
   overflow: hidden;
 }
+
+/* ── The server's own logo ─────────────────────────────── */
+
+.brand-logo {
+  width: auto;
+  max-width: 160px;
+  object-fit: contain;
+}
+
+:root[data-theme='dark'] .brand-logo-light,
+:root:not([data-theme='dark']) .brand-logo-dark {
+  display: none;
+}
+
+.welcome-logo {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.welcome-logo .brand-logo {
+  max-width: 260px;
+}

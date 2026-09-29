@@ -1,16 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
 import { LoginScreen } from '../components/LoginScreen';
+import { Modal } from '../components/Modal';
 import { NyuScene } from '../components/nyu/scenes';
-import { TitleBar } from '../components/TitleBar';
+import { Appearance } from '../components/SettingsDialog';
+import { ShortcutsDialog } from '../components/ShortcutsDialog';
+import { SkipLink, TitleBar } from '../components/TitleBar';
+import { Toasts } from '../components/Toasts';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { go, useRoute } from '../lib/route';
-import { useToast } from '../lib/toast';
+import { ADMIN_SHORTCUTS, singleKey } from '../lib/shortcuts';
 import { AdminSettings } from './AdminSettings';
 import { Backups } from './Backups';
+import { Branding } from './Branding';
 import { Diagnosis } from './Diagnosis';
 import { Events } from './Events';
 import { Invitations } from './Invitations';
@@ -26,6 +31,7 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
   { path: '/invitations', label: N_('Einladungen'), icon: 'sparkles' },
   { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
   { path: '/login', label: N_('Anmeldung'), icon: 'key' },
+  { path: '/branding', label: N_('Aussehen'), icon: 'eye' },
   { path: '/events', label: N_('Ereignisse'), icon: 'history' },
   { path: '/logs', label: N_('Log'), icon: 'terminal' },
   { path: '/backups', label: N_('Backups'), icon: 'drive' },
@@ -40,9 +46,11 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
 export function AdminApp() {
   useLanguage();
   const route = useRoute();
-  const toast = useToast();
   const [status, setStatus] = useState<Status | null>(null);
   const [info, setInfo] = useState<AccountInfo | null | 'none'>(null);
+  const [appearance, setAppearance] = useState(false);
+  const [shortcuts, setShortcuts] = useState(false);
+  const backgroundRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void vaultStatus().then(setStatus);
@@ -56,6 +64,38 @@ export function AdminApp() {
   }, [status]);
 
   const page = PAGES.find((p) => p.path === route.path) ?? PAGES[0]!;
+  const portal = Boolean(status && status.state !== 'logged-out' && info && info !== 'none');
+  const modalOpen = appearance || shortcuts;
+
+  // As in the vault: the background is inert under a dialog, and stops being so before the
+  // dialog hands focus back.
+  useLayoutEffect(() => {
+    if (backgroundRef.current) backgroundRef.current.inert = modalOpen;
+  }, [modalOpen]);
+
+  // The keyboard (see lib/shortcuts.ts): the overview, the look, and the pages by number or in
+  // order.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && !event.altKey && event.key === ',') {
+        event.preventDefault();
+        setAppearance(true);
+        return;
+      }
+      if (!singleKey(event)) return;
+      const key = event.key.toLowerCase();
+      const index = PAGES.indexOf(page);
+      if (key === '?') setShortcuts(true);
+      else if (portal && /^[1-9]$/.test(key) && !event.shiftKey) go(PAGES[Number(key) - 1]!.path);
+      else if (portal && (key === 'j' || key === 'k'))
+        go(PAGES[(index + (key === 'j' ? 1 : -1) + PAGES.length) % PAGES.length]!.path);
+      else return;
+      event.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [page, portal]);
 
   let body;
   if (status === null) body = null;
@@ -105,11 +145,12 @@ export function AdminApp() {
     body = (
       <div className="admin">
         <nav className="admin-nav" aria-label={t('Admin-Portal')}>
-          {PAGES.map((p) => (
+          {PAGES.map((p, index) => (
             <button
               key={p.path}
               type="button"
               aria-current={p.path === page.path ? 'page' : undefined}
+              aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
               onClick={() => go(p.path)}
             >
               <Icon name={p.icon} size={16} />
@@ -119,13 +160,14 @@ export function AdminApp() {
           <span className="spacer" />
           <p className="admin-who">{t('Angemeldet als {email}', { email: status.email ?? '' })}</p>
         </nav>
-        <section className="admin-page">
+        <section className="admin-page" tabIndex={-1} data-main-content>
           <h1 className="admin-title">{t(page.label)}</h1>
           {page.path === '/' && <Overview />}
           {page.path === '/users' && <Users me={status.email ?? ''} />}
           {page.path === '/invitations' && <Invitations />}
           {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
           {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
+          {page.path === '/branding' && <Branding />}
           {page.path === '/events' && <Events />}
           {page.path === '/logs' && <Logs />}
           {page.path === '/backups' && <Backups />}
@@ -138,12 +180,25 @@ export function AdminApp() {
 
   return (
     <div className="shell">
-      <div className="background">
-        <TitleBar area={t('Admin')}>
+      <div className="background" ref={backgroundRef}>
+        <SkipLink />
+        <TitleBar
+          area={t('Admin')}
+          onSettings={() => setAppearance(true)}
+          settingsLabel={t('Darstellung')}
+        >
           <a className="titlebar-link" href="/">
             <Icon name="lock" size={15} />
-            {t('Zum Tresor')}
+            <span className="titlebar-link-text">{t('Zum Tresor')}</span>
           </a>
+          <button
+            className="titlebar-action"
+            onClick={() => setShortcuts(true)}
+            title={t('Tastenkürzel (?)')}
+            aria-label={t('Tastenkürzel')}
+          >
+            <Icon name="keyboard" size={17} />
+          </button>
           {status && status.state !== 'logged-out' && (
             <button
               className="titlebar-action"
@@ -155,12 +210,31 @@ export function AdminApp() {
             </button>
           )}
         </TitleBar>
-        <main className="stage">{body}</main>
+        <main className="stage" id="main" tabIndex={-1}>
+          {body}
+        </main>
       </div>
-      {toast && (
-        <div className="toast" data-tone={toast.tone} role="status" key={toast.id}>
-          {toast.text}
-        </div>
+      <Toasts />
+      {shortcuts && (
+        <ShortcutsDialog groups={ADMIN_SHORTCUTS} onClose={() => setShortcuts(false)} />
+      )}
+      {appearance && (
+        <Modal
+          title={t('Darstellung')}
+          onCancel={() => setAppearance(false)}
+          footer={
+            <>
+              <span className="spacer" />
+              <button className="primary" data-autofocus onClick={() => setAppearance(false)}>
+                {t('Schließen')}
+              </button>
+            </>
+          }
+        >
+          <div className="settings-content">
+            <Appearance vault={false} />
+          </div>
+        </Modal>
       )}
     </div>
   );

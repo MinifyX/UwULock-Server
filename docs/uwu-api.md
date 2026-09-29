@@ -178,7 +178,7 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   "sso": { "enabled": true, "only": false, "identifier": "uwulock", "label": "UwUAuth" },
   "branding": {
     "name": "UwULock",
-    "color": "#e879a6",
+    "color": "#ff4d8d",
     "custom": false,
     "logoLight": null,
     "logoDark": null,
@@ -204,7 +204,8 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   means `/icons/…` answers 404 for everything.
 - `sso.identifier`: the value to type as "SSO identifier" in the official clients (any value
   works, §19.1); `label` is what the web vault writes on the button.
-- `branding.logoLight`/`logoDark`/`favicon`: absolute URLs of §14.5 or `null`. On a send domain,
+- `branding.logoLight`/`logoDark`/`favicon`: absolute URLs of §14.4 (with `?v=<version>`, which
+  changes with every change) or `null`; `color` is UwULock's `#ff4d8d` when none was chosen. On a send domain,
   that domain's branding.
 - `policies.masterPassword`: §20, for the registration and change-password pages; it also carries
   `enforceOnLogin`.
@@ -336,6 +337,10 @@ A key rotation made by the web vault or UwULock Client. Body limit: the router's
   Or `dropVersions: true` and `versions: []`: the personal versions are deleted.
 - All of it in one transaction with the Bitwarden part. Then as today: security stamp, logout of
   other devices, notify `LogOut`. Security notice `keysRotated`.
+- While travel mode is on (§9), this and Bitwarden's rotation are refused with 400
+  `travel_active`: the hidden items could not be re-encrypted by a client that does not see them.
+- `versions[].cipher` is read like a cipher of `accountData.ciphers` (Bitwarden's
+  `CipherRequestModel` keys; `organizationId` must be null).
 
 ### When an official client rotates
 
@@ -775,7 +780,14 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   32 px wins, else the largest. ICO, PNG, JPEG, GIF, WebP, SVG (rasterized) are read; the result is
   PNG. At most 8 fetches at a time server-wide, one per host.
 - Cache: on disk under the data directory, keyed by SHA-256 of the host, 30 days for an icon,
-  3 days for "none". The admin portal switches the feature and empties the cache (§21.10).
+  3 days for "none" (a site that could not be reached counts as "none"). The admin portal switches
+  the feature and empties the cache (§21.10).
+- Redirects go only to `http`/`https` on the usual ports (80, 443), never to a name that
+  normalizes to nothing (local names) or an address refused above; a page's `<link>` may point to
+  another host (a CDN), checked the same way. `data:` URLs in a `<link>` are read in place. A
+  proxy from the environment is never used (it would resolve names past the checks). SVG is drawn
+  without text, fonts or anything the file points to; files with `<!ENTITY` or more than 16
+  `<use>` are refused. Raster images are decoded up to 2048 × 2048 pixels and 64 MiB.
 - Log lines and metrics never name the host.
 
 ### 7.2 Icon library
@@ -818,6 +830,16 @@ host only), cached on disk. `Cache-Control: private, max-age=604800`. 404 if not
 The client does not link to the library icon: it downloads it, encrypts it, and stores it as an
 own icon (§7.3), so the server does not learn which icon belongs to which item.
 
+As built for 0.6: only selfh.st Icons. Its licence was checked in its repository
+(`github.com/selfhst/icons`, `LICENSE`: Creative Commons Attribution 4.0 International, SPDX
+`CC-BY-4.0`) on 2026-09-28. The server reads `<upstream>/index.json` (entries with `PNG: "Yes"`;
+`Light`/`Dark: "Yes"` add the variants `light`/`dark`; `aliases` stays empty) and fetches icons
+from `<upstream>/png/<id>[-light|-dark].png`, upstream `https://cdn.jsdelivr.net/gh/selfhst/icons@main`.
+Ids are `[a-z0-9._-]{1,100}` not starting with a dot; others are left out of the index. The index
+answer carries `Cache-Control: private, no-cache`; an uncached library icon costs a try of the
+§7.1 per-IP bucket (429 `rate_limited`), and 502 `upstream` when the library did not answer.
+Dashboard Icons and Simple Icons are not mirrored (not checked yet).
+
 ### 7.3 Own icons
 
 A PNG of at most 128 × 128 pixels (the client resizes and converts: PNG, JPEG, WebP accepted from
@@ -841,6 +863,10 @@ Endpoints (auth `user`; the cipher must be visible to the account and not hidden
 - `GET /uwu/v1/icons/own/{cipherId}` → `{ "object": "ownIcon", "cipherId", "keyType", "data", "revisionDate" }`.
 - `POST /uwu/v1/icons/own/get` — body `{ "cipherIds": ["…"] }`, at most 500 → list of `ownIcon`
   (those that exist and are visible).
+- `GET /uwu/v1/icons/own` → list of `ownIcon` **without** `data` for every item the account sees
+  (added for the web vault, which uses `/api/sync` and not `uwu.icons` of §4.4).
+- `PUT` for a personal item counts toward `storagePerUserMb` (422 `quota`); the answer has no
+  `data`.
 - `DELETE /uwu/v1/icons/own/{cipherId}` → 200.
 
 Which ciphers have one comes with the sync (`uwu.icons`, §4.4).
@@ -915,7 +941,8 @@ Personal cipher: its owner. Organization cipher: members who may edit it (not `r
   }
   ```
 
-  `cipher` uses the same keys and encodings as the cipher in `/api/sync`.
+  `cipher` uses the same keys and encodings as the cipher in `/api/sync`. Both the version and its
+  `cipher` also carry `organizationId` (null for a personal item), so a client knows the key.
 - `GET /uwu/v1/ciphers/{cipherId}/versions/{versionId}` → one `cipherVersion`.
 - `POST /uwu/v1/ciphers/{cipherId}/versions/{versionId}/restore` — body
   `{ "lastKnownRevisionDate": "<the cipher's current revisionDate>" }`; a different date is 409
@@ -969,7 +996,14 @@ everything, and the official clients drop them locally at their next sync.
   `twoFactorProvider` as Bitwarden numbers them: 0 authenticator, 1 e-mail, 7 WebAuthn (token = the
   assertion JSON as the login sends it). The recovery code is not accepted. Wrong password or code:
   400 `invalid`; both are counted per account (5 tries, one back every 3 minutes; then 429) and
-  a failure writes security notice `travelDisableFailed`.
+  a failure writes security notice `travelDisableFailed`. `twoFactorToken` may also be sent as a
+  JSON object (the assertion itself). A wrong password on `send-email` and `webauthn-challenge`
+  counts and is noticed the same way; both answer 400 `invalid` while the mode is off, and
+  `send-email` 400 `invalid` without two-step login by mail (or without a mail server).
+  When the account has no usable second step any more (the recovery code was used, an admin
+  reset it), the master password alone switches the mode off — otherwise nothing ever could;
+  `twoFactorProvider`/`twoFactorToken` are then ignored. `GET /uwu/v1/versions` leaves out the
+  versions of hidden items.
 
 Switching on or off: sync epoch bumped (§4.3), the account's revision date bumped, notify
 `SyncVault` (Bitwarden `PushType` 5) to all devices including the one that did it, security
@@ -987,6 +1021,12 @@ downloads), `/api/ciphers/organization-details` rows *for this account*, `/uwu/v
 views and takeover of this account's vault.
 
 Writes to a hidden cipher are 404 as well. Moving a visible cipher into a marked folder hides it.
+
+The marked folders themselves are hidden too while the mode is on (left out of `/api/sync` and
+`/api/folders`; renaming or deleting one answers as for a folder that does not exist), so their
+names do not show either. `PUT /uwu/v1/travel/folders` still takes their ids. While it is on,
+`POST /api/ciphers/purge` and both key rotations (§3) answer 400 `travel_active`; download links
+of a hidden item's attachments issued before stop working.
 Organization-wide views of admins (`/api/ciphers/organization-details` as an organization admin,
 organization export) are organization data and are not filtered.
 
@@ -1025,7 +1065,9 @@ Rules:
 - A job runs hourly. A reminder with `due` ≤ today (UTC) is `isDue`; once per due date, one mail
   per account for all that became due ("An item in your vault is due for a new password"), with a
   link to `<public>/#/vault?due=1`. No mail without a mail server; hidden (travel) reminders are
-  skipped. Realtime `notice` `reminderDue`.
+  skipped. Realtime `notice` `reminderDue` (with the realtime channel, Stufe 6). Setting a reminder
+  also works for organization items the account may only read. `due` in the past is allowed (the
+  item is due at once).
 - Deleting the cipher for good deletes its reminder.
 
 **Clients:** web vault, UwULock desktop (set, list, mark due items).
@@ -1632,7 +1674,9 @@ leaves out `send-emails`.
   4000 characters as stored after trimming and lowercasing each address (Bitwarden's service
   limit is 2500); each must be an address; values starting with `P|` are refused.
 - `password` and `emails` exclude each other: `authType` 0 clears the password, 1 clears the
-  addresses, 2 both. `authType` missing: inferred (addresses → 0, password → 1, else 2).
+  addresses, 2 both. `authType` missing: inferred (addresses → 0, password → 1); with neither,
+  a change keeps what the Send had (a key rotation, an older client) and a new Send is 2.
+  `authType` 1 without a password keeps the one there is.
 - `PUT /api/sends/{id}/remove-auth` clears both (`remove-password` stays as an alias).
 - The recipient's view (`SendAccessResponseModel`) gains `authType`; never the addresses.
 
@@ -1647,6 +1691,10 @@ leaves out `send-emails`.
 | `email`, no `otp`, address not on the list | the same answer, no mail (nobody learns the list) |
 | `email` + wrong or expired `otp` | the same answer |
 | `email` + right `otp` | `{ "access_token", "expires_in", "token_type": "Bearer", "scope": "api.send.access" }`; the token also names the address |
+
+Bitwarden's older way of opening a Send (`POST /api/sends/access/{accessId}` with the password
+hash in the body, and `/api/sends/{id}/access/file/{fileId}`) answers 401 for a Send with
+addresses: only the grant opens those.
 
 The code: 6 digits (`auth::random_code(6)`), stored hashed per (Send, address), 5 minutes,
 single use, compared in constant time. UwULock adds limits Bitwarden leaves out: 5 wrong codes
@@ -1670,19 +1718,38 @@ Sends of type 2 (item) are not offered (no feature flag in `/api/config`).
 - `GET /uwu/v1/branding` — auth `none`, by host (a send domain's own, else the server's):
   `{ "object": "branding", "name", "color", "custom", "logoLight", "logoDark", "favicon" }` (the
   URLs absolute or `null`).
-- `GET /uwu/v1/branding/logo/light`, `/logo/dark`, `/favicon` — the image,
-  `Cache-Control: public, max-age=3600`; 404 when there is none.
+- `GET /uwu/v1/branding/logo/light`, `/logo/dark`, `/favicon` — the image (`image/png`),
+  `Cache-Control: public, max-age=3600`, `X-Content-Type-Options: nosniff`,
+  `Content-Security-Policy: default-src 'none'; sandbox`; 404 when there is none.
+- The web vault's HTML (`/`, `/admin`, `/r/<accessId>`) carries it too, when the branding is not
+  UwULock's: its `<title>` is the name, the favicon link points at `/uwu/v1/branding/favicon?v=…`,
+  and `<style id="uwu-branding">` sets the accent tokens (`--uwu-pink`, `--uwu-pink-solid`, …)
+  for `html:root` and `html:root[data-theme="dark"]`, worked out from the colour (UwUMail's
+  palette: each shade moved until text on it reads at 4.5:1), plus `<meta name="theme-color">`.
 
 Admin (auth `admin`):
 
-- `PUT /uwu/v1/admin/branding` — `{ "name": "…" | null, "color": "#rrggbb" | null }` (`null` =
-  UwULock's). The colour must reach 3:1 contrast against white and the dark background (400).
+- `GET /uwu/v1/admin/branding` → the public object plus `nameSet`, `colorSet` (whether they are
+  the admin's, not UwULock's) and `contrast: { light, dark, ok }` of the colour.
+- `GET /uwu/v1/admin/branding/preview?color=%23rrggbb` → `{ light: {token: value}, dark: {…},
+  contrast: { light, dark, ok } }`: the shades a colour would give, for a preview before saving.
+- `PUT /uwu/v1/admin/branding` — `{ "name": "…" | null, "color": "#rrggbb" | null }` (`null` or
+  `""` = UwULock's); answers like `GET`. The name is trimmed, at most 40 characters, without
+  control characters (400 `brandName`). The colour must reach 3:1 contrast against white and
+  the dark background `#141016` (400 `brandContrast`, the message names both ratios; 400
+  `brandColor` for anything but `#rrggbb`).
 - `PUT /uwu/v1/admin/branding/logo/{light|dark}`, `PUT /uwu/v1/admin/branding/favicon` — raw
-  image body (PNG, JPEG, WebP; favicon also ICO), recognized by its content, at most 512 KiB
-  (favicon 128 KiB); stored re-encoded as PNG (drops metadata and anything hidden in it). SVG is
-  refused. `DELETE` the same paths.
+  image body (PNG, JPEG, WebP, GIF, ICO or SVG), recognized by its content, at most 512 KiB
+  (favicon 128 KiB); stored re-encoded as PNG, at most 512 pixels (favicon 192) on the longer
+  side, which drops metadata and anything hidden in it. An SVG is drawn (resvg) without text,
+  fonts or anything it refers to, so nothing of it but the pixels survives. 400 `brandImage` /
+  `brandImageSize`. `DELETE` the same paths. All answer like `GET`.
 - The same under `/uwu/v1/admin/send-domains/{id}/branding` (`PUT` name/colour, `…/logo/{variant}`,
-  `…/favicon`) for one send domain.
+  `…/favicon`) for one send domain — with Stufe 6's send domains. Branding is stored per scope
+  (`""` the server, a send domain's id its own; migration 0010), and the lookup by `Host` is in
+  place (`branding::scope_for_host`), so those routes only need registering.
+
+Every change is written to the admin event log; a restore brings the backup's branding back.
 
 Branding applies to the web vault, login, Send and file-request pages and mails; the official
 clients stay as they are.
@@ -1699,19 +1766,28 @@ itself.
 
 - `GET /uwu/v1/reports/health` — auth `user` → `{ "object": "healthReport", "data": "2.…" | null, "revisionDate": "…" | null }`.
 - `PUT /uwu/v1/reports/health` — `{ "data": "2.…" }`: the last password-health report, JSON
-  encrypted under the extras key, at most 1 MiB. Answer: the object.
+  encrypted under the extras key, at most 1 MiB; anything but an EncString of type 2 is refused
+  (400). Answer: the object. Resetting the extras key deletes it.
 - `DELETE /uwu/v1/reports/health` → 200.
 - `GET /uwu/v1/hibp/{prefix}` — unchanged (k-anonymity range query through the server).
 - `GET /uwu/v1/twofa-directory` — auth `user`, `ETag`/`If-None-Match`. The server mirrors the
-  list of [2fa.directory](https://2fa.directory/) daily (its public API, e.g.
-  `https://api.2fa.directory/v3/all.json`; the implementer pins the URL and checks the data's
-  licence and writes it here):
+  list of [2fa.directory](https://2fa.directory/) from its public API,
+  **`https://api.2fa.directory/v3/all.json`** (pinned; `[["Name", {domain, "additional-domains",
+  tfa, documentation, …}], …]`). **Licence, checked 2026-09-29:** the data is in
+  github.com/2factorauth/twofactorauth under the **MIT licence** (© 2factorauth and contributors;
+  before 2021 Josh Davis); passing the data on needs attribution, which travels as `source` in
+  every answer and is shown under the report. The server fetches it the first time an account
+  asks, then once a day while somebody uses it, through the icons' checked client (every address
+  checked, no private networks), at most 8 MiB. It keeps only sites with a second factor, only
+  `domain` (and extra domains) that look like host names, `name`, `methods` (`tfa`) and
+  `documentation` when it is an `https://` link. 502 `upstream` when there is no copy yet and the
+  fetch fails.
 
   ```json
   {
     "object": "twofaDirectory",
     "updated": "…",
-    "source": { "name": "2FA Directory", "url": "https://2fa.directory/", "license": "<checked licence>" },
+    "source": { "name": "2FA Directory", "url": "https://2fa.directory/", "license": "MIT, © 2factorauth and contributors (github.com/2factorauth/twofactorauth)" },
     "entries": [
       { "domain": "example.com", "additionalDomains": ["example.net"], "name": "Example", "methods": ["totp", "u2f"], "documentation": "https://example.com/help/2fa" }
     ]
@@ -1719,8 +1795,9 @@ itself.
   ```
 
   The web vault compares the items' hosts with it in the browser: items for sites that offer
-  `totp` but have no TOTP stored go into the report "2FA possible, not set up". The server never
-  learns which sites are in a vault.
+  `totp` but have no TOTP stored go into the report "2FA possible, not set up" (a host matches
+  its own entry or the nearest domain above it, never a bare top-level domain; `www.` is
+  ignored). The server never learns which sites are in a vault.
 
 **Clients:** web vault; UwULock desktop may use both.
 
@@ -2347,7 +2424,7 @@ defaults in brackets):
 
 | Key | Contents |
 | --- | --- |
-| `versions` | `{ perItem [20], days [365] }` (§8) |
+| `versions` | `{ perItem [20], days [365] }` (§8); `perItem` 0–100, `days` 0–3650 |
 | `icons` | `{ automatic [true], library [true], sources [["selfhst"]] }` (§7) |
 | `fileRequests` | `{ enabled [true], perUser [50], maxDays [90], maxFiles [20] }` (§11) |
 | `families` / `organizations` | `{ whoMayCreate, maxMembers, perUser }` (§16.4) |
@@ -2377,7 +2454,9 @@ As UwUMail Server's (its `docs/backups.md` and `routes/backups.rs`; reuse the de
 a mounted folder; deduplicated; encrypted by default with a recovery key shown once; retention
 7 days / 4 weeks / 6 months. Contents: the database (an online SQLite backup, or `pg_dump` on
 PostgreSQL), the attachment, Send, file-request and icon directories, and the server's secret
-files (token key, the secret of §13.2).
+files (token key, the secret of §13.2). (As built: own icons are in the database; the `icons/`
+directory holds only what the server fetched from websites and the library, which it fetches
+again — and which would say which websites the accounts use — so it is left out.)
 
 - `GET /uwu/v1/admin/backups/offsite` →
   `{ "object": "offsiteBackups", "enabled", "hour", "minute", "retention": { "days": 7, "weeks": 4, "months": 6 }, "encrypted", "target", "status": { "lastSuccess", "lastError", "lastDuration", "bytes" }, "running", "warnAfterHours": 48 }`.
@@ -2520,7 +2599,8 @@ saved one — → 200 or 502.
 ### 21.10 Icons
 
 `DELETE /uwu/v1/admin/icons/cache` (automatic icons), `POST /uwu/v1/admin/icons/library/refresh`
-→ 202.
+→ 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "ownBytes",
+"libraryUpdated", "libraryIcons" }` for the portal (added).
 
 ### 21.11 Families and organizations
 
@@ -2631,3 +2711,7 @@ extension; it links to the web vault.
   `sm_service_accounts`, `sm_access_tokens`, `sm_access_policies`, `notification_channels`,
   `health_reports`, `branding` (images).
 - Each in the SQLite migrations and the PostgreSQL ones (Stufe 5), behind `Store`.
+- As built in Stufe 4c (migration 0010): `sends.emails` only — `authType` is derived (addresses →
+  0, a password hash → 1, else 2), no `auth_type` column; the codes (`send_otps`) live in memory
+  (`send_codes.rs`), a restart only means asking again; `branding` is keyed by `scope` (`""` the
+  server, a send domain's id) with the pictures as PNG blobs; `health_reports`.

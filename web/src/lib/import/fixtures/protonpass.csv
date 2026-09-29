@@ -1,0 +1,4 @@
+type,name,url,email,username,password,note,totp,createTime,modifyTime,vault
+login,Beispiel,https://example.com,nyu@example.com,nyu,pp-pass,,otpauth://totp/Beispiel?secret=JBSWY3DPEHPK3PXP,1700000000,1700000000,Persönlich
+note,Notiz,,,,,Nur Text,,1700000000,1700000000,Persönlich
+alias,Alias,,alias@example.net,,,,,1700000000,1700000000,Arbeit

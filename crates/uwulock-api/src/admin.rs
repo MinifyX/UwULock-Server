@@ -778,6 +778,7 @@ pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     state.oidc.forget();
     state.apply_settings(settings);
     state.count_legacy_hashes().await;
+    crate::branding::reload(state).await;
     Ok(())
 }
 

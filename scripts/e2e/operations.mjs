@@ -9,6 +9,7 @@
 
 import { mkdirSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { checkA11y } from './axe.mjs';
 
 const [origin, email, password, folder, shots] = process.argv.slice(2);
 if (!origin || !email || !password || !folder) {
@@ -79,6 +80,7 @@ try {
   const link = (await owner.locator('.send-link').first().innerText()).trim();
   if (!link.startsWith(`${origin}/#/request/`)) throw new Error(`the link: ${link}`);
   await snap(owner, 'request');
+  await checkA11y(owner, 'file requests view');
 
   step('somebody without an account, with the link on a send domain’s path');
   const [, accessId, secret] = link.match(/#\/request\/([^/]+)\/([^/]+)$/);
@@ -88,10 +90,12 @@ try {
   await uploader.locator('input[type=password]').fill('falsch');
   await uploader.getByRole('button', { name: 'Öffnen' }).click();
   await uploader.getByText('Das Passwort stimmt nicht.').waitFor();
+  await checkA11y(uploader, 'file request page, wrong password');
   await uploader.locator('input[type=password]').fill('katzen');
   await uploader.getByRole('button', { name: 'Öffnen' }).click();
   await uploader.getByRole('heading', { name: 'Ausweis-Scan' }).waitFor();
   await uploader.getByText('Bitte beide Seiten.').waitFor();
+  await checkA11y(uploader, 'file request page');
   await uploader.locator('input[type=file]').setInputFiles([
     { name: 'vorne.txt', mimeType: 'text/plain', buffer: Buffer.from('die Vorderseite') },
     { name: 'hinten.txt', mimeType: 'text/plain', buffer: Buffer.from('die Rückseite') },

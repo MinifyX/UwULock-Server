@@ -1,0 +1,3 @@
+Title,URL,Username,Password,Notes,OTPAuth
+example.com (nyu),https://example.com/,nyu,apple-pass,Notiz,otpauth://totp/example.com:nyu?secret=JBSWY3DPEHPK3PXP&issuer=example.com
+,https://shop.example.net/,mika,shop-pass,,

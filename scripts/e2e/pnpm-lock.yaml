@@ -11,6 +11,9 @@ importers:
       '@bitwarden/cli':
         specifier: 2026.9.0
         version: 2026.9.0
+      axe-core:
+        specifier: 4.13.0
+        version: 4.13.0
       playwright:
         specifier: 1.60.0
         version: 1.60.0
@@ -98,6 +101,10 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  axe-core@4.13.0:
+    resolution: {integrity: sha512-UzGt8zg7Ny8djbYMhxl2zuEevVa7r2gJjYY5Lwr1xM7+XU2nd6CkIWFTVcCIbAP63vSz71NaVyyuSk9lHKcy0A==}
+    engines: {node: '>=4'}
 
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
@@ -970,6 +977,8 @@ snapshots:
   append-field@1.0.0: {}
 
   asynckit@0.4.0: {}
+
+  axe-core@4.13.0: {}
 
   base64-js@1.5.1: {}
 

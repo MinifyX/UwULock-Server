@@ -24,8 +24,9 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// What this server is and can do, for a client that wants to know before it logs in.
-async fn info(State(state): State<AppState>) -> Json<Value> {
+async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> Json<Value> {
     let settings = state.settings();
+    let branding = crate::branding::for_request(&state, &headers).await.json(&state.config.public);
     let mut features = vec![
         "vault",
         "folders",
@@ -43,7 +44,22 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
         "api-key",
         "admin",
         "security-notices",
+        "own-icons",
+        "travel-mode",
+        "reminders",
+        "twofa-directory",
+        "health-report",
     ];
+    if settings.icons.automatic {
+        features.push("icons");
+    }
+    let library = settings.icons.library && !settings.icons.sources.is_empty();
+    if library {
+        features.push("icon-library");
+    }
+    if settings.versions.per_item > 0 {
+        features.push("versions");
+    }
     if settings.hibp {
         features.push("hibp");
     }
@@ -52,6 +68,9 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
     }
     if settings.sso.active() {
         features.push("sso");
+    }
+    if state.mailer.enabled() {
+        features.push("send-emails");
     }
     let rules = &settings.policies.master_password;
     Json(json!({
@@ -63,6 +82,7 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
         "features": features,
+        "branding": branding,
         "sso": {
             "enabled": settings.sso.active(),
             "only": settings.sso.active() && settings.sso.only,
@@ -76,8 +96,17 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
                 "enforceOnLogin": rules.enforce_on_login,
             },
         },
+        "icons": {
+            "automatic": settings.icons.automatic,
+            "url": format!("{}/icons", state.config.public.trim_end_matches('/')),
+            "ownMaxBytes": crate::icons::OWN_MAX_TEXT,
+            "ownPixels": crate::icons::OWN_PIXELS,
+            "library": library,
+        },
         "limits": {
             "maxFileBytes": u64::from(settings.max_file_mb) * 1024 * 1024,
+            "versionsPerItem": settings.versions.per_item,
+            "versionDays": settings.versions.days,
             "fileRequestMaxFiles": settings.file_requests.max_files,
             "fileRequestMaxDays": settings.file_requests.max_days,
         },
@@ -111,10 +140,11 @@ async fn invitation(
 /// What the web vault needs to know about the account beyond Bitwarden's profile.
 async fn account(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let settings = state.settings();
-    let (factors, unseen, used) = tokio::try_join!(
+    let (factors, unseen, used, travelling) = tokio::try_join!(
         state.store.two_factors(&session.user.id),
         state.store.unseen_notices(&session.user.id),
         state.store.storage_used(&session.user.id),
+        state.store.travelling(&session.user.id),
     )?;
     let require = &settings.policies.require_two_factor;
     Ok(Json(json!({
@@ -127,6 +157,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
             "minimumKdf": settings.policies.minimum_kdf,
         },
         "securityNoticesUnseen": unseen,
+        "travel": { "enabled": travelling },
         "storage": { "usedBytes": used, "limitBytes": settings.storage_limit() },
         "admin": session.user.admin,
         "hasMasterPassword": !session.user.user_key.is_empty(),

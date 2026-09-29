@@ -1,0 +1,4 @@
+﻿"url","username","password","httpRealm","formActionOrigin","guid","timeCreated","timeLastUsed","timePasswordChanged"
+"https://www.example.org","nyu","ff-pass",,"https://www.example.org","{11111111-2222-3333-4444-555555555555}","1700000000000","1700000000000","1700000000000"
+"https://intranet.example.net","mika","basic-pass","Intranet",,"{11111111-2222-3333-4444-666666666666}","1700000000000","1700000000000","1700000000000"
+"chrome://FirefoxAccounts","abc","{}",,,"{11111111-2222-3333-4444-777777777777}","1700000000000","1700000000000","1700000000000"

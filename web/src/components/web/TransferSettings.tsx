@@ -1,60 +1,23 @@
-import { useRef, useState } from 'react';
-import { exportVault, importVault } from '../../lib/account';
-import { syncNow } from '../../lib/api';
-import { errorText } from '../../lib/errors';
+import { useState } from 'react';
+import { exportVault } from '../../lib/account';
 import { t, useLanguage } from '../../lib/i18n';
 import { reportExport } from '../../lib/notices';
-import { PasswordPrompt, ResultLine, Row, Segmented, save, type Result } from './controls';
+import { PasswordPrompt, Row, Segmented, save } from './controls';
+import { ImportSettings } from './ImportSettings';
 
 /**
- * In and out, in Bitwarden's formats: its JSON (everything) and its CSV (logins and notes).
- * An export is not encrypted — it holds every password in plain text.
+ * In and out. In: from Bitwarden's formats and from other password managers (ImportSettings).
+ * Out: Bitwarden's JSON (everything) and its CSV (logins and notes). An export is not
+ * encrypted — it holds every password in plain text.
  */
 export function TransferSettings() {
   useLanguage();
   const [format, setFormat] = useState<'json' | 'csv'>('json');
   const [exporting, setExporting] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Result>(null);
-  const file = useRef<HTMLInputElement>(null);
-
-  const pick = async (chosen: File | undefined) => {
-    if (!chosen) return;
-    setBusy(true);
-    setResult(null);
-    try {
-      const text = await chosen.text();
-      const kind = chosen.name.toLowerCase().endsWith('.csv') ? 'csv' : 'json';
-      const count = await importVault(kind, text);
-      await syncNow();
-      setResult({ tone: 'info', text: t('{n} Einträge importiert ✧', { n: count }) });
-    } catch (e) {
-      setResult({ tone: 'error', text: errorText(e) });
-    } finally {
-      setBusy(false);
-      if (file.current) file.current.value = '';
-    }
-  };
 
   return (
     <>
-      <Row
-        label={t('Importieren')}
-        description={t(
-          'Aus einem Export von Bitwarden, Vaultwarden oder UwULock: JSON (unverschlüsselt) oder CSV. Ordner kommen mit.',
-        )}
-      >
-        <input
-          ref={file}
-          type="file"
-          accept=".json,.csv,application/json,text/csv"
-          hidden
-          onChange={(e) => void pick(e.target.files?.[0])}
-        />
-        <button onClick={() => file.current?.click()} disabled={busy}>
-          {busy ? t('Importiert …') : t('Datei wählen …')}
-        </button>
-      </Row>
+      <ImportSettings />
       <Row
         label={t('Exportieren')}
         description={t(
@@ -72,7 +35,6 @@ export function TransferSettings() {
         />
         <button onClick={() => setExporting(true)}>{t('Exportieren …')}</button>
       </Row>
-      <ResultLine result={result} />
       {exporting && (
         <PasswordPrompt
           title={t('Tresor exportieren?')}

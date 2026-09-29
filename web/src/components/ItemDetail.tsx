@@ -23,6 +23,8 @@ import { IDENTITY_LABEL, KIND_LABEL } from '../lib/items';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
 import { Attachments } from './web/Attachments';
+import { ItemComfort } from './web/ItemComfort';
+import { ShareAsSend } from './web/ShareAsSend';
 import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
@@ -335,6 +337,7 @@ export function ItemDetail({
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [asking, setAsking] = useState<null | 'trash' | 'permanent'>(null);
+  const [sharing, setSharing] = useState(false);
   const [busy, setBusy] = useState(false);
   const id = summary.id;
 
@@ -462,6 +465,16 @@ export function ItemDetail({
               </button>
               <button
                 className="icon-button"
+                disabled={busy || summary.broken || !!d?.locked}
+                title={t('Als Send teilen')}
+                aria-label={t('Als Send teilen')}
+                aria-haspopup="dialog"
+                onClick={() => setSharing(true)}
+              >
+                <Icon name="send" size={15} />
+              </button>
+              <button
+                className="icon-button"
                 disabled={busy}
                 title={t('In den Papierkorb')}
                 aria-label={t('In den Papierkorb')}
@@ -473,6 +486,9 @@ export function ItemDetail({
                 className="primary"
                 disabled={busy || summary.broken || !!d?.locked}
                 onClick={onEdit}
+                title={t('Bearbeiten (E)')}
+                aria-keyshortcuts="E"
+                data-edit
               >
                 <Icon name="pencil" size={15} />
                 {t('Bearbeiten')}
@@ -481,6 +497,10 @@ export function ItemDetail({
           )}
         </div>
       </header>
+
+      {sharing && (
+        <ShareAsSend itemId={id} itemName={summary.name} onClose={() => setSharing(false)} />
+      )}
 
       {asking && (
         <ConfirmDelete
@@ -751,6 +771,8 @@ export function ItemDetail({
             revision={summary.revisionDate}
             editable={!summary.deleted && !summary.organizationId}
           />
+
+          <ItemComfort summary={summary} passwordDate={d.login?.passwordRevisionDate ?? null} />
 
           <footer className="detail-foot">
             {d.login && d.login.passkeys > 0 && (

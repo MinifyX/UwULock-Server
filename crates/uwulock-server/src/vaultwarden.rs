@@ -686,6 +686,7 @@ pub fn read_vaultwarden(
             disabled: s.16,
             hide_email: s.17.unwrap_or(false),
             uploaded,
+            emails: None,
         });
     }
     // A file Send's file is at `sends/<send>/<file>`.

@@ -20,6 +20,7 @@ import {
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
+import { listbox } from '../listbox';
 import { BackToList, Panes } from '../panes';
 import { PasswordInput } from '../PasswordInput';
 import { PasswordPrompt, save } from './controls';
@@ -68,6 +69,16 @@ export function FileRequestsView({ open }: { open?: string | null }) {
     [requests],
   );
   const current = sorted.find((request) => request.id === selected) ?? sorted[0] ?? null;
+  const list = listbox({
+    prefix: 'request',
+    ids: sorted.map((request) => request.id),
+    selected: current?.id ?? null,
+    onSelect: setSelected,
+    onOpen: (id) => {
+      setSelected(id);
+      showDetail();
+    },
+  });
 
   const copyLink = async (request: FileRequest) => {
     const link = requestLink(request);
@@ -87,7 +98,12 @@ export function FileRequestsView({ open }: { open?: string | null }) {
 
   return (
     <>
-      <section className="list-pane" aria-label={t('Datei-Anfragen')}>
+      <section
+        className="list-pane"
+        aria-label={t('Datei-Anfragen')}
+        tabIndex={-1}
+        data-main-content
+      >
         <div className="list-head">
           <p className="list-title">
             <span>{t('Datei-Anfragen')}</span>
@@ -116,10 +132,11 @@ export function FileRequestsView({ open }: { open?: string | null }) {
           </div>
         )}
         {sorted.length ? (
-          <ul className="item-list" role="listbox" aria-label={t('Datei-Anfragen')}>
+          <ul className="item-list" aria-label={t('Datei-Anfragen')} {...list.listProps}>
             {sorted.map((request) => (
               <li
                 key={request.id}
+                id={list.optionId(request.id)}
                 role="option"
                 aria-selected={request.id === current?.id}
                 className="item-row"

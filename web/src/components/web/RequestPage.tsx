@@ -6,6 +6,7 @@ import { openRequest, requestAccess, submit, type OpenedRequest } from '../../li
 import { Icon } from '../Icon';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
+import { WelcomeMark } from '../TitleBar';
 
 /**
  * A file request, for whoever has its link: `#/request/<access id>/<secret>` on the server, or
@@ -79,7 +80,7 @@ export function RequestPage({ accessId, secret }: { accessId: string; secret: st
   return (
     <div className="welcome">
       <section className="welcome-art" aria-hidden>
-        <NyuScene name="keys" className="welcome-scene" />
+        <WelcomeMark fallback={<NyuScene name="keys" className="welcome-scene" />} />
         <p className="welcome-title">
           {owner ? t('{owner} bittet um Dateien ✧', { owner }) : t('Jemand bittet um Dateien ✧')}
         </p>

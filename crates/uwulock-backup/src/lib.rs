@@ -1,5 +1,5 @@
 //! Off-site backups of a UwULock server: the database and the files of the data directory
-//! (attachments, Send files, file-request uploads, icons, certificates and keys), deduplicated
+//! (attachments, Send files, file-request uploads, certificates and keys), deduplicated
 //! and (by default) encrypted, on an SFTP server, in an S3 bucket or in a folder of this machine.
 //!
 //! The design and the repository format are UwUMail Server's (`docs/backups.md` there). The
@@ -221,9 +221,11 @@ fn random_suffix() -> String {
 }
 
 /// Whether a name at the top of the data directory is the server's own business rather than
-/// part of a backup: the database and its journal, the local backups, scratch space.
+/// part of a backup: the database and its journal, the local backups, scratch space, and the
+/// icons fetched from websites and the icon library, which are fetched again (own icons are in
+/// the database).
 fn left_out(name: &str) -> bool {
-    name.starts_with("uwulock.db") || name == "backups" || name == TEMP_DIR
+    name.starts_with("uwulock.db") || name == "backups" || name == "icons" || name == TEMP_DIR
 }
 
 /// The files of the data directory a backup carries, with their sizes and times. Symbolic links
@@ -330,7 +332,7 @@ pub async fn backup(
     let (database, database_size, bytes) = chunked?;
     uploaded += bytes;
 
-    // The files: attachments, Sends, file requests, icons, certificates and keys.
+    // The files: attachments, Sends, file requests, certificates and keys.
     let mut files = Vec::new();
     let mut files_size = 0;
     for (path, full, size, modified) in data_files(source.data_dir) {

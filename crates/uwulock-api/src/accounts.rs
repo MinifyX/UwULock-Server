@@ -56,7 +56,9 @@ pub(crate) fn routes() -> Router<AppState> {
 
 /// What brings a whole vault along, and may be large.
 pub(crate) fn vault_routes() -> Router<AppState> {
-    Router::new().route("/api/accounts/key-management/rotate-user-account-keys", post(rotate_keys))
+    Router::new()
+        .route("/api/accounts/key-management/rotate-user-account-keys", post(rotate_keys))
+        .route("/uwu/v1/accounts/rotate-keys", post(rotate_keys_uwu))
 }
 
 #[derive(Deserialize)]
@@ -445,15 +447,111 @@ struct RotateKeys {
 }
 
 /// A new user key: every item and folder name encrypted again, the private key wrapped again,
-/// the user key under the (maybe new) master password. All of it in one step, or nothing.
+/// the user key under the (maybe new) master password. All of it in one step, or nothing. The
+/// personal entry versions go, and the extras key's wrap under the old user key (§3).
 async fn rotate_keys(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
     session: Session,
     Json(data): Json<RotateKeys>,
 ) -> ApiResult<StatusCode> {
+    let rotation = prepare_rotation(&state, &session, data, uwulock_store::RotationExtras::Official).await?;
+    finish_rotation(&state, &session, ip, rotation).await
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtrasWraps {
+    user_key_wrapped: String,
+    public_key_wrapped: String,
+}
+
+#[derive(Deserialize)]
+struct RotatedVersion {
+    id: String,
+    cipher: CipherData,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UwuRotation {
+    rotation: RotateKeys,
+    #[serde(default)]
+    extras_key: Option<ExtrasWraps>,
+    #[serde(default)]
+    versions: Vec<RotatedVersion>,
+    #[serde(default)]
+    drop_versions: bool,
+}
+
+/// A key rotation by the web vault or UwULock's desktop app (docs/uwu-api.md §3): Bitwarden's
+/// rotation, and in the same step the extras key wrapped for the new user key and every
+/// personal entry version re-encrypted — or dropped, if the client says so.
+async fn rotate_keys_uwu(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    session: Session,
+    Json(data): Json<UwuRotation>,
+) -> ApiResult<StatusCode> {
+    let extras_key = match data.extras_key {
+        Some(wraps) => {
+            if !crate::keys::enc_string(&wraps.user_key_wrapped, 2, 1000)
+                || !crate::keys::enc_string(&wraps.public_key_wrapped, 4, 2000)
+            {
+                return Err(ApiError::bad("The extras key is not wrapped the way it should be.").code("invalid"));
+            }
+            Some((wraps.user_key_wrapped, wraps.public_key_wrapped))
+        }
+        None => None,
+    };
+    let versions = if data.drop_versions {
+        if !data.versions.is_empty() {
+            return Err(ApiError::bad("Either versions or dropVersions, not both.").code("invalid"));
+        }
+        None
+    } else {
+        let mut versions = Vec::with_capacity(data.versions.len());
+        for version in data.versions {
+            let mut placeholder = uwulock_store::Cipher {
+                id: version.id.clone(),
+                user_id: session.user.id.clone(),
+                organization_id: None,
+                folder_id: None,
+                kind: 1,
+                name: String::new(),
+                notes: None,
+                key: None,
+                data: "{}".into(),
+                fields: None,
+                password_history: None,
+                favorite: false,
+                reprompt: 0,
+                created: String::new(),
+                revision: String::new(),
+                deleted: None,
+                archived: None,
+            };
+            placeholder = apply(version.cipher, placeholder, None)?;
+            versions.push((version.id, uwulock_store::versions::content_of(&placeholder)));
+        }
+        Some(versions)
+    };
+    let extras = uwulock_store::RotationExtras::Own { extras_key, versions };
+    let rotation = prepare_rotation(&state, &session, data.rotation, extras).await?;
+    finish_rotation(&state, &session, ip, rotation).await
+}
+
+/// Bitwarden's rotation body, checked and made into what the store writes.
+async fn prepare_rotation(
+    state: &AppState,
+    session: &Session,
+    data: RotateKeys,
+    extras: uwulock_store::RotationExtras,
+) -> ApiResult<uwulock_store::Rotation> {
     let user = &session.user;
-    check_password(&state, user, Some(&data.old_master_key_authentication_hash)).await?;
+    check_password(state, user, Some(&data.old_master_key_authentication_hash)).await?;
+    // Hidden items cannot be encrypted again by a client that does not see them.
+    crate::travel::not_while_travelling(state, &user.id).await?;
     let unlock = data.account_unlock_data.master_password_unlock_data;
     if unlock.kdf_type != user.kdf.kind
         || unlock.kdf_iterations != user.kdf.iterations
@@ -487,7 +585,7 @@ async fn rotate_keys(
     for send in data.account_data.sends {
         let id = send.id.clone().ok_or_else(|| ApiError::bad("Send doesn't exist"))?;
         let current = existing.get(&id).cloned().ok_or_else(|| ApiError::bad("Send doesn't exist"))?;
-        sends.push(crate::sends::apply(&state, send, current).await?);
+        sends.push(crate::sends::apply(state, send, current).await?);
     }
     let folders: Vec<(String, String)> = data
         .account_data
@@ -501,7 +599,7 @@ async fn rotate_keys(
     rotated.user_key = unlock.master_key_encrypted_user_key;
     rotated.password_hash = auth::hash_password(state.config.hash_cost, &unlock.master_key_authentication_hash).await?;
     rotated.security_stamp = uuid::Uuid::new_v4().to_string();
-    let rotation = uwulock_store::Rotation {
+    Ok(uwulock_store::Rotation {
         user: rotated,
         folders,
         ciphers,
@@ -525,15 +623,35 @@ async fn rotate_keys(
             .into_iter()
             .map(|enrolment| (enrolment.organization_id, enrolment.reset_password_key))
             .collect(),
-    };
-    if !state.store.rotate_keys(rotation).await? {
-        return Err(ApiError::bad(
-            "All existing ciphers, folders, sends, emergency contacts and passkeys must be included in the rotation",
-        ));
+        extras,
+    })
+}
+
+async fn finish_rotation(
+    state: &AppState,
+    session: &Session,
+    ip: std::net::IpAddr,
+    rotation: uwulock_store::Rotation,
+) -> ApiResult<StatusCode> {
+    let user = &session.user;
+    match state.store.rotate_keys(rotation).await? {
+        uwulock_store::RotationOutcome::Done => {}
+        uwulock_store::RotationOutcome::Incomplete => {
+            return Err(ApiError::bad(
+                "All existing ciphers, folders, sends, emergency contacts and passkeys must be included in the rotation",
+            ));
+        }
+        uwulock_store::RotationOutcome::VersionsChanged => {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "The entry versions changed in the meantime. Fetch them again and repeat the rotation.",
+            )
+            .code("versions_changed"));
+        }
     }
-    let context = notices::Context::of(&state, &session, ip).await;
-    notices::record(&state, user, "keysRotated", &context, json!({})).await;
-    crate::notify::user(&state, &user.id, Some(&session), uwulock_notify::Kind::LogOut);
+    let context = notices::Context::of(state, session, ip).await;
+    notices::record(state, user, "keysRotated", &context, json!({})).await;
+    crate::notify::user(state, &user.id, Some(session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %user.id, "user key rotated");
     Ok(StatusCode::OK)
 }

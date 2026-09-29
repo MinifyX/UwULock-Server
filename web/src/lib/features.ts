@@ -66,6 +66,9 @@ export type Send = {
   maxAccessCount: number | null;
   accessCount: number;
   hasPassword: boolean;
+  /** Who may open it: 0 only `emails`, with a code by mail; 1 with the password; 2 anybody. */
+  authType: 0 | 1 | 2;
+  emails: string[];
   disabled: boolean;
   hideEmail: boolean;
   revisionDate: string | null;
@@ -88,6 +91,9 @@ export type SendDraft = {
   deletionDate: string;
   disabled: boolean;
   hideEmail: boolean;
+  /** 0 only `emails`; 1 the password (the new one, or the one there is); 2 anybody. */
+  authType: 0 | 1 | 2;
+  emails: string[];
 };
 
 export const sendsList = () => callJson<Send[]>((core) => core.sends());
@@ -129,9 +135,40 @@ export async function deleteSend(sendId: string): Promise<void> {
   await sync();
 }
 
-export async function removeSendPassword(sendId: string): Promise<void> {
-  await request(`/api/sends/${id(sendId)}/remove-password`, { method: 'PUT' });
+/** Anybody with the link may open it again: no password, no addresses. */
+export async function removeSendAuth(sendId: string): Promise<void> {
+  await request(`/api/sends/${id(sendId)}/remove-auth`, { method: 'PUT' });
   await sync();
+}
+
+/** The values of an item "Share as Send" offers, by uwulock-core's names; never the TOTP key. */
+export type ShareableField = { name: string; label: string | null };
+
+export const shareableFields = (itemId: string) =>
+  callJson<ShareableField[]>((core) => core.shareableFields(itemId));
+
+export type ShareDraft = {
+  itemId: string;
+  /** Which values, each with the label the recipient reads. */
+  fields: { name: string; label: string }[];
+  name: string;
+  hidden: boolean;
+  maxAccessCount: number | null;
+  deletionDate: string;
+  expirationDate: string | null;
+  password: string | null;
+  emails: string[];
+  hideEmail: boolean;
+};
+
+/** A text Send of an item's chosen values; its link. An ordinary Send, in every client. */
+export async function shareItem(draft: ShareDraft): Promise<string> {
+  const sealed = await callJson<{ request: Record<string, unknown>; urlKey: string }>((core) =>
+    core.shareItem(JSON.stringify(draft)),
+  );
+  const created = await request<{ accessId: string }>('/api/sends', { body: sealed.request });
+  await sync();
+  return sendLink({ accessId: created.accessId, urlKey: sealed.urlKey });
 }
 
 export type OpenedSend = {
@@ -145,41 +182,78 @@ export type OpenedSend = {
   size: string | null;
   expirationDate: string | null;
   creator: string | null;
-  /** The password's hash, for the file. */
-  password: string | null;
+  /** The token the server gave for this Send: for the file, for two minutes. */
+  token: string;
 };
 
-/** A Send, for whoever has its link. Throws `{ kind: 'password' }` when it wants one. */
+/** What opens a Send: its password, or an address on its list and the code mailed there. */
+export type SendProof = { password?: string; email?: string; otp?: string };
+
+/**
+ * Why a Send did not open: it wants a password (`password`, `wrong-password`), an address
+ * (`email`), the code mailed there (`code`, `wrong-code`), or it is not there (`gone`).
+ */
+export type SendRefusal = {
+  kind: 'password' | 'wrong-password' | 'email' | 'code' | 'wrong-code' | 'gone';
+  message: string;
+};
+
+/**
+ * A Send, for whoever has its link, the way Bitwarden's newest clients open one: a token from
+ * the identity endpoint first, then the Send. Throws a `SendRefusal` when it wants more.
+ */
 export async function openSend(
   accessId: string,
   urlKey: string,
-  password?: string,
+  proof: SendProof = {},
 ): Promise<OpenedSend> {
-  const passwordHash = password
-    ? await call((core) => core.sendAccessPassword(password, urlKey))
-    : null;
-  let access: Record<string, unknown>;
+  const form = new URLSearchParams({
+    grant_type: 'send_access',
+    client_id: 'send',
+    scope: 'api.send.access',
+    send_id: accessId,
+  });
+  if (proof.password) {
+    const password = proof.password;
+    form.set('password_hash_b64', await call((core) => core.sendAccessPassword(password, urlKey)));
+  }
+  if (proof.email) form.set('email', proof.email.trim());
+  if (proof.otp) form.set('otp', proof.otp.replace(/\s+/g, ''));
+  let token: string;
   try {
-    access = await request<Record<string, unknown>>(`/api/sends/access/${id(accessId)}`, {
-      body: passwordHash ? { password: passwordHash } : {},
-      auth: false,
-    });
+    token = (
+      await request<{ access_token: string }>('/identity/connect/token', { form, auth: false })
+    ).access_token;
   } catch (error) {
-    const status = (error as { status?: number }).status;
-    if (status === 401) throw { kind: 'password', message: 'This Send has a password.' };
+    const kind = ((error as { body?: unknown }).body as { send_access_error_type?: string } | null)
+      ?.send_access_error_type;
+    const refuse = (refusal: SendRefusal['kind']): never => {
+      throw { kind: refusal, message: (error as Error).message } satisfies SendRefusal;
+    };
+    if (kind === 'password_hash_b64_required') refuse('password');
+    if (kind === 'password_hash_b64_invalid') refuse('wrong-password');
+    if (kind === 'email_required') refuse('email');
+    if (kind === 'email_and_otp_required') refuse(proof.otp ? 'wrong-code' : 'code');
+    if (kind === 'send_id_invalid') refuse('gone');
     throw error;
   }
-  const opened = await callJson<Omit<OpenedSend, 'id' | 'password'>>((core) =>
+  const access = await request<Record<string, unknown>>('/api/sends/access', {
+    method: 'POST',
+    auth: false,
+    extraHeaders: { Authorization: `Bearer ${token}` },
+  });
+  const opened = await callJson<Omit<OpenedSend, 'id' | 'token'>>((core) =>
     core.openSendAccess(JSON.stringify(access), urlKey),
   );
-  return { ...opened, id: String(access.id), password: passwordHash };
+  return { ...opened, id: String(access.id), token };
 }
 
 export async function downloadSendFile(send: OpenedSend, urlKey: string): Promise<Blob> {
-  const answer = await request<{ url: string }>(
-    `/api/sends/${id(send.id)}/access/file/${id(send.fileId ?? '')}`,
-    { body: send.password ? { password: send.password } : {}, auth: false },
-  );
+  const answer = await request<{ url: string }>(`/api/sends/access/file/${id(send.fileId ?? '')}`, {
+    method: 'POST',
+    auth: false,
+    extraHeaders: { Authorization: `Bearer ${send.token}` },
+  });
   const bytes = await fetchBytes(answer.url);
   const plain = await call((core) => core.openSendFile(urlKey, bytes));
   return new Blob([plain as BlobPart]);

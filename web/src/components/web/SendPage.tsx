@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { errorText } from '../../lib/errors';
-import { downloadSendFile, openSend, type OpenedSend } from '../../lib/features';
+import {
+  downloadSendFile,
+  openSend,
+  type OpenedSend,
+  type SendProof,
+  type SendRefusal,
+} from '../../lib/features';
 import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
@@ -8,31 +14,51 @@ import { Icon } from '../Icon';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
 import { save } from './controls';
+import { WelcomeMark } from '../TitleBar';
+
+/** What the page asks for before the Send opens. */
+type Asking = 'password' | 'email' | 'code' | null;
 
 /**
  * A Send, for whoever has its link: `#/send/<access id>/<key>`. The key never goes to the
- * server — it is after the `#` — so the text or the file is opened here, in the browser.
+ * server — it is after the `#` — so the text or the file is opened here, in the browser. A Send
+ * may want its password first, or — when only given addresses may open it — an address and the
+ * code the server mails there.
  */
 export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: string }) {
   useLanguage();
   const [send, setSend] = useState<OpenedSend | null>(null);
-  const [needsPassword, setNeedsPassword] = useState(false);
+  const [asking, setAsking] = useState<Asking>(null);
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(false);
 
-  const load = async (withPassword?: string) => {
+  const load = async (proof: SendProof = {}) => {
     setBusy(true);
     setError(null);
     try {
-      const opened = await openSend(accessId, urlKey, withPassword);
+      const opened = await openSend(accessId, urlKey, proof);
       setSend(opened);
       setShown(!opened.hidden);
-      setNeedsPassword(false);
+      setAsking(null);
     } catch (e) {
-      if ((e as { kind?: string }).kind === 'password') setNeedsPassword(true);
-      else setError(errorText(e));
+      const refusal = (e as Partial<SendRefusal>).kind;
+      if (refusal === 'password' || refusal === 'wrong-password') {
+        setAsking('password');
+        if (refusal === 'wrong-password') setError(t('Das Passwort stimmt nicht.'));
+      } else if (refusal === 'email') {
+        setAsking('email');
+      } else if (refusal === 'code' || refusal === 'wrong-code') {
+        setAsking('code');
+        if (refusal === 'wrong-code') setError(t('Der Code stimmt nicht oder ist abgelaufen.'));
+      } else if (refusal === 'gone') {
+        setAsking(null);
+      } else {
+        setError(errorText(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -43,8 +69,16 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (password) void load(password);
+    if (asking === 'password' && password) void load({ password });
+    else if (asking === 'email' && email.trim()) void load({ email });
+    else if (asking === 'code' && code.trim()) void load({ email, otp: code });
   };
+
+  const errorLine = error && (
+    <p className="form-error" role="alert">
+      {error}
+    </p>
+  );
 
   const download = async () => {
     if (!send) return;
@@ -61,7 +95,7 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
   return (
     <div className="welcome">
       <section className="welcome-art" aria-hidden>
-        <NyuScene name="keys" className="welcome-scene" />
+        <WelcomeMark fallback={<NyuScene name="keys" className="welcome-scene" />} />
         <p className="welcome-title">{t('Jemand hat dir etwas geschickt ✧')}</p>
         <p className="welcome-text">
           {t(
@@ -70,7 +104,7 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
         </p>
       </section>
       <section className="welcome-card">
-        {needsPassword ? (
+        {asking === 'password' ? (
           <form className="form" onSubmit={submit}>
             <h1 className="card-title">{t('Passwort nötig')}</h1>
             <p className="dialog-lead">{t('Dieser Send ist mit einem Passwort geschützt.')}</p>
@@ -78,14 +112,80 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
               <span>{t('Passwort')}</span>
               <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
             </label>
-            {error && (
-              <p className="form-error" role="alert">
-                {error}
-              </p>
-            )}
+            {errorLine}
             <div className="form-actions">
               <span className="spacer" />
               <button className="primary" type="submit" disabled={busy || !password}>
+                {busy ? t('Prüft …') : t('Öffnen')}
+              </button>
+            </div>
+          </form>
+        ) : asking === 'email' ? (
+          <form className="form" onSubmit={submit}>
+            <h1 className="card-title">{t('Nur für bestimmte Adressen')}</h1>
+            <p className="dialog-lead">
+              {t(
+                'Diesen Send dürfen nur bestimmte Leute öffnen. Gib deine E-Mail-Adresse ein: Steht sie auf der Liste, bekommst du einen Code.',
+              )}
+            </p>
+            <label className="field">
+              <span>{t('E-Mail-Adresse')}</span>
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoFocus
+                required
+                disabled={busy}
+              />
+            </label>
+            {errorLine}
+            <div className="form-actions">
+              <span className="spacer" />
+              <button className="primary" type="submit" disabled={busy || !email.trim()}>
+                {busy ? t('Schickt …') : t('Code schicken')}
+              </button>
+            </div>
+          </form>
+        ) : asking === 'code' ? (
+          <form className="form" onSubmit={submit}>
+            <h1 className="card-title">{t('Code aus der Mail')}</h1>
+            <p className="dialog-lead" role="status">
+              {t(
+                'Steht {email} auf der Liste, ist ein Code unterwegs. Er gilt 5 Minuten. Keine Mail? Schau in den Spam oder frag den Absender.',
+                { email: email.trim() },
+              )}
+            </p>
+            <label className="field">
+              <span>{t('Code')}</span>
+              <input
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9 ]*"
+                maxLength={8}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                autoFocus
+                required
+                disabled={busy}
+              />
+            </label>
+            {errorLine}
+            <div className="form-actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setCode('');
+                  setError(null);
+                  setAsking('email');
+                }}
+              >
+                {t('Andere Adresse')}
+              </button>
+              <span className="spacer" />
+              <button className="primary" type="submit" disabled={busy || !code.trim()}>
                 {busy ? t('Prüft …') : t('Öffnen')}
               </button>
             </div>

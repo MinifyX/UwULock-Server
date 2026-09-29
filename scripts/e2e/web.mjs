@@ -10,6 +10,7 @@
 import { createHmac } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { checkA11y } from './axe.mjs';
 
 const [link, shots] = process.argv.slice(2);
 if (!link) {
@@ -79,6 +80,7 @@ try {
   await fields.nth(0).fill(password);
   await fields.nth(1).fill(password);
   await snap('register');
+  await checkA11y(page, 'register page');
   await page.getByRole('button', { name: 'Konto anlegen' }).click();
   await page.getByPlaceholder(/Tresor durchsuchen/).waitFor({ timeout: 30000 });
   await snap('empty-vault');
@@ -93,6 +95,22 @@ try {
   await page.getByRole('button', { name: 'Speichern' }).click();
   await page.locator('.item-list').getByText('Router').first().waitFor();
   await snap('item-saved');
+  await checkA11y(page, 'vault with an item selected');
+
+  step('the keyboard: shortcut overview, the new-item menu, the list');
+  await page.locator('.item-list').focus();
+  await page.keyboard.press('?');
+  await page.getByRole('dialog', { name: 'Tastenkürzel' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+  if (!(await page.locator('.item-list').evaluate((list) => list === document.activeElement)))
+    throw new Error('focus did not come back to the list after the overview');
+  await page.keyboard.press('n');
+  await page.getByRole('menuitem', { name: 'Login' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.getByRole('menu').waitFor({ state: 'detached' });
+  if (!(await page.locator('.item-list').evaluate((list) => list === document.activeElement)))
+    throw new Error('focus did not come back to the list after the menu');
 
   step('reload: the vault is locked, and opens again');
   await page.reload();
@@ -107,18 +125,30 @@ try {
   await page.getByLabel('Name', { exact: true }).fill('Notiz');
   await page.getByRole('button', { name: 'Speichern' }).click();
   await page.locator('.item-list').getByText('Notiz').first().waitFor();
-  for (const name of ['Router', 'Notiz']) await page.getByLabel(`${name} auswählen`).check({ force: true });
+  // Ticked with the mouse (the box on the row) and with the keyboard (Space in the list).
+  await page.locator('.item-row', { hasText: 'Router' }).locator('.item-check').click();
+  await page.locator('.item-list').focus();
+  await page.locator('.item-row', { hasText: 'Notiz' }).click();
+  await page.locator('.item-list').press('Space');
+  await page.getByText('2 ausgewählt').waitFor();
   await snap('bulk-selected');
   await page.getByRole('toolbar').getByRole('button', { name: 'Archivieren' }).click();
   const sidebar = page.getByRole('navigation', { name: 'Tresor' });
   await sidebar.getByRole('button', { name: /^Archiv/ }).click();
-  for (const name of ['Router', 'Notiz']) await page.getByLabel(`${name} auswählen`).check({ force: true });
+  for (const name of ['Router', 'Notiz'])
+    await page.locator('.item-row', { hasText: name }).locator('.item-check').click();
   await page.getByRole('toolbar').getByRole('button', { name: 'Aus dem Archiv holen' }).click();
   await sidebar.getByRole('button', { name: /^Alle Einträge/ }).click();
   await page.locator('.item-list').getByText('Router').first().waitFor();
 
   step('the settings');
   await page.getByRole('button', { name: 'Einstellungen', exact: true }).click();
+  await checkA11y(page, 'settings dialog');
+  // Once in the light theme too, then back.
+  await page.getByRole('radio', { name: 'Hell' }).click();
+  await page.locator('html[data-theme="light"]').waitFor({ state: 'attached' });
+  await checkA11y(page, 'settings dialog, light theme');
+  await page.getByRole('radio', { name: 'Dunkel' }).click();
   for (const section of ['Konto', 'Geräte', 'Import & Export', 'Zwei-Schritt-Anmeldung']) {
     await page.getByRole('navigation').getByRole('button', { name: section }).click();
     await page.waitForTimeout(300);
@@ -141,6 +171,7 @@ try {
   await page.getByRole('navigation').getByRole('button', { name: 'Konto' }).click();
   await page.getByRole('button', { name: 'Abmelden', exact: true }).click();
   await page.getByRole('heading', { name: 'Anmelden' }).waitFor();
+  await checkA11y(page, 'login page');
   await page.getByLabel('E-Mail-Adresse').fill(email);
   await unlockOrLogin();
   await page.getByRole('heading', { name: 'Zweistufige Anmeldung' }).waitFor({ timeout: 30000 });
@@ -167,6 +198,7 @@ try {
   await page.goto(`${origin}/admin`);
   await page.getByRole('heading', { name: 'Übersicht' }).waitFor({ timeout: 30000 });
   await snap('admin-overview');
+  await checkA11y(page, 'admin overview');
   await page.getByRole('button', { name: 'Einladungen' }).click();
   await page.getByLabel('E-Mail-Adresse').fill('mika@example.com');
   await page.getByRole('button', { name: 'Einladen' }).click();
@@ -177,7 +209,26 @@ try {
     await page.getByRole('heading', { name, exact: true }).waitFor();
     await page.waitForTimeout(400);
     await snap(`admin-${name.toLowerCase()}`);
+    if (name === 'Nutzer' || name === 'Einstellungen') await checkA11y(page, `admin ${name}`);
   }
+
+  step('the admin portal by keyboard, and in high contrast');
+  // "6" is the sixth page of the bar: Aussehen, the branding.
+  await page.keyboard.press('6');
+  await page.getByRole('heading', { name: 'Aussehen', exact: true }).waitFor();
+  if (!page.url().endsWith('#/branding')) throw new Error(`6 led to ${page.url()}`);
+  await page.getByRole('button', { name: 'Darstellung' }).click();
+  await page.getByRole('radio', { name: 'Hoch' }).click();
+  await page.locator('html[data-contrast="high"]').waitFor({ state: 'attached' });
+  await page.keyboard.press('Escape');
+  await checkA11y(page, 'admin branding, high contrast');
+  await snap('admin-branding-high-contrast');
+  await page.getByRole('button', { name: 'Darstellung' }).click();
+  await page.getByRole('radiogroup', { name: 'Kontrast' }).getByRole('radio', { name: 'System' }).click();
+  await page.keyboard.press('Escape');
+  // Back to the backups: the ninth page.
+  await page.keyboard.press('9');
+  await page.getByRole('heading', { name: 'Backups', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Jetzt ein Backup schreiben' }).click();
   await page.getByRole('button', { name: 'Herunterladen' }).first().click();
   // A backup is the whole database: it takes the master password, and a wrong one gets nothing.

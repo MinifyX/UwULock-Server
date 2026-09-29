@@ -190,8 +190,9 @@ fn spawn_watch(state: AppState) {
 
 /// Once a day: a backup, and the old ones swept away — backups, events, codes, invitations and
 /// sessions that ran out, items that were in the trash for 30 days, Sends past their deletion
-/// date, files nothing claims any more. Every hour: emergency access whose wait is over, and the
-/// day's numbers for the admin portal.
+/// date, files nothing claims any more, versions past their time; the icon library's index again.
+/// Every hour: emergency access whose wait is over, reminders that became due, and the day's
+/// numbers for the admin portal.
 pub fn spawn_maintenance(config: Config, state: AppState) {
     spawn_watch(state.clone());
     let hourly = state.clone();
@@ -200,6 +201,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             if let Err(error) = uwulock_api::emergency::tend(&hourly).await {
                 tracing::warn!(error = %error.message(), "looking after emergency access did not work");
             }
+            uwulock_api::reminders::tend(&hourly).await;
             if let Err(error) = hourly.store.record_day().await {
                 tracing::warn!(%error, "the numbers of the day were not written down");
             }
@@ -218,6 +220,11 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             }
             sweep_files(&config, &state).await;
             uwulock_api::file_requests::sweep(&state).await;
+            if let Err(error) = state.store.prune_versions().await {
+                tracing::warn!(%error, "old versions of items were not swept up");
+            }
+            uwulock_api::icons::daily(&state).await;
+            uwulock_api::reports::daily(&state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");

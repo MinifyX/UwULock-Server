@@ -16,8 +16,10 @@ import {
 import { errorText } from '../lib/errors';
 import { copiedText } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
+import { dueItems, useComfort } from '../lib/comfort';
 import { KIND_LABEL } from '../lib/items';
 import { useSettings } from '../lib/settings';
+import { singleKey, typing } from '../lib/shortcuts';
 import { toast } from '../lib/toast';
 import { AccountCard } from './AccountCard';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -25,6 +27,7 @@ import { Icon, type IconName } from './Icon';
 import { ItemDetail } from './ItemDetail';
 import { ItemEditor } from './ItemEditor';
 import { ItemTile } from './ItemTile';
+import { listbox } from './listbox';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
 import { DeviceRequests } from './web/DeviceRequests';
@@ -36,6 +39,7 @@ import { SendsView } from './web/SendsView';
 export type Filter =
   | { kind: 'all' }
   | { kind: 'favorites' }
+  | { kind: 'due' }
   | { kind: 'type'; type: ItemKind }
   | { kind: 'folder'; id: string | null }
   | { kind: 'collection'; id: string }
@@ -66,6 +70,8 @@ function matches(filter: Filter, item: ItemSummary): boolean {
       return true;
     case 'favorites':
       return item.favorite;
+    case 'due':
+      return false;
     case 'type':
       return item.kind === filter.type;
     case 'folder':
@@ -86,13 +92,16 @@ type Props = {
   onAddAccount: () => void;
   /** A file request to open, from the link in the mail about it. */
   openRequest?: string | null;
+  /** The items due for a new password, from the link in the reminder's mail. */
+  openDue?: boolean;
 };
 
 /** What the editor is open for: an item to change, or a new one of that kind. */
 type Editing = { summary: ItemSummary | null; kind: ItemKind };
 
-export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Props) {
+export function VaultScreen({ status, searchRef, onAddAccount, openRequest, openDue }: Props) {
   useLanguage();
+  const comfort = useComfort();
   const settings = useSettings();
   const [items, setItems] = useState<ItemSummary[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -105,6 +114,14 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
   const [editing, setEditing] = useState<Editing | null>(null);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const [requestShown, setRequestShown] = useState<string | null>(null);
+
+  // The link in the reminder's mail: the items that are due.
+  useEffect(() => {
+    if (!openDue) return;
+    setFilter({ kind: 'due' });
+    setView('list');
+    location.hash = '';
+  }, [openDue]);
 
   // The link in the mail about a file request: its page, and the link is used up.
   useEffect(() => {
@@ -123,7 +140,8 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const listRef = useRef<HTMLUListElement>(null);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  const detailRef = useRef<HTMLElement>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -145,11 +163,14 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
     return () => void stop.then((unlisten) => unlisten());
   }, [reload, status.accountId]);
 
+  // `comfort` changes when the reminders were read again.
+  const due = useMemo(() => dueItems(), [comfort]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => {
     const live = items.filter((i) => !i.deleted && !i.archived);
     return {
       all: live.length,
       favorites: live.filter((i) => i.favorite).length,
+      due: items.filter((i) => !i.deleted && due.has(i.id)).length,
       trash: items.filter((i) => i.deleted).length,
       archive: items.filter((i) => i.archived && !i.deleted).length,
       type: (type: ItemKind) => live.filter((i) => i.kind === type).length,
@@ -157,14 +178,18 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
         live.filter((i) => !i.organizationId && i.folderId === id).length,
       collection: (id: string) => live.filter((i) => i.collectionIds.includes(id)).length,
     };
-  }, [items]);
+  }, [items, due]);
 
   const visible = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
     return items
       .filter((item) =>
-        words.length ? !item.deleted || filter.kind === 'trash' : matches(filter, item),
+        words.length
+          ? !item.deleted || filter.kind === 'trash'
+          : filter.kind === 'due'
+            ? !item.deleted && due.has(item.id)
+            : matches(filter, item),
       )
       .filter((item) => {
         if (!words.length) return true;
@@ -175,7 +200,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
         (a, b) =>
           collator.compare(a.name, b.name) || collator.compare(a.subtitle ?? '', b.subtitle ?? ''),
       );
-  }, [items, filter, query]);
+  }, [items, filter, query, due]);
 
   // Keep a selection that is still visible, or take the first.
   useEffect(() => {
@@ -183,17 +208,6 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
     if (selected && visible.some((i) => i.id === selected)) return;
     setSelected(visible[0]?.id ?? null);
   }, [visible, selected, loaded]);
-
-  const move = (step: number) => {
-    if (!visible.length) return;
-    const index = visible.findIndex((i) => i.id === selected);
-    const next = visible[Math.max(0, Math.min(visible.length - 1, index + step))];
-    if (!next) return;
-    setSelected(next.id);
-    listRef.current
-      ?.querySelector<HTMLElement>(`[data-id="${CSS.escape(next.id)}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
-  };
 
   const current = items.find((i) => i.id === selected) ?? null;
 
@@ -220,21 +234,23 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
       ? t('Alle Einträge')
       : filter.kind === 'favorites'
         ? t('Favoriten')
-        : filter.kind === 'trash'
-          ? t('Papierkorb')
-          : filter.kind === 'archive'
-            ? t('Archiv')
-            : filter.kind === 'type'
-              ? t(TYPES.find((x) => x.type === filter.type)?.label ?? '')
-              : filter.kind === 'folder'
-                ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
-                : filter.kind === 'collection'
-                  ? (overview?.collections.find((c) => c.id === filter.id)?.name ?? '')
-                  : filter.kind === 'sends'
-                    ? t('Sends')
-                    : filter.kind === 'requests'
-                      ? t('Datei-Anfragen')
-                      : t('Passwortprüfung');
+        : filter.kind === 'due'
+          ? t('Fällig')
+          : filter.kind === 'trash'
+            ? t('Papierkorb')
+            : filter.kind === 'archive'
+              ? t('Archiv')
+              : filter.kind === 'type'
+                ? t(TYPES.find((x) => x.type === filter.type)?.label ?? '')
+                : filter.kind === 'folder'
+                  ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
+                  : filter.kind === 'collection'
+                    ? (overview?.collections.find((c) => c.id === filter.id)?.name ?? '')
+                    : filter.kind === 'sends'
+                      ? t('Sends')
+                      : filter.kind === 'requests'
+                        ? t('Datei-Anfragen')
+                        : t('Passwortprüfung');
 
   const pick = (next: Filter) => {
     setFilter(next);
@@ -271,6 +287,63 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
     });
     setLastChecked(id);
   };
+
+  /** Enter on the list: the item, and focus on it (on a phone, its own page). */
+  const open = (id: string) => {
+    setSelected(id);
+    setView('detail');
+    window.requestAnimationFrame(() => detailRef.current?.focus());
+  };
+
+  const list = listbox({
+    prefix: 'item',
+    ids: visible.map((item) => item.id),
+    selected,
+    onSelect: setSelected,
+    onOpen: open,
+    onMark: toggle,
+  });
+  const move = list.move;
+
+  // The shortcuts of a single key (see lib/shortcuts.ts): search, new, edit, next and previous,
+  // and the sections by number.
+  useEffect(() => {
+    const sections: Filter[] = [
+      { kind: 'all' },
+      { kind: 'favorites' },
+      { kind: 'sends' },
+      { kind: 'requests' },
+      { kind: 'health' },
+    ];
+    const onKey = (event: KeyboardEvent) => {
+      if (!singleKey(event)) return;
+      const items = !['sends', 'requests', 'health'].includes(filter.kind);
+      const key = event.key.toLowerCase();
+      if (key === '/' && items) {
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if (key === 'n' && items && newButtonRef.current) {
+        newButtonRef.current.click();
+      } else if (key === 'e' && items) {
+        const edit = detailRef.current?.querySelector<HTMLButtonElement>('[data-edit]');
+        if (!edit || edit.disabled) return;
+        edit.click();
+      } else if ((key === 'j' || key === 'k') && items) {
+        move(key === 'j' ? 1 : -1);
+      } else if (/^[1-5]$/.test(key) && !event.shiftKey) {
+        const target = sections[Number(key) - 1]!;
+        setFilter(target);
+        setQuery('');
+        setChecked(new Set());
+        setView('list');
+      } else {
+        return;
+      }
+      event.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 
   const bulk = async (work: () => Promise<void>, done: string) => {
     try {
@@ -319,10 +392,13 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
   return (
     <Panes.Provider value={{ showDetail: () => setView('detail'), back: () => setView('list') }}>
       <div className="vault" data-view={view}>
+        <h1 className="sr-only">{t('Tresor')}</h1>
         <nav className="sidebar" aria-label={t('Tresor')}>
           <ul className="nav-list">
             {nav({ kind: 'all' }, 'layers', t('Alle Einträge'), counts.all)}
             {nav({ kind: 'favorites' }, 'star', t('Favoriten'), counts.favorites)}
+            {(counts.due > 0 || filter.kind === 'due') &&
+              nav({ kind: 'due' }, 'bell', t('Fällig'), counts.due)}
           </ul>
 
           <ul className="nav-list">
@@ -386,9 +462,12 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                       key={f.id}
                       onContextMenu={(event) => {
                         event.preventDefault();
+                        // Shift+F10 or the menu key: no pointer, so beside the folder.
+                        const rect = (event.target as HTMLElement).getBoundingClientRect();
+                        const keyboard = event.clientX === 0 && event.clientY === 0;
                         setFolderMenu({
-                          x: event.clientX,
-                          y: event.clientY,
+                          x: keyboard ? rect.left + 24 : event.clientX,
+                          y: keyboard ? rect.bottom : event.clientY,
                           id: f.id,
                         });
                       }}
@@ -462,7 +541,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
           />
         ) : (
           <>
-            <section className="list-pane" aria-label={title}>
+            <section className="list-pane" aria-label={title} tabIndex={-1} data-main-content>
               <div className="list-head">
                 <label className="search-box">
                   <Icon name="search" size={15} />
@@ -583,10 +662,12 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                     <span className="list-count">{visible.length}</span>
                     <span className="spacer" />
                     <button
+                      ref={newButtonRef}
                       className="new-item"
                       aria-haspopup="menu"
                       aria-expanded={Boolean(newMenu)}
-                      title={t('Neuer Eintrag')}
+                      title={t('Neuer Eintrag (N)')}
+                      aria-keyshortcuts="N"
                       onClick={(event) => {
                         const rect = event.currentTarget.getBoundingClientRect();
                         setNewMenu({ x: rect.right - 180, y: rect.bottom + 4 });
@@ -601,29 +682,19 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
 
               {visible.length > 0 ? (
                 <ul
-                  ref={listRef}
                   className="item-list"
-                  role="listbox"
                   aria-label={title}
-                  tabIndex={0}
-                  aria-activedescendant={selected ? `item-${selected}` : undefined}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      move(e.key === 'ArrowDown' ? 1 : -1);
-                    } else if (e.key === 'Home' || e.key === 'End') {
-                      e.preventDefault();
-                      move(e.key === 'Home' ? -visible.length : visible.length);
-                    }
-                  }}
+                  aria-describedby="item-list-keys"
+                  {...list.listProps}
                 >
                   {visible.map((item) => (
                     <li
                       key={item.id}
-                      id={`item-${item.id}`}
+                      id={list.optionId(item.id)}
                       data-id={item.id}
                       role="option"
                       aria-selected={item.id === selected}
+                      aria-checked={checked.size > 0 ? checked.has(item.id) : undefined}
                       className="item-row"
                       data-checked={checked.has(item.id) || undefined}
                       onClick={(event) => {
@@ -636,17 +707,19 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                         }
                       }}
                     >
-                      <input
-                        type="checkbox"
+                      {/* For the mouse; the keyboard marks with Space, and the option says
+                          "checked" itself. Nothing focusable may sit inside an option. */}
+                      <span
                         className="item-check"
-                        checked={checked.has(item.id)}
-                        aria-label={t('{name} auswählen', { name: item.name || t('(ohne Namen)') })}
+                        aria-hidden="true"
+                        title={t('{name} auswählen', { name: item.name || t('(ohne Namen)') })}
                         onClick={(event) => {
                           event.stopPropagation();
                           toggle(item.id, event.shiftKey);
                         }}
-                        onChange={() => undefined}
-                      />
+                      >
+                        {checked.has(item.id) && <Icon name="check" size={12} />}
+                      </span>
                       <ItemTile item={item} />
                       <span className="item-text">
                         <span className="item-name">{item.name || t('(ohne Namen)')}</span>
@@ -655,7 +728,12 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                       <span className="item-badges">
                         {item.broken && (
                           <span title={t('Nicht alles ließ sich entschlüsseln')}>
-                            <Icon name="warning" size={13} className="badge-warning" />
+                            <Icon
+                              name="warning"
+                              size={13}
+                              className="badge-warning"
+                              title={t('Nicht alles ließ sich entschlüsseln')}
+                            />
                           </span>
                         )}
                         {item.reprompt && (
@@ -670,12 +748,20 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                         {item.favorite && (
                           <Icon name="star" size={13} className="badge-star" title={t('Favorit')} />
                         )}
+                        {due.has(item.id) && (
+                          <Icon
+                            name="bell"
+                            size={13}
+                            className="item-due"
+                            title={t('Fällig: Zeit für ein neues Passwort')}
+                          />
+                        )}
                       </span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <div className="list-empty">
+                <div className="list-empty" role="status">
                   {loaded && (
                     <>
                       <NyuScene
@@ -697,9 +783,27 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                   )}
                 </div>
               )}
+              <p id="item-list-keys" className="sr-only">
+                {t(
+                  'Pfeiltasten wählen einen Eintrag, Eingabe öffnet ihn, Leertaste markiert ihn für mehrere auf einmal.',
+                )}
+              </p>
             </section>
 
-            <section className="detail-pane">
+            <section
+              className="detail-pane"
+              ref={detailRef}
+              tabIndex={-1}
+              onKeyDown={(event) => {
+                // Escape in the item: back to the list, where the keyboard came from.
+                if (event.key !== 'Escape' || event.defaultPrevented) return;
+                if (typing(event.target) || document.querySelector('.modal, .context-menu')) return;
+                event.preventDefault();
+                setView('list');
+                document.querySelector<HTMLElement>('.list-pane .item-list')?.focus();
+              }}
+              aria-label={current ? current.name || t('(ohne Namen)') : t('Eintrag')}
+            >
               <BackToList />
               {current ? (
                 <ItemDetail

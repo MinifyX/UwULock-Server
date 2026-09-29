@@ -24,6 +24,8 @@ import { updateSettings, useSettings } from '../lib/settings';
 import { Icon } from './Icon';
 import { NyuScene } from './nyu/scenes';
 import { PasswordInput } from './PasswordInput';
+import { WelcomeMark } from './TitleBar';
+import { radioArrows } from './web/controls';
 
 type Props = {
   onDone: (status: Status) => void;
@@ -172,7 +174,9 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
   return (
     <div className="welcome">
       <section className="welcome-art" aria-hidden>
-        <NyuScene name={step ? 'keys' : 'welcome'} className="welcome-scene" />
+        <WelcomeMark
+          fallback={<NyuScene name={step ? 'keys' : 'welcome'} className="welcome-scene" />}
+        />
         <p className="welcome-title">{t('Hallo! Ich bin Nyu ✧')}</p>
         <p className="welcome-text">
           {t(
@@ -209,10 +213,12 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
                 autoFocus={Boolean(email)}
                 disabled={Boolean(busy)}
                 autoComplete="current-password"
+                invalid={Boolean(error)}
+                describedBy={error ? 'login-error' : undefined}
               />
             </label>
             {error && (
-              <p className="form-error" role="alert">
+              <p className="form-error" role="alert" id="login-error">
                 {error}
               </p>
             )}
@@ -378,13 +384,19 @@ function TwoFactor({
     <form className="form" onSubmit={submit}>
       <h1 className="card-title">{t('Zweistufige Anmeldung')}</h1>
       {usable.length > 1 && (
-        <div className="segmented wide" role="radiogroup" aria-label={t('Methode')}>
+        <div
+          className="segmented wide"
+          role="radiogroup"
+          aria-label={t('Methode')}
+          onKeyDown={radioArrows}
+        >
           {usable.map((m) => (
             <button
               key={m.provider}
               type="button"
               role="radio"
               aria-checked={m.provider === provider}
+              tabIndex={m.provider === provider ? 0 : -1}
               onClick={() => {
                 setProvider(m.provider);
                 setCode('');
@@ -434,6 +446,8 @@ function TwoFactor({
             spellCheck={false}
             required
             disabled={busy}
+            aria-invalid={Boolean(error) || undefined}
+            aria-describedby={error ? 'two-factor-error' : undefined}
           />
         </label>
       )}
@@ -442,7 +456,7 @@ function TwoFactor({
         <span>{t('Auf diesem Gerät merken')}</span>
       </label>
       {error && (
-        <p className="form-error" role="alert">
+        <p className="form-error" role="alert" id="two-factor-error">
           {error}
         </p>
       )}

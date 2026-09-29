@@ -7,7 +7,8 @@
 import { currentProfile, lock, logout, prelogin } from './api';
 import { t } from './i18n';
 import { call, callJson } from './web/core';
-import { deviceId, request } from './web/http';
+import { openExtras } from './requests';
+import { ApiError, deviceId, request } from './web/http';
 
 export type AccountInfo = {
   admin: boolean;
@@ -52,8 +53,22 @@ export type MinimumKdf = {
 /** The rules for a new master password: `minComplexity` is a zxcvbn score, 0 (none) to 4. */
 export type PasswordRules = { minLength: number; minComplexity: number; enforceOnLogin?: boolean };
 
+/** The server's own look (§14.4): UwULock's unless an admin changed it. */
+export type Branding = {
+  name: string;
+  color: string;
+  custom: boolean;
+  logoLight: string | null;
+  logoDark: string | null;
+  favicon: string | null;
+};
+
 /** What the server tells anybody before a login; only what the web vault uses of it. */
 export type ServerInfo = {
+  /** What the server has and has switched on: `send-emails`, `twofa-directory`, … */
+  features?: string[];
+  mail?: boolean;
+  branding?: Branding;
   policies?: { masterPassword?: PasswordRules };
   /** Logging in through an OpenID Connect provider (§19): `label` goes on the button. */
   sso?: { enabled: boolean; only: boolean; identifier: string; label: string };
@@ -384,8 +399,24 @@ export async function rotateKeys(password: string, contacts: RotationContact[]) 
     .filter((passkey) => passkey.prfStatus === 0 && passkey.encryptedPublicKey)
     .map((passkey) => ({ id: passkey.id, encryptedPublicKey: passkey.encryptedPublicKey }));
   const holders = JSON.stringify({ emergency, passkeys });
-  const body = await callJson<unknown>((core) => core.rotate(password, publicKey, holders));
-  await request('/api/accounts/key-management/rotate-user-account-keys', { body });
+  // UwULock's own under the user key comes along: the extras key, wrapped for the new key, and
+  // every earlier version of an item, encrypted anew (docs/uwu-api.md §3).
+  await openExtras().catch((error: { kind?: string }) => {
+    if (error?.kind !== 'extras-lost') throw error;
+  });
+  for (let attempt = 0; ; attempt++) {
+    const versions = await request<unknown>('/uwu/v1/versions?scope=personal');
+    const body = await callJson<unknown>((core) =>
+      core.rotateUwu(password, publicKey, holders, JSON.stringify(versions)),
+    );
+    try {
+      await request('/uwu/v1/accounts/rotate-keys', { body });
+      break;
+    } catch (error) {
+      // A version came or went in between: once more with the list as it is now.
+      if ((error as ApiError).status !== 409 || attempt > 0) throw error;
+    }
+  }
   await endSession();
 }
 

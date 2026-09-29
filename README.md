@@ -75,6 +75,15 @@ Coming with the next release (on `main` already):
   and Matrix, a diagnosis of the setup, and backups on another system (SFTP, S3 or a folder).
 - **File requests** (people without an account send you files, encrypted in their browser) and
   **the emergency sheet** as a PDF for your family.
+- **Icons** for items — the website's, fetched by the server and never by your browser, or your
+  own, encrypted, also from the selfh.st library ([docs/icons.md](docs/icons.md)); **travel
+  mode**, **earlier versions** of items and **reminders** to renew a password
+  ([docs/travel-mode.md](docs/travel-mode.md)).
+- **Import from KeePass, 1Password, Chrome, Firefox, Apple Passwords, Proton Pass and LastPass**,
+  read in the browser with a preview ([docs/import.md](docs/import.md)); **share an item as a
+  Send**, **Sends only for given addresses** with a code by mail, and the report **"2FA possible,
+  not set up"** ([docs/sharing.md](docs/sharing.md)); the server's own **branding**
+  ([docs/branding.md](docs/branding.md)).
 
 ## What it will and won't do
 
@@ -83,8 +92,10 @@ Coming with the next release (on `main` already):
 - **The official Bitwarden clients keep working.** That is the contract. UwULock's own features
   live under `/uwu/v1`, where Bitwarden's clients never look.
 - **No favicons from third parties, no telemetry.** The only connections it opens on its own are
-  Let's Encrypt (if you use it) and a daily look at GitHub for a newer release, which
-  `UWULOCK_UPDATE_CHECK=off` stops.
+  Let's Encrypt (if you use it), a daily look at GitHub for a newer release, which
+  `UWULOCK_UPDATE_CHECK=off` stops, and — unless the admin switches them off — websites' icons
+  and the icon library's index, fetched for your apps so they never ask anybody but this server,
+  and 2FA Directory's list once somebody opens the password check.
 - **Faster than Vaultwarden, measured.** [docs/performance.md](docs/performance.md) has the
   numbers, and CI runs both side by side every week.
 
@@ -189,6 +200,12 @@ GitHub release with the scripts.
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
 - [Backups](docs/backups.md) — on another system: SFTP, S3 or a folder, and back onto a new machine
 - [File requests](docs/file-requests.md) — links through which people without an account send you files
+- [Icons](docs/icons.md) — website icons fetched by the server, own icons and the icon library
+- [Travel mode, versions and reminders](docs/travel-mode.md) — hiding folders at the border, earlier versions of items, renewing passwords
+- [Import](docs/import.md) — moving in from KeePass, 1Password, browsers, Proton Pass and LastPass
+- [Sharing](docs/sharing.md) — an item as a Send, Sends only for given addresses, the 2FA report
+- [Branding](docs/branding.md) — the server's own name, colour, logos and favicon
+- [Accessibility](docs/accessibility.md) — keyboard shortcuts, high contrast, screen readers, what axe checks
 - [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing
 - [Metrics](docs/metrics.md) and [notifications](docs/notifications.md) — Prometheus, Loki, and alerts to the admins
 - [Performance](docs/performance.md) — how it is measured, and the numbers

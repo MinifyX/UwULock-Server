@@ -13,9 +13,11 @@
 //! changing the master password, the KDF or the address, new keys, import and export.
 
 mod account;
+mod comfort;
 mod draft;
 mod files;
 mod health;
+mod kdbx;
 mod keys;
 mod requests;
 mod transfer;
@@ -84,6 +86,8 @@ pub struct Unlocked {
     /// Attachments by item id, as the sync brought them.
     pub attachments: HashMap<String, Vec<wire::Attachment>>,
     pub sends: Vec<wire::Send>,
+    /// Who may open each Send (its addresses, `authType`), which `wire::Send` leaves out.
+    pub send_auth: HashMap<String, files::SendAuth>,
     /// What the last password check keeps for the answers from Have I Been Pwned.
     pub report: Vec<health::Checked>,
     /// The extras key (UwULock's own things, like the labels of file requests), once opened.
@@ -146,9 +150,8 @@ pub fn derive_login(email: &str, password: String, kdf: &str) -> Result<String, 
 #[wasm_bindgen]
 pub fn unlock(email: &str, kdf: &str, protected_key: &str) -> Result<(), JsValue> {
     let kdf = kdf_from(kdf)?;
-    let master = PENDING
-        .with(|cell| cell.borrow_mut().take())
-        .ok_or_else(|| Failure::new("locked", "Log in first."))?;
+    let master =
+        PENDING.with(|cell| cell.borrow_mut().take()).ok_or_else(|| Failure::new("locked", "Log in first."))?;
     let protected: EncString = protected_key.parse().map_err(Failure::from)?;
     let user_key = crypto::decrypt_user_key(&master, &protected)
         .map_err(|_| Failure::new("wrong-password", "The master password is wrong."))?;
@@ -169,6 +172,7 @@ fn unlock_with(email: &str, kdf: Kdf, protected_key: String, user_key: Symmetric
             reprompt_ok: HashSet::new(),
             attachments: HashMap::new(),
             sends: Vec::new(),
+            send_auth: HashMap::new(),
             report: Vec::new(),
             extras: None,
         })
@@ -203,7 +207,9 @@ struct Overview {
 #[wasm_bindgen]
 pub fn open(sync: &str) -> Result<(), JsValue> {
     let value: serde_json::Value = serde_json::from_str(sync).map_err(Failure::from)?;
-    let mut sync: wire::Sync = serde_json::from_value(wire::lowercase_keys(value)).map_err(Failure::from)?;
+    let value = wire::lowercase_keys(value);
+    let send_auth = files::send_auth(value.get("sends"));
+    let mut sync: wire::Sync = serde_json::from_value(value).map_err(Failure::from)?;
     with_unlocked(|unlocked| {
         unlocked.vault = Vault::open(&sync, &unlocked.user_key)?;
         unlocked.private_key = sync.profile.private_key.clone();
@@ -218,6 +224,7 @@ pub fn open(sync: &str) -> Result<(), JsValue> {
             .map(|cipher| (cipher.id.clone(), std::mem::take(&mut cipher.attachments)))
             .collect();
         unlocked.sends = std::mem::take(&mut sync.sends);
+        unlocked.send_auth = send_auth;
         Ok(())
     })?;
     Ok(())
@@ -354,6 +361,36 @@ pub fn rotate(password: String, public_key: &str, holders: &str) -> Result<Strin
     Ok(with_unlocked(|unlocked| json(&account::rotate(unlocked, &password, public_key, holders)?))?)
 }
 
+/// A rotation by UwULock: the body of `POST /uwu/v1/accounts/rotate-keys`, with the extras key
+/// wrapped again and `versions` (the answer of `GET /uwu/v1/versions`) re-encrypted.
+#[wasm_bindgen(js_name = rotateUwu)]
+pub fn rotate_uwu(password: String, public_key: &str, holders: &str, versions: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    let holders: account::Holders = serde_json::from_str(holders).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&comfort::rotate(unlocked, &password, public_key, holders, versions)?))?)
+}
+
+// ── Icons and versions ────────────────────────────────────
+
+/// An own icon for an item (a PNG of at most 128 × 128): `{ data, keyType }`.
+#[wasm_bindgen(js_name = sealIcon)]
+pub fn seal_icon(item_id: &str, png: &[u8]) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&comfort::seal_icon(unlocked, item_id, png)?))?)
+}
+
+/// An item's own icon, as PNG bytes.
+#[wasm_bindgen(js_name = openIcon)]
+pub fn open_icon(item_id: &str, data: &str) -> Result<Vec<u8>, JsValue> {
+    Ok(with_unlocked(|unlocked| comfort::open_icon(unlocked, item_id, data))?)
+}
+
+/// An earlier version of an item, opened: its name, notes, login, card, identity, SSH key and
+/// fields.
+#[wasm_bindgen(js_name = openVersion)]
+pub fn open_version(item_id: &str, version: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&comfort::open_version(unlocked, item_id, version)?))?)
+}
+
 // ── Import and export ─────────────────────────────────────
 
 /// The vault as Bitwarden's unencrypted JSON export, or its CSV (`format`: `json`, `csv`).
@@ -403,6 +440,20 @@ pub fn seal_send(id: &str, draft: &str, data: Option<Vec<u8>>) -> Result<files::
     Ok(with_unlocked(|unlocked| files::seal_send(unlocked, id, draft, data.as_deref()))?)
 }
 
+/// The values of an item that "Share as Send" offers: `[{ name, label }]`, `label` only for
+/// custom fields (their own name).
+#[wasm_bindgen(js_name = shareableFields)]
+pub fn shareable_fields(item_id: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&files::shareable(unlocked, item_id)?))?)
+}
+
+/// An item's chosen values as a new text Send: `{ request, urlKey }` (`files::ShareDraft`).
+#[wasm_bindgen(js_name = shareItem)]
+pub fn share_item(draft: &str) -> Result<String, JsValue> {
+    let draft: files::ShareDraft = serde_json::from_str(draft).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&files::share_item(unlocked, draft)?))?)
+}
+
 /// For somebody with a Send's link: the password's hash, to open it. No login needed.
 #[wasm_bindgen(js_name = sendAccessPassword)]
 pub fn send_access_password(password: String, url_key: &str) -> Result<String, JsValue> {
@@ -418,6 +469,31 @@ pub fn open_send_access(access: &str, url_key: &str) -> Result<String, JsValue> 
 #[wasm_bindgen(js_name = openSendFile)]
 pub fn open_send_file(url_key: &str, data: &[u8]) -> Result<Vec<u8>, JsValue> {
     Ok(files::open_file(url_key, data)?)
+}
+
+// ── KeePass files ─────────────────────────────────────────
+
+/// Argon2d (`id` false) or Argon2id of a KeePass file's composite key, with its parameters.
+#[wasm_bindgen(js_name = kdbxArgon2)]
+pub fn kdbx_argon2(
+    id: bool,
+    version: u32,
+    key: &[u8],
+    salt: &[u8],
+    memory_kib: u32,
+    iterations: u32,
+    lanes: u32,
+) -> Result<Vec<u8>, JsValue> {
+    Ok(kdbx::argon2(id, version, key, salt, memory_kib, iterations, lanes)?)
+}
+
+/// KeePass's AES-KDF of a composite key; `rounds` as a number (at most 2^53).
+#[wasm_bindgen(js_name = kdbxAesKdf)]
+pub fn kdbx_aes_kdf(key: &[u8], seed: &[u8], rounds: f64) -> Result<Vec<u8>, JsValue> {
+    if !(0.0..=9_007_199_254_740_992.0).contains(&rounds) || rounds.fract() != 0.0 {
+        return Err(Failure::new("invalid", "AES-KDF rounds out of range").into());
+    }
+    Ok(kdbx::aes_kdf(key, seed, rounds as u64)?)
 }
 
 // ── Keys for others ───────────────────────────────────────
@@ -470,9 +546,7 @@ pub fn start_device_login(email: &str) -> Result<String, JsValue> {
 #[wasm_bindgen(js_name = finishDeviceLogin)]
 pub fn finish_device_login(email: &str, kdf: &str, key: &str) -> Result<(), JsValue> {
     let kdf = kdf_from(kdf)?;
-    let private = REQUEST
-        .with(|cell| cell.borrow_mut().take())
-        .ok_or_else(|| Failure::new("locked", "Ask again."))?;
+    let private = REQUEST.with(|cell| cell.borrow_mut().take()).ok_or_else(|| Failure::new("locked", "Ask again."))?;
     let user_key = keys::finish_request(&private, key)?;
     unlock_with(email, kdf, String::new(), user_key);
     Ok(())
@@ -491,7 +565,13 @@ pub fn prf_key_set(prf: &str) -> Result<String, JsValue> {
 
 /// Open the vault with a passkey: its PRF output, and the keys the login answered with.
 #[wasm_bindgen(js_name = unlockWithPasskey)]
-pub fn unlock_with_passkey(email: &str, kdf: &str, prf: &str, private_key: &str, user_key: &str) -> Result<(), JsValue> {
+pub fn unlock_with_passkey(
+    email: &str,
+    kdf: &str,
+    prf: &str,
+    private_key: &str,
+    user_key: &str,
+) -> Result<(), JsValue> {
     let kdf = kdf_from(kdf)?;
     let key = keys::open_prf(prf, private_key, user_key)?;
     unlock_with(email, kdf, String::new(), key);
