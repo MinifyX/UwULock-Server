@@ -9,6 +9,7 @@ import { load } from './lib/web/core';
 import './styles/app.css';
 import './styles/vault.css';
 import './styles/tokens.css';
+import './styles/ui.css';
 import './styles/web.css';
 import './styles/a11y.css';
 

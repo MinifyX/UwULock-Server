@@ -192,10 +192,10 @@ function RenameAccount({ account, onClose }: { account: AccountBrief; onClose: (
       onCancel={onClose}
       footer={
         <>
-          <button className="quiet" data-secondary onClick={onClose}>
+          <span className="spacer" />
+          <button data-secondary onClick={onClose}>
             {t('Abbrechen')}
           </button>
-          <span className="spacer" />
           <button className="primary" onClick={save}>
             {t('Übernehmen')}
           </button>

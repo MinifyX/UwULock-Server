@@ -1188,10 +1188,10 @@ function FolderDialog({
       onCancel={onClose}
       footer={
         <>
-          <button className="quiet" data-secondary onClick={onClose}>
+          <span className="spacer" />
+          <button data-secondary onClick={onClose}>
             {t('Abbrechen')}
           </button>
-          <span className="spacer" />
           <button className="primary" disabled={!name.trim() || busy} onClick={() => void save()}>
             {folder.id ? t('Übernehmen') : t('Anlegen')}
           </button>

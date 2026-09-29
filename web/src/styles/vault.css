@@ -9,13 +9,6 @@
   stroke-linejoin: round;
 }
 
-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-}
-
 .settings-nav button,
 .nav-row,
 .history-toggle {
@@ -42,52 +35,9 @@ button {
 
 .card-title {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--uwu-text-xl);
   font-weight: 700;
   letter-spacing: -0.02em;
-}
-
-.form-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.segmented.wide {
-  width: 100%;
-  display: flex;
-}
-
-.segmented.wide button {
-  flex: 1;
-  padding: 6px 8px;
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  cursor: pointer;
-  font-size: 13px;
-}
-
-.check input {
-  margin: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--uwu-pink-solid);
-  flex: none;
-}
-
-.select {
-  font: inherit;
-  font-size: 13px;
-  padding: 7px 10px;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
 }
 
 .setting-value {
@@ -100,26 +50,21 @@ button {
 }
 
 .password-input input {
-  font: inherit;
   width: 100%;
-  padding: 8px 38px 8px 10px;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
+  padding-right: calc(var(--uwu-icon-button) + var(--uwu-space-2));
 }
 
+/* The eye sits in the field, like the tools of .field-control (ui.css). */
 .password-input .icon-button {
   position: absolute;
-  right: 5px;
-  top: 50%;
-  translate: 0 -50%;
+  right: var(--uwu-space-1);
+  top: calc((var(--uwu-control-height) - var(--uwu-icon-button)) / 2);
 }
 
 .caps-hint {
   display: block;
-  margin-top: 5px;
-  font-size: 12px;
+  margin-top: var(--uwu-space-1);
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-alarm);
 }
 
@@ -146,9 +91,9 @@ button {
   height: 100%;
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(360px, 440px);
-  gap: 40px;
+  gap: var(--uwu-space-10);
   align-items: center;
-  padding: 32px clamp(24px, 6vw, 80px);
+  padding: var(--uwu-space-8) clamp(var(--uwu-space-6), 6vw, 80px);
   overflow-y: auto;
   background:
     radial-gradient(circle at 18% 30%, var(--uwu-pink-tint) 0, transparent 42%), var(--uwu-canvas);
@@ -158,7 +103,7 @@ button {
   display: grid;
   justify-items: center;
   text-align: center;
-  gap: 8px;
+  gap: var(--uwu-space-2);
 }
 
 .welcome-scene {
@@ -166,7 +111,7 @@ button {
 }
 
 .welcome-title {
-  margin: 10px 0 0;
+  margin: var(--uwu-space-3) 0 0;
   font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -180,7 +125,7 @@ button {
 }
 
 .welcome-card {
-  padding: 26px 26px 22px;
+  padding: var(--uwu-space-6);
   border-radius: var(--uwu-radius-card);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-surface);
@@ -189,11 +134,11 @@ button {
 
 .welcome-beta {
   display: flex;
-  gap: 7px;
-  margin: 6px 0 0;
-  padding-top: 12px;
+  gap: var(--uwu-space-2);
+  margin: var(--uwu-space-2) 0 0;
+  padding-top: var(--uwu-space-3);
   border-top: 1px solid var(--uwu-hairline);
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   line-height: 1.5;
   color: var(--uwu-muted);
 }
@@ -218,7 +163,7 @@ button {
   height: 100%;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: var(--uwu-space-6);
   overflow-y: auto;
   background:
     radial-gradient(circle at 50% 20%, var(--uwu-pink-tint) 0, transparent 45%), var(--uwu-canvas);
@@ -227,8 +172,8 @@ button {
 .lock-card {
   width: min(400px, 100%);
   display: grid;
-  gap: 14px;
-  padding: 22px 26px 20px;
+  gap: var(--uwu-space-4);
+  padding: var(--uwu-space-6);
   border-radius: var(--uwu-radius-card);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-surface);
@@ -254,12 +199,12 @@ button {
 
 .lock-account span,
 .lock-meta {
-  font-size: 12.5px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
 .lock-button {
-  padding: 10px 14px;
+  padding: var(--uwu-space-3) var(--uwu-space-4);
 }
 
 .lock-meta {
@@ -278,25 +223,25 @@ button {
 .sidebar {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--uwu-space-1);
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 10px 10px;
+  padding: var(--uwu-space-3);
   border-right: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
 }
 
 .sidebar h2 {
-  margin: 12px 0 2px;
-  padding: 0 10px;
-  font-size: 11px;
+  margin: var(--uwu-space-3) 0 2px;
+  padding: 0 var(--uwu-space-3);
+  font-size: var(--uwu-text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--uwu-muted);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .nav-list {
@@ -308,14 +253,14 @@ button {
 }
 
 .nav-trash {
-  margin-top: 10px;
+  margin-top: var(--uwu-space-3);
 }
 
 .nav-row {
   width: 100%;
   justify-content: flex-start;
-  gap: 10px;
-  padding: 7px 10px;
+  gap: var(--uwu-space-3);
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   border: 0;
   background: transparent;
   font-weight: 500;
@@ -348,7 +293,7 @@ button {
 }
 
 .nav-count {
-  font-size: 11.5px;
+  font-size: var(--uwu-text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--uwu-muted);
 }
@@ -356,9 +301,9 @@ button {
 .account-card {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 10px;
+  gap: var(--uwu-space-3);
+  margin-top: var(--uwu-space-3);
+  padding: var(--uwu-space-3);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-elevated);
@@ -374,7 +319,7 @@ button {
   background: var(--uwu-pink-solid);
   color: var(--uwu-on-pink);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
 }
 
 .account-text {
@@ -385,7 +330,7 @@ button {
 }
 
 .account-email {
-  font-size: 12.5px;
+  font-size: var(--uwu-text-sm);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -393,7 +338,7 @@ button {
 }
 
 .account-sync {
-  font-size: 11.5px;
+  font-size: var(--uwu-text-xs);
   color: var(--uwu-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -416,9 +361,9 @@ button {
 }
 
 .list-head {
-  padding: 12px 12px 6px;
+  padding: var(--uwu-space-3) var(--uwu-space-3) var(--uwu-space-2);
   display: grid;
-  gap: 8px;
+  gap: var(--uwu-space-2);
 }
 
 .search-box {
@@ -428,7 +373,7 @@ button {
 
 .search-box .icon {
   position: absolute;
-  left: 10px;
+  left: var(--uwu-control-pad-x);
   top: 50%;
   translate: 0 -50%;
   color: var(--uwu-muted);
@@ -436,16 +381,19 @@ button {
 }
 
 .search-box .search {
-  padding-left: 32px;
+  padding-left: var(--uwu-space-8);
   background: var(--uwu-surface);
 }
 
+/* The list's name, its count and its buttons: on one line, centred on each other. */
 .list-title {
   margin: 0;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 0 4px;
-  font-size: 11px;
+  min-height: var(--uwu-control-height-small);
+  padding: 0 var(--uwu-space-1);
+  font-size: var(--uwu-text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -459,7 +407,7 @@ button {
 .item-list {
   list-style: none;
   margin: 0;
-  padding: 2px 8px 12px;
+  padding: 2px var(--uwu-space-2) var(--uwu-space-3);
   overflow-y: auto;
   min-height: 0;
   flex: 1;
@@ -469,8 +417,8 @@ button {
 .item-row {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 8px 10px;
+  gap: var(--uwu-space-3);
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   border-radius: var(--uwu-radius-control);
   cursor: pointer;
   user-select: none;
@@ -512,13 +460,13 @@ button {
 }
 
 .item-sub {
-  font-size: 12.5px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
 .item-badges {
   display: flex;
-  gap: 5px;
+  gap: var(--uwu-space-1);
   color: var(--uwu-muted);
 }
 
@@ -537,7 +485,7 @@ button {
   height: 34px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
+  border-radius: var(--uwu-radius-control);
   font-weight: 700;
   font-size: 15px;
   color: var(--tile-ink);
@@ -548,7 +496,7 @@ button {
   width: 52px;
   height: 52px;
   border-radius: 14px;
-  font-size: 22px;
+  font-size: var(--uwu-text-xl);
 }
 
 /* Six soft tiles, readable in both themes. */
@@ -621,8 +569,8 @@ button {
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 10px;
-  padding: 24px;
+  gap: var(--uwu-space-3);
+  padding: var(--uwu-space-6);
   text-align: center;
   color: var(--uwu-muted);
 }
@@ -631,7 +579,7 @@ button {
   margin: 0;
   max-width: 260px;
   line-height: 1.5;
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
 }
 
 .empty-scene {
@@ -657,32 +605,35 @@ button {
 .detail {
   width: min(680px, 100%);
   margin: 0 auto;
-  padding: 22px 24px 28px;
+  padding: var(--uwu-space-5) var(--uwu-space-6) var(--uwu-space-6);
   display: grid;
-  gap: 14px;
+  gap: var(--uwu-space-4);
   align-content: start;
 }
 
 .detail-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: var(--uwu-space-3) var(--uwu-space-4);
 }
 
+/* The name takes the room there is; the tools go to the end, or below it on a phone. */
 .detail-title {
+  flex: 1 1 200px;
   min-width: 0;
   display: grid;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .detail-title h2 {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--uwu-text-xl);
   font-weight: 700;
   letter-spacing: -0.02em;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--uwu-space-2);
   overflow-wrap: anywhere;
 }
 
@@ -690,18 +641,18 @@ button {
   margin: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 10px;
+  gap: var(--uwu-space-1);
+  padding: 2px var(--uwu-space-3);
   border-radius: var(--uwu-radius-pill);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-surface);
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
@@ -709,21 +660,35 @@ button {
   border-style: dashed;
 }
 
+/*
+ * A card of the details. Its content keeps one inset (--uwu-card-pad-x); rows reach the edges,
+ * so their dividers do too, and buttons without a frame line up their words with the text.
+ */
 .detail-card {
   display: grid;
-  padding: 4px 0;
+  padding: var(--uwu-space-1) var(--uwu-card-pad-x);
   border-radius: var(--uwu-radius-card);
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
+  min-width: 0;
+}
+
+.detail-card > :last-child:not(.detail-row, .detail-line, .detail-empty-line, .notes) {
+  margin-bottom: var(--uwu-space-2);
+}
+
+.detail-card > button.quiet {
+  justify-self: start;
+  margin-left: calc(-1 * var(--uwu-space-3));
 }
 
 .detail-card-title {
   margin: 0;
-  padding: 10px 16px 2px;
+  padding: var(--uwu-space-3) 0 var(--uwu-space-1);
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 11px;
+  gap: var(--uwu-space-2);
+  font-size: var(--uwu-text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -733,8 +698,9 @@ button {
 .detail-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px 9px 16px;
+  gap: var(--uwu-space-3);
+  margin-inline: calc(-1 * var(--uwu-card-pad-x));
+  padding: var(--uwu-space-2) var(--uwu-space-3) var(--uwu-space-2) var(--uwu-card-pad-x);
   min-height: 56px;
 }
 
@@ -750,7 +716,7 @@ button {
 }
 
 .detail-label {
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   font-weight: 600;
   color: var(--uwu-muted);
 }
@@ -761,7 +727,7 @@ button {
 }
 
 .detail-value.mono {
-  font-size: 13.5px;
+  font-size: var(--uwu-text-md);
 }
 
 .detail-actions {
@@ -794,9 +760,9 @@ button {
 }
 
 .secret-block {
-  margin: 4px 0 0;
+  margin: var(--uwu-space-1) 0 0;
   font-family: var(--uwu-mono);
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -820,7 +786,7 @@ button {
 .totp {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--uwu-space-3);
 }
 
 .totp-code {
@@ -854,7 +820,7 @@ button {
 }
 
 .totp-seconds {
-  font-size: 11.5px;
+  font-size: var(--uwu-text-xs);
   color: var(--uwu-muted);
   font-variant-numeric: tabular-nums;
   min-width: 2ch;
@@ -862,8 +828,9 @@ button {
 
 .notes {
   display: flex;
-  gap: 10px;
-  padding: 6px 12px 12px 16px;
+  gap: var(--uwu-space-3);
+  margin-right: calc(var(--uwu-space-3) - var(--uwu-card-pad-x));
+  padding: var(--uwu-space-1) 0 var(--uwu-space-2);
 }
 
 .notes p {
@@ -883,11 +850,11 @@ button {
   color: var(--uwu-online);
 }
 
-.history-toggle {
+.history-toggle,
+.detail-card > .history-toggle {
+  justify-self: start;
   justify-content: flex-start;
-  gap: 8px;
-  margin: 4px 6px;
-  padding: 8px 10px;
+  margin: var(--uwu-space-1) 0 var(--uwu-space-1) calc(-1 * var(--uwu-space-3));
   color: var(--uwu-muted);
 }
 
@@ -897,19 +864,19 @@ button {
 
 .detail-empty-line {
   margin: 0;
-  padding: 14px 16px;
+  padding: var(--uwu-space-3) 0;
   color: var(--uwu-muted);
 }
 
 .detail-error {
   color: var(--uwu-alarm);
   font-family: var(--uwu-font);
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
 }
 
 .reprompt {
-  gap: 12px;
-  padding: 14px 16px 16px;
+  gap: var(--uwu-space-3);
+  padding: var(--uwu-space-4) var(--uwu-card-pad-x);
 }
 
 .reprompt .detail-card-title {
@@ -919,9 +886,9 @@ button {
 
 .detail-foot {
   display: grid;
-  gap: 6px;
-  padding: 0 4px;
-  font-size: 12px;
+  gap: var(--uwu-space-2);
+  padding: 0 var(--uwu-space-1);
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
@@ -929,12 +896,12 @@ button {
   margin: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--uwu-space-2);
 }
 
 .detail-beta {
   flex-wrap: wrap;
-  padding-top: 8px;
+  padding-top: var(--uwu-space-2);
   border-top: 1px dashed var(--uwu-border);
 }
 
@@ -982,7 +949,7 @@ button {
   .pane-back {
     display: inline-flex;
     align-self: flex-start;
-    margin: 10px 12px 0;
+    margin: var(--uwu-space-3) var(--uwu-space-3) 0;
   }
 
   .pane-back .icon {
@@ -990,8 +957,8 @@ button {
   }
 
   .detail {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: var(--uwu-space-4);
+    padding-right: var(--uwu-space-4);
   }
 
   .vault > .bottom-nav {
@@ -999,7 +966,8 @@ button {
     grid-row: 2;
     border-top: 1px solid var(--uwu-hairline);
     background: var(--uwu-surface);
-    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    padding: var(--uwu-space-1) var(--uwu-space-1)
+      calc(var(--uwu-space-1) + env(safe-area-inset-bottom));
   }
 
   .bottom-nav button {
@@ -1007,11 +975,11 @@ button {
     flex-direction: column;
     gap: 2px;
     min-width: 0;
-    padding: 6px 2px;
+    padding: var(--uwu-space-2) 2px;
     border: 0;
     background: transparent;
     color: var(--uwu-muted);
-    font-size: 11px;
+    font-size: var(--uwu-text-xs);
   }
 
   .bottom-nav button[aria-current='page'] {
@@ -1025,23 +993,6 @@ button {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-
-  /* Dialogs take the whole screen; small ones stay small. */
-  .modal-backdrop {
-    padding: 0;
-  }
-
-  .modal[data-size='wide'],
-  .modal:has(.editor) {
-    width: 100%;
-    height: 100%;
-    max-height: 100%;
-    border-radius: 0;
-  }
-
-  .modal {
-    width: calc(100% - 24px);
-  }
 }
 
 /* ── Toast ─────────────────────────────────────────────── */
@@ -1053,11 +1004,11 @@ button {
   translate: -50% 0;
   z-index: 30;
   max-width: min(560px, calc(100% - 32px));
-  padding: 9px 16px;
+  padding: var(--uwu-space-2) var(--uwu-space-4);
   border-radius: var(--uwu-radius-pill);
   background: var(--uwu-ink);
   color: var(--uwu-canvas);
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
   font-weight: 600;
   box-shadow: 0 12px 30px -12px rgba(20, 16, 22, 0.6);
   animation: toast-in 180ms ease-out;
@@ -1080,17 +1031,17 @@ button {
 
 .generator {
   display: grid;
-  gap: 14px;
+  gap: var(--uwu-space-4);
 }
 
 .generated {
   display: block;
-  padding: 16px 14px;
+  padding: var(--uwu-space-4) var(--uwu-space-4);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-canvas);
   font-family: var(--uwu-mono);
-  font-size: 18px;
+  font-size: var(--uwu-text-lg);
   text-align: center;
   word-break: break-all;
   min-height: 60px;
@@ -1099,14 +1050,14 @@ button {
 .meter {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--uwu-space-3);
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
 .meter-bar {
   display: flex;
-  gap: 4px;
+  gap: var(--uwu-space-1);
 }
 
 .meter-bar span {
@@ -1138,11 +1089,11 @@ button {
 .generator-sets {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--uwu-space-2);
 }
 
 .chip-check {
-  padding: 6px 12px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   border-radius: var(--uwu-radius-pill);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-canvas);
@@ -1158,8 +1109,11 @@ button {
 
 /* The list head keeps room for the way to a new item. */
 .new-item {
-  padding: 3px 10px 3px 8px;
-  font-size: 12px;
+  gap: var(--uwu-space-1);
+  padding: calc((var(--uwu-control-height-small) - var(--uwu-control-line) - 2px) / 2)
+    var(--uwu-space-3) calc((var(--uwu-control-height-small) - var(--uwu-control-line) - 2px) / 2)
+    var(--uwu-space-2);
+  font-size: var(--uwu-text-sm);
   border-radius: var(--uwu-radius-pill);
   text-transform: none;
   letter-spacing: 0;
@@ -1169,145 +1123,36 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-}
-
-.icon-button.tiny {
-  width: 20px;
-  height: 20px;
+  gap: var(--uwu-space-2);
 }
 
 /* The tools next to an item's name: favourite, trash, edit. */
 .detail-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--uwu-space-1);
   flex: none;
 }
 
-.detail-tools .primary {
-  padding: 6px 12px;
+.detail-tools > button:not(.icon-button) {
+  font-size: var(--uwu-text-sm);
+  padding: calc((var(--uwu-control-height-small) - var(--uwu-control-line) - 2px) / 2)
+    var(--uwu-space-3);
 }
 
-button.danger-text {
-  color: var(--uwu-alarm);
+.detail-tools > .primary {
+  margin-left: var(--uwu-space-2);
 }
 
 .editor {
   display: grid;
-  gap: 14px;
-}
-
-.editor-row {
-  display: flex;
-  gap: 10px;
-  align-items: flex-end;
-}
-
-.editor-row > .field,
-.editor-row > input,
-.editor-row > select {
-  flex: 1;
-  min-width: 0;
-}
-
-/* A row's remove button sits on the line of the inputs, not above them. */
-.editor-row > .icon-button {
-  flex: none;
-  margin-bottom: 4px;
-}
-
-.editor-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 12px;
-}
-
-.editor-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 12px;
-  border: 1px solid var(--uwu-hairline);
-  border-radius: var(--uwu-radius-control);
-  background: var(--uwu-elevated);
-}
-
-.editor-list legend {
-  padding: 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--uwu-muted);
-}
-
-.add-kinds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-button.add-row {
-  justify-self: start;
-  gap: 6px;
-  font-size: 12.5px;
+  gap: var(--uwu-space-4);
 }
 
 .linked-note {
   flex: 1;
-  font-size: 12.5px;
-}
-
-.editor-switches {
-  display: grid;
-  gap: 8px;
-}
-
-/* A value the editor may not have: its label carries the eye and the dice. */
-.field-label-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--uwu-muted);
-  line-height: 1.45;
-}
-
-.field-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.field-hint[data-tone='warn'] {
-  color: var(--uwu-alarm);
-}
-
-/* Inputs the editor adds next to the ones the app already had. */
-.field textarea,
-.field select,
-.editor-row > input,
-.editor-row > select {
-  font: inherit;
-  font-size: 13px;
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
-}
-
-.field textarea {
-  resize: vertical;
-  min-height: 60px;
-  line-height: 1.5;
-}
-
-.field textarea.mono,
-.field input.mono {
-  font-family: var(--uwu-mono);
+  font-size: var(--uwu-text-sm);
 }
 
 /* ── Accounts ──────────────────────────────────────────── */
@@ -1317,7 +1162,7 @@ button.add-row {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--uwu-space-3);
   padding: 2px;
   border: 0;
   background: transparent;
@@ -1340,16 +1185,16 @@ button.add-row {
 
 .lock-accounts {
   display: grid;
-  gap: 4px;
-  margin-top: 4px;
+  gap: var(--uwu-space-1);
+  margin-top: var(--uwu-space-1);
 }
 
 .lock-account-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--uwu-space-2);
   width: 100%;
-  font-size: 12.5px;
+  font-size: var(--uwu-text-sm);
 }
 
 .lock-account-row small {
@@ -1364,11 +1209,11 @@ button.add-row {
   position: fixed;
   z-index: 40;
   min-width: 210px;
-  padding: 5px;
-  border-radius: 12px;
+  padding: var(--uwu-space-1);
+  border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-surface);
-  box-shadow: 0 16px 40px -16px rgba(20, 16, 22, 0.5);
+  box-shadow: var(--uwu-shadow-menu);
   display: grid;
   animation: menu-in 120ms ease both;
 }
@@ -1383,10 +1228,10 @@ button.add-row {
 .context-menu button {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 10px;
+  gap: var(--uwu-space-2);
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--uwu-radius-small);
   background: transparent;
   font-weight: 500;
   text-align: left;
@@ -1404,7 +1249,7 @@ button.add-row {
 }
 
 .context-menu hr {
-  margin: 4px 6px;
+  margin: var(--uwu-space-1) var(--uwu-space-2);
   border: 0;
   border-top: 1px solid var(--uwu-hairline);
 }

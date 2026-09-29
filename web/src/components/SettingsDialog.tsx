@@ -266,7 +266,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (
-    <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
+    <Modal title={t('Einstellungen')} size="wide" onCancel={onClose} closable>
       <div className="settings">
         <nav className="settings-nav" aria-label={t('Bereiche')}>
           {sections.map(({ id, label }) => (
@@ -285,7 +285,8 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
             </button>
           ))}
         </nav>
-        <div className="settings-content">
+        {/* A section of its own starts at its top, not where the last one was scrolled to. */}
+        <div className="settings-content" key={section}>
           {section === 'appearance' && <Appearance />}
           {section === 'security' && loggedIn && (
             <Security
@@ -309,9 +310,6 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
           {section === 'about' && <About />}
         </div>
       </div>
-      <button className="settings-close icon-button" onClick={onClose} aria-label={t('Schließen')}>
-        ×
-      </button>
     </Modal>
   );
 }

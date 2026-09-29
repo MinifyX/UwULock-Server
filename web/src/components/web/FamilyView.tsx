@@ -29,6 +29,7 @@ import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { BackToList, Panes } from '../panes';
+import { Badge, Tabs } from '../ui';
 import { PasswordPrompt } from './controls';
 
 /** What one member may do with one collection: nothing, read, or read and write. */
@@ -153,31 +154,23 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
               </button>
             )}
           </p>
-          <div className="segmented" role="tablist" aria-label={t('Ansicht')}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'members'}
-              onClick={() => {
-                setTab('members');
-                setSelected(null);
-              }}
-            >
-              {t('Mitglieder')}
-              {waiting > 0 && owner && <span className="badge">{waiting}</span>}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={tab === 'collections'}
-              onClick={() => {
-                setTab('collections');
-                setSelected(null);
-              }}
-            >
-              {t('Sammlungen')}
-            </button>
-          </div>
+          <Tabs
+            variant="segmented"
+            label={t('Ansicht')}
+            value={tab}
+            onChange={(next) => {
+              setTab(next);
+              setSelected(null);
+            }}
+            tabs={[
+              {
+                id: 'members',
+                label: t('Mitglieder'),
+                extra: waiting > 0 && owner && <Badge>{waiting}</Badge>,
+              },
+              { id: 'collections', label: t('Sammlungen') },
+            ]}
+          />
         </div>
 
         {tab === 'members' ? (
@@ -991,10 +984,10 @@ export function NameDialog({
       onCancel={() => !busy && onClose()}
       footer={
         <>
-          <button className="quiet" data-secondary onClick={onClose} disabled={busy}>
+          <span className="spacer" />
+          <button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
           </button>
-          <span className="spacer" />
           <button className="primary" disabled={!name.trim() || busy} onClick={() => void submit()}>
             {t('Übernehmen')}
           </button>
@@ -1057,10 +1050,10 @@ export function NewFamilyDialog({
       onCancel={() => !busy && onClose()}
       footer={
         <>
-          <button className="quiet" data-secondary onClick={onClose} disabled={busy}>
+          <span className="spacer" />
+          <button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
           </button>
-          <span className="spacer" />
           <button
             className="primary"
             disabled={!name.trim() || !collection.trim() || busy}

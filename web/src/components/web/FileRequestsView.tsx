@@ -560,10 +560,10 @@ function RequestEditor({
       onCancel={() => !busy && onClose()}
       footer={
         <>
-          <button className="quiet" data-secondary onClick={onClose} disabled={busy}>
+          <span className="spacer" />
+          <button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
           </button>
-          <span className="spacer" />
           <button className="primary" disabled={!ready || busy} onClick={() => void submit()}>
             {busy ? t('Einen Moment …') : request ? t('Speichern') : t('Anlegen')}
           </button>
