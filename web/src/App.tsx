@@ -13,8 +13,10 @@ import { RegisterScreen } from './components/web/RegisterScreen';
 import { SetPasswordScreen, SsoForward } from './components/web/SetPasswordScreen';
 import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
+import { connectFailureText } from './components/web/MaskedSettings';
 import { errorText } from './lib/errors';
 import { publicLinkOf } from './lib/links';
+import { connectResultOf, reloadMaskedConnection } from './lib/masked';
 import { acceptContact } from './lib/features';
 import { acceptInvitation } from './lib/families';
 import { toast } from './lib/toast';
@@ -172,7 +174,15 @@ export function App() {
   useEffect(() => {
     const section = route.path.match(/^\/settings(?:\/([a-z-]+))?$/);
     if (!section || !unlocked) return;
+    // The way back from UwUMail (§13.2): read before the address is cleared.
+    const connected = section[1] === 'masked' ? connectResultOf(route.query) : null;
     location.hash = '';
+    if (connected?.ok) {
+      void reloadMaskedConnection();
+      toast(t('Mit UwUMail verbunden ✧'));
+    } else if (connected) {
+      toast(connectFailureText(connected.reason), 'error');
+    }
     const known: SettingsSection[] = [
       'security',
       'travel',
@@ -286,6 +296,7 @@ export function App() {
                 onAddAccount={() => undefined}
                 openRequest={fileRequest}
                 openDue={route.path === '/vault' && route.query.get('due') === '1'}
+                openItem={route.path === '/vault' ? route.query.get('itemId') : null}
                 openFamily={family}
                 familyRules={info?.families ?? null}
               />

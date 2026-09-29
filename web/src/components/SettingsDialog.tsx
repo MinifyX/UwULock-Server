@@ -2,6 +2,7 @@ import { useState } from 'react';
 import pkg from '../../package.json';
 import { lock, openProjectPage, type ProjectPage, type Status } from '../lib/api';
 import { type AccountInfo } from '../lib/account';
+import { useFeature } from '../lib/branding';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { updateSettings, useSettings, type AutoLock, type ClipboardClear } from '../lib/settings';
 import { Modal } from './Modal';
@@ -12,6 +13,7 @@ import { DeviceSettings } from './web/DeviceSettings';
 import { EmergencySettings } from './web/EmergencySettings';
 import { PasskeySettings } from './web/PasskeySettings';
 import { InviteSettings } from './web/InviteSettings';
+import { MaskedSettings } from './web/MaskedSettings';
 import { SecurityNotices } from './web/SecurityNotices';
 import { TransferSettings } from './web/TransferSettings';
 import { TravelSettings } from './web/TravelSettings';
@@ -219,25 +221,6 @@ function Security({ onClose, onSeen }: { onClose: () => void; onSeen: () => void
   );
 }
 
-/**
- * Masked addresses: the desktop app links here already; the web vault's side comes with a later
- * version. A friendly word instead of nothing.
- */
-function Coming() {
-  useLanguage();
-  return (
-    <div className="about" role="status">
-      <Nyu size={72} mood="happy" title="" />
-      <p className="about-name">{t('Kommt bald ✧')}</p>
-      <p className="about-text">
-        {t(
-          'Maskierte Adressen – für jede Website eine eigene Mail-Adresse von deinem UwUMail-Server – lassen sich hier bald verbinden und verwalten. Bis dahin ändert sich an deinem Tresor nichts.',
-        )}
-      </p>
-    </div>
-  );
-}
-
 function About() {
   useLanguage();
   const open = (page: ProjectPage) => void openProjectPage(page).catch(() => undefined);
@@ -272,12 +255,14 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   useLanguage();
   const [section, setSection] = useState<SettingsSection>(initial);
   const loggedIn = status.state === 'unlocked';
+  const masked = useFeature('masked-addresses');
   const sections = SECTIONS.filter(
     (s) =>
       (loggedIn || !s.needsLogin) &&
       (s.id !== 'invite' || info?.mayInvite) &&
-      // Only through the apps' link, until the feature is here.
-      (s.id !== 'masked' || initial === 'masked'),
+      // When an admin allowed a UwUMail server, or a connection is left from before, or the
+      // apps' link asks for it (it then says what is missing).
+      (s.id !== 'masked' || masked || info?.masked?.connected || initial === 'masked'),
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (
@@ -320,7 +305,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
           {section === 'travel' && loggedIn && <TravelSettings info={info} />}
           {section === 'invite' && loggedIn && <InviteSettings />}
           {section === 'transfer' && loggedIn && <TransferSettings />}
-          {section === 'masked' && loggedIn && <Coming />}
+          {section === 'masked' && loggedIn && <MaskedSettings onClose={onClose} />}
           {section === 'about' && <About />}
         </div>
       </div>

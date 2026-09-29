@@ -5,8 +5,22 @@
 
 import { failure, type Failure } from './api';
 import { t } from './i18n';
+import { ApiError } from './web/http';
+
+/** The stable reason `/uwu/v1` gives beside its message (§1.3), if there is one. */
+export function errorCode(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const code = (error.body as { code?: unknown } | null)?.code;
+  return typeof code === 'string' ? code : null;
+}
 
 export function errorText(error: unknown): string {
+  const code = errorCode(error);
+  if (code === 'rate_limited')
+    return t('Zu viele Anfragen auf einmal. Versuch es in einer Minute noch einmal.');
+  if (code === 'quota')
+    return t('Mehr geht nicht: {reason}', { reason: (error as ApiError).message });
+  if (code === 'feature_off') return t('Das ist auf diesem Server ausgeschaltet.');
   const f: Failure = failure(error);
   const m = f.message;
   switch (f.kind) {
@@ -57,5 +71,32 @@ export function errorText(error: unknown): string {
       return m;
     default:
       return m;
+  }
+}
+
+/**
+ * An error of the masked addresses (§13): what went wrong with UwUMail, in words that say what
+ * to do. Anything else as `errorText`.
+ */
+export function maskedErrorText(error: unknown): string {
+  switch (errorCode(error)) {
+    case 'not_connected':
+      return t(
+        'UwUMail ist nicht verbunden. Verbinde es unter Einstellungen → Maskierte Adressen.',
+      );
+    case 'revoked':
+      return t(
+        'UwUMail hat die Verbindung beendet. Verbinde dich unter Einstellungen → Maskierte Adressen neu.',
+      );
+    case 'server_not_allowed':
+      return t('Mit diesem UwUMail-Server darf dieser Server nicht sprechen.');
+    case 'upstream':
+      return t('UwUMail antwortet gerade nicht. Versuch es später noch einmal.');
+    case 'quota':
+      return t('Mehr geht nicht: Das Limit ist erreicht.');
+    case 'forbidden':
+      return t('UwUMail hat das abgelehnt.');
+    default:
+      return errorText(error);
   }
 }
