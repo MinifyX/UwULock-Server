@@ -60,6 +60,45 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - The on/off settings of file requests and the suite vault moved into the switches
   (`fileRequests.enabled` and `suite.enabled` are gone from the settings).
 
+**The low findings of the 0.6 review, fixed.** Every low finding and note of
+[the review](docs/security-review-0.6.md) that stayed open for 0.6.0-beta.1 (SV-L1 to SV-L41,
+SV-I1 to SV-I4) is fixed; the review says how, finding by finding. What admins and client
+authors notice:
+
+- **Migration 0018** (schema version 18, after 0021): SCIM remembers which accounts it disabled
+  (`scim_disabled`), organisation tombstones keep their collections, the sync epoch starts anew
+  (every client syncs in full once), and leaving or being revoked from an organisation removes
+  one's reminders and masked links there.
+- **Suite push:** `POST /uwu/v1/suite/spaces/{space}/records` takes `spaceId`; a push sealed for
+  a space that was rekeyed since is refused with 409 `space_changed`. Pushes without it are still
+  taken (UwUSSH and UwURDP send it from their next releases on).
+- **Secrets at rest:** the SMTP and Loki passwords, the push relay key, the channels' tokens and
+  the off-site secrets and recovery key are sealed under `secret.key` now, existing ones at the
+  first start. Without `secret.key` but with sealed values the server refuses to start;
+  `UWULOCK_NEW_SECRET_KEY=1` for one start empties them instead.
+- **Two-step login duty:** an account that must set up a second step gets a setup-only token
+  (scope `uwu.twofactor-setup`, everything else 403 `two_factor_required`, an empty sync) until
+  it has one, from any client.
+- **SSO:** the redirect of browser extensions is pinned to the released ones; self-built ones
+  are listed in the SSO settings (`extensionIds`). The issuer takes no `?query`, endpoints on
+  loopback http only with an issuer there, and a failing provider is asked once in 30 seconds.
+- **Off-site backups:** an SFTP server's host key is confirmed before any login (the portal asks;
+  the command line needs `--host-key`). The command line reads the recovery key without echo and
+  asks before putting back the newest snapshot; the portal warns when the last snapshot this
+  server wrote is missing at the target. A restore whose files fail still finishes its steps.
+- **Alerts:** channels get fixed texts with the status code, not another server's words; admin
+  test buttons show only the status of what they reached.
+- **Sends and file requests:** send domains are recognised with a dot at the end, Send codes
+  have eight digits with daily caps and caps per Send and owner, a file request holds at most
+  2 GB by default (`fileRequests.maxRequestMb`), and uploads stop when a request closes.
+- **More:** a WebSocket ticket instead of the admin's token in the diagnosis
+  (`POST /uwu/v1/admin/diagnosis/websocket-ticket`), at most 25 sockets per address waiting for
+  their login (429), masked connects need this server on https (`https_required`), invitations
+  count admins as admins only where the portal is open, automatic icons refuse more NAT64
+  ranges and answer a cached icon like a missing one when out of tries, Loki lines are capped,
+  "Share as Send" asks for the master password first, and the importers have size limits and
+  stricter checks.
+
 ## 0.6.0-beta.1
 
 **Families, the UwU extras, and a server that looks after itself.** Stages 4b, 4c, 4d and 6 of
