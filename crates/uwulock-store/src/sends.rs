@@ -112,6 +112,20 @@ pub(crate) fn write_send(tx: &rusqlite::Transaction<'_>, send: &Send) -> rusqlit
     ])
 }
 
+/// The Sends of `user_id` whose change number is in `(since, until]`, for a delta sync.
+pub(crate) fn sends_between(
+    conn: &rusqlite::Connection,
+    user_id: &str,
+    since: i64,
+    until: i64,
+) -> rusqlite::Result<Vec<Send>> {
+    conn.prepare_cached(&format!(
+        "SELECT {COLUMNS} FROM sends WHERE user_id = ?1 AND seq > ?2 AND seq <= ?3 ORDER BY seq"
+    ))?
+    .query_map(params![user_id, since, until], send_from)?
+    .collect()
+}
+
 impl Store {
     pub async fn sends(&self, user_id: &str) -> Result<Vec<Send>> {
         let user_id = user_id.to_string();
