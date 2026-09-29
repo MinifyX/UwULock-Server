@@ -658,8 +658,8 @@ pub fn wrap_family_key(org_id: &str, public_key: &str) -> Result<String, JsValue
 
 /// The body of `PUT /api/ciphers/<id>/share`: the item encrypted anew for the family.
 /// `collections` is a JSON list of collection ids.
-#[wasm_bindgen(js_name = shareItem)]
-pub fn share_item(id: &str, org_id: &str, collections: &str) -> Result<String, JsValue> {
+#[wasm_bindgen(js_name = shareToFamily)]
+pub fn share_to_family(id: &str, org_id: &str, collections: &str) -> Result<String, JsValue> {
     let collections: Vec<String> = serde_json::from_str(collections).map_err(Failure::from)?;
     Ok(with_unlocked(|unlocked| json(&orgs::share(unlocked, id, org_id, collections)?))?)
 }

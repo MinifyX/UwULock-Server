@@ -208,7 +208,7 @@ export const declineInvitation = (id: string) =>
 /** Move a personal item into a family's collections, encrypted anew for the family. */
 export async function shareItem(itemId: string, orgId: string, collectionIds: string[]) {
   const body = await callJson<Record<string, unknown>>((core) =>
-    core.shareItem(itemId, orgId, JSON.stringify(collectionIds)),
+    core.shareToFamily(itemId, orgId, JSON.stringify(collectionIds)),
   );
   await changed(
     request(`/api/ciphers/${encodeURIComponent(itemId)}/share`, { method: 'PUT', body }),

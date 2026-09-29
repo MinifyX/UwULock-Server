@@ -223,9 +223,10 @@ impl Tokens {
     /// went to, five days, as Bitwarden's.
     pub fn org_invite_token(&self, member_id: &str, email: &str) -> String {
         let claims = LinkClaims {
-            sub: format!("{member_id} {email}"),
+            sub: member_id.to_string(),
             exp: now_seconds() + 5 * 86_400,
             iss: self.link_issuer("orginvite"),
+            email: Some(email.to_string()),
         };
         self.sign(&claims)
     }
@@ -233,8 +234,7 @@ impl Tokens {
     /// The membership and address an invitation's token is for, if it has not run out.
     pub fn check_org_invite_token(&self, token: &str) -> Option<(String, String)> {
         let claims = self.verify_link(token, "orginvite")?;
-        let (member, email) = claims.sub.split_once(' ')?;
-        Some((member.to_string(), email.to_string()))
+        Some((claims.sub, claims.email?))
     }
 
     fn link_issuer(&self, what: &str) -> String {
