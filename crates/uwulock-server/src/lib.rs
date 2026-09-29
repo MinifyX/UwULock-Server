@@ -190,7 +190,8 @@ fn spawn_watch(state: AppState) {
 
 /// Once a day: a backup, and the old ones swept away — backups, events, codes, invitations and
 /// sessions that ran out, items that were in the trash for 30 days, Sends past their deletion
-/// date, files nothing claims any more, versions past their time; the icon library's index again.
+/// date, files nothing claims any more, versions past their time, the delta sync's tombstones
+/// after 90 days; the icon library's index again.
 /// Every hour: emergency access whose wait is over, reminders that became due, and the day's
 /// numbers for the admin portal.
 pub fn spawn_maintenance(config: Config, state: AppState) {
@@ -222,6 +223,10 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             uwulock_api::file_requests::sweep(&state).await;
             if let Err(error) = state.store.prune_versions().await {
                 tracing::warn!(%error, "old versions of items were not swept up");
+            }
+            let now = time::OffsetDateTime::now_utc().unix_timestamp();
+            if let Err(error) = state.store.prune_tombstones(now).await {
+                tracing::warn!(%error, "old tombstones of the delta sync were not swept up");
             }
             uwulock_api::icons::daily(&state).await;
             uwulock_api::reports::daily(&state).await;

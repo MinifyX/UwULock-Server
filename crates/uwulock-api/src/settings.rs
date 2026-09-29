@@ -61,6 +61,24 @@ pub struct Settings {
     /// Families (Stufe 4d): who may make one, how many members one has at most, how many one
     /// account may own.
     pub families: OrgSettings,
+    /// The suite vault of UwUSSH, UwURDP and the other UwU apps (docs/uwu-api.md §6).
+    pub suite: SuiteSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SuiteSettings {
+    pub enabled: bool,
+    /// Records one account may keep in all its spaces together.
+    pub max_records: u32,
+    /// And how many MiB they may take.
+    pub max_mb: u32,
+}
+
+impl Default for SuiteSettings {
+    fn default() -> Self {
+        SuiteSettings { enabled: true, max_records: 50_000, max_mb: 256 }
+    }
 }
 
 /// Who may make an organisation of one kind.
@@ -185,6 +203,7 @@ impl Default for Settings {
             metrics: crate::metrics::MetricsSettings::default(),
             loki: crate::loki::LokiSettings::default(),
             file_requests: FileRequestSettings::default(),
+            suite: SuiteSettings::default(),
             storage_per_user_mb: None,
             sso: crate::sso::SsoSettings::default(),
             scim: crate::scim::ScimSettings::default(),
@@ -326,6 +345,12 @@ impl Settings {
         }
         if self.families.per_user > 10 {
             return Err("One account may own at most 10 families (0 for none).".into());
+        }
+        if !(1..=1_000_000).contains(&self.suite.max_records) {
+            return Err("An account may keep from 1 to 1000000 suite records.".into());
+        }
+        if !(1..=65_536).contains(&self.suite.max_mb) {
+            return Err("The suite vault of an account may take from 1 to 65536 MB.".into());
         }
         self.sso.check()?;
         Ok(())

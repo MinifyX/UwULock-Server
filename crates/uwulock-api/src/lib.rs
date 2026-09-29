@@ -56,6 +56,7 @@ pub(crate) mod outbound;
 mod palette;
 mod passkeys;
 pub mod policies;
+mod realtime;
 pub mod reminders;
 pub mod reports;
 pub mod scim;
@@ -65,6 +66,8 @@ pub mod send_hosts;
 mod sends;
 mod settings;
 pub mod sso;
+mod suite;
+mod sync;
 mod totp;
 mod travel;
 mod two_factor;
@@ -167,6 +170,8 @@ pub struct AppState {
     pub unanswerable: Arc<auth_requests::Unanswerable>,
     /// Who listens for live updates.
     pub hub: Arc<uwulock_notify::Hub>,
+    /// Who listens on UwULock's own realtime channel.
+    pub realtime: Arc<uwulock_notify::realtime::Realtime>,
     /// Bitwarden's push relay, for the phone apps.
     pub relay: uwulock_notify::relay::Relay,
     /// What `/metrics` counts.
@@ -237,6 +242,7 @@ impl AppState {
             uploads: Arc::default(),
             legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
             hub: Arc::default(),
+            realtime: Arc::default(),
             relay: uwulock_notify::relay::Relay::default(),
             metrics: Arc::default(),
             alerts,
@@ -261,6 +267,8 @@ impl AppState {
         self.store.set_version_rule(settings.versions.rule());
         *self.settings.write() = settings;
         self.settings_changed.notify_one();
+        // `/uwu/v1/info` says something else now.
+        self.realtime.broadcast(uwulock_notify::realtime::Live::Info);
     }
 
     /// Look again at how many hashes from Vaultwarden are left, after one was replaced or the
@@ -300,7 +308,10 @@ pub fn router(state: AppState) -> Router {
     let whole_vault = Router::new()
         .merge(ciphers::vault_routes())
         .merge(accounts::vault_routes())
+        .merge(suite::rekey_routes())
         .layer(DefaultBodyLimit::max(VAULT_BODY_LIMIT));
+    // A suite push brings up to 500 records with 8 MiB of sealed data, which is more in base64.
+    let suite_push = suite::push_routes().layer(DefaultBodyLimit::max(suite::MAX_PUSH_BODY));
     // Almost everything: small bodies, and an answer within a minute.
     let quick = Router::new()
         .merge(health::routes())
@@ -338,8 +349,12 @@ pub fn router(state: AppState) -> Router {
         .merge(reminders::routes())
         .merge(branding::routes())
         .merge(reports::routes())
+        .merge(sync::routes())
+        .merge(realtime::routes())
+        .merge(suite::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
+        .merge(suite_push)
         .merge(web::routes())
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(TimeoutLayer::with_status_code(axum::http::StatusCode::REQUEST_TIMEOUT, REQUEST_TIMEOUT));

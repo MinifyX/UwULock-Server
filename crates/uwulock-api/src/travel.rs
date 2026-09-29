@@ -42,7 +42,7 @@ pub(crate) async fn not_while_travelling(state: &AppState, user_id: &str) -> Api
     Ok(())
 }
 
-async fn travel_json(state: &AppState, user_id: &str) -> ApiResult<Value> {
+pub(crate) async fn travel_json(state: &AppState, user_id: &str) -> ApiResult<Value> {
     let travel = state.store.travel(user_id).await?;
     Ok(json!({
         "object": "travelMode",
@@ -61,6 +61,7 @@ async fn status(State(state): State<AppState>, session: Session) -> ApiResult<Js
 /// what comes back comes.
 fn everyone_syncs(state: &AppState, user_id: &str) {
     crate::notify::user(state, user_id, None, Kind::Vault);
+    crate::notify::live(state, user_id, None, uwulock_notify::realtime::Live::changed("uwu"));
 }
 
 #[derive(Deserialize)]

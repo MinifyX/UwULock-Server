@@ -892,9 +892,7 @@ pub(crate) async fn grant(state: &AppState, ip: IpAddr, headers: &HeaderMap, for
     let device_id = required("deviceidentifier", "device_identifier")?;
     let device_name = required("devicename", "device_name")?;
     let device_type: i64 = required("devicetype", "device_type")?.trim().parse().unwrap_or(14);
-    if form.get("scope").is_some_and(|scope| scope != "api offline_access") {
-        return Err(ApiError::bad("Scope not supported"));
-    }
+    identity::check_scope(state, client_id, form.get("scope"))?;
     if device_name.len() > 256 || device_id.len() > 256 {
         return Err(ApiError::bad("The device is not what it should be."));
     }

@@ -72,6 +72,10 @@ async fn info(State(state): State<AppState>, headers: axum::http::HeaderMap) -> 
     if state.mailer.enabled() {
         features.push("send-emails");
     }
+    features.extend(["delta-sync", "realtime"]);
+    if settings.suite.enabled {
+        features.push("suite");
+    }
     let rules = &settings.policies.master_password;
     Json(json!({
         "object": "info",
@@ -211,6 +215,8 @@ async fn devices(State(state): State<AppState>, session: Session) -> ApiResult<J
                 "lastSeen": device.last_seen,
                 "lastIp": device.last_ip,
                 "current": device.id == session.device,
+                // A suite app's device (docs/uwu-api.md §6.5), so it can be shown and removed.
+                "app": device.client_id.as_deref().filter(|client| crate::suite::space_of_client(client).is_some()),
                 "remembered": device.remember_expires.as_deref().is_some_and(|expires| expires > clock::now().as_str()),
             })
         })
@@ -228,6 +234,12 @@ async fn forget_device(
     if !state.store.delete_device(&session.user.id, &id).await? {
         return Err(ApiError::not_found("No such device."));
     }
+    crate::notify::live_to_device(
+        &state,
+        &session.user.id,
+        &id,
+        uwulock_notify::realtime::Live::Logout { reason: "deviceRemoved" },
+    );
     Ok(StatusCode::OK)
 }
 

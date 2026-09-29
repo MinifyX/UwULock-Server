@@ -272,6 +272,7 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
     out.head("uwulock_live_connections", "gauge", "Open live-update connections.");
     out.sample("uwulock_live_connections", &[("channel", "signalr")], signalr);
     out.sample("uwulock_live_connections", &[("channel", "anonymous")], anonymous);
+    out.sample("uwulock_live_connections", &[("channel", "realtime")], state.realtime.connections());
 
     let relay = state.relay.health();
     out.head("uwulock_push_relay_errors_total", "counter", "Requests the push relay did not take.");

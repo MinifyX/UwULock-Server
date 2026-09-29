@@ -176,6 +176,7 @@ pub async fn reload(state: &AppState) {
     state.branding.forget();
     let server = get_scope(state, SERVER).await;
     state.mailer.set_brand(server.mail_brand());
+    state.realtime.broadcast(uwulock_notify::realtime::Live::Info);
 }
 
 // ── The page ──────────────────────────────────────────────

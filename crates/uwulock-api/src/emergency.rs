@@ -547,7 +547,7 @@ async fn password(
             crate::notify::user(&state, &user, None, uwulock_notify::Kind::Vault);
         }
     }
-    crate::notify::user(&state, &grantor.id, None, uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &grantor.id, None, "securityStamp");
     tell(&state, &grantor, Mail::EmergencyTakenOver { grantee: called(&session.user) });
     log(&state, &session, format!("took over {}", grantor.email)).await;
     let context = crate::notices::Context::of(&state, &session, ip).await;

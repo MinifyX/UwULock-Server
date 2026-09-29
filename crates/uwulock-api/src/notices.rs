@@ -23,7 +23,7 @@ use uwulock_store::notices::{MAIL_NONE, MAIL_SENT, MAIL_WAITING};
 use uwulock_store::{Notice, User, clock};
 
 /// Every kind of notice there is (§12.1); the later stages write some of them.
-pub const KINDS: [&str; 27] = [
+pub const KINDS: [&str; 31] = [
     "failedLogins",
     "failedTwoFactor",
     "newDevice",
@@ -44,6 +44,10 @@ pub const KINDS: [&str; 27] = [
     "travelModeDisabled",
     "travelDisableFailed",
     "extrasKeyReset",
+    "extrasKeyCreated",
+    "extrasKeyLost",
+    "extrasKeyRewrapped",
+    "suiteLogin",
     "kdfBelowMinimum",
     "ssoLinked",
     "maskedConnected",
@@ -109,9 +113,16 @@ fn notice(user: &User, kind: &str, context: &Context, detail: Value, mail: i64) 
 /// Write a notice for `user`; it waits for the next bundled mail, unless its kind is off.
 pub async fn record(state: &AppState, user: &User, kind: &str, context: &Context, detail: Value) {
     let mail = if mailed(state, kind) { MAIL_WAITING } else { MAIL_NONE };
-    if let Err(error) = state.store.add_notice(notice(user, kind, context, detail, mail)).await {
-        tracing::warn!(%error, kind, "a security notice could not be written");
+    match state.store.add_notice(notice(user, kind, context, detail, mail)).await {
+        Ok(id) => tell(state, &user.id, id),
+        Err(error) => tracing::warn!(%error, kind, "a security notice could not be written"),
     }
+}
+
+/// The account's devices hear of a new notice on the realtime channel (docs/uwu-api.md §5.2).
+fn tell(state: &AppState, user_id: &str, id: i64) {
+    let live = uwulock_notify::realtime::Live::Notice { kind: "securityNotice", id: Some(id.to_string()) };
+    crate::notify::live(state, user_id, None, live);
 }
 
 /// Write a notice whose mail went out already, like the one for a new device.
@@ -122,8 +133,9 @@ pub async fn record_mailed(state: &AppState, user: &User, kind: &str, context: &
     match state.store.add_notice(notice).await {
         Ok(id) if sent => {
             let _ = state.store.notices_mailed(vec![id], &now, true).await;
+            tell(state, &user.id, id);
         }
-        Ok(_) => {}
+        Ok(id) => tell(state, &user.id, id),
         Err(error) => tracing::warn!(%error, kind, "a security notice could not be written"),
     }
 }
@@ -138,8 +150,10 @@ pub async fn failed(state: &AppState, user: &User, kind: &str, event: &str, cont
     }
     let mail = if mailed(state, kind) { MAIL_WAITING } else { MAIL_NONE };
     let notice = notice(user, kind, context, detail, mail);
-    if let Err(error) = state.store.burst_notice(notice, event, BURST_SECONDS, BURST_TRIES).await {
-        tracing::warn!(%error, kind, "a security notice could not be written");
+    match state.store.burst_notice(notice, event, BURST_SECONDS, BURST_TRIES).await {
+        Ok(Some(id)) => tell(state, &user.id, id),
+        Ok(None) => {}
+        Err(error) => tracing::warn!(%error, kind, "a security notice could not be written"),
     }
 }
 
@@ -175,6 +189,7 @@ fn line(notice: &Notice) -> NoticeLine {
             .or_else(|| detail["format"].as_str())
             .or_else(|| detail["issuer"].as_str())
             .or_else(|| detail["organization"].as_str())
+            .or_else(|| (notice.kind == "suiteLogin").then(|| detail["app"].as_str()).flatten())
             .map(str::to_string),
     }
 }

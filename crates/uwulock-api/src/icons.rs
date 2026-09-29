@@ -665,6 +665,7 @@ async fn own_put(
         crate::files::check_storage(&state, &session.user.id, body.data.len().saturating_sub(previous) as i64).await?;
     }
     let icon = state.store.put_own_icon(&cipher, key_type, body.data).await?;
+    icon_changed(&state, &session, &cipher).await;
     let mut answer = own_json(&icon);
     if let Some(object) = answer.as_object_mut() {
         object.remove("data");
@@ -679,7 +680,23 @@ async fn own_delete(
 ) -> ApiResult<StatusCode> {
     writable_key_type(&state, &session, &cipher).await?;
     state.store.delete_own_icon(&cipher).await?;
+    icon_changed(&state, &session, &cipher).await;
     Ok(StatusCode::OK)
+}
+
+/// Everybody who sees the item hears that its icon changed (realtime area `uwu`): its owner, or
+/// every member of its organisation.
+async fn icon_changed(state: &AppState, session: &Session, cipher: &str) {
+    let live = uwulock_notify::realtime::Live::changed("uwu");
+    let organization = state.store.cipher_organization(cipher).await.ok().flatten();
+    match organization {
+        Some(org) => {
+            for user in state.store.org_members_users(&org).await.unwrap_or_default() {
+                crate::notify::live(state, &user, Some(session), live.clone());
+            }
+        }
+        None => crate::notify::live(state, &session.user.id, Some(session), live),
+    }
 }
 
 // ── Admin ─────────────────────────────────────────────────

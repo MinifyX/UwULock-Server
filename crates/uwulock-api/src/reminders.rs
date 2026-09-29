@@ -34,9 +34,14 @@ fn reminder_json(reminder: &Reminder, today: &str) -> Value {
 }
 
 async fn list(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
-    let reminders = state.store.reminders(&session.user.id).await?;
+    Ok(Json(list_json(&state, &session.user.id).await?))
+}
+
+/// The account's reminders as `GET /uwu/v1/reminders` lists them; the delta sync gives the same.
+pub(crate) async fn list_json(state: &AppState, user_id: &str) -> ApiResult<Value> {
+    let reminders = state.store.reminders(user_id).await?;
     let today = day(today());
-    Ok(Json(out::list(reminders.iter().map(|reminder| reminder_json(reminder, &today)).collect())))
+    Ok(out::list(reminders.iter().map(|reminder| reminder_json(reminder, &today)).collect()))
 }
 
 #[derive(Deserialize)]
@@ -91,6 +96,7 @@ async fn set(
     };
     let reminder = Reminder { cipher_id: cipher.clone(), due: day(due), every_months: body.every_months, mailed: None };
     state.store.set_reminder(&session.user.id, reminder).await?;
+    crate::notify::live(&state, &session.user.id, Some(&session), uwulock_notify::realtime::Live::changed("uwu"));
     let saved = state
         .store
         .reminders(&session.user.id)
@@ -104,15 +110,14 @@ async fn set(
 async fn remove(State(state): State<AppState>, session: Session, Path(cipher): Path<String>) -> ApiResult<StatusCode> {
     visible(&state, &session, &cipher).await?;
     state.store.delete_reminder(&session.user.id, &cipher).await?;
+    crate::notify::live(&state, &session.user.id, Some(&session), uwulock_notify::realtime::Live::changed("uwu"));
     Ok(StatusCode::OK)
 }
 
-/// Every hour: one mail per account for the reminders that became due, once per due date. Not
-/// without a mail server; hidden ones (travel mode) wait.
+/// Every hour: one mail per account for the reminders that became due, once per due date, and
+/// a realtime `reminderDue` notice to the account's devices. Without a mail server only the
+/// notice. Hidden ones (travel mode) wait.
 pub async fn tend(state: &AppState) {
-    if !state.mailer.enabled() {
-        return;
-    }
     let today = day(today());
     let due = match state.store.reminders_to_mail(&today).await {
         Ok(due) => due,
@@ -123,6 +128,14 @@ pub async fn tend(state: &AppState) {
     };
     for (user_id, ciphers) in due {
         let Ok(Some(user)) = state.store.user(&user_id).await else { continue };
+        let notice = uwulock_notify::realtime::Live::Notice { kind: "reminderDue", id: None };
+        crate::notify::live(state, &user_id, None, notice);
+        if !state.mailer.enabled() {
+            if let Err(error) = state.store.reminders_mailed(&user_id, ciphers, &today).await {
+                tracing::warn!(%error, "a due reminder could not be noted");
+            }
+            continue;
+        }
         let mail = Mail::ReminderDue {
             count: ciphers.len(),
             link: format!("{}/#/vault?due=1", state.config.public.trim_end_matches('/')),

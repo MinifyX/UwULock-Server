@@ -300,7 +300,7 @@ async fn change_password(
         .await?;
     let context = notices::Context::of(&state, &session, ip).await;
     notices::record(&state, &session.user, "passwordChanged", &context, json!({})).await;
-    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &session.user.id, Some(&session), "securityStamp");
     tracing::info!(user = %session.user.id, "master password changed");
     Ok(StatusCode::OK)
 }
@@ -362,7 +362,7 @@ async fn change_kdf(
         .await?;
     let context = notices::Context::of(&state, &session, ip).await;
     notices::record(&state, &session.user, "kdfChanged", &context, json!({})).await;
-    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &session.user.id, Some(&session), "securityStamp");
     tracing::info!(user = %session.user.id, "key derivation changed");
     Ok(StatusCode::OK)
 }
@@ -634,6 +634,7 @@ async fn finish_rotation(
     rotation: uwulock_store::Rotation,
 ) -> ApiResult<StatusCode> {
     let user = &session.user;
+    let extras_before = state.store.extras_key(&user.id).await?.is_some_and(|(_, lost)| !lost);
     match state.store.rotate_keys(rotation).await? {
         uwulock_store::RotationOutcome::Done => {}
         uwulock_store::RotationOutcome::Incomplete => {
@@ -651,7 +652,11 @@ async fn finish_rotation(
     }
     let context = notices::Context::of(state, session, ip).await;
     notices::record(state, user, "keysRotated", &context, json!({})).await;
-    crate::notify::user(state, &user.id, Some(session), uwulock_notify::Kind::LogOut);
+    // A new key pair without the extras key wrapped for it: nothing under it opens any more.
+    if extras_before && state.store.extras_key(&user.id).await?.is_some_and(|(_, lost)| lost) {
+        notices::record(state, user, "extrasKeyLost", &context, json!({})).await;
+    }
+    crate::notify::logout(state, &user.id, Some(session), "keysRotated");
     tracing::info!(user = %user.id, "user key rotated");
     Ok(StatusCode::OK)
 }
@@ -675,7 +680,7 @@ async fn new_security_stamp(
         crate::notify::forget_phone(&state, &session.user.id, &device.id).await;
         state.store.delete_device(&session.user.id, &device.id).await?;
     }
-    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &session.user.id, Some(&session), "securityStamp");
     Ok(StatusCode::OK)
 }
 
@@ -778,7 +783,7 @@ async fn change_email(
     if let Some(user) = state.store.user(&session.user.id).await? {
         notices::record(&state, &user, "emailChanged", &context, json!({})).await;
     }
-    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &session.user.id, Some(&session), "securityStamp");
     tracing::info!(user = %session.user.id, "address changed");
     Ok(StatusCode::OK)
 }
@@ -844,7 +849,7 @@ async fn delete_account(
         )));
     }
     state.store.delete_user(&session.user.id).await?;
-    crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &session.user.id, Some(&session), "disabled");
     tracing::info!(user = %session.user.id, "account deleted");
     Ok(StatusCode::OK)
 }

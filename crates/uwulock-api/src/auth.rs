@@ -149,7 +149,12 @@ impl Tokens {
             device: device.to_string(),
             devicetype: device_type_name(device_type).to_string(),
             client_id: client_id.to_string(),
-            scope: vec!["api".into(), "offline_access".into()],
+            // A suite app's token opens its space and nothing else (docs/uwu-api.md §6.5).
+            scope: if crate::suite::space_of_client(client_id).is_some() {
+                vec![crate::suite::SCOPE.into(), "offline_access".into()]
+            } else {
+                vec!["api".into(), "offline_access".into()]
+            },
             amr: if sso { vec!["Application".into(), "sso".into()] } else { vec!["Application".into()] },
         };
         (self.sign(&claims), ACCESS_SECONDS)
@@ -518,26 +523,65 @@ pub struct Session {
     pub client_id: String,
     /// The login came through SSO.
     pub sso: bool,
+    /// A suite app's token (scope `uwu.suite`): the one space it may touch. Such a session is
+    /// only ever made by [`AnySession`]; the plain extractor refuses the token.
+    pub space: Option<&'static str>,
+    /// When the access token runs out, in Unix seconds.
+    pub expires: i64,
+}
+
+/// The bearer token of a request: Bitwarden takes what follows the last "Bearer ", or the whole
+/// value.
+fn bearer(parts: &Parts) -> &str {
+    let header = parts.headers.get("authorization").and_then(|value| value.to_str().ok()).unwrap_or_default();
+    header.rsplit_once("Bearer ").map_or(header, |(_, token)| token)
 }
 
 impl FromRequestParts<AppState> for Session {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        let header = parts.headers.get("authorization").and_then(|value| value.to_str().ok()).unwrap_or_default();
-        // Bitwarden takes what follows the last "Bearer ", or the whole value.
-        let token = header.rsplit_once("Bearer ").map_or(header, |(_, token)| token);
-        Session::from_token(state, token).await
+        Session::from_token(state, bearer(parts)).await
+    }
+}
+
+/// A session of either kind: an account's (`user`) or a suite app's (`suite`), for the few
+/// endpoints a suite app may use (docs/uwu-api.md §6.5). Each checks the space itself.
+#[derive(Debug, Clone)]
+pub struct AnySession(pub Session);
+
+impl FromRequestParts<AppState> for AnySession {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
+        Session::from_any_token(state, bearer(parts)).await.map(AnySession)
     }
 }
 
 impl Session {
-    /// The session an access token stands for, if it still does.
+    /// The session an access token stands for, if it still does. A suite app's token is
+    /// refused with 403 `scope`: it may use nothing but its space.
     pub async fn from_token(state: &AppState, token: &str) -> Result<Self, ApiError> {
+        let session = Self::from_any_token(state, token).await?;
+        if session.space.is_some() {
+            return Err(crate::suite::scope_error());
+        }
+        Ok(session)
+    }
+
+    /// Like [`Session::from_token`], for an account's token or a suite app's.
+    pub async fn from_any_token(state: &AppState, token: &str) -> Result<Self, ApiError> {
         if token.is_empty() {
             return Err(ApiError::unauthorized());
         }
         let claims = state.tokens.verify(token).ok_or_else(ApiError::unauthorized)?;
+        let space = if claims.scope.iter().any(|scope| scope == crate::suite::SCOPE) {
+            Some(crate::suite::space_of_client(&claims.client_id).ok_or_else(ApiError::unauthorized)?)
+        } else if claims.scope.iter().any(|scope| scope == "api") {
+            None
+        } else {
+            return Err(ApiError::unauthorized());
+        };
         let Some(SessionUser { user, devices }) = state.store.session_user(&claims.sub).await? else {
             return Err(ApiError::unauthorized());
         };
@@ -545,7 +589,12 @@ impl Session {
             return Err(ApiError::unauthorized());
         }
         let sso = claims.amr.iter().any(|method| method == "sso");
-        Ok(Session { user, device: claims.device, client_id: claims.client_id, sso })
+        Ok(Session { user, device: claims.device, client_id: claims.client_id, sso, space, expires: claims.exp })
+    }
+
+    /// Whether this is a suite app's session.
+    pub fn is_suite(&self) -> bool {
+        self.space.is_some()
     }
 }
 

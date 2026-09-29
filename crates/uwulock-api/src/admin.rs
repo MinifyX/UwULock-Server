@@ -335,7 +335,8 @@ async fn user_action(
         _ => return Err(ApiError::not_found("Not found.")),
     }
     if matches!(action.as_str(), "disable" | "log-out") {
-        crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
+        let reason = if action == "disable" { "disabled" } else { "securityStamp" };
+        crate::notify::logout(&state, &id, None, reason);
     }
     record(&state, &admin, format!("{action} for {}", target.email)).await;
     let overview = state
@@ -360,7 +361,7 @@ async fn delete_user(State(state): State<AppState>, admin: Admin, Path(id): Path
             owned.join(", ")
         )));
     }
-    crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
+    crate::notify::logout(&state, &id, None, "disabled");
     state.store.delete_user(&id).await?;
     record(&state, &admin, format!("deleted the account {}", target.email)).await;
     Ok(StatusCode::OK)
@@ -394,6 +395,8 @@ async fn delete_device(
     if !state.store.delete_device(&id, &device).await? {
         return Err(ApiError::not_found("No such device."));
     }
+    let logout = uwulock_notify::realtime::Live::Logout { reason: "deviceRemoved" };
+    crate::notify::live_to_device(&state, &id, &device, logout);
     record(&state, &admin, format!("logged out device {device} of {id}")).await;
     Ok(StatusCode::OK)
 }

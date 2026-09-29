@@ -5,7 +5,7 @@
 //! key again. The server never holds anything that opens it.
 
 use crate::AppState;
-use crate::auth::{ClientIp, Session};
+use crate::auth::{AnySession, ClientIp, Session};
 use crate::errors::{ApiError, ApiResult};
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -43,7 +43,7 @@ pub(crate) fn enc_string(value: &str, kind: u8, most: usize) -> bool {
     }
 }
 
-fn view(key: Option<(ExtrasKey, bool)>) -> Value {
+pub(crate) fn view(key: Option<(ExtrasKey, bool)>) -> Value {
     match key {
         Some((_, true)) => json!({ "object": "uwuKeys", "extrasKey": null, "lost": true }),
         Some((key, false)) => json!({
@@ -59,7 +59,7 @@ fn view(key: Option<(ExtrasKey, bool)>) -> Value {
     }
 }
 
-async fn keys(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
+async fn keys(State(state): State<AppState>, AnySession(session): AnySession) -> ApiResult<Json<Value>> {
     Ok(Json(view(state.store.extras_key(&session.user.id).await?)))
 }
 
@@ -70,7 +70,12 @@ struct NewKey {
     public_key_wrapped: String,
 }
 
-async fn create(State(state): State<AppState>, session: Session, Json(body): Json<NewKey>) -> ApiResult<Json<Value>> {
+async fn create(
+    State(state): State<AppState>,
+    AnySession(session): AnySession,
+    ClientIp(ip): ClientIp,
+    Json(body): Json<NewKey>,
+) -> ApiResult<Json<Value>> {
     let Some(public_key) = session.user.public_key.clone() else {
         return Err(ApiError::bad("This account has no key pair.").code("no_key_pair"));
     };
@@ -86,6 +91,7 @@ async fn create(State(state): State<AppState>, session: Session, Json(body): Jso
     if !state.store.create_extras_key(&session.user.id, key).await? {
         return Err(ApiError::new(StatusCode::CONFLICT, "There is an extras key already.").code("exists"));
     }
+    changed(&state, &session, ip, "extrasKeyCreated").await;
     Ok(Json(view(state.store.extras_key(&session.user.id).await?)))
 }
 
@@ -97,7 +103,8 @@ struct UserWrap {
 
 async fn user_wrap(
     State(state): State<AppState>,
-    session: Session,
+    AnySession(session): AnySession,
+    ClientIp(ip): ClientIp,
     Json(body): Json<UserWrap>,
 ) -> ApiResult<Json<Value>> {
     if !enc_string(&body.user_key_wrapped, 2, 1000) {
@@ -108,7 +115,15 @@ async fn user_wrap(
             ApiError::new(StatusCode::CONFLICT, "The extras key is wrapped for the user key already.").code("exists")
         );
     }
+    changed(&state, &session, ip, "extrasKeyRewrapped").await;
     Ok(Json(view(state.store.extras_key(&session.user.id).await?)))
+}
+
+/// The extras key changed: a notice, and the other devices hear it (area `uwu`).
+async fn changed(state: &AppState, session: &Session, ip: std::net::IpAddr, kind: &str) {
+    let context = crate::notices::Context::of(state, session, ip).await;
+    crate::notices::record(state, &session.user, kind, &context, json!({})).await;
+    crate::notify::live(state, &session.user.id, Some(session), uwulock_notify::realtime::Live::changed("uwu"));
 }
 
 /// Start over: the extras key goes, and everything under it. Only with the master password.
@@ -122,6 +137,7 @@ async fn reset(
     state.store.delete_extras_key(&session.user.id).await?;
     let context = crate::notices::Context::of(&state, &session, ip).await;
     crate::notices::record(&state, &session.user, "extrasKeyReset", &context, json!({})).await;
+    crate::notify::live(&state, &session.user.id, Some(&session), uwulock_notify::realtime::Live::changed("uwu"));
     Ok(StatusCode::OK)
 }
 
