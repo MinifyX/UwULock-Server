@@ -380,14 +380,18 @@ Bitwardens „Families".
 
 ### Stufe 6 — UwU-Extras (unter `/uwu/v1`, angekündigt unter `GET /uwu/v1/info`)
 
-- Schlanker Echtzeit-Kanal und Delta-Sync für den UwULock-Client
-- Suite-Tresor: eigene verschlüsselte Objekte für SSH-Hosts, RDP-Verbindungen, UwUMail-Konten —
+- [x] Schlanker Echtzeit-Kanal und Delta-Sync für den UwULock-Client (`/uwu/v1/realtime`,
+  `/uwu/v1/sync` mit Zählern, Tombstones 90 Tage und Epochen; `docs/sync.md`, Zahlen in
+  `docs/performance.md`)
+- [x] Suite-Tresor: eigene verschlüsselte Objekte für SSH-Hosts, RDP-Verbindungen, UwUMail-Konten —
   bewusst nicht in Bitwardens Eintragsliste, weil unbekannte Typen die offiziellen Clients
-  stören könnten
-- UwUSync ersetzen: UwUSSH und UwURDP synchronisieren über UwULock Server, mit Übernahme aus der
-  UwUSync-Datenbank
-- Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
-  einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf
+  stören könnten (Bereiche `ssh`/`rdp`/`mail`/`generic`, Suite-Anmeldung, `docs/suite.md`)
+- [x] UwUSync ersetzen: UwUSSH und UwURDP synchronisieren über UwULock Server, mit Übernahme aus der
+  UwUSync-Datenbank (die Übernahme machen die Apps selbst, die Datensätze sind nur dort lesbar;
+  ihre Abläufe laufen in `uwulock-e2e`)
+- [x] Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
+  einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf (der Web-Tresor
+  speichert und lädt ihn unter dem Extras-Schlüssel)
 - Eigene Domains für Sends: Im Admin-Portal lassen sich weitere Domains oder Subdomains
   (z. B. `send.example.com` neben `lock.example.com`) anlegen, unter denen nur Sends erreichbar
   sind — die Send-Seite und `/api/sends/access…`, kein Tresor, keine Anmeldung, kein

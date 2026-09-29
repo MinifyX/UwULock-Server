@@ -395,6 +395,9 @@ bumped by:
 - `POST /api/ciphers/purge`, a vault import of more than 1000 items;
 - the extras key being lost or deleted.
 
+A cursor with `suite` also carries each space's epoch: a space deleted or rekeyed (§6.4) makes
+such cursors full syncs without touching the account's epoch.
+
 The **server epoch** is bumped when a backup is restored into the running server (§21) or the
 database is migrated from another backend. A cursor with an old epoch, or older than the oldest
 tombstone that is left, cannot be served; the answer is then a full sync with `reset: true`.
@@ -455,7 +458,9 @@ Answer (full sync: every list complete, `deleted` lists empty, `reset: true`):
 - `suite.records`: envelopes of §6.3 with `seq` greater than the cursor's, of the spaces this
   token sees; deleted records are envelopes with `deleted: true` (they are the tombstones).
   `suite.spaces`: the §6.2 space objects that changed (new, or their key changed).
-- `uwu.extrasKey`: the §3 object when it changed, else `null`.
+- `uwu.extrasKey`: the whole `GET /uwu/v1/keys` body of §3 (`object: "uwuKeys"`, `extrasKey`,
+  `lost`) when it changed, else `null`; always present in a full sync (with `extrasKey: null`
+  when there is none yet).
 - `uwu.icons`: `[{ "cipherId", "revisionDate", "keyType" }]` of own icons that changed (§7.3);
   `iconsDeleted`: cipher ids whose own icon is gone.
 - `uwu.reminders`: the full §10 list when any reminder changed, else `null`.
@@ -467,6 +472,8 @@ Answer (full sync: every list complete, `deleted` lists empty, `reset: true`):
 - `uwu.unseen`: always present; counts for the badges.
 - `hasMore: true`: there is more; call again at once with the new cursor. Objects are delivered
   in `seq` order across all areas; `cursor` always points after the last one delivered.
+
+- Until Stufe 6 part B, `uwu.sendDomains` is always `{}` and `uwu.maskedLinks` always `null`.
 
 Errors: 400 `invalid` for an unreadable cursor (the client drops it and does a full sync).
 
@@ -507,7 +514,10 @@ Server answers:
   `{ "type": "ping" }`; the server answers `{ "type": "pong" }`. At most one client message per
   second on average (burst 10); more closes with 4429.
 - If `cursor` is given and the account has changed since it (for this token's areas), the server
-  sends `changed` right after `ready`. That is the whole of "resume".
+  sends `changed` right after `ready`. That is the whole of "resume". A cursor that cannot be
+  served any more (another epoch) counts as changed.
+- A later `auth` must be for the same account and app; another one is closed with 4400. With the
+  suite vault switched off, a `suite` token is closed with 4403.
 
 ### 5.2 Server messages
 
@@ -634,8 +644,9 @@ All take `user` (any space) or `suite` (its own space only; others are 403 `scop
   and tombstone, re-sealed for the new id and key, `baseSeq` = its current `seq`. One transaction;
   any missing or stale record is 409 `conflict` and nothing changes. Body limit 64 MiB. The
   space's epoch is bumped: other devices' next pull says `reset`.
-- `DELETE /uwu/v1/suite/spaces/{space}` — `user` only; body `{ "masterPasswordHash": "…" }`.
-  Deletes the space and all its records.
+- `DELETE /uwu/v1/suite/spaces/{space}` — `user` only; body `{ "masterPasswordHash": "…" }`
+  (a wrong one is 400 as everywhere). Deletes the space and all its records; 404 when there is
+  none. The web vault offers it under *Settings → Devices*.
 - `GET /uwu/v1/suite/spaces/{space}/records?since=<seq>&limit=<n>` — pull. `limit` default and
   maximum 500. Answer:
 
@@ -693,9 +704,17 @@ a token that can do nothing but their space:
 | `uwumail` | `mail` |
 | `uwusuite` | `generic` |
 
-`scope=uwu.suite` with any other `client_id` is `{"error": "invalid_client"}`. The server stores
-the `client_id` with the device; `GET /uwu/v1/devices` gets `"app": "uwussh" | … | null`, so the
-web vault can show and remove suite devices. The new-device mail and security notices apply.
+`scope=uwu.suite` with any other `client_id` is `{"error": "invalid_client"}`; a suite
+`client_id` with any other scope is `{"error": "invalid_scope"}`, and with the passkey grant
+(`webauthn`) `invalid_client`. With the suite vault switched off (§21.1 `suite.enabled`) suite
+logins are `invalid_client` and suite refreshes `invalid_grant`. The server stores the `client_id`
+with the device; `GET /uwu/v1/devices` gets `"app": "uwussh" | … | null`, so the web vault can
+show and remove suite devices. The new-device mail applies; instead of a `newDevice` notice, every
+suite login (new device or not) is a `suiteLogin` notice (§12.1).
+
+A refresh (`grant_type=refresh_token`) answers with the **same** refresh token, as for every other
+client; it must name the device's own `client_id` (another one, or a suite `client_id` for a
+device that is not a suite device, is `invalid_grant`).
 
 A `suite` token may use: `/identity/**`, `/api/accounts/prelogin`, `/uwu/v1/info`,
 `GET|POST /uwu/v1/keys`, `PUT /uwu/v1/keys/user-wrap`, its space's endpoints of §6.4 except
@@ -1305,6 +1324,10 @@ account's language. The Stufe 5 event log builds on the same table.
 | `vaultExported` | reported by a client (§12.2) or by Bitwarden's event 1007 | `{ "format": "json" }` |
 | `travelModeEnabled`, `travelModeDisabled`, `travelDisableFailed` | §9 | `{}` |
 | `extrasKeyReset` | §3 | `{}` |
+| `extrasKeyCreated` | §3: a client made the extras key | `{}` |
+| `extrasKeyRewrapped` | §3: a client wrapped it again for the user key (`PUT …/user-wrap`) | `{}` |
+| `extrasKeyLost` | §3: a rotation changed the key pair without it; nothing under it opens | `{}` |
+| `suiteLogin` | §6.5: a suite app logged in (every time, not only on a new device) | `{ "app": "uwussh", "space": "ssh", "new": true }` |
 | `kdfBelowMinimum` | §20 | `{}` |
 | `ssoLinked` | an SSO identity was linked to the account for the first time (§19) | `{ "issuer": "https://auth.example.com" }` |
 | `maskedConnected`, `maskedDisconnected` | §13 | `{ "server": "https://mail.example.com" }` |
@@ -2682,7 +2705,7 @@ addresses, names, hosts of icons, IPs or ids.
 | `uwulock_loki_dropped_total` | counter | – |
 
 Plus the process collector (`process_*`). What does not exist yet is left out rather than
-reported as 0: `kind` `file_requests`/`icons`, `channel` `realtime`, `target` `offsite`, the send
+reported as 0: `kind` `file_requests`/`icons`, `target` `offsite`, the send
 domains' certificates and `uwulock_icon_fetches_total` come with their features. `route` is
 `other` for the web vault's files and unknown paths. `docs/metrics.md` ships example alert rules (backup
 older than 2 days, certificate under 14 days, error rate, failed logins spike).
