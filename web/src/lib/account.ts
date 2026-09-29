@@ -47,7 +47,7 @@ export type AccountInfo = {
   /** The send domain new Sends get (§14.2); null: the main host. */
   sendDomainId?: string | null;
   /** Whether masked addresses are connected to UwUMail (§13.2). */
-  masked?: { connected: boolean };
+  maskedConnected?: boolean;
 };
 
 export type MinimumKdf = {

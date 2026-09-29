@@ -416,7 +416,6 @@ export function ItemDetail({
       });
   };
   // Reload when the sync brought a new revision of this item.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [id, summary.revisionDate]);
 
   const act = async (what: () => Promise<void>, done: string) => {

@@ -42,7 +42,7 @@ export function reportExport(format: 'json' | 'encrypted_json' | 'csv') {
 
 /**
  * The kinds the admin can keep from being mailed, in this order. Later stages add theirs here
- * (travel mode, masked addresses, SSO …) once the server makes them.
+ * once the server makes them.
  */
 export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'failedLogins', label: N_('Falsche Master-Passwörter') },
@@ -62,6 +62,9 @@ export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'vaultExported', label: N_('Tresor exportiert') },
   { kind: 'kdfBelowMinimum', label: N_('Schlüsselableitung schwächer als verlangt') },
   { kind: 'ssoLinked', label: N_('Anmeldung über SSO verknüpft') },
+  { kind: 'maskedConnected', label: N_('Mit UwUMail verbunden') },
+  { kind: 'maskedDisconnected', label: N_('Von UwUMail getrennt') },
+  { kind: 'maskedApiKeyCreated', label: N_('Schlüssel für maskierte Adressen erstellt') },
   { kind: 'organizationJoined', label: N_('In eine Familie aufgenommen') },
   { kind: 'organizationRemoved', label: N_('Aus einer Familie entfernt') },
   { kind: 'organizationRoleChanged', label: N_('Rolle in einer Familie geändert') },
