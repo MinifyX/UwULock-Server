@@ -61,6 +61,7 @@ pub mod reports;
 pub mod scim;
 pub mod secret;
 mod send_codes;
+pub mod send_domains;
 pub mod send_hosts;
 mod sends;
 mod settings;
@@ -193,6 +194,8 @@ pub struct AppState {
     pub send_codes: Arc<send_codes::SendCodes>,
     /// 2FA Directory's list, mirrored for the password check.
     pub twofa: Arc<reports::Directory>,
+    /// The send domains, and what the TLS side says about their certificates.
+    pub send_domains: Arc<send_domains::Registry>,
 }
 
 impl AppState {
@@ -250,7 +253,9 @@ impl AppState {
             branding: Arc::default(),
             send_codes: Arc::default(),
             twofa: Arc::default(),
+            send_domains: Arc::default(),
         };
+        send_domains::reload(&state).await;
         branding::reload(&state).await;
         Ok(state)
     }
@@ -338,6 +343,7 @@ pub fn router(state: AppState) -> Router {
         .merge(reminders::routes())
         .merge(branding::routes())
         .merge(reports::routes())
+        .merge(send_domains::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())
@@ -356,6 +362,7 @@ pub fn router(state: AppState) -> Router {
         .merge(uploads)
         .fallback(web::fallback)
         .layer(axum::middleware::from_fn_with_state(state.clone(), cors::cors))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), send_hosts::guard))
         .layer(axum::middleware::from_fn_with_state(state.clone(), networks::guard))
         .layer(axum::middleware::from_fn_with_state(state.clone(), metrics::track))
         .with_state(state)

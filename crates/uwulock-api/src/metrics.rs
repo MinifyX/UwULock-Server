@@ -321,6 +321,9 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
     if let Some(seen) = state.certificate.read().as_ref().and_then(|seen| seen.expires) {
         out.sample("uwulock_certificate_expiry_timestamp_seconds", &[("domain", "main")], seen);
     }
+    for (domain, expires) in state.send_domains.expiries() {
+        out.sample("uwulock_certificate_expiry_timestamp_seconds", &[("domain", domain.as_str())], expires);
+    }
 
     let loki = state.logs.loki().status();
     out.head("uwulock_loki_dropped_total", "counter", "Log lines dropped because Loki was away or refused them.");

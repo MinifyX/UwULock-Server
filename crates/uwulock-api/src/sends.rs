@@ -348,6 +348,8 @@ async fn create(State(state): State<AppState>, session: Session, Json(data): Jso
         return Err(ApiError::bad("File Sends go through /sends/file/v2."));
     }
     let send = save(&state, apply(&state, data, new_send(&session.user.id, TEXT)).await?).await?;
+    // The official clients cannot choose a send domain: the account's default it is (§14.2).
+    state.store.default_send_domain(&session.user.id, &send.id).await?;
     notify::send(&state, &session.user.id, Some(&session), Kind::SendCreate, &send.id, &send.revision);
     Ok(Json(render(&send)))
 }
@@ -389,6 +391,7 @@ async fn create_file(
     send.data =
         json!({ "id": file_id, "fileName": file_name, "size": size, "sizeName": files::size_name(size) }).to_string();
     let send = save(&state, send).await?;
+    state.store.default_send_domain(&session.user.id, &send.id).await?;
     Ok(Json(upload_answer(&send, &file_id)))
 }
 
@@ -566,6 +569,7 @@ async fn access_legacy(
 async fn access_file_legacy(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
+    headers: HeaderMap,
     Path((id, file)): Path<(String, String)>,
     body: Option<Json<AccessData>>,
 ) -> ApiResult<Json<Value>> {
@@ -575,7 +579,7 @@ async fn access_file_legacy(
     let send = state.store.send_by_id(&id).await?.filter(Send::accessible).ok_or_else(|| ApiError::not_found(GONE))?;
     let password = body.and_then(|Json(data)| data.password);
     check_password(&state, &send, password.as_deref()).await.map_err(refused)?;
-    file_download(&state, &send, &file).await
+    file_download(&state, &headers, &send, &file).await
 }
 
 /// What a download link's token is for: a Send's file, never an attachment of the same ids.
@@ -583,8 +587,9 @@ fn file_subject(send_id: &str, file: &str) -> String {
     format!("send:{send_id}/{file}")
 }
 
-/// The file's download link, and one more opening counted.
-async fn file_download(state: &AppState, send: &Send, file: &str) -> ApiResult<Json<Value>> {
+/// The file's download link, and one more opening counted. On the host the page was opened on:
+/// a send domain's page cannot fetch from the main host.
+async fn file_download(state: &AppState, headers: &HeaderMap, send: &Send, file: &str) -> ApiResult<Json<Value>> {
     if send.kind != FILE || file_of(send).is_none_or(|(expected, _)| expected != file) {
         return Err(ApiError::not_found(GONE));
     }
@@ -595,7 +600,7 @@ async fn file_download(state: &AppState, send: &Send, file: &str) -> ApiResult<J
     let token = state.tokens.file_token(&file_subject(&send.id, file), LINK_SECONDS);
     Ok(Json(json!({
         "id": file,
-        "url": format!("{}/api/sends/{}/{file}?t={token}", state.config.public, send.id),
+        "url": format!("{}/api/sends/{}/{file}?t={token}", crate::branding::base_for(state, headers), send.id),
         "object": "send-fileDownload",
     })))
 }
@@ -627,7 +632,7 @@ async fn access_file(
     Path(file): Path<String>,
 ) -> ApiResult<Json<Value>> {
     let send = by_token(&state, &headers).await?;
-    file_download(&state, &send, &file).await
+    file_download(&state, &headers, &send, &file).await
 }
 
 /// What the `send_access` grant was given besides the Send: a password's hash, or an address
@@ -644,6 +649,7 @@ pub(crate) struct GrantProof<'a> {
 pub(crate) async fn grant(
     state: &AppState,
     ip: std::net::IpAddr,
+    headers: &HeaderMap,
     access_id: Option<&str>,
     proof: GrantProof<'_>,
 ) -> ApiResult<Response> {
@@ -683,7 +689,9 @@ pub(crate) async fn grant(
                 // Only addresses on the list get a mail; the answer is the same for all, so the
                 // list stays unknown.
                 if listed && state.limits.mail.take(email.clone()) {
-                    mail_code(state, &send.id, &email);
+                    // In the look of the host the page was opened on (§14.3).
+                    let brand = crate::branding::mail_brand_for(state, headers).await;
+                    mail_code(state, &send.id, &email, brand);
                 }
                 return Err(request("email_and_otp_required", "email and otp are required."));
             }
@@ -721,12 +729,13 @@ pub(crate) async fn grant(
 
 /// A new code for `email`, mailed on the side so the answer takes as long whether it went or
 /// not; nothing when the address had its mails for now.
-fn mail_code(state: &AppState, send_id: &str, email: &str) {
+fn mail_code(state: &AppState, send_id: &str, email: &str, brand: Option<uwulock_mail::Brand>) {
     let Some(code) = state.send_codes.issue(send_id, email) else { return };
     let (mailer, email) = (state.mailer.clone(), email.to_string());
     let language = state.settings().default_language;
     tokio::spawn(async move {
-        if let Err(error) = mailer.send(&email, &uwulock_mail::Mail::SendCode { code }, language).await {
+        let mail = uwulock_mail::Mail::SendCode { code };
+        if let Err(error) = mailer.send_branded(&email, &mail, language, brand.as_ref()).await {
             tracing::warn!(%error, "the code for a Send could not be mailed");
         }
     });
