@@ -41,6 +41,7 @@ mod keys;
 mod limits;
 mod logs;
 pub mod loki;
+mod masked;
 mod meta;
 pub mod metrics;
 pub mod networks;
@@ -196,6 +197,8 @@ pub struct AppState {
     pub twofa: Arc<reports::Directory>,
     /// The send domains, and what the TLS side says about their certificates.
     pub send_domains: Arc<send_domains::Registry>,
+    /// Masked addresses: connects waiting for UwUMail's answer, the refresh locks.
+    pub masked: Arc<masked::Masked>,
 }
 
 impl AppState {
@@ -254,6 +257,7 @@ impl AppState {
             send_codes: Arc::default(),
             twofa: Arc::default(),
             send_domains: Arc::default(),
+            masked: Arc::default(),
         };
         send_domains::reload(&state).await;
         branding::reload(&state).await;
@@ -344,6 +348,7 @@ pub fn router(state: AppState) -> Router {
         .merge(branding::routes())
         .merge(reports::routes())
         .merge(send_domains::routes())
+        .merge(masked::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())

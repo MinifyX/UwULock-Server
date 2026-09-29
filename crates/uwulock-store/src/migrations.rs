@@ -21,6 +21,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0011_families.sql"),
     // 0012 to 0014 are Stufe 6's delta sync, realtime channel and suite vault, built beside these.
     include_str!("../migrations/sqlite/0015_send_domains.sql"),
+    include_str!("../migrations/sqlite/0016_masked.sql"),
 ];
 
 /// The schema this build writes.

@@ -175,6 +175,8 @@ fn line(notice: &Notice) -> NoticeLine {
             .or_else(|| detail["format"].as_str())
             .or_else(|| detail["issuer"].as_str())
             .or_else(|| detail["organization"].as_str())
+            .or_else(|| detail["server"].as_str())
+            .or_else(|| detail["name"].as_str())
             .map(str::to_string),
     }
 }

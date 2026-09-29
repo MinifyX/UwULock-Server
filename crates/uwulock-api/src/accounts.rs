@@ -843,6 +843,7 @@ async fn delete_account(
             owned.join(", ")
         )));
     }
+    crate::masked::account_going(&state, &session.user.id).await;
     state.store.delete_user(&session.user.id).await?;
     crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "account deleted");

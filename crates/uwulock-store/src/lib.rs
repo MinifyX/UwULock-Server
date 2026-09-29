@@ -19,6 +19,7 @@ pub mod clock;
 pub mod emergency;
 pub mod file_requests;
 pub mod icons;
+pub mod masked;
 mod migrate;
 mod migrations;
 pub mod notices;
