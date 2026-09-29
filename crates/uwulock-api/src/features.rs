@@ -11,7 +11,7 @@
 //! The switches are kept as JSON under `features` in the `server` table, apart from the other
 //! settings: the portal saves those as a whole, and a switch should never ride along with them.
 //! A server that never had them (a new one) starts with `UWULOCK_FEATURES`, by default none of
-//! them; migration 0021 wrote them for a server that was running before they existed, on for
+//! them; migration 0017 wrote them for a server that was running before they existed, on for
 //! every feature that was in use.
 
 use crate::AppState;
@@ -346,7 +346,7 @@ async fn change(State(state): State<AppState>, admin: Admin, Json(body): Json<Va
     Ok(Json(view(&state).await?))
 }
 
-/// The features something is kept for, or set up: what migration 0021 looked at, as it is now.
+/// The features something is kept for, or set up: what migration 0017 looked at, as it is now.
 pub async fn in_use(state: &AppState, settings: &crate::Settings) -> ApiResult<BTreeSet<Feature>> {
     let mut used: BTreeSet<Feature> =
         state.store.features_with_data().await?.iter().filter_map(|name| Feature::from_id(name)).collect();

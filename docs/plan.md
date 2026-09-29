@@ -457,7 +457,7 @@ Bitwardens „Families".
   blenden es aus, `/uwu/v1/info` meldet es unter `switches`; gelöscht wird nichts. Der Tresor
   und alles, was die Bitwarden-Apps nutzen, bleibt immer an; Website-Icons und HIBP behalten
   ihre eigenen Einstellungen. Neue Server starten nur mit Tresor und Icons
-  (`UWULOCK_FEATURES`), aktualisierte behalten an, was benutzt wird (Migration 0021).
+  (`UWULOCK_FEATURES`), aktualisierte behalten an, was benutzt wird (Migration 0017).
   Admin-API `GET|PUT /uwu/v1/admin/features`, auf der Kommandozeile `uwulock-server features`.
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)

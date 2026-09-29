@@ -24,8 +24,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0014_send_domains.sql"),
     include_str!("../migrations/sqlite/0015_masked.sql"),
     include_str!("../migrations/sqlite/0016_extras_private_wrap.sql"),
-    include_str!("../migrations/sqlite/0021_feature_switches.sql"),
-    // 0017 was kept for the icons branch, which needed none; 0021 came in first: schema version 18.
+    include_str!("../migrations/sqlite/0017_feature_switches.sql"),
     include_str!("../migrations/sqlite/0018_review_lows.sql"),
 ];
 

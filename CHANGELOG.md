@@ -65,7 +65,7 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 SV-I1 to SV-I4) is fixed; the review says how, finding by finding. What admins and client
 authors notice:
 
-- **Migration 0018** (schema version 18, after 0021): SCIM remembers which accounts it disabled
+- **Migration 0018**: SCIM remembers which accounts it disabled
   (`scim_disabled`), organisation tombstones keep their collections, the sync epoch starts anew
   (every client syncs in full once), and leaving or being revoked from an organisation removes
   one's reminders and masked links there.
