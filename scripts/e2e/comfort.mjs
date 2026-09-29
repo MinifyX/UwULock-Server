@@ -91,6 +91,20 @@ try {
   await page.locator('.item-list .item-tile img').first().waitFor();
   await snap('icon');
 
+  step('a device in the home network: an app icon from the server\'s own databases');
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Login' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Jellyfin');
+  if (!(await page.getByLabel('Adresse 1', { exact: true }).count())) {
+    await page.getByRole('button', { name: 'Website hinzufügen' }).click();
+  }
+  await page.getByLabel('Adresse 1', { exact: true }).fill('http://jellyfin.local');
+  await page.getByRole('button', { name: 'Speichern' }).click();
+  await page.locator('.item-list').getByText('Jellyfin').first().click();
+  await page.locator('img[src*="/icons/jellyfin.local/"]').first().waitFor();
+  await snap('home-network-icon');
+  await page.locator('.item-list').getByText('Bank').first().click();
+
   step('a reminder that is due, and the list from the mail');
   await page.getByRole('button', { name: 'Erinnern …' }).click();
   await page.getByRole('radio', { name: 'An einem Tag' }).click();
@@ -126,6 +140,14 @@ try {
   await page.locator('.modal').getByText('zweites-passwort').waitFor();
   await page.locator('.item-list .item-tile img').first().waitFor();
   await snap('after-rotation');
+
+  step('the icon databases in the admin portal, with their licences');
+  await page.goto(`${origin}/admin#/settings`);
+  const databases = page.getByRole('region', { name: 'Icon-Datenbanken' });
+  await databases.getByRole('switch', { name: 'Dashboard Icons' }).waitFor();
+  await databases.getByRole('link', { name: 'Apache-2.0' }).waitFor();
+  await databases.scrollIntoViewIfNeeded();
+  await snap('icon-databases');
 } catch (error) {
   await snap('failed');
   problems.push(String(error?.stack ?? error));

@@ -18,6 +18,21 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - The cache of website icons starts anew (`icons/auto-2`): every site is fetched again when it
   is next shown, and the old cache — with its "none"s that would now keep the domain's icon away,
   and icons of other sites — is deleted with the daily clean-up.
+- Three open icon databases now come with the server, inside its binary: 2FA Directory (MIT,
+  about 2,500 logos for 3,300 domains), Simple Icons (CC0, about 2,500 brand glyphs on a tile in
+  the brand's colour; icons with a licence or brand guidelines of their own are left out) and
+  Dashboard Icons (Apache-2.0, about 3,300 logos of self-hosted apps). A website without an icon
+  of its own, nor its domain, gets 2FA Directory's by its domain, else Simple Icons'. A device in
+  the home network is still never asked, but one named like an app (`jellyfin.local`,
+  `nextcloud.home.arpa`) gets that app's icon from Dashboard Icons. Nothing is fetched for them;
+  the browser and the apps still only talk to your server.
+- Dashboard Icons is part of the icon library, also without selfh.st. An item for a device in the
+  home network suggests library icons that fit its name.
+- Admin portal, *Settings → Icons*: each database has its own switch (all on) and a list of
+  where the icons come from, with their licences. The licence texts are in
+  `THIRD-PARTY-NOTICES.txt`, also in the image under `/usr/share/doc/uwulock-server/`. The
+  databases are taken from fixed upstream commits and updated with
+  `node scripts/icons/update.mjs --bump` ([docs/icons.md](docs/icons.md#icon-databases)).
 
 **Web vault: even spacing and one set of building blocks.**
 

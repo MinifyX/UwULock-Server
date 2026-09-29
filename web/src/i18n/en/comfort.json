@@ -67,7 +67,6 @@
   "Reisemodus aus. Alles ist wieder da ✧": "Travel mode off. Everything is back ✧",
   "Reisemodus ausschalten": "Switch travel mode off",
   "Reisemodus einschalten": "Switch travel mode on",
-  "selfh.st Icons (CC BY 4.0): der Server spiegelt den Index, die Suche läuft im Tresor.": "selfh.st Icons (CC BY 4.0): the server mirrors the index, the search runs in the vault.",
   "Stand vom {when}": "As of {when}",
   "Suchen": "Search",
   "Tag": "Day",
@@ -87,5 +86,17 @@
   "{name} wählen": "Choose {name}",
   "{n} ausgeblendete Ordner": "{n} hidden folders",
   "Der Reisemodus ist an. Bis du ihn ausschaltest, bleibt die Zwei-Schritt-Anmeldung, wie sie ist: nichts lässt sich einrichten, ausschalten oder anzeigen.": "Travel mode is on. Until you switch it off, two-step login stays as it is: nothing can be set up, switched off or shown.",
-  "{n} Websites im Cache ({size}, höchstens {max}; darüber gehen die ältesten), eigene Icons {own}.": "{n} websites in the cache ({size}, at most {max}; past that the oldest go), own icons {own}."
+  "{n} Websites im Cache ({size}, höchstens {max}; darüber gehen die ältesten), eigene Icons {own}.": "{n} websites in the cache ({size}, at most {max}; past that the oldest go), own icons {own}.",
+  "selfh.st Icons (CC BY 4.0) und Dashboard Icons: der Server spiegelt den Index von selfh.st, die Suche läuft im Tresor.": "selfh.st Icons (CC BY 4.0) and Dashboard Icons: the server mirrors selfh.st's index, the search runs in the vault.",
+  "Icon-Datenbanken": "Icon databases",
+  "Kommen mit dem Server und liegen in ihm: für Websites ohne eigenes Icon und für Geräte im Heimnetz. Nachgeschaut wird nur auf diesem Server, nichts wird dafür abgerufen.": "They come with the server and live inside it: for websites without an icon of their own and for devices in the home network. They are looked up on this server only; nothing is fetched for them.",
+  "Logos für Websites ohne eigenes Icon, nach ihrer Domain.": "Logos for websites without an icon of their own, by their domain.",
+  "Markenzeichen in der Farbe der Marke, wenn 2FA Directory die Website nicht kennt.": "Brand marks in the brand's colour, when 2FA Directory does not know the website.",
+  "Logos selbst gehosteter Apps: für Geräte im Heimnetz nach ihrem Namen (etwa jellyfin.local) und in der Icon-Bibliothek.": "Logos of self-hosted apps: for devices in the home network by their name (like jellyfin.local), and in the icon library.",
+  "{n} Icons, {size}.": "{n} icons, {size}.",
+  "Herkunft und Lizenzen der Icons": "Where the icons come from, and their licenses",
+  "Quelle": "Source",
+  "Von": "By",
+  "Alle Logos sind Marken ihrer Inhaber. Die vollständigen Lizenztexte stehen in THIRD-PARTY-NOTICES.txt im Image und im Repository.": "All logos are trademarks of their owners. The full license texts are in THIRD-PARTY-NOTICES.txt, in the image and in the repository.",
+  "Passt vielleicht, aus der Bibliothek:": "Might fit, from the library:"
 }

@@ -11,6 +11,7 @@ import { errorText } from '../lib/errors';
 import { bytes, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { useSwitch } from '../lib/switches';
+import { IconDatabases } from './IconDatabases';
 
 type Props = { draft: Settings; setDraft: (next: Settings) => void };
 
@@ -101,7 +102,7 @@ export function ComfortSettings({ draft, setDraft }: Props) {
         <Row
           label={t('Icon-Bibliothek')}
           description={t(
-            'selfh.st Icons (CC BY 4.0): der Server spiegelt den Index, die Suche läuft im Tresor.',
+            'selfh.st Icons (CC BY 4.0) und Dashboard Icons: der Server spiegelt den Index von selfh.st, die Suche läuft im Tresor.',
           )}
         >
           <Toggle
@@ -154,6 +155,7 @@ export function ComfortSettings({ draft, setDraft }: Props) {
         )}
       </div>
       <ResultLine result={result} />
+      <IconDatabases draft={draft} setDraft={setDraft} status={status} />
     </>
   );
 }
