@@ -17,6 +17,7 @@ import { Invitations } from './Invitations';
 import { Logs } from './Logs';
 import { Notifications } from './Notifications';
 import { Overview } from './Overview';
+import { SsoPage } from './SsoPage';
 import { Users } from './Users';
 
 const PAGES: { path: string; label: string; icon: IconName }[] = [
@@ -24,6 +25,7 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
   { path: '/users', label: N_('Nutzer'), icon: 'user' },
   { path: '/invitations', label: N_('Einladungen'), icon: 'sparkles' },
   { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
+  { path: '/login', label: N_('Anmeldung'), icon: 'key' },
   { path: '/events', label: N_('Ereignisse'), icon: 'history' },
   { path: '/logs', label: N_('Log'), icon: 'terminal' },
   { path: '/backups', label: N_('Backups'), icon: 'drive' },
@@ -59,7 +61,8 @@ export function AdminApp() {
   if (status === null) body = null;
   // The portal needs the session, not the vault: logging in opens the vault, and it is locked
   // again at once, so no key and nothing decrypted stays in an admin tab.
-  else if (status.state === 'logged-out') body = <LoginScreen onDone={() => void lock()} />;
+  else if (status.state === 'logged-out')
+    body = <LoginScreen target="admin" onDone={() => void lock()} />;
   else if (info === null) body = null;
   else if (info === 'none' || !info.admin) {
     body = (
@@ -74,6 +77,24 @@ export function AdminApp() {
             <a className="button-link" href="/">
               {t('Zum Tresor')}
             </a>
+            <span className="spacer" />
+            <button onClick={() => void logout()}>{t('Abmelden')}</button>
+          </div>
+        </div>
+      </div>
+    );
+  } else if (info.adminNeedsSso && !info.sso) {
+    body = (
+      <div className="lock">
+        <div className="lock-card">
+          <NyuScene name="sleepy" className="lock-scene" />
+          <h1 className="card-title">{t('Nur mit SSO')}</h1>
+          <p className="dialog-lead">
+            {t(
+              'Das Admin-Portal nimmt auf diesem Server nur Anmeldungen über SSO. Melde dich ab und wieder an, diesmal über SSO.',
+            )}
+          </p>
+          <div className="form-actions">
             <span className="spacer" />
             <button onClick={() => void logout()}>{t('Abmelden')}</button>
           </div>
@@ -104,6 +125,7 @@ export function AdminApp() {
           {page.path === '/users' && <Users me={status.email ?? ''} />}
           {page.path === '/invitations' && <Invitations />}
           {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
+          {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
           {page.path === '/events' && <Events />}
           {page.path === '/logs' && <Logs />}
           {page.path === '/backups' && <Backups />}

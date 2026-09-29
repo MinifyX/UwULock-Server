@@ -131,6 +131,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "admin": session.user.admin,
         "hasMasterPassword": !session.user.user_key.is_empty(),
         "sso": session.sso,
+        "adminNeedsSso": settings.sso.active() && settings.sso.admins_only_with_sso,
         "language": session.user.language,
         "mail": state.mailer.enabled(),
         "passwordHints": settings.password_hints,

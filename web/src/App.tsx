@@ -8,6 +8,7 @@ import { TitleBar } from './components/TitleBar';
 import { VaultScreen } from './components/VaultScreen';
 import { lacksTwoFactor, PolicyBanners, TwoFactorRequired } from './components/web/Policies';
 import { RegisterScreen } from './components/web/RegisterScreen';
+import { SetPasswordScreen, SsoForward } from './components/web/SetPasswordScreen';
 import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
 import { errorText } from './lib/errors';
@@ -114,6 +115,8 @@ export function App() {
       return path ? [path[0], path[1], location.hash.replace(/^#/, '')] : null;
     })();
   const fileRequest = route.path.match(/^\/file-requests\/([^/]+)$/)?.[1] ?? null;
+  // Bitwarden's extension, desktop app and CLI start their SSO login here.
+  const ssoForward = route.path === '/sso' && route.query.get('clientId') ? route.query : null;
 
   // The link from an emergency access invitation: accepted once the vault is open.
   useEffect(() => {
@@ -175,7 +178,9 @@ export function App() {
         </TitleBar>
 
         <main className="stage">
-          {sendLink ? (
+          {ssoForward ? (
+            <SsoForward query={ssoForward} />
+          ) : sendLink ? (
             <SendPage accessId={sendLink[1]!} urlKey={sendLink[2]!} />
           ) : requestLink ? (
             <RequestPage accessId={requestLink[1]!} secret={requestLink[2]!} />
@@ -190,6 +195,8 @@ export function App() {
             />
           ) : status === null ? null : status.state === 'logged-out' ? (
             <LoginScreen onDone={setStatus} />
+          ) : status.state === 'locked' && info?.hasMasterPassword === false ? (
+            <SetPasswordScreen status={status} info={info} onDone={setStatus} />
           ) : status.state === 'locked' ? (
             <LockScreen
               status={status}

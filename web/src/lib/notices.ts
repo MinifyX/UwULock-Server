@@ -61,6 +61,7 @@ export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'loginWithDeviceRequested', label: N_('Anmeldung mit Gerät angefragt') },
   { kind: 'vaultExported', label: N_('Tresor exportiert') },
   { kind: 'kdfBelowMinimum', label: N_('Schlüsselableitung schwächer als verlangt') },
+  { kind: 'ssoLinked', label: N_('Anmeldung über SSO verknüpft') },
 ];
 
 const PROVIDERS: Record<number, string> = {

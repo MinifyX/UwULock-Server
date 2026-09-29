@@ -6,6 +6,7 @@ import {
   loginPasskey,
   loginSecurityKey,
   loginSendEmail,
+  loginSso,
   loginTwoFactor,
   startDeviceLogin,
   type DeviceLogin,
@@ -14,7 +15,9 @@ import {
   type TwoFactorMethod,
 } from '../lib/api';
 import { available as webauthnAvailable } from '../lib/web/webauthn';
-import { passwordHintByMail } from '../lib/account';
+import { passwordHintByMail, serverInfo, type ServerInfo } from '../lib/account';
+import { useRoute } from '../lib/route';
+import { startSso, takeStarted } from '../lib/sso';
 import { errorText } from '../lib/errors';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { updateSettings, useSettings } from '../lib/settings';
@@ -24,6 +27,8 @@ import { PasswordInput } from './PasswordInput';
 
 type Props = {
   onDone: (status: Status) => void;
+  /** Where an SSO login comes back to: the vault, or the admin portal. */
+  target?: 'vault' | 'admin';
 };
 
 const METHOD_LABEL: Record<TwoFactorMethod['kind'], string> = {
@@ -41,8 +46,10 @@ const METHOD_LABEL: Record<TwoFactorMethod['kind'], string> = {
  * password is turned into the master key and its hash right in the page's WebAssembly; only the
  * hash goes to the server.
  */
-export function LoginScreen({ onDone }: Props) {
+export function LoginScreen({ onDone, target = 'vault' }: Props) {
   useLanguage();
+  const route = useRoute();
+  const [sso, setSso] = useState<ServerInfo['sso'] | null>(null);
   const settings = useSettings();
   const [email, setEmail] = useState(settings.lastEmail);
   const [password, setPassword] = useState('');
@@ -60,6 +67,56 @@ export function LoginScreen({ onDone }: Props) {
       return;
     }
     setStep(next);
+  };
+
+  useEffect(() => {
+    serverInfo().then(
+      (info) => setSso(info.sso?.enabled ? info.sso : null),
+      () => setSso(null),
+    );
+  }, []);
+
+  // Back from the provider, through the connector page: `#/sso?code=…&state=…` (or `error=…`).
+  const ssoBack = route.path === '/sso' && !route.query.get('clientId');
+  useEffect(() => {
+    if (!ssoBack) return;
+    const code = route.query.get('code');
+    const state = route.query.get('state') ?? '';
+    const refusal = route.query.get('error_description') || route.query.get('error');
+    history.replaceState(null, '', location.pathname);
+    const verifier = takeStarted(state);
+    if (!code || !verifier) {
+      setError(
+        refusal
+          ? t('Die Anmeldung über SSO wurde abgelehnt: {reason}', { reason: refusal })
+          : t('Diese Anmeldung über SSO wurde nicht in diesem Tab begonnen. Fang sie hier neu an.'),
+      );
+      return;
+    }
+    setBusy(t('Anmeldung über SSO …'));
+    loginSso(code, verifier).then(
+      (next) => {
+        setBusy(null);
+        finish(next);
+      },
+      (e) => {
+        setBusy(null);
+        setError(errorText(e));
+      },
+    );
+    // Once, for the code in the address when the page came up.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const withSso = async () => {
+    setError(null);
+    setBusy(t('Weiter zu {provider} …', { provider: sso?.label ?? 'SSO' }));
+    try {
+      await startSso(target);
+    } catch (e) {
+      setBusy(null);
+      setError(errorText(e));
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -181,6 +238,12 @@ export function LoginScreen({ onDone }: Props) {
               </button>
             </div>
             <div className="login-other">
+              {sso && (
+                <button type="button" onClick={() => void withSso()} disabled={Boolean(busy)}>
+                  <Icon name="shield" size={15} />
+                  {t('Mit {provider} anmelden', { provider: sso.label })}
+                </button>
+              )}
               {webauthnAvailable() && (
                 <button type="button" onClick={() => void passkey()} disabled={Boolean(busy)}>
                   <Icon name="key" size={15} />
@@ -198,9 +261,14 @@ export function LoginScreen({ onDone }: Props) {
             </div>
             <p className="welcome-beta">
               <Icon name="sparkles" size={14} />
-              {t(
-                'Neu hier? Konten gibt es auf diesem Server nur mit Einladung: Der Link aus der Einladungsmail führt zur Registrierung.',
-              )}
+              {sso
+                ? t(
+                    'Neu hier? Melde dich mit {provider} an, oder nimm den Link aus deiner Einladungsmail. Dein Master-Passwort legst du beim ersten Mal selbst fest.',
+                    { provider: sso.label },
+                  )
+                : t(
+                    'Neu hier? Konten gibt es auf diesem Server nur mit Einladung: Der Link aus der Einladungsmail führt zur Registrierung.',
+                  )}
             </p>
           </form>
         )}

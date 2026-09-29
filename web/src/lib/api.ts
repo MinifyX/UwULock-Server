@@ -196,6 +196,8 @@ type Pending = {
   hash: string;
   kdf: string;
   methods: TwoFactorMethod[];
+  /** An SSO login: the form of its code, in place of the password's. */
+  form?: Record<string, string>;
 };
 
 let pending: Pending | null = null;
@@ -275,11 +277,13 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
   const p = pending!;
   const device = deviceType();
   const form = new URLSearchParams({
-    grant_type: 'password',
-    username: p.email,
-    password: p.hash,
-    scope: 'api offline_access',
-    client_id: 'web',
+    ...(p.form ?? {
+      grant_type: 'password',
+      username: p.email,
+      password: p.hash,
+      scope: 'api offline_access',
+      client_id: 'web',
+    }),
     deviceType: String(device.kind),
     deviceIdentifier: deviceId(),
     deviceName: device.name,
@@ -313,6 +317,12 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
     }
     throw failure(error);
   }
+  if (p.form) {
+    // Through SSO: logged in, but the vault opens only with the master password — or, for an
+    // account made just now, waits for its first one.
+    pending = null;
+    return finishKeyless(body, async () => false);
+  }
   setSession({
     email: p.email,
     accessToken: String(body.access_token),
@@ -335,6 +345,28 @@ export const login = async (
   const kdf = await prelogin(address);
   const hash = await call((core) => core.deriveLogin(address, password, kdf));
   pending = { email: address, hash, kdf, methods: [] };
+  return token({});
+};
+
+/**
+ * Trade the code an SSO login brought back (docs/uwu-api.md §19.2 step 5). The server's own
+ * two-step login may still ask for its second step, as after a password.
+ */
+export const loginSso = (code: string, verifier: string): Promise<LoginStep> => {
+  pending = {
+    email: '',
+    hash: '',
+    kdf: '',
+    methods: [],
+    form: {
+      grant_type: 'authorization_code',
+      code,
+      code_verifier: verifier,
+      redirect_uri: `${location.origin}/sso-connector.html`,
+      client_id: 'web',
+      scope: 'api offline_access',
+    },
+  };
   return token({});
 };
 

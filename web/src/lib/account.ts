@@ -34,6 +34,12 @@ export type AccountInfo = {
     minimumKdf: MinimumKdf;
   };
   securityNoticesUnseen?: number;
+  /** False for an account made through SSO until its master password is set. */
+  hasMasterPassword?: boolean;
+  /** This session's login came through SSO. */
+  sso?: boolean;
+  /** The admin portal takes only sessions from an SSO login. */
+  adminNeedsSso?: boolean;
 };
 
 export type MinimumKdf = {
@@ -49,6 +55,8 @@ export type PasswordRules = { minLength: number; minComplexity: number; enforceO
 /** What the server tells anybody before a login; only what the web vault uses of it. */
 export type ServerInfo = {
   policies?: { masterPassword?: PasswordRules };
+  /** Logging in through an OpenID Connect provider (§19): `label` goes on the button. */
+  sso?: { enabled: boolean; only: boolean; identifier: string; label: string };
 };
 
 export const serverInfo = () => request<ServerInfo>('/uwu/v1/info', { auth: false });
@@ -157,6 +165,48 @@ export async function register(input: {
       kdfParallelism: kdf.parallelism,
       keys: { publicKey, encryptedPrivateKey: made.encryptedPrivateKey },
       emailVerificationToken: input.token,
+    },
+  });
+}
+
+/**
+ * The first master password of an account made through SSO (docs/uwu-api.md §19.2 step 6): keys
+ * made here as for a registration, sent with the session of the SSO login.
+ */
+export async function setInitialPassword(input: {
+  email: string;
+  password: string;
+  hint: string;
+  kdf: Kdf;
+}): Promise<void> {
+  const pair = await crypto.subtle.generateKey(
+    {
+      name: 'RSA-OAEP',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-1',
+    },
+    true,
+    ['encrypt', 'decrypt'],
+  );
+  const base64 = (buffer: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buffer)));
+  const publicKey = base64(await crypto.subtle.exportKey('spki', pair.publicKey));
+  const privateKey = base64(await crypto.subtle.exportKey('pkcs8', pair.privateKey));
+  const made = await callJson<{ hash: string; key: string; encryptedPrivateKey: string }>((core) =>
+    core.newAccount(input.email, input.password, kdfText(input.kdf), privateKey),
+  );
+  const kdf = kdfBody(input.kdf);
+  await request('/api/accounts/set-password', {
+    body: {
+      masterPasswordHash: made.hash,
+      masterPasswordHint: input.hint.trim() || null,
+      key: made.key,
+      kdf: kdf.kdfType,
+      kdfIterations: kdf.iterations,
+      kdfMemory: kdf.memory,
+      kdfParallelism: kdf.parallelism,
+      keys: { publicKey, encryptedPrivateKey: made.encryptedPrivateKey },
+      orgIdentifier: null,
     },
   });
 }

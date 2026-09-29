@@ -9,6 +9,7 @@ import features from './features.json';
 import operations from './operations.json';
 import requests from './requests.json';
 import settings from './settings.json';
+import sso from './sso.json';
 import vault from './vault.json';
 import web from './web.json';
 
@@ -19,6 +20,7 @@ export const EN: Readonly<Record<string, string>> = {
   ...operations,
   ...requests,
   ...settings,
+  ...sso,
   ...vault,
   ...web,
 };
