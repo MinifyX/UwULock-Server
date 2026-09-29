@@ -154,6 +154,12 @@ pub struct Limits {
     pub travel: Limiter<String>,
     /// Invitations to organisations, per account: thirty, one back every two minutes.
     pub invites: Limiter<String>,
+    /// Connecting to UwUMail for masked addresses, per account: ten, one back every six minutes.
+    pub masked_connect: Limiter<String>,
+    /// New masked addresses per account or API key: thirty a minute…
+    pub masked_minute: Limiter<String>,
+    /// …and five hundred a day.
+    pub masked_day: Limiter<String>,
 }
 
 impl Default for Limits {
@@ -171,6 +177,9 @@ impl Default for Limits {
             icons: Limiter::new(60, Duration::from_secs(1)),
             travel: Limiter::new(5, Duration::from_secs(3 * 60)),
             invites: Limiter::new(30, Duration::from_secs(2 * 60)),
+            masked_connect: Limiter::new(10, Duration::from_secs(6 * 60)),
+            masked_minute: Limiter::new(30, Duration::from_secs(2)),
+            masked_day: Limiter::new(500, Duration::from_millis(172_800)),
         }
     }
 }
@@ -205,6 +214,9 @@ impl Limits {
             icons: generous(),
             travel: generous(),
             invites: generous(),
+            masked_connect: generous(),
+            masked_minute: generous(),
+            masked_day: generous(),
         }
     }
 }

@@ -193,6 +193,12 @@ impl NoticeLine {
             }
             ("ssoLinked", true) => format!("Anmeldung über {about} mit dem Konto verknüpft"),
             ("ssoLinked", false) => format!("Login through {about} linked to the account"),
+            ("maskedConnected", true) => format!("Mit UwUMail verbunden ({about}) für maskierte Adressen"),
+            ("maskedConnected", false) => format!("Connected to UwUMail ({about}) for masked addresses"),
+            ("maskedDisconnected", true) => format!("Verbindung zu UwUMail ({about}) getrennt"),
+            ("maskedDisconnected", false) => format!("Disconnected from UwUMail ({about})"),
+            ("maskedApiKeyCreated", true) => format!("API-Key für maskierte Adressen erzeugt: {about}"),
+            ("maskedApiKeyCreated", false) => format!("API key for masked addresses created: {about}"),
             ("vaultExported", true) => "Tresor exportiert".into(),
             ("vaultExported", false) => "Vault exported".into(),
             ("kdfBelowMinimum", true) => {

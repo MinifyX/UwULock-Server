@@ -190,6 +190,8 @@ fn line(notice: &Notice) -> NoticeLine {
             .or_else(|| detail["issuer"].as_str())
             .or_else(|| detail["organization"].as_str())
             .or_else(|| (notice.kind == "suiteLogin").then(|| detail["app"].as_str()).flatten())
+            .or_else(|| detail["server"].as_str())
+            .or_else(|| detail["name"].as_str())
             .map(str::to_string),
     }
 }

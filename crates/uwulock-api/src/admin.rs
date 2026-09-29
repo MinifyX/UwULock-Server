@@ -362,6 +362,7 @@ async fn delete_user(State(state): State<AppState>, admin: Admin, Path(id): Path
         )));
     }
     crate::notify::logout(&state, &id, None, "disabled");
+    crate::masked::account_going(&state, &id).await;
     state.store.delete_user(&id).await?;
     record(&state, &admin, format!("deleted the account {}", target.email)).await;
     Ok(StatusCode::OK)
@@ -477,6 +478,7 @@ async fn put_settings(
         push.installation_id = push.installation_id.trim().to_string();
         push.installation_key = push.installation_key.trim().to_string();
     }
+    new.masked.normalize().map_err(ApiError::bad)?;
     new.check().map_err(ApiError::bad)?;
     state.mailer.configure(new.smtp.as_ref()).map_err(|error| ApiError::bad(error.to_string()))?;
     new.save(&state.store).await?;

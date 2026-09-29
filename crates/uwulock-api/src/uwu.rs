@@ -103,6 +103,9 @@ async fn info(
     if !send_domains.is_empty() {
         features.push("send-domains");
     }
+    if !settings.masked.servers.is_empty() {
+        features.push("masked-addresses");
+    }
     let rules = &settings.policies.master_password;
     Json(json!({
         "object": "info",
@@ -172,12 +175,13 @@ async fn invitation(
 /// What the web vault needs to know about the account beyond Bitwarden's profile.
 async fn account(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let settings = state.settings();
-    let (factors, unseen, used, travelling, send_domain) = tokio::try_join!(
+    let (factors, unseen, used, travelling, send_domain, masked) = tokio::try_join!(
         state.store.two_factors(&session.user.id),
         state.store.unseen_notices(&session.user.id),
         state.store.storage_used(&session.user.id),
         state.store.travelling(&session.user.id),
         state.store.account_send_domain(&session.user.id),
+        state.store.masked_connection(&session.user.id),
     )?;
     let require = &settings.policies.require_two_factor;
     let families = crate::families::account_info(&state, &session).await?;
@@ -194,6 +198,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "securityNoticesUnseen": unseen,
         "travel": { "enabled": travelling },
         "sendDomainId": send_domain,
+        "maskedConnected": masked.is_some(),
         "storage": { "usedBytes": used, "limitBytes": settings.storage_limit() },
         "admin": session.user.admin,
         "hasMasterPassword": !session.user.user_key.is_empty(),
