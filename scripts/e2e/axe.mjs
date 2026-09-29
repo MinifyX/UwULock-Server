@@ -20,6 +20,16 @@ const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 /** Checks what `page` shows now; throws when axe finds something serious or critical. */
 export async function checkA11y(page, name) {
   const started = Date.now();
+  // What is still fading in (a toast, a dialog) would fail the contrast check half-transparent:
+  // wait until the animations that end have ended. Endless ones (a spinner) are left running.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+        .map((a) => a.finished.catch(() => {})),
+    ),
+  );
   if (!(await page.evaluate(() => 'axe' in window))) await page.evaluate(axeSource);
   const violations = await page.evaluate(async (tags) => {
     const result = await window.axe.run(document, {
