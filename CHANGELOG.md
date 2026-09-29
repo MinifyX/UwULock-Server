@@ -235,6 +235,9 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   for everybody. Codes that are no codes are not sent on, refused ones are limited per account
   and per UwUMail server, and when UwUMail asks to wait (429) its token endpoint is left alone
   for 15 minutes.
+- Every answer the server reads from elsewhere has a ceiling (error texts 4 KiB, OAuth and JSON
+  answers 512 KiB, UwUMail 8 MiB): notification channels, Loki, the identity provider, UwUAuth
+  pairing, UwUMail and the push relay could each fill the memory with an endless answer.
 
 ## 0.4.0-beta.2
 

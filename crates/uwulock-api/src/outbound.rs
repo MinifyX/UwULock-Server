@@ -67,20 +67,84 @@ pub fn error_text(error: &reqwest::Error) -> String {
     message
 }
 
+/// What an error answer is read of, at most: enough for its message.
+pub const ERROR_BYTES: usize = 4 * 1024;
+/// A JSON answer of an OAuth or discovery endpoint, at most.
+pub const JSON_BYTES: usize = 512 * 1024;
+
+/// A response's body, at most `max` bytes: refused at once when its length says more, and
+/// stopped while reading when it sends more. Every body this server reads from elsewhere goes
+/// through here (or through a loop of its own with a ceiling): the only other bound is the
+/// timeout, and ten seconds on a fast link are gigabytes.
+pub async fn read_limited(mut response: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
+    if response.content_length().is_some_and(|length| length > max as u64) {
+        return Err("answered with far too much".into());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|error| error_text(&error))? {
+        if body.len() + chunk.len() > max {
+            return Err("answered with far too much".into());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+/// The start of a response's body, at most `max` bytes; the rest is not read.
+pub async fn read_start(mut response: reqwest::Response, max: usize) -> Vec<u8> {
+    let mut body = Vec::new();
+    while body.len() < max {
+        match response.chunk().await {
+            Ok(Some(chunk)) => body.extend_from_slice(&chunk[..chunk.len().min(max - body.len())]),
+            _ => break,
+        }
+    }
+    body
+}
+
 /// A response that is not a success, said in words: the status and the start of the body.
 pub async fn refused(response: reqwest::Response) -> String {
     let status = response.status();
     if status.is_redirection() {
         return format!("answered {status} and wants to send the request elsewhere, which is not followed");
     }
-    let body = response.text().await.unwrap_or_default();
-    let body: String = body.trim().chars().take(200).collect();
+    let body = read_start(response, ERROR_BYTES).await;
+    let body: String = String::from_utf8_lossy(&body).trim().chars().take(200).collect();
     if body.is_empty() { format!("answered {status}") } else { format!("answered {status}: {body}") }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Review finding R3-6: a server that answers without end is not read without end.
+    #[tokio::test]
+    async fn answers_are_read_up_to_a_ceiling() {
+        use axum::body::Body;
+        let endless = || {
+            let chunk = axum::body::Bytes::from(vec![b'x'; 64 * 1024]);
+            Body::from_stream(tokio_stream::iter(std::iter::repeat_with(move || {
+                Ok::<_, std::io::Error>(chunk.clone())
+            })))
+        };
+        let app = axum::Router::new()
+            .route(
+                "/endless",
+                axum::routing::get(move || async move { (axum::http::StatusCode::INTERNAL_SERVER_ERROR, endless()) }),
+            )
+            .route("/long", axum::routing::get(|| async { vec![b'y'; 2 * 1024 * 1024] }))
+            .route("/short", axum::routing::get(|| async { "fine" }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let get = |path: &str| client().unwrap().get(format!("{base}{path}")).send();
+
+        let text = refused(get("/endless").await.unwrap()).await;
+        assert!(text.starts_with("answered 500 Internal Server Error: xxx") && text.len() < 300, "{}", text.len());
+        assert!(read_limited(get("/endless").await.unwrap(), JSON_BYTES).await.is_err());
+        assert!(read_limited(get("/long").await.unwrap(), JSON_BYTES).await.is_err(), "by its length");
+        assert_eq!(read_limited(get("/short").await.unwrap(), JSON_BYTES).await.unwrap(), b"fine");
+    }
 
     #[test]
     fn only_plain_web_addresses() {

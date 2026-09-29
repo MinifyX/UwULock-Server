@@ -1284,7 +1284,8 @@ async fn pair(State(state): State<AppState>, admin: Admin, Json(data): Json<Pair
     let bytes = match status.as_u16() {
         200 => oidc::read(response, "UwUAuth").await.map_err(ApiError::upstream)?,
         400 | 429 => {
-            let answer: Value = response.json().await.unwrap_or(Value::Null);
+            let body = crate::outbound::read_start(response, crate::outbound::ERROR_BYTES * 16).await;
+            let answer: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
             return Err(match (status.as_u16(), answer["error"].as_str()) {
                 (429, _) => ApiError::too_many("UwUAuth says: too many tries. Wait a quarter of an hour."),
                 (_, Some("invalid_code")) => {
