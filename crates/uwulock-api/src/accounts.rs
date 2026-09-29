@@ -836,6 +836,13 @@ async fn delete_account(
     if session.user.admin && state.store.admin_count().await? <= 1 {
         return Err(ApiError::bad("You are the last admin. Make somebody else an admin first."));
     }
+    let owned = state.store.sole_owner_of(&session.user.id).await?;
+    if !owned.is_empty() {
+        return Err(ApiError::bad(format!(
+            "You are the only owner of {}. Make somebody else an owner, or delete it, first.",
+            owned.join(", ")
+        )));
+    }
     state.store.delete_user(&session.user.id).await?;
     crate::notify::user(&state, &session.user.id, Some(&session), uwulock_notify::Kind::LogOut);
     tracing::info!(user = %session.user.id, "account deleted");

@@ -58,6 +58,48 @@ pub struct Settings {
     pub versions: VersionSettings,
     /// Website icons: fetched by the server, and the icon library.
     pub icons: IconSettings,
+    /// Families (Stufe 4d): who may make one, how many members one has at most, how many one
+    /// account may own.
+    pub families: OrgSettings,
+}
+
+/// Who may make an organisation of one kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WhoMayCreate {
+    Everyone,
+    Admins,
+    Nobody,
+}
+
+/// The rules for one kind of organisation: families today, Stufe 5's organisations with the
+/// same keys.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct OrgSettings {
+    pub who_may_create: WhoMayCreate,
+    /// Members one has at most, invited ones counting.
+    pub max_members: u32,
+    /// How many of them one account may own.
+    pub per_user: u32,
+}
+
+impl Default for OrgSettings {
+    fn default() -> Self {
+        // Bitwarden's Families plan has six seats.
+        OrgSettings { who_may_create: WhoMayCreate::Everyone, max_members: 6, per_user: 1 }
+    }
+}
+
+impl OrgSettings {
+    /// Whether `admin` (or not) may make one.
+    pub fn may_create(&self, admin: bool) -> bool {
+        match self.who_may_create {
+            WhoMayCreate::Everyone => true,
+            WhoMayCreate::Admins => admin,
+            WhoMayCreate::Nobody => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,6 +190,7 @@ impl Default for Settings {
             scim: crate::scim::ScimSettings::default(),
             versions: VersionSettings::default(),
             icons: IconSettings::default(),
+            families: OrgSettings::default(),
         }
     }
 }
@@ -277,6 +320,12 @@ impl Settings {
         }
         if self.storage_per_user_mb == Some(0) {
             return Err("The storage per account is at least 1 MB, or no limit.".into());
+        }
+        if !(2..=50).contains(&self.families.max_members) {
+            return Err("A family has from 2 to 50 members at most.".into());
+        }
+        if self.families.per_user > 10 {
+            return Err("One account may own at most 10 families (0 for none).".into());
         }
         self.sso.check()?;
         Ok(())

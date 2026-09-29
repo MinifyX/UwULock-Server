@@ -354,8 +354,11 @@ async fn sync(
         .exclude_domains
         .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"));
 
-    let memberships: Vec<Value> =
-        orgs.memberships.iter().map(|(org, member)| crate::organizations::profile_organization(org, member)).collect();
+    let memberships: Vec<Value> = orgs
+        .memberships
+        .iter()
+        .map(|(org, member)| crate::families::profile_organization(&state, org, member))
+        .collect();
     let mut body = String::with_capacity(4096 + (vault.ciphers.len() + orgs.ciphers.len()) * 1200);
     body.push_str("{\"object\":\"sync\",\"profile\":");
     body.push_str(&out::profile(user, two_factor.iter().any(|factor| factor.enabled), memberships).to_string());

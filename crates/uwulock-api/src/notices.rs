@@ -23,7 +23,7 @@ use uwulock_store::notices::{MAIL_NONE, MAIL_SENT, MAIL_WAITING};
 use uwulock_store::{Notice, User, clock};
 
 /// Every kind of notice there is (§12.1); the later stages write some of them.
-pub const KINDS: [&str; 24] = [
+pub const KINDS: [&str; 27] = [
     "failedLogins",
     "failedTwoFactor",
     "newDevice",
@@ -48,6 +48,9 @@ pub const KINDS: [&str; 24] = [
     "ssoLinked",
     "maskedConnected",
     "maskedDisconnected",
+    "organizationJoined",
+    "organizationRemoved",
+    "organizationRoleChanged",
 ];
 
 /// How many wrong tries within [`BURST_SECONDS`] make a notice.
@@ -171,6 +174,7 @@ fn line(notice: &Notice) -> NoticeLine {
             .as_str()
             .or_else(|| detail["format"].as_str())
             .or_else(|| detail["issuer"].as_str())
+            .or_else(|| detail["organization"].as_str())
             .map(str::to_string),
     }
 }

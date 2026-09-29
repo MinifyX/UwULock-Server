@@ -119,7 +119,7 @@ pub async fn invite_as_user(state: &AppState, email: &str, user: &User, quota: i
     })
 }
 
-fn checked_address(email: &str) -> ApiResult<String> {
+pub(crate) fn checked_address(email: &str) -> ApiResult<String> {
     let email = normalize_email(email);
     let (local, domain) = email.split_once('@').unwrap_or_default();
     if local.is_empty() || !domain.contains('.') || email.chars().any(char::is_whitespace) {
@@ -352,6 +352,13 @@ async fn delete_user(State(state): State<AppState>, admin: Admin, Path(id): Path
     let target = state.store.user(&id).await?.ok_or_else(|| ApiError::not_found("No such account."))?;
     if target.id == admin.0.user.id {
         return Err(ApiError::bad("Delete your own account in your settings, not here."));
+    }
+    let owned = state.store.sole_owner_of(&id).await?;
+    if !owned.is_empty() {
+        return Err(ApiError::bad(format!(
+            "This account is the only owner of {}. Delete that under Families first, or have its owner make somebody else an owner.",
+            owned.join(", ")
+        )));
     }
     crate::notify::user(&state, &id, None, uwulock_notify::Kind::LogOut);
     state.store.delete_user(&id).await?;
