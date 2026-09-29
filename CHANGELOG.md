@@ -3,7 +3,18 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.6.0-beta.1
+
+**Families, the UwU extras, and a server that looks after itself.** Stages 4b, 4c, 4d and 6 of
+[the plan](docs/plan.md) at once: backups off-site, alerts, metrics, logging in through UwUAuth
+or another OpenID Connect provider; entry versions, reminders, travel mode and more importers in
+the vault; families; and UwULock's own extras: delta sync and a realtime channel, the suite vault
+for UwUSSH and UwURDP, file requests, Sends on domains of their own and masked addresses from
+UwUMail. It belongs with UwULock 0.3.0-beta.1 and its browser extension. A security review came
+before the release; what it found high or medium is fixed (the last part below), the low findings
+are listed in [docs/security-review-0.6.md](docs/security-review-0.6.md). Update with
+`sudo bash update.sh`. Unencrypted off-site backups to SFTP or S3 stop until they are saved again
+with encryption. Stufe 5 (companies) is not part of it and stays planned.
 
 **The UwU extras (Stufe 6).**
 

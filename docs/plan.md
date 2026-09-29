@@ -11,7 +11,9 @@ Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind z
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
 0.4.0-beta.2 behebt; passend dazu UwULock 0.2.0-beta.3. Seitdem fertig: Stufe 4b (Betrieb und
 Sicherheit), 4c (Tresor-Komfort), 4d (Familie) und Stufe 6 (UwU-Extras) — Stufe 6 kam vor Stufe 5.
-Sie erscheinen zusammen als 0.6.0-beta.1, passend dazu UwULock 0.3.0-beta.1. Stufe 5 (Firma) ist
+Sie sind zusammen als 0.6.0-beta.1 erschienen, nach einem Sicherheitsreview
+([docs/security-review-0.6.md](security-review-0.6.md)), dessen hohe und mittlere Funde behoben
+sind; passend dazu UwULock 0.3.0-beta.1 mit Browsererweiterung. Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
 Die Schnittstellen, die Server, Web-Tresor, UwULock-Client, Browsererweiterung, UwUSSH, UwURDP,
