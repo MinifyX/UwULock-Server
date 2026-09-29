@@ -231,7 +231,7 @@ async fn save(state: &AppState, cipher: Cipher) -> ApiResult<Cipher> {
 pub(crate) async fn cipher_json(state: &AppState, cipher: &Cipher) -> ApiResult<String> {
     let attachments = state.store.attachments(&cipher.id).await?;
     let rendered = (!attachments.is_empty())
-        .then(|| crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS).to_string());
+        .then(|| crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS, None).to_string());
     Ok(out::cipher(cipher, &View::own(rendered.as_deref())))
 }
 
@@ -243,7 +243,9 @@ pub(crate) async fn attachments_by_cipher(state: &AppState, user_id: &str) -> Ap
     }
     Ok(grouped
         .into_iter()
-        .map(|(id, list)| (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS).to_string()))
+        .map(|(id, list)| {
+            (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS, None).to_string())
+        })
         .collect())
 }
 

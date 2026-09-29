@@ -413,7 +413,11 @@ async fn delta_answer(
         let attachments: HashMap<String, String> = grouped
             .into_iter()
             .map(|(id, list)| {
-                (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS).to_string())
+                (
+                    id,
+                    crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS, Some(&user.id))
+                        .to_string(),
+                )
             })
             .collect();
         let mut ciphers = String::from("[");

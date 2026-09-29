@@ -195,6 +195,8 @@ pub struct AppState {
     pub admin_reloaded: Arc<std::sync::atomic::AtomicI64>,
     /// One-time tickets for the admin portal's WebSocket check.
     pub socket_tickets: Arc<diagnosis::SocketTickets>,
+    /// Realtime connections that have not said `auth` yet.
+    pub realtime_waiting: Arc<realtime::Waiting>,
     /// The backups to another system: SFTP, S3 or a mounted folder.
     pub offsite: uwulock_backup::Offsite,
     /// The key for secrets at rest, like the OpenID Connect client secret.
@@ -267,6 +269,7 @@ impl AppState {
             settings_changed: Arc::default(),
             admin_reloaded: Arc::default(),
             socket_tickets: Arc::default(),
+            realtime_waiting: Arc::default(),
             secret: Arc::new(secret::ServerSecret::new(&config_data)),
             offsite,
             oidc: Arc::default(),

@@ -110,6 +110,10 @@ struct LinkClaims {
     /// For a Send only given addresses may open: the address that proved itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     email: Option<String>,
+    /// For a download link of an organisation's item: the member it was made for, whose travel
+    /// mode the download follows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    viewer: Option<String>,
 }
 
 impl Tokens {
@@ -178,18 +182,29 @@ impl Tokens {
 
     /// A token for one file, `subject`, that works for `seconds`: download links carry it.
     pub fn file_token(&self, subject: &str, seconds: i64) -> String {
+        self.file_token_for(subject, seconds, None)
+    }
+
+    /// Like [`Tokens::file_token`], made for `viewer` (see [`Tokens::file_token_viewer`]).
+    pub fn file_token_for(&self, subject: &str, seconds: i64, viewer: Option<&str>) -> String {
         let claims = LinkClaims {
             sub: subject.to_string(),
             exp: now_seconds() + seconds,
             iss: self.link_issuer("file"),
             email: None,
+            viewer: viewer.map(str::to_string),
         };
         self.sign(&claims)
     }
 
     /// Whether `token` is a file token for `subject` that has not run out.
     pub fn check_file_token(&self, token: &str, subject: &str) -> bool {
-        self.verify_link(token, "file").is_some_and(|claims| claims.sub == subject)
+        self.file_token_viewer(token, subject).is_some()
+    }
+
+    /// For a valid file token for `subject`: whom it was made for, if for anybody.
+    pub fn file_token_viewer(&self, token: &str, subject: &str) -> Option<Option<String>> {
+        self.verify_link(token, "file").filter(|claims| claims.sub == subject).map(|claims| claims.viewer)
     }
 
     /// A token that opens one Send, `send_id`, for a short while: what the send access grant
@@ -201,6 +216,7 @@ impl Tokens {
             exp: now_seconds() + seconds,
             iss: self.link_issuer("send"),
             email: email.map(str::to_string),
+            viewer: None,
         };
         (self.sign(&claims), seconds)
     }
@@ -219,14 +235,20 @@ impl Tokens {
             exp: now_seconds() + seconds,
             iss: self.link_issuer("filerequest"),
             email: None,
+            viewer: None,
         };
         (self.sign(&claims), seconds)
     }
 
     /// What `/identity/sso/prevalidate` hands out, for `/identity/connect/authorize`: two minutes.
     pub fn sso_token(&self) -> String {
-        let claims =
-            LinkClaims { sub: "sso".into(), exp: now_seconds() + 2 * 60, iss: self.link_issuer("sso"), email: None };
+        let claims = LinkClaims {
+            sub: "sso".into(),
+            exp: now_seconds() + 2 * 60,
+            iss: self.link_issuer("sso"),
+            email: None,
+            viewer: None,
+        };
         self.sign(&claims)
     }
 
@@ -248,6 +270,7 @@ impl Tokens {
             exp: now_seconds() + 5 * 86_400,
             iss: self.link_issuer("orginvite"),
             email: Some(email.to_string()),
+            viewer: None,
         };
         self.sign(&claims)
     }
@@ -789,6 +812,11 @@ mod tests {
         let (login, _) = tokens.access_token(&user(), "d", 3, "browser", false);
         assert!(!tokens.check_file_token(&login, "u1"), "an access token opens no file");
         assert!(!tokens.check_file_token(&tokens.file_token("c1/a1", -1), "c1/a1"), "ran out");
+        // A link for an organisation's item names the member it was made for (SV-L8).
+        let bound = tokens.file_token_for("c1/a1", 60, Some("u1"));
+        assert_eq!(tokens.file_token_viewer(&bound, "c1/a1"), Some(Some("u1".to_string())));
+        assert_eq!(tokens.file_token_viewer(&file, "c1/a1"), Some(None));
+        assert_eq!(tokens.file_token_viewer(&bound, "c1/a2"), None);
     }
 
     #[tokio::test]

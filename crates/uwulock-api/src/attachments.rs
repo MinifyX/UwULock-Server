@@ -45,16 +45,20 @@ fn attachment_subject(cipher_id: &str, id: &str) -> String {
 }
 
 /// Attachments as the clients read them, with a download link each that works for `seconds`.
+/// `viewer`: the member an organisation's item is shown to; the link then follows their travel
+/// mode.
 pub(crate) fn render<'a>(
     state: &AppState,
     attachments: impl IntoIterator<Item = &'a Attachment>,
     seconds: i64,
+    viewer: Option<&str>,
 ) -> Value {
-    Value::Array(attachments.into_iter().map(|attachment| render_one(state, attachment, seconds)).collect())
+    Value::Array(attachments.into_iter().map(|attachment| render_one(state, attachment, seconds, viewer)).collect())
 }
 
-pub(crate) fn render_one(state: &AppState, attachment: &Attachment, seconds: i64) -> Value {
-    let token = state.tokens.file_token(&attachment_subject(&attachment.cipher_id, &attachment.id), seconds);
+pub(crate) fn render_one(state: &AppState, attachment: &Attachment, seconds: i64, viewer: Option<&str>) -> Value {
+    let subject = attachment_subject(&attachment.cipher_id, &attachment.id);
+    let token = state.tokens.file_token_for(&subject, seconds, viewer);
     json!({
         "id": attachment.id,
         "url": format!("{}/attachments/{}/{}?token={token}", state.config.public, attachment.cipher_id, attachment.id),
@@ -123,7 +127,7 @@ async fn one(
         .await?
         .filter(|attachment| attachment.uploaded)
         .ok_or_else(|| ApiError::bad("Attachment doesn't exist"))?;
-    Ok(Json(render_one(&state, &attachment, LINK_SECONDS)))
+    Ok(Json(render_one(&state, &attachment, LINK_SECONDS, Some(&session.user.id))))
 }
 
 fn number_or_string<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<i64, D::Error> {
@@ -314,12 +318,17 @@ async fn download(
     Path((id, attachment)): Path<(String, String)>,
     Query(query): Query<DownloadQuery>,
 ) -> ApiResult<Response> {
-    if !state.tokens.check_file_token(&query.token, &attachment_subject(&id, &attachment)) {
+    let Some(viewer) = state.tokens.file_token_viewer(&query.token, &attachment_subject(&id, &attachment)) else {
         return Err(ApiError::unauthorized());
-    }
+    };
     let found = state.store.attachment(&id, &attachment).await?.filter(|found| found.uploaded);
-    // A link from before travel mode was switched on does not open a hidden item's files.
-    if found.is_none() || state.store.hidden_from_owner(&id).await? {
+    // A link from before travel mode was switched on does not open a hidden item's files: the
+    // owner's, or (an organisation's item) the member's the link was made for.
+    let hidden = match &viewer {
+        Some(viewer) => state.store.hidden_from(viewer, &id).await?,
+        None => state.store.hidden_from_owner(&id).await?,
+    };
+    if found.is_none() || hidden {
         return Err(ApiError::not_found("Attachment doesn't exist"));
     }
     files::serve(&files::attachment_path(&state, &id, &attachment)?).await

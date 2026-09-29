@@ -192,6 +192,49 @@ mod tests {
         assert_eq!(names, ["admin-notifications", "sso"]);
     }
 
+    /// Step 0018's triggers: SCIM's mark goes when an account is enabled (SV-L2), an organisation
+    /// item's tombstone keeps its collections (SV-L7), and reminders and masked links go with the
+    /// membership (SV-L9).
+    #[test]
+    fn the_review_triggers_hold() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        run(&mut conn).unwrap();
+        conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (id, email, password_hash, user_key, kdf_type, kdf_iterations, security_stamp, language, \
+             created, updated, revision) VALUES ('u', 'nyu@example.com', 'h', 'k', 0, 600000, 's', 'de', 't', 't', 't'), \
+             ('v', 'mio@example.com', 'h', 'k', 0, 600000, 's', 'de', 't', 't', 't');
+             INSERT INTO organizations (id, name, created, revision) VALUES ('o', 'n', 't', 't');
+             INSERT INTO org_members (id, org_id, user_id, status, type, created, revision) VALUES ('m', 'o', 'v', 2, 2, 't', 't');
+             INSERT INTO collections (id, org_id, name, created, revision) VALUES ('k', 'o', 'n', 't', 't');
+             INSERT INTO ciphers (id, organization_id, type, name, data, created, revision) VALUES
+                 ('c', 'o', 1, 'n', '{}', 't', 't'), ('d', 'o', 1, 'n', '{}', 't', 't');
+             INSERT INTO collection_ciphers (collection_id, cipher_id) VALUES ('k', 'c');
+             INSERT INTO reminders (user_id, cipher_id, due) VALUES ('v', 'd', '2020-01-01');
+             INSERT INTO masked_links (user_id, masked_id, cipher_id, email, revision) VALUES ('v', 'x', 'd', 'e', 't');
+             INSERT INTO scim_disabled (user_id) VALUES ('u');",
+        )
+        .unwrap();
+        let count = |conn: &Connection, sql: &str| conn.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
+
+        conn.execute("UPDATE users SET disabled = 1 WHERE id = 'u'", []).unwrap();
+        assert_eq!(count(&conn, "SELECT count(*) FROM scim_disabled"), 1, "still disabled");
+        conn.execute("UPDATE users SET disabled = 0 WHERE id = 'u'", []).unwrap();
+        assert_eq!(count(&conn, "SELECT count(*) FROM scim_disabled"), 0, "enabled: the mark is gone");
+
+        conn.execute("DELETE FROM ciphers WHERE id = 'c'", []).unwrap();
+        let collections: String = conn
+            .query_row("SELECT collections FROM tombstones WHERE object_id = 'c' AND owner = 'o'", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(collections, r#"["k"]"#);
+
+        conn.execute("UPDATE org_members SET status = -1 WHERE id = 'm'", []).unwrap();
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM reminders") + count(&conn, "SELECT count(*) FROM masked_links"),
+            0
+        );
+    }
+
     /// Extras keys from before `privateKeyWrapped`: the old RSA wrap goes; one that still has
     /// its wrap under the user key keeps working, one that had only the old wrap left is lost.
     #[tokio::test]

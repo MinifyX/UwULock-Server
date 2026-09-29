@@ -582,7 +582,9 @@ is taken from the access token).
 Otherwise: exponential backoff from 1 s to 60 s with ±30 % jitter, reset after a connection
 lived 60 s. On every reconnect the client sends its cursor, so nothing is missed. At most 20
 connections per account (the 21st is closed with 4429); the server rechecks the session (security
-stamp, device) at every heartbeat, like the SignalR hub.
+stamp, device) at every heartbeat, like the SignalR hub. Connections that have not sent their
+`auth` yet are limited before the upgrade, as on the anonymous hub: 25 per address (an IPv6 /64)
+and 1,000 in all; more answer the upgrade with HTTP 429.
 
 **Clients:** UwULock desktop (replaces its polling), browser extension (from the background
 service worker; MV3 keeps it alive by the heartbeat traffic, and the extension falls back to a
@@ -691,8 +693,15 @@ All take `user` (any space) or `suite` (its own space only; others are 403 `scop
 - `POST /uwu/v1/suite/spaces/{space}/records` — push. Body limit 8 MiB, at most 500 records:
 
   ```json
-  { "schema": 2, "records": [envelope…] }
+  { "schema": 2, "spaceId": "<the space's id>", "records": [envelope…] }
   ```
+
+  `spaceId` (since 0.6.0-beta.2; UwUSSH and UwURDP send it from their next releases on) is the
+  space id the records were sealed for. When the space was rekeyed since (its id is another),
+  the push is refused as a whole with 409 `space_changed`, and nothing is written: the device
+  fetches the space (`GET /uwu/v1/suite/spaces`), opens the new key, pulls with `since=0` and
+  seals again. A push without `spaceId` is still taken as before (older apps), with only the
+  apps' own check before pushing against a rekey in between.
 
   Answer `{ "object": "suitePush", "accepted": [{ "id": "…", "seq": 182 }], "conflicts": [envelope…], "cursor": 182 }`.
   Exactly UwUSync's semantics: a record is accepted when `baseSeq` equals the stored `seq` (0 for
@@ -1097,8 +1106,10 @@ ciphers, their attachments, own icons, versions and reminders are left out of, o
 
 `/api/sync`, `/api/ciphers`, `/api/ciphers/{id}` and all its sub-paths (details, attachments,
 downloads), `/api/ciphers/organization-details` rows *for this account*, `/uwu/v1/sync`,
-`/uwu/v1/ciphers/{id}/versions`, `/uwu/v1/icons/own/*`, `/uwu/v1/reminders`, and emergency access
-views and takeover of this account's vault.
+`/uwu/v1/ciphers/{id}/versions`, `/uwu/v1/icons/own/*`, `/uwu/v1/reminders`, the masked
+addresses (§13: a hidden item's link is left out of `/uwu/v1/masked/links` and `uwu.maskedLinks`,
+and the address linked to it out of `GET /uwu/v1/masked/addresses`, since it names the item and
+the site), and emergency access views and takeover of this account's vault.
 
 Writes to a hidden cipher are 404 as well. Moving a visible cipher into a marked folder hides it.
 
@@ -1106,7 +1117,8 @@ The marked folders themselves are hidden too while the mode is on (left out of `
 `/api/folders`; renaming or deleting one answers as for a folder that does not exist), so their
 names do not show either. `PUT /uwu/v1/travel/folders` still takes their ids. While it is on,
 `POST /api/ciphers/purge` and both key rotations (§3) answer 400 `travel_active`; download links
-of a hidden item's attachments issued before stop working.
+of a hidden item's attachments issued before stop working — for an organisation's item, the
+link is bound to the member it was made for and follows that member's travel mode.
 Organization-wide views of admins (`/api/ciphers/organization-details` as an organization admin,
 organization export) are organization data and are not filtered.
 

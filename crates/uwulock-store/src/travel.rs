@@ -158,6 +158,13 @@ impl Store {
         Ok(changed)
     }
 
+    /// Whether travel mode hides the item from `user_id` right now: for a download link made for
+    /// a member of the item's organisation.
+    pub async fn hidden_from(&self, user_id: &str, cipher_id: &str) -> Result<bool> {
+        let (user_id, cipher_id) = (user_id.to_string(), cipher_id.to_string());
+        self.sqlite_read(move |conn| is_hidden(conn, &user_id, &cipher_id)).await
+    }
+
     /// Whether the item is hidden from its owner by travel mode, for a download that comes with
     /// a link instead of a session. An organisation's item is nobody's alone: never.
     pub async fn hidden_from_owner(&self, cipher_id: &str) -> Result<bool> {

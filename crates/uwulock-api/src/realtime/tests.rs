@@ -73,6 +73,30 @@ async fn suite_token(server: &TestServer, email: &str, device: &str) -> String {
 }
 
 #[tokio::test]
+async fn sockets_that_never_log_in_are_limited_per_address() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let address = listen(&server).await;
+    let mut waiting: Vec<Socket> = Vec::new();
+    for _ in 0..super::WAITING_PER_NETWORK {
+        waiting.push(open(address).await);
+    }
+    let mut request = format!("ws://{address}/uwu/v1/realtime").into_client_request().unwrap();
+    request.headers_mut().insert("Sec-WebSocket-Protocol", "uwu.realtime.v1".parse().unwrap());
+    let refused = tokio_tungstenite::connect_async(request).await;
+    assert!(
+        matches!(refused, Err(tokio_tungstenite::tungstenite::Error::Http(ref response)) if response.status() == 429),
+        "{refused:?}"
+    );
+    // Once one of them says `auth`, its place is free again (SV-L11).
+    let mut first = waiting.remove(0);
+    say(&mut first, json!({ "type": "auth", "token": nyu.token })).await;
+    assert_eq!(next(&mut first).await["type"], "ready");
+    let (_, ready) = connect(address, &nyu.token, None).await;
+    assert_eq!(ready["type"], "ready");
+}
+
+#[tokio::test]
 async fn the_channel_wants_its_protocol_and_auth_first() {
     let server = TestServer::new().await;
     let nyu = server.account("nyu@example.com").await;

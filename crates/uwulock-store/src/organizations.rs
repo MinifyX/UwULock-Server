@@ -123,6 +123,8 @@ pub struct OrgCipher {
     pub cipher: Cipher,
     pub collection_ids: Vec<String>,
     pub access: Access,
+    /// The member it is shown to: download links are bound to them (travel mode).
+    pub viewer: String,
 }
 
 /// Everything of organisations a sync hands one user.
@@ -272,6 +274,25 @@ pub(crate) fn access_to(member: &Member, reach: &HashMap<String, Access>, collec
     collections.iter().filter_map(|id| reach.get(id).copied()).reduce(Access::union)
 }
 
+/// Whether `user_id` sees the item `cipher_id` at all: their own, or an organisation's they are
+/// a confirmed member of with access to it (travel mode aside: see `travel::is_hidden`).
+pub(crate) fn sees(conn: &rusqlite::Connection, user_id: &str, cipher_id: &str) -> rusqlite::Result<bool> {
+    let owner: Option<(Option<String>, Option<String>)> = conn
+        .prepare_cached("SELECT user_id, organization_id FROM ciphers WHERE id = ?1")?
+        .query_row([cipher_id], |row| Ok((row.get(0)?, row.get(1)?)))
+        .optional()?;
+    let Some((owner, org)) = owner else { return Ok(false) };
+    if owner.as_deref() == Some(user_id) {
+        return Ok(true);
+    }
+    let Some(org) = org else { return Ok(false) };
+    let Some((_, member)) = memberships(conn, user_id)?.into_iter().find(|(o, _)| o.id == org) else {
+        return Ok(false);
+    };
+    let reach = reachable(conn, &member)?;
+    Ok(access_to(&member, &reach, &collections_of(conn, cipher_id)?).is_some())
+}
+
 /// Every confirmed member's user id: whose revision moves when the organisation's items change.
 pub(crate) fn member_users(conn: &rusqlite::Connection, org_id: &str) -> rusqlite::Result<Vec<String>> {
     conn.prepare_cached("SELECT user_id FROM org_members WHERE org_id = ?1 AND status = 2 AND user_id IS NOT NULL")?
@@ -337,7 +358,7 @@ impl Store {
                         }
                         cipher.folder_id = folder;
                         cipher.favorite = favorite;
-                        vault.ciphers.push(OrgCipher { cipher, collection_ids, access });
+                        vault.ciphers.push(OrgCipher { cipher, collection_ids, access, viewer: user_id.clone() });
                     }
                 }
                 vault.policies.extend(
@@ -397,7 +418,7 @@ impl Store {
             }
             cipher.folder_id = folder;
             cipher.favorite = favorite;
-            Ok(Some(OrgCipher { cipher, collection_ids, access }))
+            Ok(Some(OrgCipher { cipher, collection_ids, access, viewer: user_id.clone() }))
         })
         .await
     }

@@ -302,21 +302,57 @@ impl Store {
 
     // ── Links ────────────────────────────────────────────
 
+    /// The account's links, but those of items travel mode hides right now and those of items
+    /// the account does not see (any more).
     pub async fn masked_links(&self, user_id: &str) -> Result<Vec<MaskedLink>> {
+        Ok(self
+            .all_masked_links(user_id)
+            .await?
+            .into_iter()
+            .filter_map(|(link, hidden)| (!hidden).then_some(link))
+            .collect())
+    }
+
+    /// The masked ids linked to items travel mode hides right now: the address list leaves them
+    /// out, since they name the item and the site.
+    pub async fn masked_hidden(&self, user_id: &str) -> Result<std::collections::HashSet<String>> {
+        Ok(self
+            .all_masked_links(user_id)
+            .await?
+            .into_iter()
+            .filter_map(|(link, hidden)| hidden.then_some(link.masked_id))
+            .collect())
+    }
+
+    async fn all_masked_links(&self, user_id: &str) -> Result<Vec<(MaskedLink, bool)>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
-            conn.prepare_cached(
-                "SELECT masked_id, cipher_id, email, state FROM masked_links WHERE user_id = ?1 ORDER BY cipher_id",
-            )?
-            .query_map([user_id], |row| {
-                Ok(MaskedLink {
-                    masked_id: row.get(0)?,
-                    cipher_id: row.get(1)?,
-                    email: row.get(2)?,
-                    state: row.get(3)?,
-                })
-            })?
-            .collect()
+            let links: Vec<MaskedLink> = conn
+                .prepare_cached(
+                    "SELECT masked_id, cipher_id, email, state FROM masked_links WHERE user_id = ?1 ORDER BY cipher_id",
+                )?
+                .query_map([&user_id], |row| {
+                    Ok(MaskedLink {
+                        masked_id: row.get(0)?,
+                        cipher_id: row.get(1)?,
+                        email: row.get(2)?,
+                        state: row.get(3)?,
+                    })
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            let travelling: bool =
+                conn.query_row("SELECT EXISTS (SELECT 1 FROM travel WHERE user_id = ?1)", [&user_id], |row| {
+                    row.get(0)
+                })?;
+            let mut kept = Vec::with_capacity(links.len());
+            for link in links {
+                if !crate::organizations::sees(conn, &user_id, &link.cipher_id)? {
+                    continue;
+                }
+                let hidden = travelling && crate::travel::is_hidden(conn, &user_id, &link.cipher_id)?;
+                kept.push((link, hidden));
+            }
+            Ok(kept)
         })
         .await
     }

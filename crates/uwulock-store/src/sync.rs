@@ -92,6 +92,9 @@ pub struct Delta {
     pub extras_key: Option<(ExtrasKey, bool)>,
     pub icons: Vec<OwnIcon>,
     pub icons_deleted: Vec<String>,
+    /// Beside `deleted_ciphers` while an organisation's tombstones are read: each item's
+    /// collections when it went (JSON), for the member's access check. Empty in a delta.
+    tombstone_collections: Vec<Option<String>>,
     /// A reminder changed: the whole list goes out again.
     pub reminders: bool,
     /// The send domain of each Send that changed: `(send id, domain id)`.
@@ -459,7 +462,15 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
             delta.policies |= conn
                 .prepare_cached("SELECT policies_seq > ?2 AND policies_seq <= ?3 FROM organizations WHERE id = ?1")?
                 .query_row(params![org_id, org_since, org_until], |row| row.get::<_, bool>(0))?;
-            let reach = reachable(conn, member)?;
+        }
+        // Items, their icons and deletions only for confirmed members, and of those only what the
+        // member can see: the same check as for the items themselves.
+        if member.status != CONFIRMED {
+            continue;
+        }
+        let reach = reachable(conn, member)?;
+        let visible = |collections: &[String]| access_to(member, &reach, collections).is_some();
+        if request.vault {
             for collection in conn
                 .prepare_cached(
                     "SELECT id, org_id, name, external_id, created, revision FROM collections \
@@ -473,26 +484,58 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
                     None => delta.deleted_collections.push(collection.id),
                 }
             }
-            if member.status == CONFIRMED {
-                for id in conn
-                    .prepare_cached("SELECT id FROM ciphers WHERE organization_id = ?1 AND seq > ?2 AND seq <= ?3")?
-                    .query_map(params![org_id, org_since, org_until], |row| row.get::<_, String>(0))?
-                {
-                    org_cipher_ids.insert(id?);
-                }
+            for id in conn
+                .prepare_cached("SELECT id FROM ciphers WHERE organization_id = ?1 AND seq > ?2 AND seq <= ?3")?
+                .query_map(params![org_id, org_since, org_until], |row| row.get::<_, String>(0))?
+            {
+                org_cipher_ids.insert(id?);
             }
         }
+        let first_icon = delta.icons.len();
         if request.uwu {
             icons_between(conn, org_id, *org_since, *org_until, &mut delta)?;
         }
+        let mut kept = Vec::with_capacity(delta.icons.len());
+        for icon in delta.icons.drain(first_icon..) {
+            if visible(&collections_of(conn, &icon.cipher_id)?) {
+                kept.push(icon);
+            }
+        }
+        delta.icons.extend(kept);
         if !org_kinds.is_empty() {
-            tombstones_between(conn, org_id, *org_since, *org_until, &org_kind_list, &mut delta)?;
+            let mut org_delta = Delta::default();
+            tombstones_between(conn, org_id, *org_since, *org_until, &org_kind_list, &mut org_delta)?;
+            // A deleted item's collections are kept with its tombstone.
+            for (id, collections) in org_delta.deleted_ciphers.into_iter().zip(org_delta.tombstone_collections) {
+                let collections: Vec<String> =
+                    collections.and_then(|list| serde_json::from_str(&list).ok()).unwrap_or_default();
+                if visible(&collections) {
+                    delta.deleted_ciphers.push(id);
+                }
+            }
+            // An icon taken off an item that is still there; one gone with its item is in the
+            // item's tombstone.
+            for id in org_delta.icons_deleted {
+                let item: Option<String> = conn
+                    .prepare_cached("SELECT id FROM ciphers WHERE id = ?1")?
+                    .query_row([&id], |row| row.get(0))
+                    .optional()?;
+                let shown = match item {
+                    Some(_) => visible(&collections_of(conn, &id)?),
+                    None => member.sees_everything(),
+                };
+                if shown {
+                    delta.icons_deleted.push(id);
+                }
+            }
+            delta.deleted_collections.extend(org_delta.deleted_collections);
         }
     }
     if !org_cipher_ids.is_empty() {
         org_ciphers(conn, user, &members, &hidden, org_cipher_ids, &mut delta)?;
     }
 
+    delta.tombstone_collections.clear();
     // Given away and back, or moved between owners: what is there now wins over its tombstone.
     let present: HashSet<&str> = delta
         .ciphers
@@ -532,15 +575,18 @@ fn tombstones_between(
     delta: &mut Delta,
 ) -> rusqlite::Result<()> {
     let sql = format!(
-        "SELECT kind, object_id FROM tombstones WHERE owner = ?1 AND seq > ?2 AND seq <= ?3 AND kind IN ({kind_list})"
+        "SELECT kind, object_id, collections FROM tombstones WHERE owner = ?1 AND seq > ?2 AND seq <= ?3 \
+         AND kind IN ({kind_list})"
     );
-    for row in conn
-        .prepare_cached(&sql)?
-        .query_map(params![owner, since, until], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))?
-    {
-        let (kind, id) = row?;
+    for row in conn.prepare_cached(&sql)?.query_map(params![owner, since, until], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?))
+    })? {
+        let (kind, id, collections) = row?;
         match kind.as_str() {
-            "cipher" => delta.deleted_ciphers.push(id),
+            "cipher" => {
+                delta.deleted_ciphers.push(id);
+                delta.tombstone_collections.push(collections);
+            }
             "folder" => delta.deleted_folders.push(id),
             "send" => delta.deleted_sends.push(id),
             "collection" => delta.deleted_collections.push(id),
@@ -598,7 +644,7 @@ fn org_ciphers(
         }
         cipher.folder_id = folder;
         cipher.favorite = favorite;
-        delta.org_ciphers.push(OrgCipher { cipher, collection_ids, access });
+        delta.org_ciphers.push(OrgCipher { cipher, collection_ids, access, viewer: user.to_string() });
     }
     Ok(())
 }

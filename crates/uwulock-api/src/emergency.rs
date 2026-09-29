@@ -479,7 +479,7 @@ async fn attachment(
     state.store.cipher(&grantor.id, &cipher).await?.ok_or_else(invalid)?;
     let found =
         state.store.attachment(&cipher, &attachment).await?.filter(|found| found.uploaded).ok_or_else(invalid)?;
-    Ok(Json(crate::attachments::render_one(&state, &found, crate::files::LINK_SECONDS)))
+    Ok(Json(crate::attachments::render_one(&state, &found, crate::files::LINK_SECONDS, None)))
 }
 
 /// What a contact needs to set a new master password for the grantor: the KDF and the key.

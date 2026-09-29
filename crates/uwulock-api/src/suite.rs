@@ -353,6 +353,9 @@ async fn pull(
 struct Push {
     #[serde(default)]
     schema: Option<i64>,
+    /// The space id the records were sealed for; left out by apps from before 0.6.0-beta.2.
+    #[serde(default, rename = "spaceId")]
+    space_id: Option<String>,
     #[serde(default)]
     records: Vec<Envelope>,
 }
@@ -385,9 +388,16 @@ async fn push(
             return Err(quota_error());
         }
     }
-    let answer = match state.store.suite_push(&session.user.id, space, records, quota).await? {
+    let answer = match state.store.suite_push(&session.user.id, space, body.space_id, records, quota).await? {
         Ok(answer) => answer,
         Err(PushRefusal::NoSpace) => return Err(ApiError::not_found("The account has no such space.")),
+        Err(PushRefusal::SpaceChanged) => {
+            return Err(ApiError::new(
+                StatusCode::CONFLICT,
+                "The space was rekeyed: fetch it, pull everything again and seal the records for its new key.",
+            )
+            .code("space_changed"));
+        }
         Err(PushRefusal::Exists) => {
             return Err(
                 ApiError::new(StatusCode::CONFLICT, "A record with that id belongs to another space.").code("exists")

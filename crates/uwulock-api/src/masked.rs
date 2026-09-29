@@ -766,8 +766,11 @@ async fn addresses(
     if state.store.masked_link_states(user_id, states).await? {
         links_changed(&state, user_id, Some(&session));
     }
+    // Travel mode: an address of a hidden item is not there, as the item is not.
+    let hidden = state.store.masked_hidden(user_id).await?;
     let data: Vec<Value> = list
         .iter()
+        .filter(|address| address["id"].as_str().is_none_or(|id| !hidden.contains(id)))
         .map(|address| render(address, &links))
         .filter(|address| query.cipher_id.as_ref().is_none_or(|cipher| address["cipherId"].as_str() == Some(cipher)))
         .collect();

@@ -115,6 +115,8 @@ pub struct SuitePush {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PushRefusal {
     NoSpace,
+    /// The push names another space id than the space has: it was rekeyed since.
+    SpaceChanged,
     /// A record id belongs to another space or account.
     Exists,
     /// It would go past the account's records or bytes.
@@ -350,13 +352,18 @@ impl Store {
         &self,
         user_id: &str,
         space: &str,
+        space_id: Option<String>,
         records: Vec<SuiteRecord>,
         quota: SuiteQuota,
     ) -> Result<std::result::Result<SuitePush, PushRefusal>> {
         let (user_id, space) = (user_id.to_string(), space.to_string());
         self.sqlite_write(move |tx| {
-            if space_of(tx, &user_id, &space)?.is_none() {
+            let Some(current) = space_of(tx, &user_id, &space)? else {
                 return Ok(Err(PushRefusal::NoSpace));
+            };
+            // Sealed for a space id that is not the space's any more: under a key nobody else has.
+            if space_id.is_some_and(|id| id != current.id) {
+                return Ok(Err(PushRefusal::SpaceChanged));
             }
             // First what would be taken, and whether it fits; then the writes.
             let mut accepted = Vec::new();
@@ -456,17 +463,19 @@ mod tests {
     #[tokio::test]
     async fn a_push_takes_what_is_based_on_the_record_here_and_returns_the_rest() {
         let (store, user, _dir) = store_with_user().await;
-        assert_eq!(store.suite_push(&user, "ssh", vec![], QUOTA).await.unwrap(), Err(PushRefusal::NoSpace));
+        assert_eq!(store.suite_push(&user, "ssh", None, vec![], QUOTA).await.unwrap(), Err(PushRefusal::NoSpace));
         store.create_suite_space(&user, "ssh", "space-1", "2.k").await.unwrap().unwrap();
         assert_eq!(store.create_suite_space(&user, "ssh", "space-2", "2.k").await.unwrap(), Err(SpaceRefusal::Exists));
-        let first = store.suite_push(&user, "ssh", vec![record("r1", 0, b"a"), record("r2", 0, b"b")], QUOTA).await;
+        let first =
+            store.suite_push(&user, "ssh", None, vec![record("r1", 0, b"a"), record("r2", 0, b"b")], QUOTA).await;
         let first = first.unwrap().unwrap();
         assert_eq!(first.accepted.len(), 2);
         let r1 = first.accepted[0].1;
-        let stale = store.suite_push(&user, "ssh", vec![record("r1", r1 - 1, b"x")], QUOTA).await.unwrap().unwrap();
+        let stale =
+            store.suite_push(&user, "ssh", None, vec![record("r1", r1 - 1, b"x")], QUOTA).await.unwrap().unwrap();
         assert!(stale.accepted.is_empty());
         assert_eq!(stale.conflicts[0].blob, b"a", "as it is here");
-        let next = store.suite_push(&user, "ssh", vec![record("r1", r1, b"c")], QUOTA).await.unwrap().unwrap();
+        let next = store.suite_push(&user, "ssh", None, vec![record("r1", r1, b"c")], QUOTA).await.unwrap().unwrap();
         assert!(next.accepted[0].1 > first.cursor);
 
         let page = store.suite_pull(&user, "ssh", 0, 1, 1 << 20).await.unwrap().unwrap();
@@ -479,12 +488,12 @@ mod tests {
         let other = store.create_user(crate::accounts::tests::new_user("other@example.com")).await.unwrap();
         store.create_suite_space(&other.id, "ssh", "space-o", "2.k").await.unwrap().unwrap();
         assert_eq!(
-            store.suite_push(&other.id, "ssh", vec![record("r1", 0, b"z")], QUOTA).await.unwrap(),
+            store.suite_push(&other.id, "ssh", None, vec![record("r1", 0, b"z")], QUOTA).await.unwrap(),
             Err(PushRefusal::Exists)
         );
         let tight = SuiteQuota { records: 2, bytes: 1 << 20 };
         assert_eq!(
-            store.suite_push(&user, "ssh", vec![record("r3", 0, b"d")], tight).await.unwrap(),
+            store.suite_push(&user, "ssh", None, vec![record("r3", 0, b"d")], tight).await.unwrap(),
             Err(PushRefusal::Quota)
         );
     }
@@ -493,7 +502,7 @@ mod tests {
     async fn a_new_key_brings_every_record_or_nothing_and_older_pulls_start_over() {
         let (store, user, _dir) = store_with_user().await;
         store.create_suite_space(&user, "rdp", "space-1", "2.k").await.unwrap().unwrap();
-        let pushed = store.suite_push(&user, "rdp", vec![record("r1", 0, b"a"), record("r2", 0, b"b")], QUOTA);
+        let pushed = store.suite_push(&user, "rdp", None, vec![record("r1", 0, b"a"), record("r2", 0, b"b")], QUOTA);
         let pushed = pushed.await.unwrap().unwrap();
         let (r1, r2) = (pushed.accepted[0].1, pushed.accepted[1].1);
         let only_one = store.rekey_suite_space(&user, "rdp", "space-2", "2.n", vec![record("r1", r1, b"A")]).await;
