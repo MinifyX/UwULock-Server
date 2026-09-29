@@ -30,6 +30,8 @@ pub mod files;
 mod folders;
 mod health;
 mod hibp;
+pub mod icon_fetch;
+pub mod icons;
 mod identity;
 mod invitations;
 mod json;
@@ -51,14 +53,17 @@ mod passkeys;
 pub mod policies;
 pub mod scim;
 pub mod secret;
+pub mod reminders;
 pub mod send_hosts;
 mod sends;
 mod settings;
 pub mod sso;
 mod totp;
+mod travel;
 mod two_factor;
 mod uwu;
 pub mod vaultwarden;
+mod versions;
 mod web;
 mod webauthn;
 
@@ -173,6 +178,8 @@ pub struct AppState {
     pub secret: Arc<secret::ServerSecret>,
     /// What the OpenID Connect provider said about itself, and its keys.
     pub oidc: Arc<oidc::Cache>,
+    /// Websites' icons and the icon library, fetched by the server.
+    pub icons: Arc<icons::Icons>,
 }
 
 impl AppState {
@@ -194,6 +201,8 @@ impl AppState {
         let offsite = uwulock_backup::Offsite::new(store.clone(), &config.data, &host, version);
         let alerts = Arc::new(alerts::Alerts::default());
         let config_data = config.data.clone();
+        store.set_version_rule(settings.versions.rule());
+        let icons = Arc::new(icons::Icons::new(&config.data, icon_fetch::Upstream::default()));
         if let Some(success) = offsite.status().await.last_success {
             alerts.offsite_succeeded(success.max(0) as u64);
         }
@@ -224,12 +233,14 @@ impl AppState {
             secret: Arc::new(secret::ServerSecret::new(&config_data)),
             offsite,
             oidc: Arc::default(),
+            icons,
         })
     }
 
     /// Settings an admin saved, or a restore brought, take effect everywhere.
     pub fn apply_settings(&self, settings: Settings) {
         self.logs.loki().configure(&settings.loki);
+        self.store.set_version_rule(settings.versions.rule());
         *self.settings.write() = settings;
         self.settings_changed.notify_one();
     }
@@ -300,6 +311,10 @@ pub fn router(state: AppState) -> Router {
         .merge(file_requests::routes())
         .merge(sso::routes())
         .merge(scim::routes())
+        .merge(icons::routes())
+        .merge(versions::routes())
+        .merge(travel::routes())
+        .merge(reminders::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())

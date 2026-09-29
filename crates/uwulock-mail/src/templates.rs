@@ -58,6 +58,9 @@ pub enum Mail {
     SecurityNotices { notices: Vec<NoticeLine>, link: String },
     /// Somebody uploaded something to one of the reader's file requests; `link` opens it.
     FileRequestArrived { link: String },
+    /// Items in the reader's vault are due for a new password; `count` how many, `link` shows
+    /// them. The mail names none of them.
+    ReminderDue { count: usize, link: String },
     /// To the admins: something on the server needs looking at (`resolved`: is fine again).
     AdminAlert { event: String, detail: String, resolved: bool, server: String },
 }
@@ -433,6 +436,25 @@ impl Mail {
                 button: Some((if de { "Im Web-Tresor ansehen" } else { "Open in the web vault" }.into(), link.clone())),
                 footer,
             },
+            Mail::ReminderDue { count, link } => Text {
+                subject: match (de, *count) {
+                    (true, 1) => "Ein Eintrag in deinem Tresor ist fällig".into(),
+                    (true, _) => format!("{count} Einträge in deinem Tresor sind fällig"),
+                    (false, 1) => "An item in your vault is due for a new password".into(),
+                    (false, _) => format!("{count} items in your vault are due for a new password"),
+                },
+                lines: vec![
+                    if de {
+                        "Du wolltest daran erinnert werden, ein Passwort zu erneuern. Welche Einträge es sind, siehst du im Web-Tresor; diese Mail nennt sie nicht."
+                    } else {
+                        "You asked to be reminded to renew a password. The web vault shows which items it is; this mail names none of them."
+                    }
+                    .into(),
+                ],
+                highlight: None,
+                button: Some((if de { "Fällige Einträge ansehen" } else { "See the items that are due" }.into(), link.clone())),
+                footer,
+            },
             Mail::EmergencyInvited { grantor, link } => Text {
                 subject: if de { format!("{grantor} möchte dich als Notfallkontakt") } else { format!("{grantor} wants you as an emergency contact") },
                 lines: vec![
@@ -660,6 +682,7 @@ mod tests {
             Mail::EmergencyInvited { grantor: "Nyu".into(), link: "https://vault.example.com/".into() },
             Mail::EmergencyAccepted { grantee: "Mika".into() },
             Mail::FileRequestArrived { link: "https://vault.example.com/#/file-requests/x".into() },
+            Mail::ReminderDue { count: 2, link: "https://vault.example.com/#/vault?due=1".into() },
             Mail::EmergencyConfirmed { grantor: "Nyu".into() },
             Mail::EmergencyAsked { grantee: "Mika".into(), takeover: true, days: 7, reminder: true },
             Mail::EmergencyApproved { grantor: "Nyu".into() },

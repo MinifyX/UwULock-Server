@@ -17,7 +17,7 @@ use axum::{Json, Router};
 use serde::{Deserialize, Deserializer};
 use serde_json::{Value, json};
 use uwulock_mail::{Language, Mail};
-use uwulock_store::{CodeRefusal, Device, Event, User, clock};
+use uwulock_store::{CodeRefusal, Device, Event, TwoFactor, User, clock};
 
 pub const AUTHENTICATOR: i64 = 0;
 pub const EMAIL: i64 = 1;
@@ -210,45 +210,8 @@ pub(crate) async fn check_login(
                 .await;
                 return Ok(false);
             }
-            AUTHENTICATOR if usable.iter().any(|factor| factor.kind == AUTHENTICATOR) => {
-                let factor = factors.iter().find(|factor| factor.kind == AUTHENTICATOR).expect("listed as usable");
-                let secret = totp::base32_decode(&factor.data).unwrap_or_default();
-                let step = totp::matching_step(&secret, code, auth::now_seconds())
-                    .ok_or_else(|| ApiError::bad("The code from the authenticator app is wrong. Try again."))?;
-                if !state.store.use_totp_step(&user.id, step).await? {
-                    return Err(ApiError::bad("This code was used already. Wait for the next one."));
-                }
-            }
-            WEBAUTHN if usable.iter().any(|factor| factor.kind == WEBAUTHN) => {
-                let factor = factors.iter().find(|factor| factor.kind == WEBAUTHN).expect("listed as usable");
-                let wrong = || ApiError::bad("The security key did not answer as expected. Try again.");
-                let assertion: webauthn::Assertion = serde_json::from_str(code).map_err(|_| wrong())?;
-                let challenge = state.challenges.take(&format!("2fa:{}", user.id)).ok_or_else(wrong)?;
-                let mut keys = security_keys(&factor.data);
-                let used = assertion.credential_id().map(|id| webauthn::b64(&id)).unwrap_or_default();
-                let key = keys.iter_mut().find(|key| key.credential_id == used).ok_or_else(wrong)?;
-                let public_key = webauthn::unb64(&key.public_key).unwrap_or_default();
-                key.counter = webauthn::assert(&assertion, &challenge, &state.party, &public_key, key.counter, false)
-                    .map_err(|reason| {
-                    tracing::info!(user = %user.id, %reason, "a security key was refused");
-                    wrong()
-                })?;
-                state
-                    .store
-                    .set_two_factor_data(&user.id, WEBAUTHN, serde_json::to_string(&keys).expect("keys serialize"))
-                    .await?;
-            }
-            EMAIL if usable.iter().any(|factor| factor.kind == EMAIL) => {
-                match state.store.take_code(&user.id, LOGIN_CODE, auth::sha256(code.as_bytes())).await? {
-                    Ok(_) => {}
-                    Err(CodeRefusal::Wrong) => {
-                        return Err(ApiError::bad("The code from the mail is wrong. Try again."));
-                    }
-                    Err(CodeRefusal::Missing | CodeRefusal::TooManyAttempts) => {
-                        return Err(ApiError::bad("There is no valid code any more. Send a new one."));
-                    }
-                    Err(CodeRefusal::Expired) => return Err(ApiError::bad("The code has expired. Send a new one.")),
-                }
+            AUTHENTICATOR | WEBAUTHN | EMAIL if usable.iter().any(|factor| factor.kind == provider) => {
+                verify_code(state, user, &factors, provider, code, &format!("2fa:{}", user.id), LOGIN_CODE).await?;
             }
             _ => return Err(required()),
         }
@@ -267,20 +230,92 @@ pub(crate) async fn check_login(
     Ok(remember.then(|| auth::random_token(32)))
 }
 
-/// A new login code, to the address two-step login by mail goes to.
-async fn send_code(state: &AppState, user: &User, data: &str) -> ApiResult<()> {
+/// A second-step `code` from `provider` (authenticator, security key or mail), checked against
+/// the account's `factors`: the WebAuthn challenge waits under `challenge`, a mailed code under
+/// `purpose`. For the login, and for what asks for the second step again, like switching travel
+/// mode off.
+pub(crate) async fn verify_code(
+    state: &AppState,
+    user: &User,
+    factors: &[TwoFactor],
+    provider: i64,
+    code: &str,
+    challenge: &str,
+    purpose: &str,
+) -> ApiResult<()> {
+    let factor = factors
+        .iter()
+        .find(|factor| factor.enabled && factor.kind == provider)
+        .ok_or_else(|| ApiError::bad("This way of two-step login is not set up."))?;
+    match provider {
+        AUTHENTICATOR => {
+            let secret = totp::base32_decode(&factor.data).unwrap_or_default();
+            let step = totp::matching_step(&secret, code, auth::now_seconds())
+                .ok_or_else(|| ApiError::bad("The code from the authenticator app is wrong. Try again."))?;
+            if !state.store.use_totp_step(&user.id, step).await? {
+                return Err(ApiError::bad("This code was used already. Wait for the next one."));
+            }
+        }
+        WEBAUTHN => {
+            let wrong = || ApiError::bad("The security key did not answer as expected. Try again.");
+            let assertion: webauthn::Assertion = serde_json::from_str(code).map_err(|_| wrong())?;
+            let challenge = state.challenges.take(challenge).ok_or_else(wrong)?;
+            let mut keys = security_keys(&factor.data);
+            let used = assertion.credential_id().map(|id| webauthn::b64(&id)).unwrap_or_default();
+            let key = keys.iter_mut().find(|key| key.credential_id == used).ok_or_else(wrong)?;
+            let public_key = webauthn::unb64(&key.public_key).unwrap_or_default();
+            key.counter = webauthn::assert(&assertion, &challenge, &state.party, &public_key, key.counter, false)
+                .map_err(|reason| {
+                    tracing::info!(user = %user.id, %reason, "a security key was refused");
+                    wrong()
+                })?;
+            state
+                .store
+                .set_two_factor_data(&user.id, WEBAUTHN, serde_json::to_string(&keys).expect("keys serialize"))
+                .await?;
+        }
+        EMAIL => match state.store.take_code(&user.id, purpose, auth::sha256(code.as_bytes())).await? {
+            Ok(_) => {}
+            Err(CodeRefusal::Wrong) => return Err(ApiError::bad("The code from the mail is wrong. Try again.")),
+            Err(CodeRefusal::Missing | CodeRefusal::TooManyAttempts) => {
+                return Err(ApiError::bad("There is no valid code any more. Send a new one."));
+            }
+            Err(CodeRefusal::Expired) => return Err(ApiError::bad("The code has expired. Send a new one.")),
+        },
+        _ => return Err(ApiError::bad("This way of two-step login is not set up.")),
+    }
+    Ok(())
+}
+
+/// A new code by mail, for `purpose`, to the address two-step login by mail goes to.
+pub(crate) async fn send_code_for(state: &AppState, user: &User, data: &str, purpose: &str) -> ApiResult<()> {
     let address = code_address(data).ok_or_else(|| ApiError::internal("two-step login by mail has no address"))?;
     mail_allowed(state, &address, None)?;
     let code = auth::random_code(6);
     state
         .store
-        .put_code(&user.id, LOGIN_CODE, auth::sha256(code.as_bytes()), None, clock::in_seconds(CODE_SECONDS))
+        .put_code(&user.id, purpose, auth::sha256(code.as_bytes()), None, clock::in_seconds(CODE_SECONDS))
         .await?;
     state
         .mailer
         .send(&address, &Mail::TwoFactorCode { code }, Language::from_code(&user.language))
         .await
         .map_err(|error| ApiError::internal(format!("sending a login code: {error}")))
+}
+
+/// WebAuthn assertion options for the account's security keys, the challenge kept under `key`.
+pub(crate) fn webauthn_options(state: &AppState, factor: &TwoFactor, key: String) -> Value {
+    let challenge = webauthn::challenge();
+    let allow: Vec<Vec<u8>> =
+        security_keys(&factor.data).iter().filter_map(|key| webauthn::unb64(&key.credential_id)).collect();
+    let options = webauthn::request_options(&state.party, &challenge, &allow);
+    state.challenges.put(key, challenge);
+    options
+}
+
+/// A new login code, to the address two-step login by mail goes to.
+async fn send_code(state: &AppState, user: &User, data: &str) -> ApiResult<()> {
+    send_code_for(state, user, data, LOGIN_CODE).await
 }
 
 #[derive(Deserialize)]

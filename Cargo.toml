@@ -37,6 +37,8 @@ base64 = "0.22"
 clap = { version = "4", features = ["derive"] }
 # Timeouts for reading a request's head, below axum-server.
 hyper-util = { version = "0.1", features = ["tokio"] }
+# Website icons: read in whatever format a site has (ICO, PNG, JPEG, GIF, WebP), handed out as PNG.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "ico"] }
 # Mail over SMTP, TLS by rustls with `ring` like everything else here.
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1-rustls-tls"] }
 libc = "0.2"
@@ -49,6 +51,8 @@ ciborium = "0.2"
 # Bundled SQLite, so the server never depends on whichever libsqlite3 is around.
 # Signing tokens, hashing, random numbers and TOTP: the crypto rustls brings along anyway.
 ring = "0.17"
+# SVG icons, drawn as PNG: no text, no fonts, no images from outside the file.
+resvg = { version = "0.48", default-features = false }
 rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 # `ring` rather than aws-lc: it needs no C toolchain beyond a compiler, which keeps the arm64
 # cross build simple.
@@ -71,6 +75,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "set-header", "limit", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+url = "2"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 webpki-roots = "1"
 

@@ -71,6 +71,13 @@ impl TestServer {
         self
     }
 
+    /// Fetching icons from `upstream` (fake websites on this machine) instead of the internet.
+    pub(crate) fn with_upstream(mut self, upstream: crate::icon_fetch::Upstream) -> Self {
+        self.state.icons = Arc::new(crate::icons::Icons::new(&self.state.config.data, upstream));
+        self.router = router(self.state.clone());
+        self
+    }
+
     /// Behind a proxy it trusts: `X-Forwarded-For` says where a request comes from.
     pub(crate) fn behind_proxy(mut self) -> Self {
         let mut config = (*self.state.config).clone();

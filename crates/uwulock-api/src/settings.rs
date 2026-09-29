@@ -46,14 +46,56 @@ pub struct Settings {
     pub loki: crate::loki::LokiSettings,
     /// File requests: links people without an account upload files to.
     pub file_requests: FileRequestSettings,
-    /// How much an account may keep in files (attachments, Send files, file requests), in MiB;
-    /// none for no limit.
+    /// How much an account may keep in files (attachments, Send files, file requests), versions
+    /// and own icons, in MiB; none for no limit.
     pub storage_per_user_mb: Option<u64>,
     /// Logging in through an OpenID Connect provider (docs/uwu-api.md §19.1). Changed through its
     /// own endpoints, `/uwu/v1/admin/sso`, never with the rest.
     pub sso: crate::sso::SsoSettings,
     /// SCIM from the provider: what a deleted person means, and the token's hash.
     pub scim: crate::scim::ScimSettings,
+    /// Earlier states of items: how many, how long.
+    pub versions: VersionSettings,
+    /// Website icons: fetched by the server, and the icon library.
+    pub icons: IconSettings,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct VersionSettings {
+    /// Versions kept per item; 0 keeps none.
+    pub per_item: u32,
+    /// Days a version is kept; 0 for no limit.
+    pub days: u32,
+}
+
+impl Default for VersionSettings {
+    fn default() -> Self {
+        VersionSettings { per_item: 20, days: 365 }
+    }
+}
+
+impl VersionSettings {
+    pub fn rule(&self) -> uwulock_store::VersionRule {
+        uwulock_store::VersionRule { per_item: self.per_item, days: self.days }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct IconSettings {
+    /// The server fetches websites' icons for `/icons/<host>/icon.png`.
+    pub automatic: bool,
+    /// The icon library, searched in the vault, its icons fetched by the server.
+    pub library: bool,
+    /// The libraries mirrored: only `selfhst` today.
+    pub sources: Vec<String>,
+}
+
+impl Default for IconSettings {
+    fn default() -> Self {
+        IconSettings { automatic: true, library: true, sources: vec!["selfhst".into()] }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +146,8 @@ impl Default for Settings {
             storage_per_user_mb: None,
             sso: crate::sso::SsoSettings::default(),
             scim: crate::scim::ScimSettings::default(),
+            versions: VersionSettings::default(),
+            icons: IconSettings::default(),
         }
     }
 }
@@ -219,6 +263,17 @@ impl Settings {
         }
         if !(1..=100).contains(&requests.max_files) {
             return Err("A file request may take from 1 to 100 files at once.".into());
+        }
+        if self.versions.per_item > 100 {
+            return Err("An item keeps at most 100 versions.".into());
+        }
+        if self.versions.days > 3650 {
+            return Err("Versions are kept at most 3650 days (0 for no limit).".into());
+        }
+        if let Some(source) =
+            self.icons.sources.iter().find(|source| !crate::icons::LIBRARY_SOURCES.contains(&source.as_str()))
+        {
+            return Err(format!("{source} is no icon library this server knows."));
         }
         if self.storage_per_user_mb == Some(0) {
             return Err("The storage per account is at least 1 MB, or no limit.".into());

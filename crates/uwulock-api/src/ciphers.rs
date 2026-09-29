@@ -293,6 +293,20 @@ pub(crate) async fn find(state: &AppState, session: &Session, id: &str) -> ApiRe
     }
 }
 
+/// 404 `not_found`: the answer under `/uwu/v1` for an item the account does not see — somebody
+/// else's, hidden by travel mode, or none at all.
+pub(crate) fn not_visible() -> ApiError {
+    ApiError::not_found("There is no such item.").code("not_found")
+}
+
+/// [`find`], answered the way `/uwu/v1` answers: 404 when the account does not see the item.
+pub(crate) async fn visible(state: &AppState, session: &Session, id: &str) -> ApiResult<Found> {
+    if let Some(cipher) = state.store.cipher(&session.user.id, id).await? {
+        return Ok(Found::Own(cipher));
+    }
+    state.store.org_cipher(&session.user.id, id).await?.map(Found::Org).ok_or_else(not_visible)
+}
+
 pub(crate) async fn found_json(state: &AppState, found: &Found) -> ApiResult<String> {
     match found {
         Found::Own(cipher) => cipher_json(state, cipher).await,
@@ -788,6 +802,7 @@ async fn purge(
         return Err(ApiError::bad("Emptying an organisation's vault is not available on this server."));
     }
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
+    crate::travel::not_while_travelling(&state, &session.user.id).await?;
     state.store.purge_vault(&session.user.id).await?;
     notify::user(&state, &session.user.id, Some(&session), Kind::Vault);
     tracing::info!(user = %session.user.id, "vault emptied");
