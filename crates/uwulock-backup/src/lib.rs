@@ -67,6 +67,9 @@ pub enum Error {
     LoginRefused(String),
     #[error("the backup server's host key changed from {expected} to {seen}; if that is expected, forget the old key")]
     HostKeyChanged { expected: String, seen: String },
+    /// The SFTP server's key is not confirmed yet: nothing was sent to it (SV-L27).
+    #[error("confirm the backup server's host key {seen} first (test the connection in the admin portal)")]
+    HostKeyUnconfirmed { seen: String },
     #[error("{0}")]
     Config(String),
     /// Something else has the backup server right now: a backup, a restore. Try again later.
@@ -93,6 +96,7 @@ impl Error {
             Error::Store(_) => "a database error on this server".into(),
             Error::LoginRefused(_) => "the backup server refused the login".into(),
             Error::HostKeyChanged { .. } => "the backup server's host key changed".into(),
+            Error::HostKeyUnconfirmed { .. } => "the backup server's host key is not confirmed yet".into(),
             // Our own words, without anything from the storage server.
             Error::WrongKey | Error::Crypto | Error::Config(_) | Error::Busy(_) => self.to_string(),
         }

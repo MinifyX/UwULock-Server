@@ -49,7 +49,8 @@ pub fn folder_target(folder: &Path) -> Target {
     Target::Folder(FolderTarget { path: folder.display().to_string() })
 }
 
-/// A line from the terminal, with nothing echoed back; `None` for an empty one.
+/// A line from the terminal, with nothing echoed back (SV-L30); `None` for an empty one. Not
+/// from a terminal (a pipe), the line as it comes.
 pub fn ask(prompt: &str) -> Result<Option<String>, String> {
     use std::io::{BufRead, IsTerminal, Write};
     let stdin = std::io::stdin();
@@ -60,17 +61,77 @@ pub fn ask(prompt: &str) -> Result<Option<String>, String> {
     }
     eprint!("{prompt}");
     let _ = std::io::stderr().flush();
+    let _quiet = Quiet::new();
+    let mut line = String::new();
+    let read = stdin.lock().read_line(&mut line).map_err(|error| error.to_string());
+    eprintln!();
+    read?;
+    Ok(Some(line.trim().to_string()).filter(|line| !line.is_empty()))
+}
+
+/// Yes or no from the terminal; no when stdin is not one.
+pub fn confirm(prompt: &str) -> Result<bool, String> {
+    use std::io::{BufRead, IsTerminal, Write};
+    let stdin = std::io::stdin();
+    if !stdin.is_terminal() {
+        return Ok(false);
+    }
+    eprint!("{prompt} [y/N] ");
+    let _ = std::io::stderr().flush();
     let mut line = String::new();
     stdin.lock().read_line(&mut line).map_err(|error| error.to_string())?;
-    Ok(Some(line.trim().to_string()).filter(|line| !line.is_empty()))
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes" | "j" | "ja"))
+}
+
+/// The terminal's echo off while this lives.
+struct Quiet {
+    #[cfg(unix)]
+    before: Option<libc::termios>,
+}
+
+impl Quiet {
+    fn new() -> Self {
+        #[cfg(unix)]
+        {
+            // SAFETY: tcgetattr and tcsetattr on stdin with a termios this function owns.
+            unsafe {
+                let mut now: libc::termios = std::mem::zeroed();
+                if libc::tcgetattr(libc::STDIN_FILENO, &mut now) != 0 {
+                    return Quiet { before: None };
+                }
+                let before = now;
+                now.c_lflag &= !libc::ECHO;
+                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &now);
+                Quiet { before: Some(before) }
+            }
+        }
+        #[cfg(not(unix))]
+        Quiet {}
+    }
+}
+
+impl Drop for Quiet {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(before) = self.before {
+            // SAFETY: puts back what `new` read.
+            unsafe {
+                libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &before);
+            }
+        }
+    }
 }
 
 async fn open(target: &Target, key: Option<&str>) -> Result<Repository, String> {
     let key = key.map(RepoKey::from_recovery_text).transpose().map_err(|error| error.to_string())?;
-    let storage = Storage::open(target).await.map_err(|error| error.to_string())?;
-    if let Some(seen) = storage.host_key() {
-        eprintln!("The backup server's host key: {seen}");
-    }
+    // An SFTP server is asked only for its host key until `--host-key` confirms it (SV-L27).
+    let storage = Storage::open(target).await.map_err(|error| match error {
+        uwulock_backup::Error::HostKeyUnconfirmed { seen } => format!(
+            "The backup server shows the host key {seen}. Check it (on the server: \
+             ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) and run again with --host-key {seen}"
+        ),
+        other => other.to_string(),
+    })?;
     Repository::open_existing(storage, key).await.map_err(|error| error.to_string())
 }
 

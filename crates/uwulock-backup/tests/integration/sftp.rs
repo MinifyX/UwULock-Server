@@ -18,6 +18,8 @@ use crate::support::*;
 struct Disk {
     files: BTreeMap<String, Vec<u8>>,
     dirs: BTreeSet<String>,
+    /// Login attempts, of either kind.
+    logins: usize,
 }
 
 type Shared = Arc<Mutex<Disk>>;
@@ -46,10 +48,12 @@ impl russh::server::Handler for Connection {
     type Error = russh::Error;
 
     async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
+        self.server.disk.lock().unwrap().logins += 1;
         Ok(if user == "backup" && password == "geheim" { Auth::Accept } else { Auth::reject() })
     }
 
     async fn auth_publickey(&mut self, user: &str, key: &russh::keys::PublicKey) -> Result<Auth, Self::Error> {
+        self.server.disk.lock().unwrap().logins += 1;
         let line = key.to_openssh().unwrap_or_default();
         let known = self.server.authorized.split_whitespace().take(2).collect::<Vec<_>>();
         let offered = line.split_whitespace().take(2).collect::<Vec<_>>();
@@ -291,9 +295,14 @@ async fn a_backup_goes_over_sftp_and_comes_back() {
     };
     let with_key = Login::Key { private_key: private_key.clone() };
 
-    let first = Sftp::connect(&target(with_key.clone(), None)).await.unwrap();
-    let host_key = first.host_key.clone();
+    // SV-L27: without a confirmed host key, only the key is looked at; no login is sent.
+    let Err(Error::HostKeyUnconfirmed { seen: host_key }) = Sftp::connect(&target(with_key.clone(), None)).await else {
+        panic!("an unconfirmed host key is not trusted");
+    };
     assert!(host_key.starts_with("SHA256:"), "{host_key}");
+    assert_eq!(disk.lock().unwrap().logins, 0, "nothing of the login went there");
+    let first = Sftp::connect(&target(with_key.clone(), Some(host_key.clone()))).await.unwrap();
+    assert_eq!(first.host_key, host_key);
     let server = Server::new().await;
     let key = RepoKey::generate();
     let repo = Repository::open(Storage::Sftp(Box::new(first)), Some(key.clone()), 1).await.unwrap();
@@ -332,7 +341,8 @@ async fn an_endless_listing_is_cut_off() {
         login: Login::Password { password: "geheim".into() },
         host_key: None,
     };
-    let sftp = Sftp::connect(&target).await.unwrap();
+    let Err(Error::HostKeyUnconfirmed { seen }) = Sftp::connect(&target).await else { panic!("not confirmed") };
+    let sftp = Sftp::connect(&SftpTarget { host_key: Some(seen), ..target }).await.unwrap();
     let error = sftp.list_within("endless", 100, 1 << 20).await.unwrap_err();
     assert!(error.to_string().contains("more than this reads"), "{error}");
     let error = sftp.list_within("endless", 1_000_000, 500).await.unwrap_err();

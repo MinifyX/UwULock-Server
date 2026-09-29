@@ -66,7 +66,8 @@ struct OffsiteRestore {
     /// environment.
     #[arg(long)]
     ssh_key: Option<PathBuf>,
-    /// The SFTP server's host key as `SHA256:…`, to check it.
+    /// The SFTP server's host key as `SHA256:…`. Needed for SFTP: without it, the server is
+    /// only asked for its key, which is then shown.
     #[arg(long)]
     host_key: Option<String>,
     /// An S3 bucket: `s3://bucket/folder`.
@@ -83,7 +84,7 @@ struct OffsiteRestore {
     /// A folder on this machine, like a mounted disk.
     #[arg(long, group = "target")]
     folder: Option<PathBuf>,
-    /// The snapshot to put back; the newest without it.
+    /// The snapshot to put back; without it, the newest, shown and confirmed first.
     #[arg(long)]
     snapshot: Option<String>,
     /// Only list the snapshots there.
@@ -442,7 +443,22 @@ async fn offsite(
                 return Ok(());
             }
             let into = args.into.unwrap_or_else(|| config.data_dir.clone());
-            let manifest = cli::restore(&target, key.as_deref(), args.snapshot.as_deref(), &into).await?;
+            // The newest one there, said with its date and confirmed: whoever keeps the storage
+            // could have hidden newer ones (SV-L31).
+            let snapshot = match args.snapshot {
+                Some(name) => name,
+                None => {
+                    let snapshots = cli::list(&target, key.as_deref()).await?;
+                    let newest = snapshots.first().ok_or("There are no snapshots there.")?;
+                    println!("The newest snapshot there ({} in all):", snapshots.len());
+                    cli::print_snapshots(std::slice::from_ref(newest));
+                    if !cli::confirm("Put this one back? If newer ones should be there, answer no.")? {
+                        return Err("Nothing restored. Pick one with --snapshot <name> (--list shows them).".into());
+                    }
+                    newest.name.clone()
+                }
+            };
+            let manifest = cli::restore(&target, key.as_deref(), Some(&snapshot), &into).await?;
             println!(
                 "Restored the snapshot {} of {} (UwULock Server {}) into {}.",
                 manifest.name,

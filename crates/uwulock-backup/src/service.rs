@@ -288,36 +288,37 @@ impl Offsite {
         tokio::time::timeout(timeout, self.inner.wakeup.notified()).await.is_ok()
     }
 
-    /// Opens the repository, remembering an SFTP server's host key the first time.
+    /// Opens the repository. An SFTP server's host key must be confirmed already (see
+    /// [`Offsite::test`]).
     async fn open(&self, settings: &mut OffsiteSettings, create: bool) -> Result<Repository, Error> {
         let target = settings.target.as_mut().ok_or_else(|| Error::Config("no backup target is set up".into()))?;
         let storage = Storage::open(target).await?;
-        if let (Some(sftp), Some(seen)) = (target.as_sftp_mut(), storage.host_key())
-            && sftp.host_key.is_none()
-        {
-            sftp.host_key = Some(seen.to_owned());
-            self.save_settings(settings).await?;
-        }
         let key = settings.key.as_deref().map(RepoKey::from_recovery_text).transpose()?;
         if create { Repository::open(storage, key, now()).await } else { Repository::open_existing(storage, key).await }
     }
 
     /// Connects to the target and writes a small file there and takes it away: whether backups
-    /// can go there. Remembers an SFTP server's host key the first time. Answers the host key,
-    /// and whether it was known before.
-    pub async fn test(&self) -> Result<(Option<String>, bool), Error> {
+    /// can go there. Answers the host key, and whether it was known before.
+    ///
+    /// An SFTP server's key is confirmed first (SV-L27): without one known, the test only looks
+    /// at the key the server shows and answers it, with nothing sent to the server and nothing
+    /// saved (`Error::HostKeyUnconfirmed`). Tested again with that key as `confirm`, the key is
+    /// trusted for this connection, and remembered once the test worked.
+    pub async fn test(&self, confirm: Option<&str>) -> Result<(Option<String>, bool), Error> {
         let mut settings = self.settings().await?;
         let target = settings.target.as_mut().ok_or_else(|| Error::Config("no backup target is set up".into()))?;
         let known = target.as_sftp().is_some_and(|sftp| sftp.host_key.is_some());
+        if let Some(sftp) = target.as_sftp_mut()
+            && sftp.host_key.is_none()
+        {
+            sftp.host_key = confirm.map(str::to_owned);
+        }
         let storage = Storage::open(target).await?;
         let host_key = storage.host_key().map(str::to_owned);
         let written = storage.check_writable().await;
         storage.close().await;
         written?;
-        if let (Some(sftp), Some(seen)) = (target.as_sftp_mut(), &host_key)
-            && sftp.host_key.is_none()
-        {
-            sftp.host_key = Some(seen.clone());
+        if !known && target.as_sftp().is_some() && host_key.is_some() {
             self.save_settings(&settings).await?;
         }
         Ok((host_key, known))
