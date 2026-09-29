@@ -113,6 +113,16 @@ struct PasskeyHolder {
 /// whose keys hang on it, the private key wrapped again, the new user key under the master key
 /// and for everybody in `holders`. The body of `rotate-user-account-keys`.
 pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Holders) -> Result<Value> {
+    Ok(rotate_with_key(unlocked, password, public_key, holders)?.0)
+}
+
+/// [`rotate`], and the new user key, for what UwULock re-encrypts beside it.
+pub fn rotate_with_key(
+    unlocked: &Unlocked,
+    password: &str,
+    public_key: &str,
+    holders: Holders,
+) -> Result<(Value, SymmetricKey)> {
     let current_hash = check_password(unlocked, password)?;
     let private = unlocked
         .private_key
@@ -224,7 +234,7 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Ho
         .map(|folder| json!({ "id": folder.id, "name": EncString::encrypt(folder.name.as_bytes(), &new_key).to_string() }))
         .collect();
     let kdf = numbers(unlocked.kdf);
-    Ok(json!({
+    let body = json!({
         "oldMasterKeyAuthenticationHash": current_hash,
         "accountUnlockData": {
             "masterPasswordUnlockData": {
@@ -245,5 +255,6 @@ pub fn rotate(unlocked: &Unlocked, password: &str, public_key: &str, holders: Ho
             "accountPublicKey": public_key,
         },
         "accountData": { "ciphers": ciphers, "folders": folders, "sends": sends },
-    }))
+    });
+    Ok((body, new_key))
 }

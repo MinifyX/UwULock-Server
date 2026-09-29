@@ -13,6 +13,7 @@
 //! changing the master password, the KDF or the address, new keys, import and export.
 
 mod account;
+mod comfort;
 mod draft;
 mod files;
 mod health;
@@ -352,6 +353,36 @@ pub fn rotate(password: String, public_key: &str, holders: &str) -> Result<Strin
     let password = Zeroizing::new(password);
     let holders: account::Holders = serde_json::from_str(holders).map_err(Failure::from)?;
     Ok(with_unlocked(|unlocked| json(&account::rotate(unlocked, &password, public_key, holders)?))?)
+}
+
+/// A rotation by UwULock: the body of `POST /uwu/v1/accounts/rotate-keys`, with the extras key
+/// wrapped again and `versions` (the answer of `GET /uwu/v1/versions`) re-encrypted.
+#[wasm_bindgen(js_name = rotateUwu)]
+pub fn rotate_uwu(password: String, public_key: &str, holders: &str, versions: &str) -> Result<String, JsValue> {
+    let password = Zeroizing::new(password);
+    let holders: account::Holders = serde_json::from_str(holders).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&comfort::rotate(unlocked, &password, public_key, holders, versions)?))?)
+}
+
+// ── Icons and versions ────────────────────────────────────
+
+/// An own icon for an item (a PNG of at most 128 × 128): `{ data, keyType }`.
+#[wasm_bindgen(js_name = sealIcon)]
+pub fn seal_icon(item_id: &str, png: &[u8]) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&comfort::seal_icon(unlocked, item_id, png)?))?)
+}
+
+/// An item's own icon, as PNG bytes.
+#[wasm_bindgen(js_name = openIcon)]
+pub fn open_icon(item_id: &str, data: &str) -> Result<Vec<u8>, JsValue> {
+    Ok(with_unlocked(|unlocked| comfort::open_icon(unlocked, item_id, data))?)
+}
+
+/// An earlier version of an item, opened: its name, notes, login, card, identity, SSH key and
+/// fields.
+#[wasm_bindgen(js_name = openVersion)]
+pub fn open_version(item_id: &str, version: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&comfort::open_version(unlocked, item_id, version)?))?)
 }
 
 // ── Import and export ─────────────────────────────────────
