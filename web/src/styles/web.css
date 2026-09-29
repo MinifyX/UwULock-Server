@@ -1165,6 +1165,64 @@ a {
   color: var(--uwu-alarm);
 }
 
+/* Masked addresses and send domains: a card each, like the channels. */
+.masked-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.masked-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--uwu-radius-card);
+  border: 1px solid var(--uwu-hairline);
+  background: var(--uwu-surface);
+  min-width: 0;
+}
+
+.masked-card[data-state='disabled'] .channel-name,
+.masked-card[data-state='deleted'] .channel-name {
+  color: var(--uwu-muted);
+}
+
+.masked-card[data-state='deleted'] .channel-name {
+  text-decoration: line-through;
+}
+
+.masked-card .form-actions {
+  margin-top: 0;
+  flex-wrap: wrap;
+}
+
+.masked-chip {
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+
+.domain-checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.domain-checks li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+
+.domain-checks li[data-ok='false'] {
+  color: var(--uwu-alarm);
+}
+
 /* The diagnosis: a card per check, its state in words and an icon. */
 .diagnosis-date {
   margin: 14px 0 0;

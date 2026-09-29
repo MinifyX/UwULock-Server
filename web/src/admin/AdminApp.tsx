@@ -23,6 +23,7 @@ import { Invitations } from './Invitations';
 import { Logs } from './Logs';
 import { Notifications } from './Notifications';
 import { Overview } from './Overview';
+import { SendDomains } from './SendDomains';
 import { SsoPage } from './SsoPage';
 import { Users } from './Users';
 
@@ -34,6 +35,7 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
   { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
   { path: '/login', label: N_('Anmeldung'), icon: 'key' },
   { path: '/branding', label: N_('Aussehen'), icon: 'eye' },
+  { path: '/send-domains', label: N_('Send-Domains'), icon: 'globe' },
   { path: '/events', label: N_('Ereignisse'), icon: 'history' },
   { path: '/logs', label: N_('Log'), icon: 'terminal' },
   { path: '/backups', label: N_('Backups'), icon: 'drive' },
@@ -171,6 +173,7 @@ export function AdminApp() {
           {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
           {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
           {page.path === '/branding' && <Branding />}
+          {page.path === '/send-domains' && <SendDomains />}
           {page.path === '/events' && <Events />}
           {page.path === '/logs' && <Logs />}
           {page.path === '/backups' && <Backups />}

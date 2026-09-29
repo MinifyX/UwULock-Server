@@ -1,5 +1,6 @@
 import { ComfortSettings } from './ComfortSettings';
 import { FamilySettings } from './FamilySettings';
+import { MaskedServerSettings } from './MaskedServerSettings';
 import { useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import { ResultLine, Row, Segmented, Toggle, type Result } from '../components/web/controls';
@@ -71,6 +72,16 @@ export function AdminSettings({ me }: { me: string }) {
     setResult(null);
     try {
       const body: Settings = { ...draft, smtp: draft.smtp?.host.trim() ? draft.smtp : null };
+      // Rows left empty are not servers.
+      if (draft.masked)
+        body.masked = {
+          servers: draft.masked.servers
+            .filter((server) => server.url.trim())
+            .map((server) => ({
+              url: server.url.trim().replace(/\/+$/, ''),
+              name: server.name.trim(),
+            })),
+        };
       const saved = await saveSettings(body);
       setCurrent(saved);
       setDraft(saved);
@@ -436,6 +447,8 @@ export function AdminSettings({ me }: { me: string }) {
       <ComfortSettings draft={draft} setDraft={setDraft} />
 
       <FamilySettings draft={draft} setDraft={setDraft} />
+
+      <MaskedServerSettings draft={draft} setDraft={setDraft} />
 
       <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
       <p className="settings-lead">
