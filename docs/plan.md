@@ -154,7 +154,7 @@ mitbringen soll. Die Version heißt 0.4, nicht 1.0: 1.0 kommt nach dem Test auf 
 - [x] Passwortprüfung im Web-Tresor: schwach, mehrfach, ohne https, Datenlecks über den eigenen
       Server bei Have I Been Pwned (k-Anonymität, im Admin-Portal abschaltbar)
 
-### Stufe 4b — Betrieb und Sicherheit (vor Stufe 5)
+### Stufe 4b — Betrieb und Sicherheit (vor Stufe 5; fertig, kommt mit 0.6)
 
 Was ein Server für eine Familie oder ein kleines Büro braucht, bevor Firmen dazukommen. Kommt nach
 den Tests auf echten Geräten.
@@ -188,7 +188,7 @@ den Tests auf echten Geräten.
       und die Regel, was eine Send-Domain beantwortet, stehen bereit. Die Live-Meldung an den
       Besitzer und das Zählen im Delta-Sync kommen mit dem Echtzeit-Kanal und dem Delta-Sync;
       die Seite im UwULock-Client mit dessen 0.3.)
-- [ ] UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
+- [x] UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
   - Admin-Portal: Admins melden sich über UwUAuth an, auf Wunsch nur Mitglieder einer Gruppe
   - Tresor: „Mit SSO anmelden" in Erweiterung, Apps und Web-Tresor wie bei Vaultwarden (die
     SSO-Kennung der Clients ist egal); das Master-Passwort entsperrt den Tresor weiterhin, der
@@ -198,7 +198,11 @@ den Tests auf echten Geräten.
     entfernt Konten
   - Suite-Kopplung per Code, sobald UwUAuth sie hat (dort Stufe 4), statt Client-ID und
     Adressen von Hand einzutragen
-  Die Anmeldung per Einladung und Passwort bleibt daneben.
+  Die Anmeldung per Einladung und Passwort bleibt daneben. (Fertig: Admin-Portal *Anmeldung*,
+  Kopplung mit UwUAuth 0.4 oder von Hand, SCIM 2.0 unter `/scim/v2`, das Client-Geheimnis
+  verschlüsselt unter `secret.key`; Admin-Recht per Gruppe oder UwUAuth-Rolle nur innerhalb der
+  Admin-Netze, nie dem letzten Admin weggenommen; `docs/sso.md`. Getestet mit einem OIDC-Anbieter
+  im Testprozess und im Browser; `bw login --sso` ist interaktiv und nicht automatisch getestet.)
 - [x] Notfallblatt als PDF, im Browser erzeugt (der Server bekommt es nie): Server-Adresse und
       E-Mail als Text und QR-Code, ein leeres Feld für das Master-Passwort zum Eintragen von Hand, der
       2FA-Wiederherstellungscode (nach dem Master-Passwort) und eine kurze Anleitung für Angehörige,

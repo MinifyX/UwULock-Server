@@ -58,8 +58,23 @@ teams and SSO.
   mail, push and other settings, numbers over time, the event log, the server's log, backups —
   here and on another system, put back while the server runs — and the update notice. Admins are ordinary accounts with the
   admin right.
-- **Registration only by invitation**: by mail, or as a link to pass on by hand; users may
+- **Registration by invitation**: by mail, or as a link to pass on by hand; users may
   invite a few people too, if the admin allows it.
+
+Coming with the next release (on `main` already):
+
+- **Log in with UwUAuth or any OpenID Connect provider**, in the web vault, the admin portal and
+  the official Bitwarden apps ("Log in with SSO", any identifier); the master password still
+  opens the vault. People in a group sign up without an invitation, admins can follow a group,
+  SCIM disables and removes accounts, and pairing with UwUAuth takes one code
+  ([docs/sso.md](docs/sso.md)).
+- **Security notices** for everybody, in the web vault and bundled by mail; **server policies**
+  (two-step login required, a minimum KDF, master password rules); the admin portal only from
+  some networks.
+- **Running it**: `/metrics` for Prometheus, the log to Loki, admin alerts by mail, ntfy, Gotify
+  and Matrix, a diagnosis of the setup, and backups on another system (SFTP, S3 or a folder).
+- **File requests** (people without an account send you files, encrypted in their browser) and
+  **the emergency sheet** as a PDF for your family.
 
 ## What it will and won't do
 
@@ -174,6 +189,8 @@ GitHub release with the scripts.
 - [Deployment](docs/deployment.md) — Let's Encrypt, reverse proxies, backups, settings
 - [Backups](docs/backups.md) — on another system: SFTP, S3 or a folder, and back onto a new machine
 - [File requests](docs/file-requests.md) — links through which people without an account send you files
+- [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing
+- [Metrics](docs/metrics.md) and [notifications](docs/notifications.md) — Prometheus, Loki, and alerts to the admins
 - [Performance](docs/performance.md) — how it is measured, and the numbers
 - [Security review, September 2026](docs/security-review-2026-09.md) — what was found for 0.4,
   and how it was fixed

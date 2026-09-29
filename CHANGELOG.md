@@ -58,6 +58,30 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - The extras key of the 0.6 API (`/uwu/v1/keys`), which UwULock's own things are encrypted
   under so that a key rotation by any client loses nothing.
 
+**Stufe 4b, third part: UwUAuth (or any OpenID Connect provider) as the login.**
+
+- **Log in with SSO** in the web vault, the admin portal and Bitwarden's own apps — browser
+  extension, desktop, phones, CLI — the way they do it with Vaultwarden: any SSO identifier will
+  do. SSO says who somebody is; the vault still opens only with the master password, which the
+  server never sees. The server's own two-step login still applies. Works with UwUAuth, Keycloak,
+  Authentik, Entra ID and any other provider (ID tokens signed RS256/PS256/ES256/ES384/EdDSA).
+- **Accounts without an invitation** for whoever the settings let in: everybody the provider lets
+  through, the members of a group, or (after pairing) UwUAuth's `user` role. They set their master
+  password at the first login. An existing account is linked by its verified address, with a
+  security notice (`ssoLinked`).
+- **Admins through SSO**: being an admin can follow a group (or UwUAuth's `admin` role) — given
+  only within the admin networks, never taken from the last admin — and the admin portal can be
+  kept to SSO logins. "SSO only" leaves password logins to admins and the CLI's API key.
+- **SCIM 2.0** at `/scim/v2`: the provider disables accounts (every session ends at once), deletes
+  them (or only disables them, as the admin chooses), adds addresses that may sign up, and keeps
+  the admin group, whose former members lose the admin right. The address never changes this way:
+  it is the salt of the account's keys.
+- **Pairing with UwUAuth** (0.4 and newer): a code (or the QR code's text) in the admin portal
+  under *Anmeldung*, and client id, secret, addresses, roles and SCIM set themselves up. Any other
+  provider is set up by hand on the same page, with a test.
+- The client secret is kept encrypted, under a key in `secret.key` in the data directory (the
+  off-site backups take it along). See [docs/sso.md](docs/sso.md).
+
 - Development: `scripts/test.sh` runs the tests quietly, with only a summary and what failed.
   The tests take about half the time (the crypto and SQLite are built optimised in the dev
   profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).

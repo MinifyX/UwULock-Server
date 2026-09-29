@@ -2052,8 +2052,9 @@ Bitwarden's; how the server does it mirrors Vaultwarden 1.34+ (`src/sso.rs`, `sr
 
 - `identifier`: what `/api/organizations/domain/sso/verified` hands out; the clients' "SSO
   identifier" may be anything (the plan: it does not matter).
-- `only`: when true, `grant_type=password` is refused (400, "Log in with SSO.") except for the
-  CLI's API key and accounts that are admins without `adminsOnlyWithSso`.
+- `only`: when true, `grant_type=password` is refused (400, "Log in with SSO.", code
+  `sso_required`) except for the CLI's API key and accounts that are admins without
+  `adminsOnlyWithSso`; so is `grant_type=webauthn` (a passkey login), under the same rule.
 - `signups`: `off` (only existing accounts), `invitation` (plus pending invitations), `group`
   (plus anyone in `userGroup`; `userGroup: null` = anyone the provider lets through).
 - `adminGroup`: with it set, being an admin follows the group at every SSO login (added or
@@ -2112,7 +2113,9 @@ Bitwarden's; how the server does it mirrors Vaultwarden 1.34+ (`src/sso.rs`, `sr
    `{ "masterPasswordHash", "key", "masterPasswordHint", "orgIdentifier", "keys": { "publicKey", "encryptedPrivateKey" }, "kdf", "kdfIterations", "kdfMemory", "kdfParallelism" }`
    and the new one `{ "masterPasswordAuthentication": { "kdf": {…}, "masterPasswordAuthenticationHash", "salt" }, "masterPasswordUnlock": { "kdf": {…}, "masterKeyWrappedUserKey", "salt" }, "accountKeys": {…} }`.
    Only for an account without keys (else 400); the KDF must meet §20 (400). `orgIdentifier` is
-   ignored. Answer 200. Then the security stamp changes; the client logs in again.
+   ignored. Answer 200. The security stamp stays, as with Vaultwarden (the account had no password
+   that could have leaked, and a new stamp would log out the client that is setting it up); the
+   client goes on with its session.
 7. **[BW]** `GET /api/organizations/{identifier}/auto-enroll-status` →
    `{ "object": "organizationAutoEnrollStatus", "id": "<UUIDv5 of the identifier>", "resetPasswordEnabled": false }`
    for the SSO identifier (there is no organization behind it; the client then skips account
@@ -2244,8 +2247,39 @@ protocol both sides implement; UwUAuth builds its half from this section.
    may sign up, `admin` role = admin).
 5. Answer: the §19.1 settings. The page offers "Test login".
 
-`DELETE /uwu/v1/admin/sso/pairing` forgets it here (and switches SSO off); the app on the UwUAuth
-side is deleted there.
+`DELETE /uwu/v1/admin/sso/pairing` forgets it here (and switches SSO off, and the SCIM token); the
+app on the UwUAuth side is deleted there.
+
+### 19.6 Implementation notes (UwULock Server, Stufe 4b)
+
+- `GET|PUT /uwu/v1/admin/sso` also answer `redirectUri` (`<public>/identity/connect/oidc-signin`),
+  `scimUrl`, `scimTokenSet` and `scimOnDelete` (read-only here; `scim.onDelete` is saved with
+  §21.1). `PUT` refuses `adminsOnlyWithSso: true` from a session without SSO (400
+  `would_lock_out`) and reads the discovery document when SSO is switched on or the issuer
+  changes. Pairing errors: 400 `invalid_code`, 400 `not_uwuauth`, 429, 502 `upstream`.
+- `/uwu/v1/admin/**` with `adminsOnlyWithSso`: 403 with code `sso_required` for a session without
+  SSO. Whether a session came through SSO survives refreshes (kept with the device).
+- `GET /uwu/v1/account` additionally says `hasMasterPassword` (false until §19.2 step 6), `sso`
+  (this session came through SSO) and `adminNeedsSso`.
+- `GET /api/organizations/{id}/policies/master-password` — auth `user` — for the id of step 7:
+  Bitwarden's policy object (`type: 1`) with the §20 master password rules, which the clients'
+  "set initial password" asks for. Any other id: 404.
+- The web vault serves `#/sso?clientId=…&redirectUri=…&state=…&codeChallenge=…` (the login of
+  Bitwarden's extension, desktop app and CLI, passed on to step 3 at once) and `#/sso?code=…&state=…`
+  (its own, and the admin portal's at `/admin#/sso`). Its own logins use `client_id=web` with a
+  state ending in `:clientId=web` (`:admin:clientId=web` for the admin portal), which the connector
+  page reads to know where to go; states with `:clientId=browser` are posted to the page as
+  `{ command: "authResult", code, state }` for Bitwarden's extension, `:clientId=desktop` go to
+  `bitwarden://sso-callback`.
+- The one-time code of step 4 stays valid (5 minutes) until a token request with it succeeds, so
+  the client can send it again with the second step of two-step login.
+- Refused SSO logins are written to the event log as `login-failed` (detail `SSO: …`); SSO sign-ups
+  as `register` (detail `through SSO`); step 6 as `password-set`; SCIM changes as `scim`; the admin
+  right given or taken by SSO as `admin`. SCIM refuses to disable or delete the last admin (409
+  `mutability`), and neither SSO nor SCIM takes the admin right from the last admin.
+- Wrong SCIM tokens: 30 per address, then one every 30 seconds (429 before that).
+- The client secret is sealed (AES-256-GCM) under `secret.key` in the data directory (§13.2);
+  a value set on the command line unsealed is taken as it is.
 
 Other suite apps pair the same way with their own `app` values (UwUMail, UwUSync for
 UwUSSH/UwURDP).
