@@ -9,6 +9,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
+import { checkA11y } from './axe.mjs';
 
 const [origin, email, password, apiKeyFile, shots] = process.argv.slice(2);
 if (!origin || !email || !password) {
@@ -135,14 +136,17 @@ try {
   await nyu.getByRole('button', { name: 'Text', exact: true }).click();
   await nyu.locator('.modal').getByLabel('Name', { exact: true }).fill('WLAN');
   await nyu.locator('.modal').getByLabel('Text', { exact: true }).fill('Gast-WLAN: nyu-net / miau1234');
+  await nyu.locator('.modal').getByRole('radio', { name: 'Mit Passwort' }).check();
   await nyu.locator('.modal input[type=password]').fill('geheim');
   await nyu.getByRole('button', { name: 'Anlegen' }).click();
   await nyu.getByText(/Send angelegt/).waitFor();
   await snap(nyu, 'send');
+  await checkA11y(nyu, 'Sends view');
   const textLink = await copiedLink(nyu);
   const stranger = await open('stranger');
   await stranger.goto(textLink);
   await stranger.getByRole('heading', { name: 'Passwort nötig' }).waitFor({ timeout: 30000 });
+  await checkA11y(stranger, 'public Send page');
   await stranger.locator('input[type=password]').fill('geheim');
   await stranger.getByRole('button', { name: 'Öffnen' }).click();
   await stranger.getByText('Gast-WLAN: nyu-net / miau1234').waitFor();
@@ -172,6 +176,7 @@ try {
   await nyu.getByRole('button', { name: 'Jetzt prüfen' }).click();
   await nyu.getByRole('heading', { name: /Schwach/ }).waitFor({ timeout: 60000 });
   await snap(nyu, 'password-check');
+  await checkA11y(nyu, 'password check');
 
   step('the API key');
   await settings(nyu, 'Konto');
