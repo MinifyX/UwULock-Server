@@ -1,0 +1,29 @@
+url,username,password,totp,extra,name,grouping,fav
+https://example.com,nyu,lp-pass,JBSWY3DPEHPK3PXP,Notiz,Beispiel,Privat\Web,1
+http://sn,,,,"NoteType:Credit Card
+Language:de-DE
+Name on Card:Nyu Beispiel
+Type:Visa
+Number:4111111111111111
+Security Code:123
+Start Date:,
+Expiration Date:June,2030
+Notes:Karte fürs Reisen
+zweite Zeile",Reisekarte,Finanzen,0
+http://sn,,,,"NoteType:Address
+Language:de-DE
+Title:dr
+First Name:Nyu
+Last Name:Beispiel
+Address 1:Musterweg 1
+City / Town:Musterstadt
+Zip / Postal Code:12345
+Country:DE
+Email Address:nyu@example.com
+Notes:",Adresse,,0
+http://sn,,,,Einfach eine Notiz,Notiz,(none),0
+http://sn,,,,"NoteType:Bank Account
+Language:de-DE
+Bank Name:Beispielbank
+Account Number:0000000000
+Notes:",Konto,Finanzen,0

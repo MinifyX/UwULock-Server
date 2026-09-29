@@ -1,0 +1,4 @@
+name,url,username,password,note
+Beispiel,https://www.example.com/login,nyu@example.com,"pa,ss""word",
+,android://abc123==@com.example.app/,mika,app-pass,"Zeile 1
+Zeile 2"

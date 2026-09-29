@@ -1,0 +1,242 @@
+{
+  "version": "1.21.0",
+  "userId": "test-user",
+  "encrypted": false,
+  "vaults": {
+    "share-1": {
+      "name": "Persönlich",
+      "description": "",
+      "display": { "color": 0, "icon": 0 },
+      "items": [
+        {
+          "itemId": "i1",
+          "shareId": "share-1",
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": true,
+          "data": {
+            "metadata": { "name": "Beispiel", "note": "Notiz zum Login", "itemUuid": "u1" },
+            "extraFields": [
+              { "fieldName": "Sicherheitsfrage", "type": "hidden", "data": { "content": "Blau" } },
+              { "fieldName": "Kundennummer", "type": "text", "data": { "content": "K-1001" } },
+              {
+                "fieldName": "Zweiter Faktor",
+                "type": "totp",
+                "data": { "totpUri": "otpauth://totp/Zwei?secret=GEZDGNBVGY3TQOJQ" }
+              }
+            ],
+            "type": "login",
+            "content": {
+              "itemEmail": "nyu@example.com",
+              "itemUsername": "nyu",
+              "password": "pp-pass",
+              "urls": ["https://example.com", "https://login.example.com"],
+              "totpUri": "otpauth://totp/Beispiel?secret=JBSWY3DPEHPK3PXP",
+              "passkeys": [{ "keyId": "k1" }]
+            }
+          }
+        },
+        {
+          "itemId": "i2",
+          "shareId": "share-1",
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Reisekarte", "note": "", "itemUuid": "u2" },
+            "extraFields": [],
+            "type": "creditCard",
+            "content": {
+              "cardholderName": "Nyu Beispiel",
+              "cardType": 0,
+              "number": "4111111111111111",
+              "verificationNumber": "123",
+              "expirationDate": "2030-06",
+              "pin": "4321"
+            }
+          }
+        },
+        {
+          "itemId": "i3",
+          "shareId": "share-1",
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Ich", "note": "", "itemUuid": "u3" },
+            "extraFields": [],
+            "type": "identity",
+            "content": {
+              "fullName": "Nyu Maria Beispiel",
+              "email": "nyu@example.com",
+              "phoneNumber": "+49 000 000000",
+              "firstName": "",
+              "middleName": "",
+              "lastName": "",
+              "birthdate": "",
+              "gender": "",
+              "extraPersonalDetails": [
+                { "fieldName": "Lieblingsfarbe", "type": "text", "data": { "content": "Blau" } }
+              ],
+              "organization": "",
+              "streetAddress": "Musterweg 1",
+              "zipOrPostalCode": "12345",
+              "city": "Musterstadt",
+              "stateOrProvince": "",
+              "countryOrRegion": "DE",
+              "floor": "2",
+              "county": "",
+              "extraAddressDetails": [],
+              "socialSecurityNumber": "",
+              "passportNumber": "P123",
+              "licenseNumber": "",
+              "website": "",
+              "xHandle": "",
+              "secondPhoneNumber": "",
+              "linkedin": "",
+              "reddit": "",
+              "facebook": "",
+              "yahoo": "",
+              "instagram": "",
+              "extraContactDetails": [],
+              "company": "Beispiel GmbH",
+              "jobTitle": "Entwicklerin",
+              "personalWebsite": "",
+              "workPhoneNumber": "",
+              "workEmail": "",
+              "extraWorkDetails": [],
+              "extraSections": [
+                {
+                  "sectionName": "Mehr",
+                  "sectionFields": [
+                    {
+                      "fieldName": "Mitgliedsnummer",
+                      "type": "hidden",
+                      "data": { "content": "M-7" }
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "itemId": "i4",
+          "shareId": "share-1",
+          "state": 2,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Gelöscht", "note": "", "itemUuid": "u4" },
+            "extraFields": [],
+            "type": "note",
+            "content": {}
+          }
+        }
+      ]
+    },
+    "share-2": {
+      "name": "Arbeit",
+      "description": "",
+      "display": { "color": 0, "icon": 0 },
+      "items": [
+        {
+          "itemId": "i5",
+          "shareId": "share-2",
+          "state": 1,
+          "aliasEmail": "alias.1234@example.net",
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Newsletter-Alias", "note": "", "itemUuid": "u5" },
+            "extraFields": [],
+            "type": "alias",
+            "content": {}
+          }
+        },
+        {
+          "itemId": "i6",
+          "shareId": "share-2",
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "WLAN", "note": "Gastnetz", "itemUuid": "u6" },
+            "extraFields": [],
+            "type": "note",
+            "content": {}
+          }
+        },
+        {
+          "itemId": "i7",
+          "shareId": "share-2",
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Server-Schlüssel", "note": "", "itemUuid": "u7" },
+            "extraFields": [],
+            "type": "sshKey",
+            "content": {
+              "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----",
+              "publicKey": "ssh-ed25519 AAAA test@example.com",
+              "fingerprint": "SHA256:abcdefghijklmnop",
+              "sections": []
+            }
+          }
+        },
+        {
+          "itemId": "i8",
+          "shareId": "share-2",
+          "state": 1,
+          "aliasEmail": null,
+          "contentFormatVersion": 1,
+          "createTime": 1700000000,
+          "modifyTime": 1700000000,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Konto", "note": "", "itemUuid": "u8" },
+            "extraFields": [
+              {
+                "fieldName": "IBAN",
+                "type": "text",
+                "data": { "content": "DE00000000000000000000" }
+              }
+            ],
+            "type": "custom",
+            "content": {
+              "sections": [
+                {
+                  "sectionName": "Zugang",
+                  "sectionFields": [
+                    { "fieldName": "PIN", "type": "hidden", "data": { "content": "0000" } }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
