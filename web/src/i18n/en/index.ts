@@ -4,6 +4,7 @@
  */
 
 import app from './app.json';
+import comfort from './comfort.json';
 import editing from './editing.json';
 import features from './features.json';
 import operations from './operations.json';
@@ -15,6 +16,7 @@ import web from './web.json';
 
 export const EN: Readonly<Record<string, string>> = {
   ...app,
+  ...comfort,
   ...editing,
   ...features,
   ...operations,

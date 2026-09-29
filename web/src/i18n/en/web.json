@@ -153,7 +153,7 @@
   "Info": "Info",
   "Installations-ID": "Installation id",
   "Installations-Schlüssel": "Installation key",
-  "Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel. Alle Geräte müssen sich danach neu anmelden.": "Every item and every folder gets a new key. Every device has to log in again afterwards.",
+  "Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel, frühere Versionen deiner Einträge auch. Alle Geräte müssen sich danach neu anmelden.": "Every item and every folder gets a new key, and so do the earlier versions of your items. Every device has to log in again afterwards.",
   "Jedes Gerät muss sich neu anmelden, auch dieser Browser.": "Every device has to log in again, this browser too.",
   "Jedes Gerät und jeder Browser muss sich neu anmelden, dieser auch.": "Every device and browser has to log in again, this one too.",
   "Jedes Gerät von {email} muss sich neu anmelden.": "Every device of {email} has to log in again.",

@@ -341,6 +341,10 @@ jobs:
         run: |
           scripts/e2e/bw-cli.sh https://localhost:8443 nyu@example.com 'correct horse battery staple' \
             "$RUNNER_TEMP/api-key"
+      - name: Versions, icons, reminders, travel mode and new keys, in a browser
+        run: |
+          node scripts/e2e/comfort.mjs https://localhost:8443 nyu@example.com \
+            'correct horse battery staple' "$RUNNER_TEMP/shots"
       - name: What the server said
         if: always()
         run: cat "$RUNNER_TEMP/server.log"

@@ -201,6 +201,19 @@ export type Settings = {
   fileRequests: { enabled: boolean; perUser: number; maxDays: number; maxFiles: number };
   /** How much an account may keep in files; null: no limit. */
   storagePerUserMb: number | null;
+  /** Earlier states of items: how many per item (0: none), how many days (0: no limit). */
+  versions: { perItem: number; days: number };
+  /** Websites' icons fetched by the server, and the icon library. */
+  icons: { automatic: boolean; library: boolean; sources: string[] };
+};
+
+/** What the server keeps of icons. */
+export type IconStatus = {
+  cached: number;
+  cacheBytes: number;
+  ownBytes: number;
+  libraryUpdated: string | null;
+  libraryIcons: number;
 };
 
 /** One day of the numbers over time. */
@@ -261,6 +274,9 @@ export const invite = (email: string, admin: boolean) =>
 export const uninvite = (email: string) =>
   request(`${base}/invitations/${encodeURIComponent(email)}`, { method: 'DELETE' });
 export const settings = () => request<Settings>(`${base}/settings`);
+export const iconStatus = () => request<IconStatus>(`${base}/icons`);
+export const clearIconCache = () => request(`${base}/icons/cache`, { method: 'DELETE' });
+export const refreshIconLibrary = () => request(`${base}/icons/library/refresh`, { body: {} });
 export const saveSettings = (next: Settings) =>
   request<Settings>(`${base}/settings`, { method: 'PUT', body: next });
 export const testMail = (to: string) => request(`${base}/settings/test-mail`, { body: { to } });

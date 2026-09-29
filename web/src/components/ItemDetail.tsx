@@ -23,6 +23,7 @@ import { IDENTITY_LABEL, KIND_LABEL } from '../lib/items';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
 import { Attachments } from './web/Attachments';
+import { ItemComfort } from './web/ItemComfort';
 import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
@@ -751,6 +752,8 @@ export function ItemDetail({
             revision={summary.revisionDate}
             editable={!summary.deleted && !summary.organizationId}
           />
+
+          <ItemComfort summary={summary} passwordDate={d.login?.passwordRevisionDate ?? null} />
 
           <footer className="detail-foot">
             {d.login && d.login.passkeys > 0 && (

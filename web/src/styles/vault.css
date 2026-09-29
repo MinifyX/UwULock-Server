@@ -602,6 +602,19 @@ button {
   --tile-ink: #ffaaaa;
 }
 
+/* A picture instead of the letter: on a quiet tile, whatever colours it has. */
+.item-tile[data-picture] {
+  background: var(--uwu-surface);
+  box-shadow: inset 0 0 0 1px var(--uwu-hairline);
+  overflow: hidden;
+}
+
+.item-tile img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+}
+
 .list-empty,
 .detail-empty {
   flex: 1;

@@ -32,6 +32,8 @@ export type Settings = {
   clipboardClear: ClipboardClear;
   /** Items in the trash show up in their own section only. */
   showTrash: boolean;
+  /** Websites' icons in the list, fetched by this server. */
+  showIcons: boolean;
   /** Where the last login went, to fill the login form next time. Not secret. */
   lastServerKind: 'bitwarden-us' | 'bitwarden-eu' | 'self-hosted';
   lastServerUrl: string;
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoLock: 15,
   clipboardClear: 30,
   showTrash: true,
+  showIcons: true,
   lastServerKind: 'self-hosted',
   lastServerUrl: '',
   lastEmail: '',
@@ -72,6 +75,7 @@ export function sanitize(raw: unknown): Settings {
     autoLock: oneOf(input.autoLock, [0, 1, 5, 15, 30, 60, 240] as const, d.autoLock),
     clipboardClear: oneOf(input.clipboardClear, [0, 10, 30, 60, 120] as const, d.clipboardClear),
     showTrash: bool(input.showTrash, d.showTrash),
+    showIcons: bool(input.showIcons, d.showIcons),
     lastServerKind: oneOf(
       input.lastServerKind,
       ['bitwarden-us', 'bitwarden-eu', 'self-hosted'] as const,

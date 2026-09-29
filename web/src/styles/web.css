@@ -1342,3 +1342,130 @@ code.wrap {
   margin: 18px 0 8px;
   font-size: 1rem;
 }
+
+/* ── Icons, reminders and versions of an item ───────────── */
+
+.comfort-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.comfort-icon-row .field-hint {
+  margin: 0;
+}
+
+.comfort-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.comfort-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.comfort-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.chip.chip-due {
+  color: var(--uwu-on-pink);
+  background: var(--uwu-pink-solid);
+}
+
+.library-grid {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.library-icon {
+  display: grid;
+  gap: 4px;
+}
+
+.library-icon > button {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  border-radius: var(--uwu-radius-control);
+}
+
+.library-picture {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+}
+
+.library-picture img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.library-name {
+  font-size: 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.library-credit a {
+  color: inherit;
+}
+
+.version-values {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.version-values > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 30%) 1fr;
+  gap: 10px;
+}
+
+.version-values dt {
+  color: var(--uwu-muted);
+}
+
+.version-values dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.item-due {
+  color: var(--uwu-pink-ink);
+}
+
+.travel-folders {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.travel-folders label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.travel-off {
+  margin-top: 12px;
+}

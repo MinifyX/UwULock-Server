@@ -14,6 +14,7 @@ import { PasskeySettings } from './web/PasskeySettings';
 import { InviteSettings } from './web/InviteSettings';
 import { SecurityNotices } from './web/SecurityNotices';
 import { TransferSettings } from './web/TransferSettings';
+import { TravelSettings } from './web/TravelSettings';
 import { TwoFactorSettings } from './web/TwoFactorSettings';
 
 export type SettingsSection =
@@ -24,6 +25,7 @@ export type SettingsSection =
   | 'passkeys'
   | 'emergency'
   | 'devices'
+  | 'travel'
   | 'invite'
   | 'transfer'
   | 'about';
@@ -36,6 +38,7 @@ const SECTIONS: { id: SettingsSection; label: string; needsLogin: boolean }[] = 
   { id: 'passkeys', label: N_('Passkeys'), needsLogin: true },
   { id: 'emergency', label: N_('Notfallzugriff'), needsLogin: true },
   { id: 'devices', label: N_('Geräte'), needsLogin: true },
+  { id: 'travel', label: N_('Reisemodus'), needsLogin: true },
   { id: 'invite', label: N_('Einladen'), needsLogin: true },
   { id: 'transfer', label: N_('Import & Export'), needsLogin: true },
   { id: 'about', label: N_('Über UwULock'), needsLogin: false },
@@ -100,6 +103,18 @@ function Appearance() {
           label={t('Papierkorb zeigen')}
           checked={settings.showTrash}
           onChange={(showTrash) => updateSettings({ showTrash })}
+        />
+      </Row>
+      <Row
+        label={t('Website-Icons zeigen')}
+        description={t(
+          'Holt dieser Server von den Websites deiner Einträge. Eigene Icons zeigt der Tresor immer.',
+        )}
+      >
+        <Toggle
+          label={t('Website-Icons zeigen')}
+          checked={settings.showIcons}
+          onChange={(showIcons) => updateSettings({ showIcons })}
         />
       </Row>
     </>
@@ -243,6 +258,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
           {section === 'passkeys' && loggedIn && <PasskeySettings />}
           {section === 'emergency' && loggedIn && <EmergencySettings mail={info?.mail ?? false} />}
           {section === 'devices' && loggedIn && <DeviceSettings onClose={onClose} />}
+          {section === 'travel' && loggedIn && <TravelSettings info={info} />}
           {section === 'invite' && loggedIn && <InviteSettings />}
           {section === 'transfer' && loggedIn && <TransferSettings />}
           {section === 'about' && <About />}

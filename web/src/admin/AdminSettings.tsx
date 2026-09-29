@@ -1,3 +1,4 @@
+import { ComfortSettings } from './ComfortSettings';
 import { useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import { ResultLine, Row, Segmented, Toggle, type Result } from '../components/web/controls';
@@ -304,7 +305,9 @@ export function AdminSettings({ me }: { me: string }) {
 
       <Row
         label={t('Speicher pro Konto')}
-        description={t('Anhänge, Send-Dateien und Datei-Anfragen zusammen. Leer: keine Grenze.')}
+        description={t(
+          'Anhänge, Send-Dateien, Datei-Anfragen, Versionen und eigene Icons zusammen. Leer: keine Grenze.',
+        )}
       >
         <input
           type="number"
@@ -385,6 +388,8 @@ export function AdminSettings({ me }: { me: string }) {
           }
         />
       </Row>
+
+      <ComfortSettings draft={draft} setDraft={setDraft} />
 
       <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
       <p className="settings-lead">

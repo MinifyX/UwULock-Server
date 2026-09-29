@@ -133,11 +133,15 @@ export function App() {
     );
   }, [route, unlocked]);
 
-  // The link in a security notice's mail: the list, once the vault is open.
+  // Links into the settings — a security notice's mail, the desktop app's travel mode button —
+  // once the vault is open.
   useEffect(() => {
-    if (route.path !== '/settings/security' || !unlocked) return;
+    const section = route.path.match(/^\/settings(?:\/([a-z-]+))?$/);
+    if (!section || !unlocked) return;
     location.hash = '';
-    setSettingsOpen('security');
+    const known: SettingsSection[] = ['security', 'travel', 'account', 'two-factor', 'devices'];
+    const wanted = (section[1] ?? 'appearance') as SettingsSection;
+    setSettingsOpen(known.includes(wanted) ? wanted : 'appearance');
   }, [route, unlocked]);
 
   const unseen = unlocked ? (info?.securityNoticesUnseen ?? 0) : 0;
@@ -214,6 +218,7 @@ export function App() {
                 searchRef={searchRef}
                 onAddAccount={() => undefined}
                 openRequest={fileRequest}
+                openDue={route.path === '/vault' && route.query.get('due') === '1'}
               />
             </div>
           )}

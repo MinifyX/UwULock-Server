@@ -322,7 +322,7 @@ function Rotate({ onCancel, onDone }: { onCancel: () => void; onDone: () => void
         <>
           <p>
             {t(
-              'Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel. Alle Geräte müssen sich danach neu anmelden.',
+              'Jeder Eintrag und jeder Ordner bekommt einen neuen Schlüssel, frühere Versionen deiner Einträge auch. Alle Geräte müssen sich danach neu anmelden.',
             )}
           </p>
           <p>

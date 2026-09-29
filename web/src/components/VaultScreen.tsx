@@ -16,6 +16,7 @@ import {
 import { errorText } from '../lib/errors';
 import { copiedText } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
+import { dueItems, useComfort } from '../lib/comfort';
 import { KIND_LABEL } from '../lib/items';
 import { useSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
@@ -36,6 +37,7 @@ import { SendsView } from './web/SendsView';
 export type Filter =
   | { kind: 'all' }
   | { kind: 'favorites' }
+  | { kind: 'due' }
   | { kind: 'type'; type: ItemKind }
   | { kind: 'folder'; id: string | null }
   | { kind: 'collection'; id: string }
@@ -66,6 +68,8 @@ function matches(filter: Filter, item: ItemSummary): boolean {
       return true;
     case 'favorites':
       return item.favorite;
+    case 'due':
+      return false;
     case 'type':
       return item.kind === filter.type;
     case 'folder':
@@ -86,13 +90,16 @@ type Props = {
   onAddAccount: () => void;
   /** A file request to open, from the link in the mail about it. */
   openRequest?: string | null;
+  /** The items due for a new password, from the link in the reminder's mail. */
+  openDue?: boolean;
 };
 
 /** What the editor is open for: an item to change, or a new one of that kind. */
 type Editing = { summary: ItemSummary | null; kind: ItemKind };
 
-export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Props) {
+export function VaultScreen({ status, searchRef, onAddAccount, openRequest, openDue }: Props) {
   useLanguage();
+  const comfort = useComfort();
   const settings = useSettings();
   const [items, setItems] = useState<ItemSummary[]>([]);
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -105,6 +112,14 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
   const [editing, setEditing] = useState<Editing | null>(null);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const [requestShown, setRequestShown] = useState<string | null>(null);
+
+  // The link in the reminder's mail: the items that are due.
+  useEffect(() => {
+    if (!openDue) return;
+    setFilter({ kind: 'due' });
+    setView('list');
+    location.hash = '';
+  }, [openDue]);
 
   // The link in the mail about a file request: its page, and the link is used up.
   useEffect(() => {
@@ -145,11 +160,14 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
     return () => void stop.then((unlisten) => unlisten());
   }, [reload, status.accountId]);
 
+  // `comfort` changes when the reminders were read again.
+  const due = useMemo(() => dueItems(), [comfort]); // eslint-disable-line react-hooks/exhaustive-deps
   const counts = useMemo(() => {
     const live = items.filter((i) => !i.deleted && !i.archived);
     return {
       all: live.length,
       favorites: live.filter((i) => i.favorite).length,
+      due: items.filter((i) => !i.deleted && due.has(i.id)).length,
       trash: items.filter((i) => i.deleted).length,
       archive: items.filter((i) => i.archived && !i.deleted).length,
       type: (type: ItemKind) => live.filter((i) => i.kind === type).length,
@@ -157,14 +175,18 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
         live.filter((i) => !i.organizationId && i.folderId === id).length,
       collection: (id: string) => live.filter((i) => i.collectionIds.includes(id)).length,
     };
-  }, [items]);
+  }, [items, due]);
 
   const visible = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
     return items
       .filter((item) =>
-        words.length ? !item.deleted || filter.kind === 'trash' : matches(filter, item),
+        words.length
+          ? !item.deleted || filter.kind === 'trash'
+          : filter.kind === 'due'
+            ? !item.deleted && due.has(item.id)
+            : matches(filter, item),
       )
       .filter((item) => {
         if (!words.length) return true;
@@ -175,7 +197,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
         (a, b) =>
           collator.compare(a.name, b.name) || collator.compare(a.subtitle ?? '', b.subtitle ?? ''),
       );
-  }, [items, filter, query]);
+  }, [items, filter, query, due]);
 
   // Keep a selection that is still visible, or take the first.
   useEffect(() => {
@@ -220,21 +242,23 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
       ? t('Alle Einträge')
       : filter.kind === 'favorites'
         ? t('Favoriten')
-        : filter.kind === 'trash'
-          ? t('Papierkorb')
-          : filter.kind === 'archive'
-            ? t('Archiv')
-            : filter.kind === 'type'
-              ? t(TYPES.find((x) => x.type === filter.type)?.label ?? '')
-              : filter.kind === 'folder'
-                ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
-                : filter.kind === 'collection'
-                  ? (overview?.collections.find((c) => c.id === filter.id)?.name ?? '')
-                  : filter.kind === 'sends'
-                    ? t('Sends')
-                    : filter.kind === 'requests'
-                      ? t('Datei-Anfragen')
-                      : t('Passwortprüfung');
+        : filter.kind === 'due'
+          ? t('Fällig')
+          : filter.kind === 'trash'
+            ? t('Papierkorb')
+            : filter.kind === 'archive'
+              ? t('Archiv')
+              : filter.kind === 'type'
+                ? t(TYPES.find((x) => x.type === filter.type)?.label ?? '')
+                : filter.kind === 'folder'
+                  ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
+                  : filter.kind === 'collection'
+                    ? (overview?.collections.find((c) => c.id === filter.id)?.name ?? '')
+                    : filter.kind === 'sends'
+                      ? t('Sends')
+                      : filter.kind === 'requests'
+                        ? t('Datei-Anfragen')
+                        : t('Passwortprüfung');
 
   const pick = (next: Filter) => {
     setFilter(next);
@@ -323,6 +347,8 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
           <ul className="nav-list">
             {nav({ kind: 'all' }, 'layers', t('Alle Einträge'), counts.all)}
             {nav({ kind: 'favorites' }, 'star', t('Favoriten'), counts.favorites)}
+            {(counts.due > 0 || filter.kind === 'due') &&
+              nav({ kind: 'due' }, 'bell', t('Fällig'), counts.due)}
           </ul>
 
           <ul className="nav-list">
@@ -669,6 +695,14 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest }: Pr
                         )}
                         {item.favorite && (
                           <Icon name="star" size={13} className="badge-star" title={t('Favorit')} />
+                        )}
+                        {due.has(item.id) && (
+                          <Icon
+                            name="bell"
+                            size={13}
+                            className="item-due"
+                            title={t('Fällig: Zeit für ein neues Passwort')}
+                          />
                         )}
                       </span>
                     </li>
