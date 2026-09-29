@@ -106,6 +106,8 @@ const browser = await chromium.launch({
 });
 const problems = [];
 
+const pages = [];
+
 async function open(name) {
   const context = await browser.newContext({
     ignoreHTTPSErrors: true,
@@ -113,6 +115,7 @@ async function open(name) {
     locale: 'de-DE',
   });
   const page = await context.newPage();
+  pages.push([name, page]);
   page.on('pageerror', (error) => problems.push(`${name}: page error: ${error.message}`));
   page.on('console', (message) => {
     if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) {
@@ -214,6 +217,15 @@ try {
 } catch (error) {
   console.error(error);
   problems.push(String(error));
+  // What each page showed when it failed.
+  for (const [name, page] of pages) {
+    const text = await page
+      .locator('body')
+      .innerText({ timeout: 2000 })
+      .catch(() => '?');
+    console.error(`-- ${name} at ${page.url()}:\n${text.slice(0, 600)}`);
+    await snap(page, `failed-${name}`).catch(() => undefined);
+  }
 } finally {
   await browser.close();
   provider.close();
