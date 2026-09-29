@@ -238,6 +238,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - Every answer the server reads from elsewhere has a ceiling (error texts 4 KiB, OAuth and JSON
   answers 512 KiB, UwUMail 8 MiB): notification channels, Loki, the identity provider, UwUAuth
   pairing, UwUMail and the push relay could each fill the memory with an endless answer.
+- The request metrics label only the standard HTTP methods; anything else is `other`. Requests
+  with invented methods made new counters that were never removed, metrics on or off.
 
 ## 0.4.0-beta.2
 
