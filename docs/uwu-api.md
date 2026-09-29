@@ -1263,7 +1263,10 @@ full requests are the same 404 `gone`, so a link cannot be probed.
 
   Checks: at least a text or a file; `text` only if `textAllowed`; at most `maxFiles` files; each
   `size` at most `maxFileBytes + 65` (the EncArrayBuffer's header and padding); submissions left;
-  the owner's storage (422 `quota`); per IP 10 submissions an hour (429). Answer:
+  the owner's storage (422 `quota`); the request's own cap, all its submissions' files together
+  (`fileRequests.maxRequestMb`, default 2048, 0 for none; 422 `request_full`); per IP 10
+  submissions an hour (429). Uploads and `complete` answer 404 `gone` once the request is
+  disabled or has run out, also for a submission begun before. Answer:
 
   ```json
   {
@@ -1854,11 +1857,13 @@ Bitwarden's older way of opening a Send (`POST /api/sends/access/{accessId}` wit
 hash in the body, and `/api/sends/{id}/access/file/{fileId}`) answers 401 for a Send with
 addresses: only the grant opens those.
 
-The code: 6 digits (`auth::random_code(6)`), stored hashed per (Send, address), 5 minutes,
-single use, compared in constant time. UwULock adds limits Bitwarden leaves out: 5 wrong codes
-per (Send, address) end the code; at most one mail per (Send, address) a minute and 5 an hour;
-the per-IP anonymous limit and the existing per-address mail limit apply. The mail ("Your Send
-verification code is 123456") is in the server's default language, with the branding of the host
+The code: 8 digits since 0.6.0-beta.2 (`auth::random_code(8)`; 6 before), stored hashed per
+(Send, address), 5 minutes, single use, compared in constant time. UwULock adds limits Bitwarden
+leaves out: 5 wrong codes per (Send, address) end the code, and 20 wrong codes a day end every
+code of that pair until the day is over; at most one mail per (Send, address) a minute, 5 an hour
+and 10 a day; at most 10 code mails an hour per Send, and 30 an hour and 100 a day for all Sends
+of one owner; the per-IP anonymous limit and the existing per-address mail limit apply. The mail
+("Your Send verification code is 12345678") is in the server's default language, with the branding of the host
 the page was opened on. After the token: **[BW]** `POST /api/sends/access` and
 `POST /api/sends/access/file/{fileId}` with `Authorization: Bearer`, as today. The access count
 goes up when the text or file is handed out, as today.

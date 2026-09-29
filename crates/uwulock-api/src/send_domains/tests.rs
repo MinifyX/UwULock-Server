@@ -150,6 +150,12 @@ async fn a_send_domain_answers_only_for_sends() {
     }
     // With the port, and in capitals, it is the same host.
     assert_eq!(on(&server, "SEND.example.com:443", "GET", "/", None).await.status(), StatusCode::NOT_FOUND);
+    // SV-L23: and with the dot of a fully qualified name.
+    for dotted in ["send.example.com.", "send.example.com.:443", "send.example.com.."] {
+        assert_eq!(on(&server, dotted, "GET", "/api/sync", None).await.status(), StatusCode::NOT_FOUND, "{dotted}");
+    }
+    let h2 = Request::get("https://send.example.com./api/sync").body(Body::empty()).unwrap();
+    assert_eq!(server.send(h2).await.status(), StatusCode::NOT_FOUND);
     // HTTP/2 brings the host as `:authority`, in the URI, without a `Host` header.
     let h2 = Request::get("https://send.example.com/api/sync").body(Body::empty()).unwrap();
     assert_eq!(server.send(h2).await.status(), StatusCode::NOT_FOUND);

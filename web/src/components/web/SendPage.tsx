@@ -163,7 +163,7 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 pattern="[0-9 ]*"
-                maxLength={8}
+                maxLength={10}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 autoFocus

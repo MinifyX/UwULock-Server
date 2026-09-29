@@ -135,7 +135,8 @@ pub(crate) fn scope_for_host(state: &AppState, host: Option<&str>) -> String {
 }
 
 /// The host a request was made to, for [`scope_for_host`]: `Host`, or `X-Forwarded-Host` behind
-/// a proxy the server trusts. Lower case, without the port.
+/// a proxy the server trusts. Lower case, without the port and without the dot at the end of a
+/// fully qualified name: `send.example.com.` is the send domain too (SV-L23).
 pub(crate) fn request_host(state: &AppState, headers: &HeaderMap) -> Option<String> {
     let forwarded = state.config.trust_forwarded.then(|| headers.get("x-forwarded-host")).flatten();
     let value = forwarded.or_else(|| headers.get(header::HOST))?.to_str().ok()?;
@@ -145,7 +146,8 @@ pub(crate) fn request_host(state: &AppState, headers: &HeaderMap) -> Option<Stri
         Some(rest) => rest.split(']').next().unwrap_or_default().to_string(),
         None => host.split(':').next().unwrap_or_default().to_string(),
     };
-    (!name.is_empty()).then_some(name)
+    let name = name.trim_end_matches('.');
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// The branding of `scope`, from memory or the database. UwULock's own when there is none or the

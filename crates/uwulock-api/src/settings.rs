@@ -239,11 +239,21 @@ pub struct FileRequestSettings {
     pub max_days: u32,
     /// Files one submission may bring.
     pub max_files: u32,
+    /// Megabytes one request may hold, all its submissions together; 0 for no cap beyond the
+    /// owner's storage (SV-L26).
+    pub max_request_mb: u32,
 }
 
 impl Default for FileRequestSettings {
     fn default() -> Self {
-        FileRequestSettings { per_user: 50, max_days: 90, max_files: 20 }
+        FileRequestSettings { per_user: 50, max_days: 90, max_files: 20, max_request_mb: 2048 }
+    }
+}
+
+impl FileRequestSettings {
+    /// [`FileRequestSettings::max_request_mb`] in bytes, `None` for no cap.
+    pub fn request_limit(&self) -> Option<i64> {
+        (self.max_request_mb > 0).then(|| i64::from(self.max_request_mb) * 1024 * 1024)
     }
 }
 
