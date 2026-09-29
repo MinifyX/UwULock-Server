@@ -185,7 +185,7 @@ den Tests auf echten Geräten.
       UwULock-Client (die offiziellen Clients kennen das nicht). Rate-Limits gegen Missbrauch; läuft
       auch unter den Send-Domains aus Stufe 6. (Server und Web-Tresor fertig, mit dem
       Extras-Schlüssel und `storagePerUserMb`; `docs/file-requests.md`. Die Seite unter `/r/<id>`
-      und die Regel, was eine Send-Domain beantwortet, stehen bereit. Die Live-Meldung an den
+      läuft unter den Send-Domains aus Stufe 6. Die Live-Meldung an den
       Besitzer und das Zählen im Delta-Sync kommen mit dem Echtzeit-Kanal und dem Delta-Sync;
       die Seite im UwULock-Client mit dessen 0.3.)
 - [x] UwUAuth als Anmeldung (OIDC; mit jedem anderen OIDC-Anbieter nutzbar):
@@ -338,7 +338,8 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   Stufe 6 auch pro Domain.
   (Fertig: Bilder werden als PNG neu gezeichnet, auch SVG; die Farbe braucht 3:1 zu Weiß und zum
   dunklen Hintergrund, die Töne daraus rechnet UwUMails Palette; gespeichert pro Bereich, damit
-  Stufe 6 pro Send-Domain nur noch die Routen braucht. `docs/branding.md`.)
+  Stufe 6 pro Send-Domain nur noch die Routen braucht. `docs/branding.md`. Pro Send-Domain seit
+  Stufe 6, `docs/send-domains.md`.)
 
 ### Stufe 4d — Familie (vor Stufe 5)
 
@@ -388,20 +389,33 @@ Bitwardens „Families".
   UwUSync-Datenbank
 - Passwort-Gesundheit: Der Client rechnet (der Server kennt keine Passwörter); der Server bietet
   einen HIBP-Proxy mit k-Anonymität und hebt den Bericht verschlüsselt auf
-- Eigene Domains für Sends: Im Admin-Portal lassen sich weitere Domains oder Subdomains
+- [x] Eigene Domains für Sends: Im Admin-Portal lassen sich weitere Domains oder Subdomains
   (z. B. `send.example.com` neben `lock.example.com`) anlegen, unter denen nur Sends erreichbar
   sind — die Send-Seite und `/api/sends/access…`, kein Tresor, keine Anmeldung, kein
   Admin-Portal. Links werden kürzer, etwa `https://send.example.com/<access id>#<schlüssel>`;
   der Schlüssel bleibt hinter dem `#`, sonst sähe ihn der Server. Alte Links unter
-  `/#/send/…` gehen weiter. Noch zu klären, bevor es gebaut wird:
+  `/#/send/…` gehen weiter. Entschieden:
   - Die offiziellen Bitwarden-Clients bauen den Link selbst aus ihrer Web-Tresor-Adresse; die
     eigene Domain nutzen also nur Web-Tresor und UwULock-Client (dort über `/uwu/v1/info`).
-  - Eine Send-Domain für alle, oder wählbar pro Send bzw. pro Konto?
-  - TLS für die zusätzlichen Domains: Let's Encrypt über den Server selbst, oder nur hinter
-    einem Proxy (Caddy)?
-  - Eigene Optik der Send-Seite pro Domain (Name, Logo)?
-- Masken-Adressen von UwUMail: UwULock Server legt für ein Konto Masken-Adressen bei UwUMail
+  - Mehrere Send-Domains, vom Admin verwaltet; wählbar pro Send (und pro Datei-Anfrage), mit
+    einem Standard pro Konto, den auch Sends aus den offiziellen Clients bekommen. Jeder Send
+    ist unter der Hauptadresse und allen Send-Domains erreichbar; die Wahl bestimmt nur den
+    Link und die Optik, darum verliert das Löschen einer Domain nichts außer ihren Links.
+  - TLS pro Domain wählbar: Let's Encrypt über den Server selbst (TLS-ALPN-01 wie die
+    Hauptadresse, je Name ein Zertifikat, per SNI ausgeliefert; auch neben Zertifikat-Dateien)
+    oder ein Proxy davor.
+  - Eigene Optik pro Domain (Name, Farbe, Logos, Favicon), sonst die des Servers; auch die
+    Mail mit dem Code eines Sends für bestimmte Adressen kommt in der Optik der Domain.
+  (Fertig: Admin-Portal mit Prüfung von DNS, HTTPS und Weiterleitung, Zertifikatsstand und
+  Optik je Domain; Diagnose und Metrik je Domain; Web-Tresor mit Wahl am Send, an der
+  Datei-Anfrage und dem Standard in den Einstellungen. `docs/send-domains.md`.)
+- [x] Masken-Adressen von UwUMail: UwULock Server legt für ein Konto Masken-Adressen bei UwUMail
   Server an (dessen JMAP `MaskedEmail`, siehe `docs/jmap-masked-email.md` dort).
+  (Fertig im Server und Web-Tresor, gegen einen nachgebauten UwUMail getestet — OAuth mit
+  Registrierung, PKCE, Rotation der Refresh-Tokens, neue Registrierung bei `invalid_client`,
+  429 — und im Browsertest; die Probe gegen einen echten UwUMail mit dem Scope `maskedemail`
+  (UwUMail-Server PR #21) ist ein `#[ignore]`-Test zum Starten von Hand.
+  `docs/masked-addresses.md`.)
   - Verbinden: Der Admin trägt im Admin-Portal die erlaubten UwUMail-Server ein; nur an diese
     schickt der Lock-Server Anfragen. Der Nutzer klickt im Web-Tresor „Mit UwUMail verbinden",
     meldet sich per OAuth (PKCE, dynamische Registrierung, beides hat UwUMail schon) bei

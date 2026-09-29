@@ -5,6 +5,26 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Send domains and masked addresses (Stufe 6, second part).**
+
+- **Send domains**: extra names like `send.example.com` that serve only Sends and file requests —
+  no web vault, no login, no admin portal — with short links
+  (`https://send.example.com/<id>#<key>`; the old `/#/send/…` links keep working). The admin adds
+  several; each gets its certificate from Let's Encrypt through the server itself (TLS-ALPN-01,
+  one certificate per name, chosen by SNI) or from a proxy in front, and can have a look of its
+  own (name, colour, logos, favicon), which the page and the mail with a Send's code follow.
+  Every Send opens under every address; the account's default and a choice per Send or file
+  request only decide which link is shown. The admin portal checks DNS, HTTPS and routing per
+  domain; the diagnosis and `/metrics` watch each certificate ([docs/send-domains.md](docs/send-domains.md)).
+- **Masked addresses from UwUMail**: connect your UwUMail mailbox once (OAuth with PKCE, a scope
+  that can only make masked addresses) and make a mail address of its own for each website — in
+  the web vault's settings, its generator and next to an item's username. Switch them off, on or
+  delete them; deleting an item offers to switch its address off. The official Bitwarden apps
+  make them too, through addy.io- and SimpleLogin-compatible endpoints with keys from the web
+  vault. The admin lists which UwUMail servers the server may talk to; tokens are kept encrypted
+  with the server secret, and connecting, disconnecting and new keys are security notices
+  ([docs/masked-addresses.md](docs/masked-addresses.md)).
+
 **Families (Stufe 4d).**
 
 - **Share with your family**: make a family in the web vault, invite people by address, and
