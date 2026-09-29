@@ -139,7 +139,15 @@ export function App() {
     const section = route.path.match(/^\/settings(?:\/([a-z-]+))?$/);
     if (!section || !unlocked) return;
     location.hash = '';
-    const known: SettingsSection[] = ['security', 'travel', 'account', 'two-factor', 'devices'];
+    const known: SettingsSection[] = [
+      'security',
+      'travel',
+      'account',
+      'two-factor',
+      'devices',
+      'transfer',
+      'masked',
+    ];
     const wanted = (section[1] ?? 'appearance') as SettingsSection;
     setSettingsOpen(known.includes(wanted) ? wanted : 'appearance');
   }, [route, unlocked]);

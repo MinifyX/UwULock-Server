@@ -1469,3 +1469,135 @@ code.wrap {
 .travel-off {
   margin-top: 12px;
 }
+
+/* ── Who may open a Send ───────────────────────────────── */
+
+fieldset.send-access {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+fieldset.send-access > legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--uwu-muted);
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.share-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px 16px;
+}
+
+.button-link {
+  gap: 6px;
+}
+
+/* ── Branding (admin portal) ───────────────────────────── */
+
+.brand-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.brand-swatch {
+  width: 26px;
+  height: 26px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--uwu-surface);
+  box-shadow: 0 0 0 1px var(--uwu-border);
+}
+
+.brand-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--uwu-ink);
+}
+
+.brand-hex {
+  width: 96px;
+  font-family: var(--uwu-mono);
+}
+
+.brand-preview {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.brand-contrast {
+  margin: 0;
+  font-size: 13px;
+}
+
+.brand-samples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.brand-sample {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: var(--uwu-radius-card);
+  border: 1px solid var(--uwu-border);
+  font-weight: 600;
+}
+
+.brand-sample[data-sample='light'] {
+  background: #ffffff;
+  color: #1c1420;
+}
+
+.brand-sample[data-sample='dark'] {
+  background: #1c171f;
+  color: #f8f2f6;
+}
+
+.brand-sample-button {
+  padding: 6px 12px;
+  border-radius: var(--uwu-radius-control);
+}
+
+.brand-sample-tint {
+  width: 28px;
+  height: 18px;
+  border-radius: 6px;
+}
+
+.brand-image {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 40px;
+  padding: 4px 8px;
+  border-radius: var(--uwu-radius-control);
+  border: 1px dashed var(--uwu-border);
+  background: #ffffff;
+  color: #716672;
+  font-size: 12px;
+}
+
+.brand-image[data-dark] {
+  background: #1c171f;
+  color: #b3a8b3;
+}
+
+.brand-image img {
+  max-height: 32px;
+  max-width: 140px;
+}

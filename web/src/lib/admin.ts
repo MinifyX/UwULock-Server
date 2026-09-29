@@ -1,5 +1,6 @@
 /** The admin portal's API (`/uwu/v1/admin`): what the server says, typed. */
 
+import type { Branding } from './account';
 import { prelogin } from './api';
 import { N_, t } from './i18n';
 import { call } from './web/core';
@@ -247,6 +248,32 @@ export type UserAction =
   'disable' | 'enable' | 'make-admin' | 'remove-admin' | 'log-out' | 'reset-two-factor';
 
 const base = '/uwu/v1/admin';
+
+// ── Branding ──────────────────────────────────────────────
+
+export type BrandingAdmin = Branding & {
+  nameSet: boolean;
+  colorSet: boolean;
+  contrast: { light: number; dark: number; ok: boolean } | null;
+};
+
+export type BrandingPreview = {
+  light: Record<string, string>;
+  dark: Record<string, string>;
+  contrast: { light: number; dark: number; ok: boolean };
+};
+
+export type BrandingImage = 'logo/light' | 'logo/dark' | 'favicon';
+
+export const branding = () => request<BrandingAdmin>(`${base}/branding`);
+export const saveBranding = (name: string | null, color: string | null) =>
+  request<BrandingAdmin>(`${base}/branding`, { method: 'PUT', body: { name, color } });
+export const brandingPreview = (color: string) =>
+  request<BrandingPreview>(`${base}/branding/preview?color=${encodeURIComponent(color)}`);
+export const uploadBrandingImage = (image: BrandingImage, file: Blob) =>
+  request<BrandingAdmin>(`${base}/branding/${image}`, { method: 'PUT', raw: file });
+export const removeBrandingImage = (image: BrandingImage) =>
+  request<BrandingAdmin>(`${base}/branding/${image}`, { method: 'DELETE' });
 
 export const overview = () => request<Overview>(`${base}/overview`);
 export const users = () => request<User[]>(`${base}/users`);

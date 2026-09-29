@@ -3,7 +3,7 @@ import { listen } from '../../lib/events';
 import { errorText } from '../../lib/errors';
 import {
   deleteSend,
-  removeSendPassword,
+  removeSendAuth,
   saveSend,
   sendLink,
   sendsList,
@@ -11,6 +11,7 @@ import {
   type SendDraft,
   type SendKind,
 } from '../../lib/features';
+import { useFeature } from '../../lib/branding';
 import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
@@ -191,17 +192,27 @@ export function SendsView() {
               <p className="detail-line">
                 {t('Wird gelöscht {when}', { when: when(current.deletionDate) ?? '' })}
               </p>
-              {current.hasPassword && (
+              {current.authType === 0 && (
+                <p className="detail-line">
+                  {t('Nur für: {emails}', { emails: current.emails.join(', ') })}
+                </p>
+              )}
+              {current.authType !== 2 && (
                 <button
                   className="quiet"
                   onClick={() =>
-                    void removeSendPassword(current.id).then(
-                      () => toast(t('Passwort entfernt.')),
+                    void removeSendAuth(current.id).then(
+                      () =>
+                        toast(
+                          current.authType === 0
+                            ? t('Adressen entfernt.')
+                            : t('Passwort entfernt.'),
+                        ),
                       (e) => toast(errorText(e), 'error'),
                     )
                   }
                 >
-                  {t('Passwort entfernen')}
+                  {current.authType === 0 ? t('Adressen entfernen') : t('Passwort entfernen')}
                 </button>
               )}
             </section>
@@ -304,11 +315,19 @@ function SendEditor({
   );
   const [disabled, setDisabled] = useState(send?.disabled ?? false);
   const [hideEmail, setHideEmail] = useState(send?.hideEmail ?? false);
+  const [access, setAccess] = useState<0 | 1 | 2>(send?.authType ?? 2);
+  const [emails, setEmails] = useState(send?.emails.join(', ') ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const mailOk = useFeature('send-emails');
 
-  const ready = name.trim() && (kind === 0 ? text.trim() : send || file);
+  const addresses = splitAddresses(emails);
+  const ready =
+    name.trim() &&
+    (kind === 0 ? text.trim() : send || file) &&
+    (access !== 0 || addresses.length > 0) &&
+    (access !== 1 || password || send?.hasPassword);
 
   const submit = async () => {
     if (!ready || busy) return;
@@ -321,7 +340,9 @@ function SendEditor({
       text: kind === 0 ? text : null,
       hidden,
       fileName: file?.name ?? send?.fileName ?? null,
-      password: password || null,
+      password: access === 1 ? password || null : null,
+      authType: access,
+      emails: access === 0 ? addresses : [],
       maxAccessCount: maxAccess ? Math.max(1, Number(maxAccess)) : null,
       expirationDate: expires ? inDays(Math.min(expires, deletion)) : null,
       deletionDate: inDays(deletion),
@@ -448,14 +469,16 @@ function SendEditor({
             onChange={(e) => setMaxAccess(e.target.value)}
           />
         </label>
-        <label className="field">
-          <span>
-            {send?.hasPassword
-              ? t('Neues Passwort (leer lässt das alte)')
-              : t('Passwort (freiwillig)')}
-          </span>
-          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
-        </label>
+        <SendAccess
+          value={access}
+          onChange={setAccess}
+          mailOk={mailOk || access === 0}
+          hasPassword={Boolean(send?.hasPassword)}
+          password={password}
+          onPassword={setPassword}
+          emails={emails}
+          onEmails={setEmails}
+        />
         <label className="field">
           <span>{t('Notizen (nur für dich)')}</span>
           <textarea
@@ -488,5 +511,92 @@ function SendEditor({
         )}
       </form>
     </Modal>
+  );
+}
+
+/** Addresses as somebody types them: separated by commas, spaces or lines. */
+export function splitAddresses(text: string): string[] {
+  return text
+    .split(/[\s,;]+/)
+    .map((address) => address.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Who may open a Send: anybody with the link, whoever knows a password, or only given addresses
+ * — they get a code by mail first, which needs mail on the server.
+ */
+export function SendAccess({
+  value,
+  onChange,
+  mailOk,
+  hasPassword,
+  password,
+  onPassword,
+  emails,
+  onEmails,
+}: {
+  value: 0 | 1 | 2;
+  onChange: (value: 0 | 1 | 2) => void;
+  mailOk: boolean;
+  hasPassword: boolean;
+  password: string;
+  onPassword: (value: string) => void;
+  emails: string;
+  onEmails: (value: string) => void;
+}) {
+  useLanguage();
+  const options: { value: 0 | 1 | 2; label: string }[] = [
+    { value: 2, label: t('Jeder mit dem Link') },
+    { value: 1, label: t('Mit Passwort') },
+    { value: 0, label: t('Nur bestimmte Adressen') },
+  ];
+  return (
+    <fieldset className="field send-access">
+      <legend>{t('Wer darf öffnen?')}</legend>
+      <div className="radio-row">
+        {options.map((option) => (
+          <label key={option.value} className="check">
+            <input
+              type="radio"
+              name="send-access"
+              value={option.value}
+              checked={value === option.value}
+              disabled={option.value === 0 && !mailOk}
+              onChange={() => onChange(option.value)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+      {!mailOk && (
+        <p className="field-hint">
+          {t('Nur bestimmte Adressen braucht Mail auf dem Server; hier ist keine eingerichtet.')}
+        </p>
+      )}
+      {value === 1 && (
+        <label className="field">
+          <span>{hasPassword ? t('Neues Passwort (leer lässt das alte)') : t('Passwort')}</span>
+          <PasswordInput value={password} onChange={onPassword} autoComplete="new-password" />
+        </label>
+      )}
+      {value === 0 && (
+        <label className="field">
+          <span>{t('E-Mail-Adressen')}</span>
+          <textarea
+            rows={2}
+            value={emails}
+            onChange={(e) => onEmails(e.target.value)}
+            placeholder="friend@example.com, family@example.org"
+            aria-describedby="send-emails-hint"
+          />
+          <span id="send-emails-hint" className="field-hint">
+            {t(
+              'Wer den Link öffnet, gibt seine Adresse an und bekommt einen Code per Mail. Der Server kennt dafür die Adressen.',
+            )}
+          </span>
+        </label>
+      )}
+    </fieldset>
   );
 }

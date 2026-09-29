@@ -11,6 +11,7 @@ import { go, useRoute } from '../lib/route';
 import { useToast } from '../lib/toast';
 import { AdminSettings } from './AdminSettings';
 import { Backups } from './Backups';
+import { Branding } from './Branding';
 import { Diagnosis } from './Diagnosis';
 import { Events } from './Events';
 import { Invitations } from './Invitations';
@@ -26,6 +27,7 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
   { path: '/invitations', label: N_('Einladungen'), icon: 'sparkles' },
   { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
   { path: '/login', label: N_('Anmeldung'), icon: 'key' },
+  { path: '/branding', label: N_('Aussehen'), icon: 'eye' },
   { path: '/events', label: N_('Ereignisse'), icon: 'history' },
   { path: '/logs', label: N_('Log'), icon: 'terminal' },
   { path: '/backups', label: N_('Backups'), icon: 'drive' },
@@ -126,6 +128,7 @@ export function AdminApp() {
           {page.path === '/invitations' && <Invitations />}
           {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
           {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
+          {page.path === '/branding' && <Branding />}
           {page.path === '/events' && <Events />}
           {page.path === '/logs' && <Logs />}
           {page.path === '/backups' && <Backups />}

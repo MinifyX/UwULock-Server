@@ -53,8 +53,22 @@ export type MinimumKdf = {
 /** The rules for a new master password: `minComplexity` is a zxcvbn score, 0 (none) to 4. */
 export type PasswordRules = { minLength: number; minComplexity: number; enforceOnLogin?: boolean };
 
+/** The server's own look (§14.4): UwULock's unless an admin changed it. */
+export type Branding = {
+  name: string;
+  color: string;
+  custom: boolean;
+  logoLight: string | null;
+  logoDark: string | null;
+  favicon: string | null;
+};
+
 /** What the server tells anybody before a login; only what the web vault uses of it. */
 export type ServerInfo = {
+  /** What the server has and has switched on: `send-emails`, `twofa-directory`, … */
+  features?: string[];
+  mail?: boolean;
+  branding?: Branding;
   policies?: { masterPassword?: PasswordRules };
   /** Logging in through an OpenID Connect provider (§19): `label` goes on the button. */
   sso?: { enabled: boolean; only: boolean; identifier: string; label: string };

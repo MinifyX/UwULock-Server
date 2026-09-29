@@ -168,6 +168,8 @@ type Options = {
   auth?: boolean;
   /** A form instead of JSON. */
   form?: URLSearchParams;
+  /** Bytes as they are, instead of JSON: an uploaded picture. */
+  raw?: Blob;
   extraHeaders?: Record<string, string>;
 };
 
@@ -178,12 +180,18 @@ export async function request<T = unknown>(path: string, options: Options = {}):
   const send = () => {
     const extra: Record<string, string> = { ...options.extraHeaders };
     if (options.form) extra['Content-Type'] = 'application/x-www-form-urlencoded';
+    else if (options.raw) extra['Content-Type'] = 'application/octet-stream';
     else if (options.body !== undefined) extra['Content-Type'] = 'application/json';
     if (auth && session) extra.Authorization = `Bearer ${session.accessToken}`;
     return fetch(path, {
-      method: options.method ?? (options.body !== undefined || options.form ? 'POST' : 'GET'),
+      method:
+        options.method ??
+        (options.body !== undefined || options.form || options.raw ? 'POST' : 'GET'),
       headers: headers(extra),
-      body: options.form ?? (options.body !== undefined ? JSON.stringify(options.body) : undefined),
+      body:
+        options.form ??
+        options.raw ??
+        (options.body !== undefined ? JSON.stringify(options.body) : undefined),
     });
   };
   let response: Response;

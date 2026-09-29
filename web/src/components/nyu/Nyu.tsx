@@ -242,15 +242,15 @@ type NyuProps = {
   title?: string;
 };
 
-/** The symbol on its own: title bar, empty states, the update hint. */
+/** The symbol on its own: title bar, empty states, the update hint. Without a title, decoration. */
 export function Nyu({ size = 96, mood = 'uwu', blink = true, title = 'Nyu' }: NyuProps) {
+  const label = title ? { role: 'img', 'aria-label': title } : { 'aria-hidden': true };
   return (
     <svg
       viewBox="0 0 256 256"
       width={size}
       height={size}
-      role="img"
-      aria-label={title}
+      {...label}
       focusable="false"
       className={blink ? 'nyu-host nyu-blink' : 'nyu-host'}
       style={{ overflow: 'visible' }}

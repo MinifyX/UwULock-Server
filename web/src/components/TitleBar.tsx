@@ -1,4 +1,5 @@
 import { type ReactNode } from 'react';
+import { useBranding } from '../lib/branding';
 import { t, useLanguage } from '../lib/i18n';
 import { Nyu } from './nyu/Nyu';
 
@@ -23,13 +24,19 @@ const ICONS = {
  */
 export function TitleBar({ onSettings, badge = 0, area, children }: Props) {
   useLanguage();
+  const branding = useBranding();
+  const name = branding?.name ?? 'UwULock';
   return (
     <header className="titlebar">
-      <a className="titlebar-brand" href="/" aria-label="UwULock">
-        <Nyu size={22} blink={false} title="UwULock" />
-        <span className="wordmark">
-          <span>UwU</span>Lock
-        </span>
+      <a className="titlebar-brand" href="/" aria-label={name}>
+        <BrandMark size={22} />
+        {branding && branding.name !== 'UwULock' ? (
+          <span className="wordmark">{branding.name}</span>
+        ) : (
+          <span className="wordmark">
+            <span>UwU</span>Lock
+          </span>
+        )}
         {area && <span className="titlebar-area">{area}</span>}
       </a>
       <span className="spacer" />
@@ -58,5 +65,36 @@ export function TitleBar({ onSettings, badge = 0, area, children }: Props) {
         </span>
       )}
     </header>
+  );
+}
+
+/**
+ * The server's logo — the light or the dark one, whichever fits the theme — or Nyu when the
+ * server has none. Decorative: the name next to it says what it is.
+ */
+export function BrandMark({ size }: { size: number }) {
+  const branding = useBranding();
+  const light = branding?.logoLight ?? branding?.logoDark;
+  const dark = branding?.logoDark ?? branding?.logoLight;
+  if (!light || !dark) return <Nyu size={size} blink={false} title="" />;
+  return (
+    <>
+      <img className="brand-logo brand-logo-light" src={light} alt="" style={{ height: size }} />
+      <img className="brand-logo brand-logo-dark" src={dark} alt="" style={{ height: size }} />
+    </>
+  );
+}
+
+/**
+ * The picture beside a welcome page (login, Send, file request): the server's logo, large, when
+ * it has one; else `fallback`, Nyu's scene.
+ */
+export function WelcomeMark({ fallback }: { fallback: ReactNode }) {
+  const branding = useBranding();
+  if (!branding?.logoLight && !branding?.logoDark) return <>{fallback}</>;
+  return (
+    <div className="welcome-logo">
+      <BrandMark size={96} />
+    </div>
   );
 }
