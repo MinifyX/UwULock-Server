@@ -19,6 +19,7 @@ mod files;
 mod health;
 mod kdbx;
 mod keys;
+mod orgs;
 mod requests;
 mod transfer;
 mod view;
@@ -628,6 +629,39 @@ pub fn file_request_password(password: String, secret: &str) -> Result<String, J
 #[wasm_bindgen(js_name = fileRequestLink)]
 pub fn file_request_link(base: &str, access_id: &str, secret: &str, send_domain: bool) -> Result<String, JsValue> {
     Ok(requests::link(base, access_id, secret, send_domain)?)
+}
+
+// ── Families ──────────────────────────────────────────────
+
+/// The body of `POST /api/organizations` for a new family, with its first collection.
+#[wasm_bindgen(js_name = newFamily)]
+pub fn new_family(name: &str, collection: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&orgs::new_family(unlocked, name, collection)?))?)
+}
+
+/// Text under a family's key: a collection's name.
+#[wasm_bindgen(js_name = familyEncrypt)]
+pub fn family_encrypt(org_id: &str, text: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| orgs::encrypt(unlocked, org_id, text))?)
+}
+
+#[wasm_bindgen(js_name = familyDecrypt)]
+pub fn family_decrypt(org_id: &str, text: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| orgs::decrypt(unlocked, org_id, text))?)
+}
+
+/// The family key wrapped for a member's public key (base64 SPKI), to confirm them.
+#[wasm_bindgen(js_name = wrapFamilyKey)]
+pub fn wrap_family_key(org_id: &str, public_key: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| orgs::wrap_for_member(unlocked, org_id, public_key))?)
+}
+
+/// The body of `PUT /api/ciphers/<id>/share`: the item encrypted anew for the family.
+/// `collections` is a JSON list of collection ids.
+#[wasm_bindgen(js_name = shareItem)]
+pub fn share_item(id: &str, org_id: &str, collections: &str) -> Result<String, JsValue> {
+    let collections: Vec<String> = serde_json::from_str(collections).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&orgs::share(unlocked, id, org_id, collections)?))?)
 }
 
 /// Which items' passwords were in a breach, from HIBP's answer for one prefix.

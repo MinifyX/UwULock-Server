@@ -25,6 +25,7 @@ import { toast } from '../lib/toast';
 import { Attachments } from './web/Attachments';
 import { ItemComfort } from './web/ItemComfort';
 import { ShareAsSend } from './web/ShareAsSend';
+import { ShareToFamily, shareTargets } from './web/ShareToFamily';
 import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
@@ -338,6 +339,7 @@ export function ItemDetail({
   const [showHistory, setShowHistory] = useState(false);
   const [asking, setAsking] = useState<null | 'trash' | 'permanent'>(null);
   const [sharing, setSharing] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [busy, setBusy] = useState(false);
   const id = summary.id;
 
@@ -482,6 +484,21 @@ export function ItemDetail({
               >
                 <Icon name="trash" size={15} />
               </button>
+              {(summary.organizationId || shareTargets().length > 0) && (
+                <button
+                  className="icon-button"
+                  disabled={busy || summary.broken || !!d?.locked}
+                  title={
+                    summary.organizationId ? t('Sammlungen') : t('In eine Familie verschieben')
+                  }
+                  aria-label={
+                    summary.organizationId ? t('Sammlungen') : t('In eine Familie verschieben')
+                  }
+                  onClick={() => setMoving(true)}
+                >
+                  <Icon name={summary.organizationId ? 'grid' : 'house'} size={15} />
+                </button>
+              )}
               <button
                 className="primary"
                 disabled={busy || summary.broken || !!d?.locked}
@@ -500,6 +517,16 @@ export function ItemDetail({
 
       {sharing && (
         <ShareAsSend itemId={id} itemName={summary.name} onClose={() => setSharing(false)} />
+      )}
+
+      {moving && (
+        <ShareToFamily
+          itemId={id}
+          itemName={summary.name || t('(ohne Namen)')}
+          organizationId={summary.organizationId}
+          collectionIds={summary.collectionIds}
+          onClose={() => setMoving(false)}
+        />
       )}
 
       {asking && (

@@ -206,6 +206,24 @@ export type Settings = {
   versions: { perItem: number; days: number };
   /** Websites' icons fetched by the server, and the icon library. */
   icons: { automatic: boolean; library: boolean; sources: string[] };
+  /** Families (§16.4): who may make one, its size, how many one account may own. */
+  families: OrgRules;
+};
+
+export type OrgRules = {
+  whoMayCreate: 'everyone' | 'admins' | 'nobody';
+  maxMembers: number;
+  perUser: number;
+};
+
+/** A family (or organisation) as the portal lists it: no vault content, only who is in it. */
+export type AdminOrganization = {
+  id: string;
+  name: string;
+  kind: 'family' | 'organization';
+  members: number;
+  owners: string[];
+  creationDate: string;
 };
 
 /** What the server keeps of icons. */
@@ -334,6 +352,17 @@ async function passwordHash(password: string): Promise<string> {
   } finally {
     await call((core) => core.lock());
   }
+}
+
+export const organizations = () => request<AdminOrganization[]>(`${base}/organizations`);
+
+/** Delete a family and everything in it, for the admin's master password. */
+export async function deleteOrganization(id: string, password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  await request(`${base}/organizations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    body: { masterPasswordHash },
+  });
 }
 
 export async function downloadBackup(name: string, password: string): Promise<Blob> {

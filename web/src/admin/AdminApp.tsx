@@ -18,6 +18,7 @@ import { Backups } from './Backups';
 import { Branding } from './Branding';
 import { Diagnosis } from './Diagnosis';
 import { Events } from './Events';
+import { Families } from './Families';
 import { Invitations } from './Invitations';
 import { Logs } from './Logs';
 import { Notifications } from './Notifications';
@@ -29,6 +30,7 @@ const PAGES: { path: string; label: string; icon: IconName }[] = [
   { path: '/', label: N_('Übersicht'), icon: 'house' },
   { path: '/users', label: N_('Nutzer'), icon: 'user' },
   { path: '/invitations', label: N_('Einladungen'), icon: 'sparkles' },
+  { path: '/families', label: N_('Familien'), icon: 'house' },
   { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
   { path: '/login', label: N_('Anmeldung'), icon: 'key' },
   { path: '/branding', label: N_('Aussehen'), icon: 'eye' },
@@ -165,6 +167,7 @@ export function AdminApp() {
           {page.path === '/' && <Overview />}
           {page.path === '/users' && <Users me={status.email ?? ''} />}
           {page.path === '/invitations' && <Invitations />}
+          {page.path === '/families' && <Families />}
           {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
           {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
           {page.path === '/branding' && <Branding />}

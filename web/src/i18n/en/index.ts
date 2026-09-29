@@ -7,6 +7,7 @@ import a11y from './a11y.json';
 import app from './app.json';
 import comfort from './comfort.json';
 import editing from './editing.json';
+import families from './families.json';
 import features from './features.json';
 import importing from './import.json';
 import operations from './operations.json';
@@ -22,6 +23,7 @@ export const EN: Readonly<Record<string, string>> = {
   ...app,
   ...comfort,
   ...editing,
+  ...families,
   ...features,
   ...importing,
   ...operations,

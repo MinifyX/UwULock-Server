@@ -33,8 +33,17 @@ import { NyuScene } from './nyu/scenes';
 import { DeviceRequests } from './web/DeviceRequests';
 import { HealthReport } from './web/HealthReport';
 import { BackToList, Panes } from './panes';
+import { FamilyView, NewFamilyDialog } from './web/FamilyView';
 import { FileRequestsView } from './web/FileRequestsView';
 import { SendsView } from './web/SendsView';
+import {
+  STATUS,
+  acceptInvitation,
+  declineInvitation,
+  families,
+  pendingInvitations,
+  type Invitation,
+} from '../lib/families';
 
 export type Filter =
   | { kind: 'all' }
@@ -43,6 +52,8 @@ export type Filter =
   | { kind: 'type'; type: ItemKind }
   | { kind: 'folder'; id: string | null }
   | { kind: 'collection'; id: string }
+  | { kind: 'organization'; id: string }
+  | { kind: 'family'; id: string }
   | { kind: 'archive' }
   | { kind: 'trash' }
   | { kind: 'sends' }
@@ -58,7 +69,12 @@ const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
 ];
 
 function matches(filter: Filter, item: ItemSummary): boolean {
-  if (filter.kind === 'sends' || filter.kind === 'requests' || filter.kind === 'health')
+  if (
+    filter.kind === 'sends' ||
+    filter.kind === 'requests' ||
+    filter.kind === 'health' ||
+    filter.kind === 'family'
+  )
     return false;
   if (filter.kind === 'trash') return item.deleted;
   if (item.deleted) return false;
@@ -78,6 +94,8 @@ function matches(filter: Filter, item: ItemSummary): boolean {
       return !item.organizationId && item.folderId === filter.id;
     case 'collection':
       return item.collectionIds.includes(filter.id);
+    case 'organization':
+      return item.organizationId === filter.id;
   }
 }
 
@@ -94,12 +112,24 @@ type Props = {
   openRequest?: string | null;
   /** The items due for a new password, from the link in the reminder's mail. */
   openDue?: boolean;
+  /** A family's page to open (`#/organizations/<id>`). */
+  openFamily?: string | null;
+  /** What the server says about families for this account. */
+  familyRules?: { mayCreate: boolean; maxMembers: number } | null;
 };
 
 /** What the editor is open for: an item to change, or a new one of that kind. */
 type Editing = { summary: ItemSummary | null; kind: ItemKind };
 
-export function VaultScreen({ status, searchRef, onAddAccount, openRequest, openDue }: Props) {
+export function VaultScreen({
+  status,
+  searchRef,
+  onAddAccount,
+  openRequest,
+  openDue,
+  openFamily,
+  familyRules,
+}: Props) {
   useLanguage();
   const comfort = useComfort();
   const settings = useSettings();
@@ -114,6 +144,16 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
   const [editing, setEditing] = useState<Editing | null>(null);
   const [newMenu, setNewMenu] = useState<{ x: number; y: number } | null>(null);
   const [requestShown, setRequestShown] = useState<string | null>(null);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
+  const [newFamily, setNewFamily] = useState(false);
+
+  // The link from the desktop app or a mail: a family's page.
+  useEffect(() => {
+    if (!openFamily) return;
+    setFilter({ kind: 'family', id: openFamily });
+    setView('list');
+    location.hash = '';
+  }, [openFamily]);
 
   // The link in the reminder's mail: the items that are due.
   useEffect(() => {
@@ -144,6 +184,8 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
   const detailRef = useRef<HTMLElement>(null);
 
   const reload = useCallback(async () => {
+    // Invitations to families wait here until they are taken or turned down.
+    void pendingInvitations().then(setInvitations, () => setInvitations([]));
     try {
       const [list, info] = await Promise.all([vaultItems(), vaultOverview()]);
       setItems(list);
@@ -177,6 +219,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
       folder: (id: string | null) =>
         live.filter((i) => !i.organizationId && i.folderId === id).length,
       collection: (id: string) => live.filter((i) => i.collectionIds.includes(id)).length,
+      organization: (id: string) => live.filter((i) => i.organizationId === id).length,
     };
   }, [items, due]);
 
@@ -246,11 +289,13 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                   ? (overview?.folders.find((f) => f.id === filter.id)?.name ?? t('Ohne Ordner'))
                   : filter.kind === 'collection'
                     ? (overview?.collections.find((c) => c.id === filter.id)?.name ?? '')
-                    : filter.kind === 'sends'
-                      ? t('Sends')
-                      : filter.kind === 'requests'
-                        ? t('Datei-Anfragen')
-                        : t('Passwortprüfung');
+                    : filter.kind === 'organization' || filter.kind === 'family'
+                      ? (families().find((f) => f.id === filter.id)?.name ?? '')
+                      : filter.kind === 'sends'
+                        ? t('Sends')
+                        : filter.kind === 'requests'
+                          ? t('Datei-Anfragen')
+                          : t('Passwortprüfung');
 
   const pick = (next: Filter) => {
     setFilter(next);
@@ -496,19 +541,97 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
             </>
           )}
 
-          {overview?.organizations.map((org) => (
+          {invitations.map((invitation) => (
+            <div key={invitation.id} className="family-invitation" role="group">
+              <p>
+                {invitation.family
+                  ? t('Einladung in die Familie „{name}“', { name: invitation.organizationName })
+                  : t('Einladung in die Organisation „{name}“', {
+                      name: invitation.organizationName,
+                    })}
+              </p>
+              <div className="buttons">
+                <button
+                  className="primary"
+                  onClick={() =>
+                    void acceptInvitation(invitation.organizationId, invitation.id).then(
+                      () => {
+                        toast(
+                          t(
+                            'Angenommen ✧ Sobald dich jemand bestätigt, siehst du, was geteilt ist.',
+                          ),
+                        );
+                        void reload();
+                      },
+                      (e) => toast(errorText(e), 'error'),
+                    )
+                  }
+                >
+                  {t('Annehmen')}
+                </button>
+                <button
+                  className="quiet"
+                  onClick={() =>
+                    void declineInvitation(invitation.id).then(
+                      () => void reload(),
+                      (e) => toast(errorText(e), 'error'),
+                    )
+                  }
+                >
+                  {t('Ablehnen')}
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {(families().length > 0 || familyRules?.mayCreate) && (
+            <h2 className="nav-heading">
+              {t('Familien')}
+              {familyRules?.mayCreate && (
+                <button
+                  className="icon-button tiny"
+                  title={t('Neue Familie')}
+                  aria-label={t('Neue Familie')}
+                  onClick={() => setNewFamily(true)}
+                >
+                  <Icon name="plus" size={14} />
+                </button>
+              )}
+            </h2>
+          )}
+          {families().map((org) => (
             <div key={org.id}>
               <h2 className="org-heading">
-                <Icon name="building" size={13} />
+                <Icon name={org.family ? 'house' : 'building'} size={13} />
                 {org.name}
               </h2>
               <ul className="nav-list">
-                {overview.collections
-                  .filter((c) => c.organizationId === org.id)
-                  .sort((a, b) => a.name.localeCompare(b.name))
-                  .map((c) =>
-                    nav({ kind: 'collection', id: c.id }, 'grid', c.name, counts.collection(c.id)),
-                  )}
+                {org.status !== STATUS.confirmed ? (
+                  <li>
+                    <p className="nav-note">{t('Wartet auf Bestätigung')}</p>
+                  </li>
+                ) : (
+                  <>
+                    {nav(
+                      { kind: 'organization', id: org.id },
+                      'layers',
+                      t('Alle Einträge'),
+                      counts.organization(org.id),
+                    )}
+                    {(overview?.collections ?? [])
+                      .filter((c) => c.organizationId === org.id)
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((c) =>
+                        nav(
+                          { kind: 'collection', id: c.id },
+                          'grid',
+                          c.name,
+                          counts.collection(c.id),
+                        ),
+                      )}
+                    {nav({ kind: 'family', id: org.id }, 'user', t('Mitglieder & Sammlungen'), 0)}
+                  </>
+                )}
               </ul>
             </div>
           ))}
@@ -527,7 +650,16 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
           <AccountCard status={status} onAddAccount={onAddAccount} />
         </nav>
 
-        {filter.kind === 'sends' ? (
+        {filter.kind === 'family' ? (
+          <FamilyView
+            key={filter.id}
+            orgId={filter.id}
+            onGone={() => {
+              pick({ kind: 'all' });
+              void reload();
+            }}
+          />
+        ) : filter.kind === 'sends' ? (
           <SendsView />
         ) : filter.kind === 'requests' ? (
           <FileRequestsView open={requestShown} />
@@ -954,6 +1086,17 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
               })}
             </p>
           </Modal>
+        )}
+
+        {newFamily && (
+          <NewFamilyDialog
+            maxMembers={familyRules?.maxMembers ?? 6}
+            onClose={() => setNewFamily(false)}
+            onDone={(id) => {
+              setNewFamily(false);
+              pick({ kind: 'family', id });
+            }}
+          />
         )}
 
         {editing && (

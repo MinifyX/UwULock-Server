@@ -21,6 +21,8 @@ import { radioArrows } from './controls';
 type Props = {
   token: string;
   email: string;
+  /** Registering with a family's invitation, in place of the server's: its link's values. */
+  family?: { token: string; memberId: string; name: string };
   onDone: (status: Status) => void;
 };
 
@@ -37,7 +39,7 @@ function strengthLabel(bits: number): { text: string; level: number } {
  * name, the master password, a hint. The keys are made in this browser; the server gets the
  * password's hash and the keys wrapped under it, and logs the new account in right after.
  */
-export function RegisterScreen({ token, email, onDone }: Props) {
+export function RegisterScreen({ token, email, family, onDone }: Props) {
   useLanguage();
   const [invited, setInvited] = useState<Invitation | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
@@ -52,6 +54,8 @@ export function RegisterScreen({ token, email, onDone }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // A family's link carries its own token; the server checks it with the registration.
+    if (family) return;
     if (!token) {
       setProblem(t('In diesem Link fehlt die Einladung. Öffne den Link aus der Mail noch einmal.'));
       return;
@@ -59,7 +63,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
     invitation(token).then(setInvited, () =>
       setProblem(t('Diese Einladung gilt nicht (mehr). Bitte um eine neue.')),
     );
-  }, [token]);
+  }, [token, family]);
 
   useEffect(() => {
     void strength(password).then(setBits, () => setBits(0));
@@ -91,7 +95,15 @@ export function RegisterScreen({ token, email, onDone }: Props) {
     setError(null);
     setBusy(t('Nyu macht deine Schlüssel …'));
     try {
-      await register({ token, email: address, name, password, hint, kdf: DEFAULT_KDFS[kdf] });
+      await register({
+        token,
+        email: address,
+        name,
+        password,
+        hint,
+        kdf: DEFAULT_KDFS[kdf],
+        family: family ? { token: family.token, memberId: family.memberId } : undefined,
+      });
       setBusy(t('Meldet an …'));
       const step = await login({ kind: 'self-hosted' }, address, password);
       if (step.step === 'done') onDone(step.status);
@@ -131,6 +143,14 @@ export function RegisterScreen({ token, email, onDone }: Props) {
         ) : (
           <form className="form" onSubmit={submit} aria-busy={Boolean(busy)}>
             <h1 className="card-title">{t('Konto anlegen')}</h1>
+            {family && (
+              <p className="dialog-lead">
+                {t(
+                  'Du bist in die Familie „{name}“ eingeladen. Mit dem Konto nimmst du die Einladung an; ein Eigentümer bestätigt dich danach.',
+                  { name: family.name },
+                )}
+              </p>
+            )}
             <label className="field">
               <span>{t('E-Mail-Adresse')}</span>
               <input value={address} readOnly autoComplete="username" />
