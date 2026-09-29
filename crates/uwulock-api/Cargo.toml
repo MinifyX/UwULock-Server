@@ -25,6 +25,7 @@ ciborium.workspace = true
 image.workspace = true
 libc.workspace = true
 parking_lot.workspace = true
+psl.workspace = true
 reqwest.workspace = true
 resvg.workspace = true
 ring.workspace = true

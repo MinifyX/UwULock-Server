@@ -213,6 +213,29 @@ pub fn normalize_host(raw: &str) -> Option<String> {
     Some(host)
 }
 
+/// The registrable domain above a host, by the Public Suffix List compiled into the server:
+/// `example.com` for `account.example.com`, `example.co.uk` for `foo.example.co.uk`. None when the
+/// host is that domain already, when its ending is not on the list, and for every host
+/// [`normalize_host`] refuses (addresses, names without a dot, the home network's names). The
+/// list's private rules count like the others: a user's site on a hoster's shared domain has no
+/// base domain above it, so it never gets the hoster's icon.
+pub fn base_domain(host: &str) -> Option<String> {
+    let host = normalize_host(host)?;
+    let domain = psl::domain(host.as_bytes()).filter(|domain| domain.suffix().is_known())?;
+    let domain = std::str::from_utf8(domain.as_bytes()).ok()?;
+    (domain != host).then(|| domain.to_string())
+}
+
+/// The site a host belongs to: its registrable domain, else the host itself (an address, or an
+/// ending the list does not know).
+pub fn site(host: &str) -> String {
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    match psl::domain(host.as_bytes()).filter(|domain| domain.suffix().is_known()) {
+        Some(domain) => String::from_utf8_lossy(domain.as_bytes()).into_owned(),
+        None => host,
+    }
+}
+
 fn percent_decode(raw: &str) -> Option<String> {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
@@ -768,6 +791,35 @@ mod tests {
         ] {
             assert_eq!(normalize_host(bad), None, "{bad}");
         }
+    }
+
+    #[test]
+    fn base_domains_by_the_public_suffix_list() {
+        assert_eq!(base_domain("account.example.com").as_deref(), Some("example.com"));
+        assert_eq!(base_domain("a.b.Account.Example.COM.").as_deref(), Some("example.com"));
+        assert_eq!(base_domain("foo.example.co.uk").as_deref(), Some("example.co.uk"), "a rule of two labels");
+        assert_eq!(base_domain("www.example.org").as_deref(), Some("example.org"));
+        assert_eq!(base_domain("b%C3%BCcher.example.net").as_deref(), Some("example.net"));
+        for unchanged in [
+            "example.com",
+            "example.co.uk",
+            "co.uk",
+            "com",
+            "nas",
+            "nas.local",
+            "router.fritz.lan",
+            "shop.example",
+            "a.b.invalid",
+            "192.0.2.1",
+            "[2001:db8::1]",
+            "a.b.not-a-known-ending",
+            "",
+        ] {
+            assert_eq!(base_domain(unchanged), None, "{unchanged}");
+        }
+        assert_eq!(site("login.example.com"), "example.com");
+        assert_eq!(site("example.co.uk"), "example.co.uk");
+        assert_eq!(site("198.51.100.7"), "198.51.100.7");
     }
 
     #[test]

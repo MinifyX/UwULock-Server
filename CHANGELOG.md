@@ -3,6 +3,22 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**Website icons.**
+
+- An address without an icon of its own now gets its domain's: `account.example.com`, which
+  answers 404 and names no icon, shows the icon of `example.com`. Which part is the domain comes
+  from the Public Suffix List built into the server (`foo.example.co.uk` → `example.co.uk`); IP
+  addresses, names without a dot and the home network's names stay as they are. The domain is
+  fetched once for every address below it, through the same checks and limits as every other
+  fetch ([docs/icons.md](docs/icons.md)).
+- An address whose page ends up on another site after its redirects (a sign-in provider, a
+  hoster's or a parked domain's page) no longer gets that site's icon, but its domain's.
+- The cache of website icons starts anew (`icons/auto-2`): every site is fetched again when it
+  is next shown, and the old cache — with its "none"s that would now keep the domain's icon away,
+  and icons of other sites — is deleted with the daily clean-up.
+
 ## 0.6.0-beta.1
 
 **Families, the UwU extras, and a server that looks after itself.** Stages 4b, 4c, 4d and 6 of
