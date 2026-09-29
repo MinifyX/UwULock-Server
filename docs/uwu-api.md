@@ -467,13 +467,16 @@ Answer (full sync: every list complete, `deleted` lists empty, `reset: true`):
 - `uwu.travel`: the §9 object when it changed, else `null`.
 - `uwu.sendDomains`: `{ "<sendId>": "<sendDomainId>" | null }` for Sends whose domain choice
   changed (§14.2); full map in a full sync.
-- `uwu.maskedLinks`: `{ "<cipherId>": { "id": "x42", "email": "…" } }`, the full map of §13.3
-  links when any changed, else `null`.
+- `uwu.maskedLinks`: `{ "<cipherId>": { "id": "x42", "email": "…", "state": "enabled" } }`, the
+  full map of §13.3 links when any changed, else `null`.
 - `uwu.unseen`: always present; counts for the badges.
 - `hasMore: true`: there is more; call again at once with the new cursor. Objects are delivered
   in `seq` order across all areas; `cursor` always points after the last one delivered.
 
-- Until Stufe 6 part B, `uwu.sendDomains` is always `{}` and `uwu.maskedLinks` always `null`.
+- `uwu.sendDomains` in a delta names every Send that changed in the window (its domain choice
+  included), whether or not the choice itself changed; a client just takes the values. The map of
+  `uwu.maskedLinks` carries `state` as well, like §13.3. In a full sync both are complete (`{}`
+  when empty).
 
 Errors: 400 `invalid` for an unreadable cursor (the client drops it and does a full sync).
 

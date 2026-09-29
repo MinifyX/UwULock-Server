@@ -6,8 +6,8 @@ extension, UwUSSH and UwURDP — use two lighter things instead, described for d
 [uwu-api.md](uwu-api.md) §4 and §5:
 
 - **Delta sync** (`GET /uwu/v1/sync`): the first sync gets everything, as `/api/sync` would, plus
-  UwULock's own (the extras key, own icons, reminders, travel mode, the unseen counts) and the
-  suite vault if asked for. It comes with a cursor; the next sync hands the cursor back and gets
+  UwULock's own (the extras key, own icons, reminders, travel mode, each Send's domain, the
+  masked addresses' links to items, the unseen counts) and the suite vault if asked for. It comes with a cursor; the next sync hands the cursor back and gets
   only what changed since, deletions included.
 - **Realtime channel** (`/uwu/v1/realtime`): one WebSocket per device that says *that* something
   changed — never what — so the device asks for a delta at once. It carries no secrets and may
@@ -55,7 +55,7 @@ fresh token on the same connection. It then hears:
 | `logout` | the session ended: new password or keys, "log out everywhere", the device removed, the account disabled |
 | `authRequest` | a "log in with a device" request waits for approval |
 | `notice` | a new security notice, something arrived for a file request, a reminder became due |
-| `info` | the admin changed a setting (the client fetches `/uwu/v1/info` again) |
+| `info` | the admin changed a setting, a send domain or the UwUMail servers (the client fetches `/uwu/v1/info` again) |
 
 The server pings every 25 seconds and checks the session at every ping, like the SignalR hub. An
 account may keep 20 connections open; a client may send about one message a second. Every change
