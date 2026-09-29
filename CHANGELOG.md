@@ -5,8 +5,34 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
-**Comfort in the vault (Stufe 4c, first part).**
+**Comfort in the vault (Stufe 4c).**
 
+- **Import from other password managers**, read in the browser — the server only ever sees what
+  it encrypted: KeePass and KeePassXC (KDBX 4 and 3.1 with the file's password and key file,
+  Argon2 or AES-KDF, AES or ChaCha20; and their CSV), 1Password (1PUX and CSV), Chrome and Edge,
+  Firefox, Apple Passwords, Proton Pass (JSON or its zip) and LastPass. A preview shows what comes
+  and into which folders, TOTP keys come along, and whatever has no place of its own becomes a
+  custom field instead of getting lost ([docs/import.md](docs/import.md)).
+- **Share an item as a Send**: tick the values — never the authenticator key — and the item's
+  name with them becomes a text Send that goes after a day and opens once, unless you say
+  otherwise. An ordinary Send, visible in every app.
+- **Sends only for given addresses**, Bitwarden's "Send with email verification": whoever opens
+  the link gives their address and gets a code by mail. The answer is the same for addresses on
+  and off the list, codes last five minutes, five wrong ones end a code, and mails are limited per
+  Send and address. Needs mail on the server; the newest Bitwarden apps open such Sends too
+  ([docs/sharing.md](docs/sharing.md)).
+- **"2FA possible, not set up"** in the password check: logins for sites that offer authenticator
+  codes, without one stored, with a link to the site's instructions. The list is
+  [2FA Directory](https://2fa.directory/)'s (MIT), mirrored by the server once somebody asks and
+  then daily; the comparison happens in the browser, so the server never learns which sites are
+  in a vault. The last report can be kept, encrypted, under `/uwu/v1/reports/health`.
+- **Branding** in the admin portal: a name, an accent colour (checked for contrast, with its
+  shades for both themes worked out as in UwUMail), logos for light and dark and a favicon — for
+  the web vault, the login, Send and file-request pages and the mails. Pictures, SVG included,
+  are drawn again as PNG by the server, so nothing but pixels survives
+  ([docs/branding.md](docs/branding.md)).
+- `#/settings/masked`, where the UwULock app links for masked addresses, answers with a friendly
+  "coming soon" until they arrive.
 - **Icons for items**: `/icons/<host>/icon.png`, where the Bitwarden apps and extensions ask, now
   answers with the website's icon, fetched by the server — every resolved address checked (also
   after redirects, against DNS rebinding), nothing in the local network ever asked, with time,
@@ -25,6 +51,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   names no item and a *Due* section in the web vault.
 - **New keys** from the web vault go through `POST /uwu/v1/accounts/rotate-keys` and take the
   extras key and the versions along; a rotation by a Bitwarden app drops the versions.
+- The Send page opens Sends the way Bitwarden's newest clients do: a token from the identity
+  endpoint first. Database schema 10.
 
 **Running it and keeping it safe (Stufe 4b, first part).**
 

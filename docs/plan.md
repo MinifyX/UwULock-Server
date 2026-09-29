@@ -242,7 +242,7 @@ den Tests auf echten Geräten.
       für die Anmeldung per UwUAuth (mit ihr). Tresor, Sends und Kommandozeile sind davon nicht
       betroffen; `uwulock-server settings set adminNetworks '[]'` ist der Weg zurück.
 
-### Stufe 4c — Tresor-Komfort (vor Stufe 5; erster Teil fertig, kommt mit 0.6)
+### Stufe 4c — Tresor-Komfort (vor Stufe 5; fertig bis auf den Umzug von Bitwarden, kommt mit 0.6)
 
 Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach Stufe 4b.
 
@@ -272,10 +272,13 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   zur geprüften, Grenzen für Zeit, Größe und Bildgröße; eigene Icons verschlüsselt unter
   `/uwu/v1/icons/own`; die Bibliothek sind selfh.st Icons, CC BY 4.0, geprüft am 2026-09-28 —
   Dashboard Icons und Simple Icons noch nicht; `docs/icons.md`. Im UwULock-Client mit dessen 0.3.)
-- [ ] Import aus anderen Passwort-Managern im Web-Tresor, gelesen im Browser (der Server sieht nur
+- [x] Import aus anderen Passwort-Managern im Web-Tresor, gelesen im Browser (der Server sieht nur
   Verschlüsseltes): KeePass/KeePassXC (KDBX mit dessen Passwort, und CSV), 1Password (1PUX und
   CSV), Chrome/Edge, Firefox, Apple Passwörter, Proton Pass, LastPass. Mit Vorschau, Ordnern und
   TOTP; was nicht passt, wird zur Notiz. Bitwardens eigene Importer dienen als Maßstab.
+  (Fertig: KDBX 4 und 3.1 mit Passwort und Schlüsseldatei, Argon2d/Argon2id und AES-KDF in der
+  WebAssembly, AES oder ChaCha20; unbekannte Felder werden eigene Felder, nichts fällt still weg;
+  Anhänge nicht. Getestet mit kleinen erzeugten Dateien jedes Formats; `docs/import.md`.)
 - [x] Reisemodus: Ordner lassen sich als „auf Reisen ausblenden" markieren. Ist der Modus an, lässt
   der Server deren Einträge (samt Anhängen) aus Sync und allen Abfragen weg; die Apps entfernen
   sie beim nächsten Sync auch lokal — das geht mit den offiziellen Clients. Einschalten auf jedem
@@ -296,19 +299,27 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   ohne Namen des Eintrags („Ein Eintrag in deinem Tresor ist fällig") mit Link in den
   Web-Tresor; dort und im UwULock-Client sind fällige Einträge markiert.
   (Fertig: Mail stündlich, Link `#/vault?due=1`, Glocke und Bereich *Fällig* im Web-Tresor.)
-- [ ] Bericht „2FA möglich, aber nicht eingerichtet" bei der Passwortprüfung: Einträge für Websites,
+- [x] Bericht „2FA möglich, aber nicht eingerichtet" bei der Passwortprüfung: Einträge für Websites,
   die laut [2fa.directory](https://2fa.directory/) 2FA anbieten, bei denen aber kein TOTP
   hinterlegt ist, mit Link zur Anleitung der Website. Der Server spiegelt die Liste täglich
   (Lizenz prüfen), verglichen wird im Browser — der Server erfährt nicht, welche Websites im
   Tresor sind.
-- [ ] „Eintrag als Send teilen": Ein Knopf am Eintrag (Web-Tresor, UwULock-Client) macht daraus
+  (Fertig: `https://api.2fa.directory/v3/all.json`, MIT-Lizenz, geprüft am 2026-09-29, Quelle
+  steht unter dem Bericht; der Server holt sie erst, wenn jemand fragt, dann täglich.
+  `docs/sharing.md`.)
+- [x] „Eintrag als Send teilen": Ein Knopf am Eintrag (Web-Tresor, UwULock-Client) macht daraus
   einen Text-Send; man wählt, welche Felder hinein sollen (Benutzername, Passwort, Notiz, eigene
   Felder, nie das TOTP-Geheimnis). Vorgaben: Ablauf nach einem Tag, einmal abrufbar, optional mit
   Passwort. Ein ganz normaler Send, also auch in den offiziellen Clients sichtbar.
-- [ ] Sends nur für bestimmte E-Mail-Adressen, wie in den neueren Bitwarden-Clients: Wer den Link
+  (Fertig im Web-Tresor, mit `uwulock-core::send::share_text` wie im UwULock-Client; auch nur für
+  bestimmte Adressen.)
+- [x] Sends nur für bestimmte E-Mail-Adressen, wie in den neueren Bitwarden-Clients: Wer den Link
   öffnet, gibt seine Adresse an und bekommt einen Code per Mail; erst dann gibt der Server den
   Send heraus (über den `send_access`-Weg, den es schon gibt). Der Server kennt dafür die
   Adressen. Braucht Mail; ohne Mail im Admin-Portal ist die Option aus.
+  (Fertig: Bitwardens `authType`/`emails`, Code 5 Minuten und einmal, 5 falsche beenden ihn,
+  höchstens eine Mail pro Minute und 5 pro Stunde je Send und Adresse; dieselbe Antwort für
+  Adressen auf und nicht auf der Liste. Im Browser getestet mit einem Mailserver im Testskript.)
 - [ ] Umzug von Bitwarden (Cloud und selbst gehostet): Bitwardens Export lässt Anhänge und
   Organisationen weg. Der UwULock-Client meldet sich an beiden Servern an und überträgt Einträge,
   Ordner, Anhänge und Sends (entschlüsselt nur im Client, neu verschlüsselt für UwULock);
@@ -317,10 +328,13 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
 - [ ] Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
   Kürzeln und einer Übersicht dazu), mit Screenreader nutzbar, ein Modus mit hohem Kontrast; Ziel
   WCAG 2.2 AA, geprüft mit axe im bestehenden Browsertest, ohne ihn spürbar langsamer zu machen.
-- [ ] Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
+- [x] Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
   Web-Tresor, Anmeldung, Send- und Datei-Anfrage-Seiten und Mails; wie bei UwUMail Server (dort
   `docs/branding.md`). Die offiziellen Clients bleiben, wie sie sind. Mit den Send-Domains aus
   Stufe 6 auch pro Domain.
+  (Fertig: Bilder werden als PNG neu gezeichnet, auch SVG; die Farbe braucht 3:1 zu Weiß und zum
+  dunklen Hintergrund, die Töne daraus rechnet UwUMails Palette; gespeichert pro Bereich, damit
+  Stufe 6 pro Send-Domain nur noch die Routen braucht. `docs/branding.md`.)
 
 ### Stufe 4d — Familie (vor Stufe 5)
 

@@ -178,7 +178,7 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   "sso": { "enabled": true, "only": false, "identifier": "uwulock", "label": "UwUAuth" },
   "branding": {
     "name": "UwULock",
-    "color": "#e879a6",
+    "color": "#ff4d8d",
     "custom": false,
     "logoLight": null,
     "logoDark": null,
@@ -204,7 +204,8 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   means `/icons/…` answers 404 for everything.
 - `sso.identifier`: the value to type as "SSO identifier" in the official clients (any value
   works, §19.1); `label` is what the web vault writes on the button.
-- `branding.logoLight`/`logoDark`/`favicon`: absolute URLs of §14.5 or `null`. On a send domain,
+- `branding.logoLight`/`logoDark`/`favicon`: absolute URLs of §14.4 (with `?v=<version>`, which
+  changes with every change) or `null`; `color` is UwULock's `#ff4d8d` when none was chosen. On a send domain,
   that domain's branding.
 - `policies.masterPassword`: §20, for the registration and change-password pages; it also carries
   `enforceOnLogin`.
@@ -1673,7 +1674,9 @@ leaves out `send-emails`.
   4000 characters as stored after trimming and lowercasing each address (Bitwarden's service
   limit is 2500); each must be an address; values starting with `P|` are refused.
 - `password` and `emails` exclude each other: `authType` 0 clears the password, 1 clears the
-  addresses, 2 both. `authType` missing: inferred (addresses → 0, password → 1, else 2).
+  addresses, 2 both. `authType` missing: inferred (addresses → 0, password → 1); with neither,
+  a change keeps what the Send had (a key rotation, an older client) and a new Send is 2.
+  `authType` 1 without a password keeps the one there is.
 - `PUT /api/sends/{id}/remove-auth` clears both (`remove-password` stays as an alias).
 - The recipient's view (`SendAccessResponseModel`) gains `authType`; never the addresses.
 
@@ -1688,6 +1691,10 @@ leaves out `send-emails`.
 | `email`, no `otp`, address not on the list | the same answer, no mail (nobody learns the list) |
 | `email` + wrong or expired `otp` | the same answer |
 | `email` + right `otp` | `{ "access_token", "expires_in", "token_type": "Bearer", "scope": "api.send.access" }`; the token also names the address |
+
+Bitwarden's older way of opening a Send (`POST /api/sends/access/{accessId}` with the password
+hash in the body, and `/api/sends/{id}/access/file/{fileId}`) answers 401 for a Send with
+addresses: only the grant opens those.
 
 The code: 6 digits (`auth::random_code(6)`), stored hashed per (Send, address), 5 minutes,
 single use, compared in constant time. UwULock adds limits Bitwarden leaves out: 5 wrong codes
@@ -1711,19 +1718,38 @@ Sends of type 2 (item) are not offered (no feature flag in `/api/config`).
 - `GET /uwu/v1/branding` — auth `none`, by host (a send domain's own, else the server's):
   `{ "object": "branding", "name", "color", "custom", "logoLight", "logoDark", "favicon" }` (the
   URLs absolute or `null`).
-- `GET /uwu/v1/branding/logo/light`, `/logo/dark`, `/favicon` — the image,
-  `Cache-Control: public, max-age=3600`; 404 when there is none.
+- `GET /uwu/v1/branding/logo/light`, `/logo/dark`, `/favicon` — the image (`image/png`),
+  `Cache-Control: public, max-age=3600`, `X-Content-Type-Options: nosniff`,
+  `Content-Security-Policy: default-src 'none'; sandbox`; 404 when there is none.
+- The web vault's HTML (`/`, `/admin`, `/r/<accessId>`) carries it too, when the branding is not
+  UwULock's: its `<title>` is the name, the favicon link points at `/uwu/v1/branding/favicon?v=…`,
+  and `<style id="uwu-branding">` sets the accent tokens (`--uwu-pink`, `--uwu-pink-solid`, …)
+  for `html:root` and `html:root[data-theme="dark"]`, worked out from the colour (UwUMail's
+  palette: each shade moved until text on it reads at 4.5:1), plus `<meta name="theme-color">`.
 
 Admin (auth `admin`):
 
-- `PUT /uwu/v1/admin/branding` — `{ "name": "…" | null, "color": "#rrggbb" | null }` (`null` =
-  UwULock's). The colour must reach 3:1 contrast against white and the dark background (400).
+- `GET /uwu/v1/admin/branding` → the public object plus `nameSet`, `colorSet` (whether they are
+  the admin's, not UwULock's) and `contrast: { light, dark, ok }` of the colour.
+- `GET /uwu/v1/admin/branding/preview?color=%23rrggbb` → `{ light: {token: value}, dark: {…},
+  contrast: { light, dark, ok } }`: the shades a colour would give, for a preview before saving.
+- `PUT /uwu/v1/admin/branding` — `{ "name": "…" | null, "color": "#rrggbb" | null }` (`null` or
+  `""` = UwULock's); answers like `GET`. The name is trimmed, at most 40 characters, without
+  control characters (400 `brandName`). The colour must reach 3:1 contrast against white and
+  the dark background `#141016` (400 `brandContrast`, the message names both ratios; 400
+  `brandColor` for anything but `#rrggbb`).
 - `PUT /uwu/v1/admin/branding/logo/{light|dark}`, `PUT /uwu/v1/admin/branding/favicon` — raw
-  image body (PNG, JPEG, WebP; favicon also ICO), recognized by its content, at most 512 KiB
-  (favicon 128 KiB); stored re-encoded as PNG (drops metadata and anything hidden in it). SVG is
-  refused. `DELETE` the same paths.
+  image body (PNG, JPEG, WebP, GIF, ICO or SVG), recognized by its content, at most 512 KiB
+  (favicon 128 KiB); stored re-encoded as PNG, at most 512 pixels (favicon 192) on the longer
+  side, which drops metadata and anything hidden in it. An SVG is drawn (resvg) without text,
+  fonts or anything it refers to, so nothing of it but the pixels survives. 400 `brandImage` /
+  `brandImageSize`. `DELETE` the same paths. All answer like `GET`.
 - The same under `/uwu/v1/admin/send-domains/{id}/branding` (`PUT` name/colour, `…/logo/{variant}`,
-  `…/favicon`) for one send domain.
+  `…/favicon`) for one send domain — with Stufe 6's send domains. Branding is stored per scope
+  (`""` the server, a send domain's id its own; migration 0010), and the lookup by `Host` is in
+  place (`branding::scope_for_host`), so those routes only need registering.
+
+Every change is written to the admin event log; a restore brings the backup's branding back.
 
 Branding applies to the web vault, login, Send and file-request pages and mails; the official
 clients stay as they are.
@@ -1740,19 +1766,28 @@ itself.
 
 - `GET /uwu/v1/reports/health` — auth `user` → `{ "object": "healthReport", "data": "2.…" | null, "revisionDate": "…" | null }`.
 - `PUT /uwu/v1/reports/health` — `{ "data": "2.…" }`: the last password-health report, JSON
-  encrypted under the extras key, at most 1 MiB. Answer: the object.
+  encrypted under the extras key, at most 1 MiB; anything but an EncString of type 2 is refused
+  (400). Answer: the object. Resetting the extras key deletes it.
 - `DELETE /uwu/v1/reports/health` → 200.
 - `GET /uwu/v1/hibp/{prefix}` — unchanged (k-anonymity range query through the server).
 - `GET /uwu/v1/twofa-directory` — auth `user`, `ETag`/`If-None-Match`. The server mirrors the
-  list of [2fa.directory](https://2fa.directory/) daily (its public API, e.g.
-  `https://api.2fa.directory/v3/all.json`; the implementer pins the URL and checks the data's
-  licence and writes it here):
+  list of [2fa.directory](https://2fa.directory/) from its public API,
+  **`https://api.2fa.directory/v3/all.json`** (pinned; `[["Name", {domain, "additional-domains",
+  tfa, documentation, …}], …]`). **Licence, checked 2026-09-29:** the data is in
+  github.com/2factorauth/twofactorauth under the **MIT licence** (© 2factorauth and contributors;
+  before 2021 Josh Davis); passing the data on needs attribution, which travels as `source` in
+  every answer and is shown under the report. The server fetches it the first time an account
+  asks, then once a day while somebody uses it, through the icons' checked client (every address
+  checked, no private networks), at most 8 MiB. It keeps only sites with a second factor, only
+  `domain` (and extra domains) that look like host names, `name`, `methods` (`tfa`) and
+  `documentation` when it is an `https://` link. 502 `upstream` when there is no copy yet and the
+  fetch fails.
 
   ```json
   {
     "object": "twofaDirectory",
     "updated": "…",
-    "source": { "name": "2FA Directory", "url": "https://2fa.directory/", "license": "<checked licence>" },
+    "source": { "name": "2FA Directory", "url": "https://2fa.directory/", "license": "MIT, © 2factorauth and contributors (github.com/2factorauth/twofactorauth)" },
     "entries": [
       { "domain": "example.com", "additionalDomains": ["example.net"], "name": "Example", "methods": ["totp", "u2f"], "documentation": "https://example.com/help/2fa" }
     ]
@@ -1760,8 +1795,9 @@ itself.
   ```
 
   The web vault compares the items' hosts with it in the browser: items for sites that offer
-  `totp` but have no TOTP stored go into the report "2FA possible, not set up". The server never
-  learns which sites are in a vault.
+  `totp` but have no TOTP stored go into the report "2FA possible, not set up" (a host matches
+  its own entry or the nearest domain above it, never a bare top-level domain; `www.` is
+  ignored). The server never learns which sites are in a vault.
 
 **Clients:** web vault; UwULock desktop may use both.
 
@@ -2675,3 +2711,7 @@ extension; it links to the web vault.
   `sm_service_accounts`, `sm_access_tokens`, `sm_access_policies`, `notification_channels`,
   `health_reports`, `branding` (images).
 - Each in the SQLite migrations and the PostgreSQL ones (Stufe 5), behind `Store`.
+- As built in Stufe 4c (migration 0010): `sends.emails` only — `authType` is derived (addresses →
+  0, a password hash → 1, else 2), no `auth_type` column; the codes (`send_otps`) live in memory
+  (`send_codes.rs`), a restart only means asking again; `branding` is keyed by `scope` (`""` the
+  server, a send domain's id) with the pictures as PNG blobs; `health_reports`.

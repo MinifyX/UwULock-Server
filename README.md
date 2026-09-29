@@ -79,6 +79,11 @@ Coming with the next release (on `main` already):
   own, encrypted, also from the selfh.st library ([docs/icons.md](docs/icons.md)); **travel
   mode**, **earlier versions** of items and **reminders** to renew a password
   ([docs/travel-mode.md](docs/travel-mode.md)).
+- **Import from KeePass, 1Password, Chrome, Firefox, Apple Passwords, Proton Pass and LastPass**,
+  read in the browser with a preview ([docs/import.md](docs/import.md)); **share an item as a
+  Send**, **Sends only for given addresses** with a code by mail, and the report **"2FA possible,
+  not set up"** ([docs/sharing.md](docs/sharing.md)); the server's own **branding**
+  ([docs/branding.md](docs/branding.md)).
 
 ## What it will and won't do
 
@@ -89,7 +94,8 @@ Coming with the next release (on `main` already):
 - **No favicons from third parties, no telemetry.** The only connections it opens on its own are
   Let's Encrypt (if you use it), a daily look at GitHub for a newer release, which
   `UWULOCK_UPDATE_CHECK=off` stops, and — unless the admin switches them off — websites' icons
-  and the icon library's index, fetched for your apps so they never ask anybody but this server.
+  and the icon library's index, fetched for your apps so they never ask anybody but this server,
+  and 2FA Directory's list once somebody opens the password check.
 - **Faster than Vaultwarden, measured.** [docs/performance.md](docs/performance.md) has the
   numbers, and CI runs both side by side every week.
 
@@ -196,6 +202,9 @@ GitHub release with the scripts.
 - [File requests](docs/file-requests.md) — links through which people without an account send you files
 - [Icons](docs/icons.md) — website icons fetched by the server, own icons and the icon library
 - [Travel mode, versions and reminders](docs/travel-mode.md) — hiding folders at the border, earlier versions of items, renewing passwords
+- [Import](docs/import.md) — moving in from KeePass, 1Password, browsers, Proton Pass and LastPass
+- [Sharing](docs/sharing.md) — an item as a Send, Sends only for given addresses, the 2FA report
+- [Branding](docs/branding.md) — the server's own name, colour, logos and favicon
 - [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing
 - [Metrics](docs/metrics.md) and [notifications](docs/notifications.md) — Prometheus, Loki, and alerts to the admins
 - [Performance](docs/performance.md) — how it is measured, and the numbers
