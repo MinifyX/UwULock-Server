@@ -4,8 +4,12 @@
 //!   server fetches the website's icon itself (see [`crate::icon_fetch`] for how it keeps away
 //!   from the local network), makes a PNG of it and keeps it on disk. Browsers and apps only
 //!   ever talk to this server.
+//!   A site without an icon of its own gets one from the icon databases that come with the
+//!   server ([`crate::icon_db`]): 2FA Directory's by its domain, else Simple Icons'. A device in
+//!   the home network is never asked; it gets Dashboard Icons' by its name, if there is one.
 //! - **The icon library**: the server mirrors the index of selfh.st Icons, the vault searches
 //!   it, and an icon somebody picks is fetched by the server from its one upstream host.
+//!   Dashboard Icons is part of it too, from the server's own copy.
 //! - **Own icons**: a PNG the person chose, encrypted by their client and kept per item. The
 //!   server cannot see it, nor which website or library icon it is.
 //!
@@ -14,6 +18,7 @@
 use crate::auth::{Admin, ClientIp, Session};
 use crate::ciphers::{Found, visible};
 use crate::errors::{ApiError, ApiResult};
+use crate::icon_db;
 use crate::icon_fetch::{self, Upstream};
 use crate::{AppState, json as out};
 use axum::extract::{Path, Query, State};
@@ -111,6 +116,10 @@ pub struct Icons {
     evicting: tokio::sync::Mutex<()>,
     /// The ceilings, lower in tests.
     limits: (u64, u64),
+    /// The icon databases that come with the server.
+    databases: Arc<icon_db::Databases>,
+    /// The library with Dashboard Icons in it, and what it was made of.
+    merged: parking_lot::Mutex<Option<(String, Arc<Library>)>>,
 }
 
 impl Icons {
@@ -128,7 +137,21 @@ impl Icons {
             book: parking_lot::Mutex::default(),
             evicting: tokio::sync::Mutex::default(),
             limits: (CACHE_MAX_FILES, CACHE_MAX_BYTES),
+            databases: icon_db::bundled(),
+            merged: parking_lot::Mutex::default(),
         }
+    }
+
+    /// The same, with other icon databases than the bundled ones: for tests.
+    #[cfg(test)]
+    pub(crate) fn with_databases(mut self, databases: icon_db::Databases) -> Self {
+        self.databases = Arc::new(databases);
+        self
+    }
+
+    /// The icon databases that come with the server.
+    pub fn databases(&self) -> &icon_db::Databases {
+        &self.databases
     }
 
     /// The same, with other ceilings for the cache (files, bytes): for tests.
@@ -396,6 +419,31 @@ impl Icons {
         Ok(icon)
     }
 
+    /// An icon of a database as PNG of at most `pixels`: drawn once, then kept in the cache of
+    /// website icons (under a name no host can have, which changes with the icon), so it counts
+    /// toward the same ceiling.
+    async fn database_png(&self, found: icon_db::Found<'_>, pixels: u32) -> Option<Vec<u8>> {
+        let key = format!("database:{}:{}:{pixels}", found.database, found.hash);
+        if let Some(Some(png)) = self.cached_icon(&key).await {
+            return Some(png);
+        }
+        let (png, _) = icon_fetch::decode(found.bytes.to_vec(), pixels).await?;
+        self.keep(&key, Some(&png)).await;
+        Some(png)
+    }
+
+    /// A public host's icon from the databases switched on: 2FA Directory's, else Simple Icons'.
+    async fn database_icon(&self, on: &[String], host: &str) -> Option<Vec<u8>> {
+        let found = self.databases.for_host(on, host)?;
+        self.database_png(found, icon_fetch::AUTO_PIXELS).await
+    }
+
+    /// A device in the home network: Dashboard Icons' by its name, if that database is on.
+    async fn local_icon(&self, on: &[String], raw: &str) -> Option<Vec<u8>> {
+        let found = self.databases.for_local(on, raw)?;
+        self.database_png(found, icon_fetch::AUTO_PIXELS).await
+    }
+
     /// Everything fetched so far, gone.
     pub async fn clear(&self) -> std::io::Result<()> {
         self.drop_old_caches().await;
@@ -464,6 +512,58 @@ impl Icons {
             tracing::warn!(%error, "the icon library's index could not be fetched");
         }
         self.library.read().clone()
+    }
+
+    /// The library as the vault gets it: selfh.st's mirrored index if it is on, and Dashboard
+    /// Icons if that database is on — one index. None when neither is there.
+    async fn library_for(&self, settings: &crate::settings::IconSettings) -> Option<Arc<Library>> {
+        let selfhst =
+            if settings.sources.iter().any(|source| source == "selfhst") { self.library().await } else { None };
+        let dashboard = settings
+            .databases
+            .iter()
+            .any(|id| id == icon_db::DASHBOARD)
+            .then(|| self.databases.get(icon_db::DASHBOARD))
+            .flatten();
+        let Some(dashboard) = dashboard else { return selfhst };
+        let made_of =
+            format!("{}|{}", selfhst.as_ref().map_or("", |library| library.etag.as_str()), dashboard.about.commit);
+        if let Some((known, library)) = self.merged.lock().as_ref()
+            && *known == made_of
+        {
+            return Some(library.clone());
+        }
+        let mut index = match &selfhst {
+            Some(library) => serde_json::from_str(&library.body).ok()?,
+            None => json!({ "object": "iconLibrary", "updated": clock::now(), "sources": [], "icons": [] }),
+        };
+        let about = &dashboard.about;
+        index["sources"].as_array_mut()?.push(json!({
+            "id": icon_db::DASHBOARD,
+            "name": about.name,
+            "url": about.url,
+            "license": about.license,
+            "licenseUrl": about.license_url,
+            "attribution": about.attribution,
+        }));
+        index["icons"].as_array_mut()?.extend(dashboard.library().iter().map(|entry| {
+            json!({
+                "source": icon_db::DASHBOARD,
+                "id": entry.id,
+                "name": entry.name,
+                "variants": ["default"],
+                "aliases": entry.aliases,
+            })
+        }));
+        let body = index.to_string();
+        let library = Arc::new(Library {
+            etag: format!("\"{}\"", hex(&crate::auth::sha256(body.as_bytes())[..16])),
+            updated: selfhst.as_ref().map_or_else(clock::now, |library| library.updated.clone()),
+            icons: selfhst.as_ref().map(|library| library.icons.clone()).unwrap_or_default(),
+            body,
+        });
+        *self.merged.lock() = Some((made_of, library.clone()));
+        Some(library)
     }
 
     /// Fetch the libraries' indexes again, and keep them.
@@ -681,15 +781,25 @@ fn none() -> Response {
 }
 
 async fn automatic(State(state): State<AppState>, ClientIp(ip): ClientIp, Path(host): Path<String>) -> Response {
-    if !state.settings().icons.automatic {
+    let settings = state.settings();
+    if !settings.icons.automatic {
         return none();
     }
+    let databases = &settings.icons.databases;
     let Some(host) = icon_fetch::normalize_host(&host) else {
-        return none();
+        // The home network is never asked; an app there may have its icon in Dashboard Icons.
+        return match state.icons.local_icon(databases, &host).await {
+            Some(icon) => png(icon, "public, max-age=604800"),
+            None => none(),
+        };
     };
     match state.icons.site_icon(&state, &host, ip).await {
         Ok(Some(icon)) => png(icon, "public, max-age=604800"),
-        Ok(None) => none(),
+        // No icon of its own, nor its base domain: one of the databases', if they know it.
+        Ok(None) => match state.icons.database_icon(databases, &host).await {
+            Some(icon) => png(icon, "public, max-age=604800"),
+            None => none(),
+        },
         // Out of tries: not found, and not remembered as such by anyone.
         Err(()) => {
             (StatusCode::NOT_FOUND, [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))]).into_response()
@@ -699,9 +809,17 @@ async fn automatic(State(state): State<AppState>, ClientIp(ip): ClientIp, Path(h
 
 // ── The library ───────────────────────────────────────────
 
+/// Whether the vault has an icon library: it is on, and selfh.st or Dashboard Icons is in it.
+pub(crate) fn library_available(state: &AppState) -> bool {
+    let icons = state.settings().icons;
+    icons.library
+        && (!icons.sources.is_empty()
+            || (icons.databases.iter().any(|id| id == icon_db::DASHBOARD)
+                && state.icons.databases.get(icon_db::DASHBOARD).is_some()))
+}
+
 fn library_on(state: &AppState) -> ApiResult<()> {
-    let settings = state.settings();
-    if !settings.icons.library || settings.icons.sources.is_empty() {
+    if !library_available(state) {
         return Err(ApiError::not_found("The icon library is switched off on this server.").code("feature_off"));
     }
     Ok(())
@@ -711,7 +829,7 @@ async fn library(State(state): State<AppState>, _session: Session, headers: Head
     library_on(&state)?;
     let library = state
         .icons
-        .library()
+        .library_for(&state.settings().icons)
         .await
         .ok_or_else(|| ApiError::upstream("The icon library could not be fetched. Try again later."))?;
     let etag = HeaderValue::from_str(&library.etag).map_err(ApiError::internal)?;
@@ -744,11 +862,21 @@ async fn library_icon(
 ) -> ApiResult<Response> {
     library_on(&state)?;
     let missing = || ApiError::not_found("There is no such icon in the library.").code("not_found");
-    if !state.settings().icons.sources.contains(&source) || source != "selfhst" {
-        return Err(missing());
-    }
+    let settings = state.settings();
     let id = file.strip_suffix(".png").filter(|id| plain_id(id)).ok_or_else(missing)?;
     let variant = query.variant.unwrap_or_else(|| "default".into());
+    if source == icon_db::DASHBOARD && settings.icons.databases.contains(&source) {
+        let found = state.icons.databases.get(icon_db::DASHBOARD).and_then(|database| database.library_icon(id));
+        let found = found.filter(|_| variant == "default").ok_or_else(missing)?;
+        if !state.limits.icons.check(ip) {
+            return Err(ApiError::too_many("Too many icons at once. Wait a moment.").code("rate_limited"));
+        }
+        let icon = state.icons.database_png(found, icon_fetch::LIBRARY_PIXELS).await.ok_or_else(missing)?;
+        return Ok(png(icon, "private, max-age=604800"));
+    }
+    if !settings.icons.sources.contains(&source) || source != "selfhst" {
+        return Err(missing());
+    }
     let library = state.icons.library().await.ok_or_else(missing)?;
     if !library.icons.get(id).is_some_and(|variants| variants.contains(&variant)) {
         return Err(missing());
@@ -904,6 +1032,23 @@ async fn admin_status(State(state): State<AppState>, _admin: Admin) -> ApiResult
     let (count, bytes) = state.icons.counted().await;
     let library = state.icons.library.read().clone();
     let own = state.store.own_icon_bytes().await?;
+    let on = state.settings().icons.databases;
+    let databases: Vec<Value> = state
+        .icons
+        .databases
+        .all()
+        .iter()
+        .map(|database| {
+            let (icons, domains, names, bytes) = database.counts();
+            let mut about = serde_json::to_value(&database.about).unwrap_or_default();
+            about["on"] = json!(on.contains(&database.about.id));
+            about["icons"] = json!(icons);
+            about["domains"] = json!(domains);
+            about["names"] = json!(names);
+            about["bytes"] = json!(bytes);
+            about
+        })
+        .collect();
     Ok(Json(json!({
         "object": "iconStatus",
         "cached": count,
@@ -913,6 +1058,7 @@ async fn admin_status(State(state): State<AppState>, _admin: Admin) -> ApiResult
         "ownBytes": own,
         "libraryUpdated": library.as_ref().map(|library| library.updated.clone()),
         "libraryIcons": library.as_ref().map_or(0, |library| library.icons.len()),
+        "databases": databases,
     })))
 }
 

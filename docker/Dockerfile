@@ -49,6 +49,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # runs as.
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS prep
 COPY --from=build /usr/local/bin/uwulock-server /usr/local/bin/uwulock-server
+# The licences of the icon databases inside the binary.
+COPY THIRD-PARTY-NOTICES.txt /usr/share/doc/uwulock-server/THIRD-PARTY-NOTICES.txt
 RUN chmod 755 /usr/local/bin/uwulock-server \
  && install -d -o 10001 -g 10001 /data
 
@@ -58,6 +60,7 @@ RUN chmod 755 /usr/local/bin/uwulock-server \
 # directory, so it needs no capability at all and no root.
 FROM gcr.io/distroless/cc-debian13@sha256:4594d59540d1948417f6ca2829ddd9294493a7c68b7528f4dd459de7f203a750
 COPY --from=prep /usr/local/bin/ /usr/local/bin/
+COPY --from=prep /usr/share/doc/uwulock-server/ /usr/share/doc/uwulock-server/
 COPY --from=prep --chown=10001:10001 /data /data
 USER 10001:10001
 ENV UWULOCK_DATA=/data \

@@ -866,6 +866,18 @@ same on UwULock's clients. `host` is what the client puts there: a hostname.
   `<style>` (at most 16 KiB of it). Raster images are decoded up to 2048 × 2048 pixels and
   64 MiB. At most two images are decoded at a time, server-wide.
 - Log lines and metrics never name the host.
+- Icon databases (0.6.0-beta.2): the server carries 2FA Directory, Simple Icons and Dashboard
+  Icons in its binary (`crate::icon_db`, packs made by `uwulock-server icon-databases` from fixed
+  upstream commits; docs/icons.md). When a public host has no icon — neither its own nor its base
+  domain's, the answer being "none" — the server looks it up in the databases that
+  `settings.icons.databases` switches on: 2FA Directory by the host and each domain above it down
+  to the registrable one, then Simple Icons the same way. A refused name that is a name in the
+  home network (not an IP address) is looked up in Dashboard Icons by its first label (also
+  without dashes, and by the aliases upstream lists): `jellyfin.local`, `nextcloud.home.arpa`,
+  `home-assistant`. Nothing is fetched for either. The found icon is drawn as a PNG of at most
+  64 × 64 and cached in the same cache, under `database:<id>:<hash>:<pixels>`, so it counts toward
+  its ceiling; the answer is the same `200` as for a fetched icon. Out of tries (no-store 404)
+  stays as it is. The databases are part of automatic icons, not a feature switch of their own.
 
 ### 7.2 Icon library
 
@@ -907,6 +919,13 @@ host only), cached on disk. `Cache-Control: private, max-age=604800`. 404 if not
 The client does not link to the library icon: it downloads it, encrypts it, and stores it as an
 own icon (§7.3), so the server does not learn which icon belongs to which item.
 
+Dashboard Icons (since 0.6.0-beta.2) is a second source, `id` `dashboard-icons` (Apache-2.0), from
+the server's own copy: its entries (`variants: ["default"]`, the upstream aliases) follow
+selfh.st's in the same index, and it is there without selfh.st too. The library is on when its
+feature switch and `settings.icons.library` are, and selfh.st or Dashboard Icons is in it. Its
+icons are drawn from the copy (SVGs at 128 × 128, the others at most 64 × 64), cost a try of the
+per-IP bucket when not cached, and never fetch anything.
+
 As built for 0.6: only selfh.st Icons. Its licence was checked in its repository
 (`github.com/selfhst/icons`, `LICENSE`: Creative Commons Attribution 4.0 International, SPDX
 `CC-BY-4.0`) on 2026-09-28. The server reads `<upstream>/index.json` (entries with `PNG: "Yes"`;
@@ -915,7 +934,7 @@ from `<upstream>/png/<id>[-light|-dark].png`, upstream `https://cdn.jsdelivr.net
 Ids are `[a-z0-9._-]{1,100}` not starting with a dot; others are left out of the index. The index
 answer carries `Cache-Control: private, no-cache`; an uncached library icon costs a try of the
 §7.1 per-IP bucket (429 `rate_limited`), and 502 `upstream` when the library did not answer.
-Dashboard Icons and Simple Icons are not mirrored (not checked yet).
+Simple Icons is not part of the library (it is used for automatic icons only).
 
 ### 7.3 Own icons
 
@@ -2647,7 +2666,7 @@ defaults in brackets):
 | Key | Contents |
 | --- | --- |
 | `versions` | `{ perItem [20], days [365] }` (§8); `perItem` 0–100, `days` 0–3650 |
-| `icons` | `{ automatic [true], library [true], sources [["selfhst"]] }` (§7) |
+| `icons` | `{ automatic [true], library [true], sources [["selfhst"]], databases [["2fa-directory", "simple-icons", "dashboard-icons"]] }` (§7) |
 | `fileRequests` | `{ perUser [50], maxDays [90], maxFiles [20] }` (§11); on or off is a feature switch (§21.12) |
 | `families` / `organizations` | `{ whoMayCreate, maxMembers, perUser }` (§16.4) |
 | `secretsManager` | `{ enabled [true] }` (§17) |
@@ -2849,7 +2868,9 @@ saved one — → 200 or 502.
 
 `DELETE /uwu/v1/admin/icons/cache` (automatic icons), `POST /uwu/v1/admin/icons/library/refresh`
 → 202. `GET /uwu/v1/admin/icons` → `{ "object": "iconStatus", "cached", "cacheBytes", "cacheMaxBytes",
-"cacheMaxFiles", "ownBytes", "libraryUpdated", "libraryIcons" }` for the portal (added).
+"cacheMaxFiles", "ownBytes", "libraryUpdated", "libraryIcons", "databases" }` for the portal
+(added); `databases` lists each bundled icon database: `id`, `name`, `url`, `license`,
+`licenseUrl`, `attribution`, `repository`, `commit`, `on`, `icons`, `domains`, `names`, `bytes`.
 
 ### 21.11 Families and organizations
 

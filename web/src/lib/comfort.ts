@@ -71,9 +71,32 @@ export function isLocalHost(host: string): boolean {
   ].includes(last);
 }
 
-/** Where this server hands out a website's icon; none for the home network. */
+/** Whether `host` is an address (IPv4 or IPv6) rather than a name. */
+function isAddress(host: string): boolean {
+  const name = host.toLowerCase().replace(/\.$/, '');
+  return (/^\[?[0-9a-f:]+\]?$/.test(name) && name.includes(':')) || /^[\d.]+$/.test(name);
+}
+
+/**
+ * The name of the app a device in the home network is called after: `jellyfin` of
+ * `jellyfin.local`, `nextcloud` of `nextcloud.home.arpa`. None for addresses and public names.
+ */
+export function localLabel(host: string | null): string | null {
+  if (!host || !isLocalHost(host) || isAddress(host)) return null;
+  const label = host.toLowerCase().split('.')[0] ?? '';
+  return /^[a-z0-9_-]{1,63}$/.test(label) && /[a-z]/.test(label) && label !== 'localhost'
+    ? label
+    : null;
+}
+
+/**
+ * Where this server hands out a website's icon. A device in the home network is never asked by
+ * the server, but may get an app's icon by its name from the server's own databases; an address
+ * names no app.
+ */
 export function automaticIcon(host: string | null): string | null {
-  if (!host || isLocalHost(host)) return null;
+  if (!host) return null;
+  if (isLocalHost(host) && !localLabel(host)) return null;
   return `/icons/${id(host)}/icon.png`;
 }
 
@@ -264,6 +287,30 @@ export function iconLibrary(): Promise<Library> {
     throw error;
   });
   return library;
+}
+
+/**
+ * Library icons that fit an item in the home network: by the device's name (`jellyfin.local`),
+ * then by the item's name — whole, else word by word (`My Jellyfin`) — the best first, each once.
+ */
+export function suggestLibrary(
+  index: Library,
+  host: string | null,
+  name: string,
+  most = 6,
+): LibraryIcon[] {
+  const found = new Map<string, LibraryIcon>();
+  const add = (query: string | undefined) => {
+    if (!query?.trim()) return 0;
+    const icons = searchLibrary(index, query, most);
+    for (const icon of icons) found.set(`${icon.source}/${icon.id}`, icon);
+    return icons.length;
+  };
+  add(localLabel(host)?.replace(/[-_]+/g, ' '));
+  if (!add(name)) {
+    for (const word of name.split(/\s+/).filter((word) => word.length >= 4)) add(word);
+  }
+  return [...found.values()].slice(0, most);
 }
 
 /** Icons whose name or id has every word of `query`, the best first. */

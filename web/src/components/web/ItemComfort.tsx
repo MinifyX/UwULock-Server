@@ -15,6 +15,7 @@ import {
   reminderOf,
   restoreVersion,
   searchLibrary,
+  suggestLibrary,
   setOwnIcon,
   setReminder,
   toIconPng,
@@ -156,6 +157,13 @@ function IconCard({ summary }: { summary: ItemSummary }) {
           </button>
         )}
       </div>
+      {local && !own && (
+        <LibrarySuggestions
+          host={local}
+          name={summary.name}
+          onPick={(blob) => void keep(() => toIconPng(blob), t('Icon gespeichert ✧'))}
+        />
+      )}
       {library && (
         <LibraryDialog
           initial={summary.name}
@@ -219,6 +227,41 @@ function LibraryPreview({ icon, onPick }: { icon: LibraryIcon; onPick: (blob: Bl
         </select>
       )}
     </li>
+  );
+}
+
+/** For a device in the home network: library icons that fit its name or the item's. */
+function LibrarySuggestions({
+  host,
+  name,
+  onPick,
+}: {
+  host: string;
+  name: string;
+  onPick: (blob: Blob) => void;
+}) {
+  const [index, setIndex] = useState<Library | null>(null);
+  useEffect(() => {
+    let gone = false;
+    iconLibrary().then(
+      (library) => !gone && setIndex(library),
+      () => undefined,
+    );
+    return () => {
+      gone = true;
+    };
+  }, []);
+  const found = index ? suggestLibrary(index, host, name) : [];
+  if (!found.length) return null;
+  return (
+    <div className="library-suggestions">
+      <p className="field-hint">{t('Passt vielleicht, aus der Bibliothek:')}</p>
+      <ul className="library-grid">
+        {found.map((icon) => (
+          <LibraryPreview key={`${icon.source}/${icon.id}`} icon={icon} onPick={onPick} />
+        ))}
+      </ul>
+    </div>
   );
 }
 

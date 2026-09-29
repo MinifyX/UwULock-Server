@@ -206,7 +206,13 @@ export type Settings = {
   /** Earlier states of items: how many per item (0: none), how many days (0: no limit). */
   versions: { perItem: number; days: number };
   /** Websites' icons fetched by the server, and the icon library. */
-  icons: { automatic: boolean; library: boolean; sources: string[] };
+  icons: {
+    automatic: boolean;
+    library: boolean;
+    sources: string[];
+    /** The icon databases that come with the server and are used (docs/icons.md). */
+    databases: string[];
+  };
   /** Families (§16.4): who may make one, its size, how many one account may own. */
   families: OrgRules;
   /** The suite vault of UwUSSH and UwURDP (§6): what one account may keep. On or off is a
@@ -242,6 +248,24 @@ export type IconStatus = {
   ownBytes: number;
   libraryUpdated: string | null;
   libraryIcons: number;
+  /** The icon databases in the server's binary: who made them, their licence, what they hold. */
+  databases?: IconDatabase[];
+};
+
+export type IconDatabase = {
+  id: string;
+  name: string;
+  url: string;
+  license: string;
+  licenseUrl: string;
+  attribution: string;
+  repository: string;
+  commit: string;
+  on: boolean;
+  icons: number;
+  domains: number;
+  names: number;
+  bytes: number;
 };
 
 /** One day of the numbers over time. */

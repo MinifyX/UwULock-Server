@@ -64,6 +64,7 @@ for test in "$@"; do
       case $test in
         features) node_ scripts/e2e/features.mjs "$origin" "$email" "$password" "$work/api-key" target/e2e-shots ;;
         operations) node_ scripts/e2e/operations.mjs "$origin" "$email" "$password" "$work/offsite" target/e2e-shots ;;
+        comfort) node_ scripts/e2e/comfort.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         sso) node_ scripts/e2e/sso.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         domains) node_ scripts/e2e/domains.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         family)

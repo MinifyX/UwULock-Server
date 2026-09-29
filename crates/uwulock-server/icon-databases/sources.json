@@ -1,0 +1,31 @@
+{
+  "2fa-directory": {
+    "repository": "https://github.com/2factorauth/twofactorauth",
+    "commit": "92d901f308ed6adc07b2415377b011c7dd544b13",
+    "paths": [
+      "entries",
+      "img",
+      "LICENSE.md"
+    ]
+  },
+  "dashboard-icons": {
+    "repository": "https://github.com/homarr-labs/dashboard-icons",
+    "commit": "c716eb6798576923fa08e9b3e4125173148994ed",
+    "paths": [
+      "metadata.json",
+      "svg",
+      "png",
+      "LICENSE"
+    ]
+  },
+  "simple-icons": {
+    "repository": "https://github.com/simple-icons/simple-icons",
+    "commit": "d4e6ba93e48f178898707f0145ec285f28b64b38",
+    "paths": [
+      "data/simple-icons.json",
+      "icons",
+      "slugs.md",
+      "LICENSE.md"
+    ]
+  }
+}

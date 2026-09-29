@@ -267,13 +267,21 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
     128 px verkleinert, mit dem Schlüssel des Kontos verschlüsselt unter `/uwu/v1` zur
     Eintrags-ID gespeichert. Sichtbar in Web-Tresor und UwULock-Client; die offiziellen Clients
     fragen Icons ohne Anmeldung nur pro Hostname ab und zeigen deshalb das automatische.
-  - Icon-Bibliothek: [selfh.st Icons](https://selfh.st/icons/), eventuell auch Dashboard Icons
-    und Simple Icons (Lizenzen vorher prüfen, Quelle und Lizenz im Tresor angeben). Der Server
+  - Icon-Bibliothek: [selfh.st Icons](https://selfh.st/icons/) und Dashboard Icons (Quelle und
+    Lizenz im Tresor angeben). Der Server
     spiegelt nur den Index; die Suche läuft im Tresor darüber. Ein gewähltes Icon holt der Server
     bei Bedarf, hebt es auf und liefert es aus — der Browser spricht nie mit selfh.st oder einem
     CDN. Im Eintrag wird es wie ein eigenes Icon verschlüsselt gespeichert, damit der Server
     nicht erfährt, welches Icon zu welchem Eintrag gehört.
-  - Reihenfolge: eigenes Icon, sonst automatisches, sonst Standard-Symbol.
+  - Reihenfolge: eigenes Icon, sonst automatisches (Host, dann Basis-Domain), sonst eines aus
+    den mitgelieferten Icon-Datenbanken, sonst Standard-Symbol.
+  - Icon-Datenbanken im Binary (fertig in 0.6.0-beta.2): 2FA Directory (MIT, Domain → Logo),
+    Simple Icons (CC0; ohne Icons mit eigener `license` oder `guidelines`; Glyphe auf Kachel in
+    Markenfarbe; Domains nur eindeutig über 2FA-Directory-Namen und die `source`-Domain) und
+    Dashboard Icons (Apache-2.0; Geräte im Heimnetz nach Namen, Teil der Bibliothek). Feste
+    Upstream-Commits in `crates/uwulock-server/icon-databases/sources.json`, Packs mit
+    `SHA256SUMS`, erneuert mit `node scripts/icons/update.mjs --bump`; je Datenbank ein Schalter
+    im Admin-Portal, Lizenzen in `THIRD-PARTY-NOTICES.txt` und `docs/icons.md`.
   - Hat eine Adresse kein eigenes Icon (Fehlerseite, 404, kein Link, kein `/favicon.ico`), nimmt
     der Server das der Domain darüber, bestimmt mit der eingebauten Public Suffix List
     (`account.example.com` → `example.com`); IPs, Namen ohne Punkt und Heimnetz-Namen bleiben.
@@ -281,8 +289,8 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
     deren Icon nicht. (Fertig in 0.6.0-beta.2; der Cache beginnt neu unter `icons/auto-2`.)
   (Fertig: `/icons/<host>/icon.png` mit Prüfung jeder aufgelösten Adresse, fester Verbindung
   zur geprüften, Grenzen für Zeit, Größe und Bildgröße; eigene Icons verschlüsselt unter
-  `/uwu/v1/icons/own`; die Bibliothek sind selfh.st Icons, CC BY 4.0, geprüft am 2026-09-28 —
-  Dashboard Icons und Simple Icons noch nicht; `docs/icons.md`. Im UwULock-Client mit dessen 0.3.)
+  `/uwu/v1/icons/own`; die Bibliothek sind selfh.st Icons, CC BY 4.0, geprüft am 2026-09-28, und
+  seit 0.6.0-beta.2 Dashboard Icons, Apache-2.0; `docs/icons.md`. Im UwULock-Client mit dessen 0.3.)
 - [x] Import aus anderen Passwort-Managern im Web-Tresor, gelesen im Browser (der Server sieht nur
   Verschlüsseltes): KeePass/KeePassXC (KDBX mit dessen Passwort, und CSV), 1Password (1PUX und
   CSV), Chrome/Edge, Firefox, Apple Passwörter, Proton Pass, LastPass. Mit Vorschau, Ordnern und
