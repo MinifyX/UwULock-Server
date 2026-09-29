@@ -231,7 +231,7 @@ async fn save(state: &AppState, cipher: Cipher) -> ApiResult<Cipher> {
 pub(crate) async fn cipher_json(state: &AppState, cipher: &Cipher) -> ApiResult<String> {
     let attachments = state.store.attachments(&cipher.id).await?;
     let rendered = (!attachments.is_empty())
-        .then(|| crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS).to_string());
+        .then(|| crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS, None).to_string());
     Ok(out::cipher(cipher, &View::own(rendered.as_deref())))
 }
 
@@ -243,7 +243,9 @@ pub(crate) async fn attachments_by_cipher(state: &AppState, user_id: &str) -> Ap
     }
     Ok(grouped
         .into_iter()
-        .map(|(id, list)| (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS).to_string()))
+        .map(|(id, list)| {
+            (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS, None).to_string())
+        })
         .collect())
 }
 
@@ -342,7 +344,15 @@ async fn sync(
     let exclude_domains = query
         .exclude_domains
         .is_some_and(|value| matches!(value.to_ascii_lowercase().as_str(), "true" | "1" | "yes" | "on"));
-    let parts = vault_parts(&state, &session.user, &headers, exclude_domains).await?;
+    let mut parts = vault_parts(&state, &session.user, &headers, exclude_domains).await?;
+    if session.setup_only {
+        // Only what unlocking needs, while two-step login has to be set up first (§20).
+        for part in
+            [&mut parts.folders, &mut parts.collections, &mut parts.policies, &mut parts.sends, &mut parts.ciphers]
+        {
+            *part = "[]".into();
+        }
+    }
     let mut body = String::with_capacity(4096 + parts.ciphers.len());
     body.push_str("{\"object\":\"sync\",\"profile\":");
     body.push_str(&parts.profile);

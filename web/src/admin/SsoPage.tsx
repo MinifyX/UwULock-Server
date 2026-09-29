@@ -308,6 +308,17 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
             spellCheck={false}
           />
         </label>
+        <label className="field">
+          <span>
+            {t('Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)')}
+          </span>
+          <textarea
+            rows={2}
+            value={(draft.extensionIds ?? []).join('\n')}
+            onChange={(e) => set({ extensionIds: e.target.value.split('\n') })}
+            spellCheck={false}
+          />
+        </label>
       </div>
       <Row
         label={t('Nur noch über SSO anmelden')}

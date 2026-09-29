@@ -67,8 +67,10 @@ reads the discovery document and the keys.
 | Entra ID | `https://login.microsoftonline.com/<tenant id>/v2.0` |
 
 The provider's address may be in the local network (only an admin can set it). The server follows
-no redirects there, reads only https (plain http only on this machine), and takes ID tokens signed
-with RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384 or EdDSA.
+no redirects there, reads only https (plain http only on this machine, and only when the issuer
+itself is on this machine), and takes ID tokens signed with RS256, RS384, RS512, PS256, PS384,
+PS512, ES256, ES384 or EdDSA. The issuer has no `?query` or `#fragment`. When the provider does not
+answer, the server remembers that for 30 seconds and asks it once for all logins waiting.
 
 ## Who may sign up, and who is an admin
 

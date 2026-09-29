@@ -56,6 +56,15 @@ async fn hidden_folders_leave_every_view_until_the_second_step_brings_them_back(
     let icon = json!({"data": type2(), "keyType": "extras"});
     server.call("PUT", &format!("/uwu/v1/icons/own/{hidden}"), Some(&nyu.token), icon).await;
     server.call("PUT", &format!("/uwu/v1/reminders/{hidden}"), Some(&nyu.token), json!({"due": "2020-01-01"})).await;
+    let link = |cipher: &str, masked: &str| uwulock_store::masked::MaskedLink {
+        masked_id: masked.into(),
+        cipher_id: cipher.into(),
+        email: format!("{masked}@masked.example.com"),
+        state: None,
+    };
+    for (cipher, masked) in [(&hidden, "m1"), (&shown, "m2")] {
+        server.state.store.link_masked(&nyu.id, link(cipher, masked)).await.unwrap().unwrap();
+    }
 
     let on = json(server.call("POST", "/uwu/v1/travel/enable", Some(&nyu.token), json!({})).await).await;
     assert_eq!((on["enabled"].as_bool(), on["hiddenCount"].as_i64()), (Some(true), Some(1)));
@@ -75,6 +84,10 @@ async fn hidden_folders_leave_every_view_until_the_second_step_brings_them_back(
     assert!(json(server.get_as(&nyu.token, "/uwu/v1/icons/own").await).await["data"].as_array().unwrap().is_empty());
     let personal = json(server.get_as(&nyu.token, "/uwu/v1/versions?scope=personal").await).await;
     assert!(personal["data"].as_array().unwrap().is_empty(), "the hidden item's version too");
+    // The masked address of the hidden item is not there either (SV-L8).
+    let links = crate::masked::links_json(&server.state, &nyu.id).await.unwrap();
+    assert_eq!(links.as_object().unwrap().keys().collect::<Vec<_>>(), vec![&shown]);
+    assert_eq!(server.state.store.masked_hidden(&nyu.id).await.unwrap(), ["m1".to_string()].into());
     let purge = json!({"masterPasswordHash": password_hash("nyu@example.com")});
     let response = server.call("POST", "/api/ciphers/purge", Some(&nyu.token), purge).await;
     assert_eq!(json(response).await["code"], "travel_active");
@@ -112,6 +125,7 @@ async fn hidden_folders_leave_every_view_until_the_second_step_brings_them_back(
     let (ciphers, folders) = synced_ids(&server, &nyu.token).await;
     assert_eq!((ciphers.len(), folders.len()), (2, 1));
     assert_eq!(json(server.get_as(&nyu.token, "/uwu/v1/reminders").await).await["data"].as_array().unwrap().len(), 1);
+    assert_eq!(server.state.store.masked_links(&nyu.id).await.unwrap().len(), 2);
 }
 
 #[tokio::test]

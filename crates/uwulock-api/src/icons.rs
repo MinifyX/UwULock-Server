@@ -347,6 +347,12 @@ impl Icons {
     /// fetched once for all hosts below it, and a host's "none" does not keep its base domain's
     /// icon away. `Err` when this asker may not start another fetch right now.
     async fn site_icon(&self, state: &AppState, host: &str, ip: std::net::IpAddr) -> Result<Option<Vec<u8>>, ()> {
+        // Out of tries, a cached host answers like one that is not: otherwise anybody could test
+        // which sites this server's users have, without the side effect of a fetch. Cached
+        // answers take no try.
+        if !state.limits.icons.allows(&crate::limits::network_of(ip)) {
+            return Err(());
+        }
         let base = icon_fetch::base_domain(host);
         if let Some(icon) = self.host_icon(state, host, base.is_some(), ip).await? {
             return Ok(Some(icon));

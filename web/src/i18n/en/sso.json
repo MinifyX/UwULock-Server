@@ -70,5 +70,6 @@
   "Wer die Rolle „user“ hat, darf sich einen Tresor anlegen; die Rolle „admin“ macht zum Admin. Beides stellst du in UwUAuth ein.": "Whoever has the role “user” may create a vault; the role “admin” makes an admin. You set both in UwUAuth.",
   "Wer in der Nutzergruppe ist": "Whoever is in the user group",
   "Wer sich ohne Einladung einen Tresor anlegen darf": "Who may create a vault without an invitation",
-  "Willkommen ✧": "Welcome ✧"
+  "Willkommen ✧": "Welcome ✧",
+  "Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)": "More browser extensions (ids, one per line; only for self-built ones)"
 }

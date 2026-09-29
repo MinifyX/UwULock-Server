@@ -48,8 +48,9 @@ pub fn setting_in(backup: &Path, key: &str) -> Result<Option<String>, String> {
 /// login with them; a server restored from one makes a new key, and everybody logs in again.
 pub const SERVER_SECRETS: &[&str] = &["token_key"];
 
-/// Removes the server's own keys ([`SERVER_SECRETS`]) from the database copy at `path`, with the
-/// deleted bytes overwritten and the file compacted, so nothing of them stays in free pages.
+/// Removes the server's own keys ([`SERVER_SECRETS`]) from the database copy at `path`, and
+/// empties what is sealed with `secret.key` (which stays home too), with the deleted bytes
+/// overwritten and the file compacted, so nothing of them stays in free pages.
 pub fn forget_secrets_in(path: &Path) -> Result<(), String> {
     let failed = |error: rusqlite::Error| format!("{}: {error}", path.display());
     let conn = Connection::open(path).map_err(failed)?;
@@ -57,6 +58,7 @@ pub fn forget_secrets_in(path: &Path) -> Result<(), String> {
     for key in SERVER_SECRETS {
         conn.execute("DELETE FROM server WHERE key = ?1", [key]).map_err(failed)?;
     }
+    crate::admin::empty_sealed(&conn).map_err(failed)?;
     conn.execute_batch("VACUUM").map_err(failed)?;
     Ok(())
 }

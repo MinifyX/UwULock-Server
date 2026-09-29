@@ -20,7 +20,7 @@ where a part touched them; they hold.
 
 Every finding was checked again before it was counted, and a finding several reviewers reported is
 counted once. There was nothing critical. The high and medium findings are fixed in 0.6.0-beta.1.
-The low ones and the notes are listed below and stay open for 0.6.0-beta.1.
+The low ones and the notes stayed open for 0.6.0-beta.1 and are fixed in 0.6.0-beta.2 (below).
 
 Severity, as before: **High** is a secret or the whole database leaving the server, or a promise of
 the design broken for a normal user. **Medium** needs a hostile server, an admin session that got
@@ -45,213 +45,267 @@ The ids (SV-…) stay the same from here on; "reported as" names the reviewers' 
 | SV-M8 | Medium | Metrics | The request metrics used the HTTP method as a label as it came, before every guard and even with metrics switched off. The HTTP parser takes any token as a method, so an anonymous caller could make two new entries per request that were never removed, until the memory ran out. (Reported as R3-18.) | The standard HTTP methods are labelled as they are, everything else as `other`, and the number of series is capped. (`8901ccb`) | Fixed (PR #14) |
 | SV-M9 | Medium | File requests | A public upload to a file request had no limit on uploads at once, and a file already uploaded could be uploaded again. Whoever has the link could open hundreds of slow uploads to the same files; free space was checked only when each began, so the partial files filled the disk past the floor that the previous review's fix keeps. (Reported as R3-19.) | One upload at a time per file and four per request, rate-limited per address; a file that arrived is never overwritten (409), and the free-space check reserves the room of every upload on its way. (`a70c649`) | Fixed (PR #14) |
 
-## Low: open, accepted for 0.6.0-beta.1
+## Low: accepted for 0.6.0-beta.1, fixed in 0.6.0-beta.2
 
-These are listed for the record and stay as they are in 0.6.0-beta.1. Each has a suggested
-follow-up.
+These stayed as they were in 0.6.0-beta.1, each with a suggested follow-up. 0.6.0-beta.2 fixes
+every one of them along its follow-up; where the fix differs, or a detail matters, it is said at
+the end of the entry. Each fix has a test, except where the entry says why not.
 
 Logging in and accounts:
 
 - **SV-L1 Low, masked addresses: API keys work for a disabled account.** A `uwulock_ma_…` key is
   resolved to its user without looking at `disabled`, so an account an admin or SCIM disabled keeps
-  making masked addresses at UwUMail. (Reported as R1-2, R3-7.) *Open (accepted for 0.6.0-beta.1).*
-  Follow-up: refuse disabled users in `key_owner`; a one-line fix for 0.6.0-beta.2.
+  making masked addresses at UwUMail. (Reported as R1-2, R3-7.) *Fixed in 0.6.0-beta.2 (`4fffef5`).*
+  Follow-up: refuse disabled users in `key_owner`; a one-line fix for 0.6.0-beta.2. The check sits
+  in `masked_api_key`, which resolves the key.
 - **SV-L2 Low, SCIM: turns on accounts an admin turned off.** `active: true`, or a `PUT` without
-  `active`, enables any disabled account, whoever disabled it and why. (Reported as R1-3.)
-  *Open (accepted for 0.6.0-beta.1).* Follow-up: remember who disabled an account; SCIM enables only
-  what it disabled, and a `PUT` without `active` leaves it alone.
+  `active`, enables any disabled account, whoever disabled it and why. (Reported as R1-3.) *Fixed in
+  0.6.0-beta.2 (`4fffef5`).* Follow-up: remember who disabled an account; SCIM enables only what it
+  disabled, and a `PUT` without `active` leaves it alone. Migration 0018 adds `scim_disabled`;
+  enabling the account otherwise (an admin) forgets the mark.
 - **SV-L3 Low, SSO: any browser extension can get a silent login.** For the client
   `uwulock-extension` every extension's `chromiumapp.org` or `extensions.allizom.org` address is
   taken, so an unrelated extension with the `identity` permission can get tokens without a click
   when the provider asks nothing. The vault stays encrypted, and Lock's own two-step login still
-  applies. (Reported as R1-4.) *Open (accepted for 0.6.0-beta.1).* Follow-up: pin the ids of the
-  released extensions, with a setting for self-built ones.
+  applies. (Reported as R1-4.) *Fixed in 0.6.0-beta.2 (`4fffef5`).* Follow-up: pin the ids of the
+  released extensions, with a setting for self-built ones. The released Firefox add-on's redirect
+  host is pinned; the Chromium build is installed by hand, so its id goes in the admin setting
+  `extensionIds` (SSO page).
 - **SV-L4 Low, two-step login duty: kept only by the web vault.** After the deadline an account
   without a second step still gets a full token for `client_id=web`, and any refresh token can be
-  refreshed as `web`. (Reported as R1-5.) *Open (accepted for 0.6.0-beta.1).* The account holder
+  refreshed as `web`. (Reported as R1-5.) *Fixed in 0.6.0-beta.2 (`4fffef5`).* The account holder
   dodges their own policy; nobody else gains access. Follow-up: a setup-only token scope, and keep a
-  device's client id at refresh.
+  device's client id at refresh. Such an account gets a token with the scope `uwu.twofactor-setup`:
+  it may set up a second step and read its own profile, everything else is 403
+  `two_factor_required`, and sync is empty. Once a second step exists, the next refresh is a full
+  token. A device keeps its client id at refresh.
 - **SV-L5 Low, invitations: an admin's rights outside the admin networks.** Invitations are not an
   admin path, so an admin session from outside the admin networks, or without SSO where that is
-  required, still invites without quota. (Reported as R1-6.) *Open (accepted for 0.6.0-beta.1).*
-  Follow-up: count someone as admin there only inside the admin networks and with SSO where required.
+  required, still invites without quota. (Reported as R1-6.) *Fixed in 0.6.0-beta.2 (`4fffef5`).*
+  Follow-up: count someone as admin there only inside the admin networks and with SSO where
+  required.
 - **SV-L6 Low, diagnosis: the admin's token in the WebSocket address.** The portal's WebSocket check
   puts the admin's access token in the URL. Caddy's example filters it from the logs, the nginx
   advice does not; the handler also skips the "admins only with SSO" rule. (Reported as R3-17,
-  R4-4.) *Open (accepted for 0.6.0-beta.1).* Follow-up: a short one-time ticket for the socket and
-  the `Admin` rules; until then, the nginx advice covers the whole site.
+  R4-4.) *Fixed in 0.6.0-beta.2 (`4fffef5`).* Follow-up: a short one-time ticket for the socket and
+  the `Admin` rules; until then, the nginx advice covers the whole site. The portal asks for a
+  one-time ticket (`POST /uwu/v1/admin/diagnosis/websocket-ticket`, 30 seconds) and puts that in the
+  address; the ticket is only issued on the admin path, with every admin rule.
 
 Who may see what:
 
 - **SV-L7 Low, delta sync: organisation-wide ids to members who cannot see them.** A delta lists
   own-icon metadata and deletions of every item of an organisation, to members limited to some
-  collections and to members who accepted but were never confirmed. Only ids and times, no
-  contents; the full sync filters correctly. (Reported as R2-3.) *Open (accepted for 0.6.0-beta.1).*
-  Follow-up: confirmed members only, filtered by the same access check as the items.
+  collections and to members who accepted but were never confirmed. Only ids and times, no contents;
+  the full sync filters correctly. (Reported as R2-3.) *Fixed in 0.6.0-beta.2 (`f2af461`).*
+  Follow-up: confirmed members only, filtered by the same access check as the items. Migration 0018
+  keeps the collections of a deleted organisation item in its tombstone and starts a new sync epoch,
+  so every client syncs in full once.
 - **SV-L8 Low, travel mode: masked addresses and organisation attachments.** While travelling, the
   masked-address list still names hidden items and the site an address was made for, and a download
   link for an attachment of a hidden organisation item keeps working for its hour. (Reported as
-  R2-4.) *Open (accepted for 0.6.0-beta.1).* Follow-up: filter masked links through `is_hidden`,
+  R2-4.) *Fixed in 0.6.0-beta.2 (`f2af461`).* Follow-up: filter masked links through `is_hidden`,
   check it at download, and name masked data in §9.2.
-- **SV-L9 Low, reminders: kept after leaving an organisation.** A removed member keeps reminders
-  and masked links for the organisation's items, and reminder mails go on. Ids only. (Reported as
-  R2-5.) *Open (accepted for 0.6.0-beta.1).* Follow-up: remove them with the membership and filter
-  by visibility.
-- **SV-L10 Low, suite vault: a push names no space.** After a rekey a stale or lost device can
-  still push records sealed for the old space; other devices cannot open them, so they are lost,
-  not read. The clients now look at the space before pushing, so only a race remains. (Reported as
-  R2-6, R6-12.) *Open (accepted for 0.6.0-beta.1).* Follow-up: `spaceId` in the push and 409 on a
-  mismatch, server and UwUSSH/UwURDP together; offer removing suite devices at rekey.
+- **SV-L9 Low, reminders: kept after leaving an organisation.** A removed member keeps reminders and
+  masked links for the organisation's items, and reminder mails go on. Ids only. (Reported as R2-5.)
+  *Fixed in 0.6.0-beta.2 (`f2af461`).* Follow-up: remove them with the membership and filter by
+  visibility. Migration 0018 adds triggers that remove the reminders and masked links of a member
+  who leaves or is revoked, and removes those left over.
+- **SV-L10 Low, suite vault: a push names no space.** After a rekey a stale or lost device can still
+  push records sealed for the old space; other devices cannot open them, so they are lost, not read.
+  The clients now look at the space before pushing, so only a race remains. (Reported as R2-6,
+  R6-12.) *Fixed in 0.6.0-beta.2 (`f2af461`).* Follow-up: `spaceId` in the push and 409 on a
+  mismatch, server and UwUSSH/UwURDP together; offer removing suite devices at rekey. The exact wire
+  change: `POST /uwu/v1/suite/spaces/{space}/records` takes `spaceId` beside `schema` and `records`,
+  the space id the records were sealed for; when the space was rekeyed since, the push is refused as
+  a whole with 409 `space_changed` and nothing is written. A push without `spaceId` is still taken,
+  for clients from before. UwUSSH and UwURDP send it (their own change); offering to remove suite
+  devices at a rekey is theirs too, in the client apps.
 - **SV-L11 Low, live updates: no cap on sockets that never log in.** `/uwu/v1/realtime` upgrades
   every request and waits 10 seconds for `auth`; nothing limits such sockets per address or in
-  total. (Reported as R2-7.) *Open (accepted for 0.6.0-beta.1).* Follow-up: the anonymous hub's
-  limits (per /64, a global ceiling) before the upgrade.
+  total. (Reported as R2-7.) *Fixed in 0.6.0-beta.2 (`f2af461`).* Follow-up: the anonymous hub's
+  limits (per /64, a global ceiling) before the upgrade. At most 25 sockets per /64 (IPv4: per
+  address) and 1000 in all may wait for their login; more answer 429 before the upgrade.
 
 Icons and the network:
 
 - **SV-L12 Low, automatic icons: which sites this server's users have.** A cached host answers
   differently from an uncached one once the caller's limit is used up, so anyone can test a list
-  of hosts without side effects. (Reported as R3-3.) *Open (accepted for 0.6.0-beta.1).* Follow-up:
+  of hosts without side effects. (Reported as R3-3.) *Fixed in 0.6.0-beta.2 (`163dabf`).* Follow-up:
   check the limiter before the cache for callers without a session, and say in the admin page what
   automatic icons reveal.
 - **SV-L13 Low, automatic icons: NAT64 ranges only partly known.** `64:ff9b:1::/48`, `::/8` and a
   network's own DNS64 prefix are taken as public, so on an IPv6-only host an icon fetch can reach a
-  private IPv4 address through the NAT64 gateway. (Reported as R3-4.) *Open (accepted for
-  0.6.0-beta.1).* Follow-up: refuse those ranges and learn the local prefix from `ipv4only.arpa`.
+  private IPv4 address through the NAT64 gateway. (Reported as R3-4.) *Fixed in 0.6.0-beta.2
+  (`163dabf`).* Follow-up: refuse those ranges and learn the local prefix from `ipv4only.arpa`. Also
+  refused: 64:ff9b:1::/48 and the rest of ::/8; a DNS64 prefix is learned from `ipv4only.arpa` (RFC
+  7050) and the IPv4 address inside is checked.
 
 Masked addresses:
 
 - **SV-L14 Low, reconnecting to UwUMail keeps the old grant.** Connecting again to the same UwUMail
   account never revokes the previous grant, and `finish` runs without the per-account lock.
-  (Reported as R3-8.) *Open (accepted for 0.6.0-beta.1).* Follow-up: revoke the old grant, under
+  (Reported as R3-8.) *Fixed in 0.6.0-beta.2 (`9fd1424`).* Follow-up: revoke the old grant, under
   the lock.
 - **SV-L15 Low, the binding cookie can be planted on http.** Without https the cookie has neither
   `__Host-` nor `Secure`, which allows linking somebody's account to the wrong UwUMail account.
-  (Reported as R3-9.) *Open (accepted for 0.6.0-beta.1).* Follow-up: refuse masked connect unless
+  (Reported as R3-9.) *Fixed in 0.6.0-beta.2 (`9fd1424`).* Follow-up: refuse masked connect unless
   the server is https (loopback aside).
 - **SV-L16 Low, http UwUMail servers are accepted.** Tokens then travel in the clear. (Reported as
-  R3-10.) *Open (accepted for 0.6.0-beta.1).* Follow-up: https except loopback and private
-  addresses, or a warning in the portal.
+  R3-10.) *Fixed in 0.6.0-beta.2 (`9fd1424`).* Follow-up: https except loopback and private
+  addresses, or a warning in the portal. http stays for private and loopback addresses and local or
+  single-label names; connecting needs this server on https (400 `https_required`).
 
 Alerts, logs, OIDC:
 
 - **SV-L17 Low, the "mail failing" alert carries users' addresses.** The alert sends the mail
-  server's raw error text, often with addresses, to ntfy, Gotify or Matrix, against the module's
-  own rule; the push relay alert names its URL with push ids. (Reported as R3-11.) *Open (accepted
-  for 0.6.0-beta.1).* Follow-up: a fixed text and the SMTP status for channels, the full text only
-  in the portal and the log.
+  server's raw error text, often with addresses, to ntfy, Gotify or Matrix, against the module's own
+  rule; the push relay alert names its URL with push ids. (Reported as R3-11.) *Fixed in
+  0.6.0-beta.2 (`a9fa7fd`).* Follow-up: a fixed text and the SMTP status for channels, the full text
+  only in the portal and the log. Channels get "Mails do not go out (SMTP 550)" and the like; the
+  push relay's address and push ids never go to a channel.
 - **SV-L18 Low, channel and storage secrets are stored in plain.** Alert channel tokens, the Matrix
   token, the Loki password, the off-site S3/SFTP secrets and SMTP are kept unsealed, although
-  `crate::secret` exists for this. (Reported as R3-12.) *Open (accepted for 0.6.0-beta.1).*
-  Follow-up: seal them and migrate existing rows.
+  `crate::secret` exists for this. (Reported as R3-12.) *Fixed in 0.6.0-beta.2 (`a9fa7fd`).*
+  Follow-up: seal them and migrate existing rows. Also sealed: the push relay's installation key and
+  the off-site recovery key. Unencrypted snapshots, which leave `secret.key` home, empty the sealed
+  values in their copy of the database.
 - **SV-L19 Low, admin requests to internal addresses with part of the answer.** The admin's test
   buttons reach any host and port and show the status and 200 characters; an OIDC issuer may end in
   `?`, which turns the fixed discovery path into a query. Admin only, behind the admin networks.
-  (Reported as R3-13.) *Open (accepted for 0.6.0-beta.1).* Follow-up: refuse query and fragment in
-  the issuer, return only the status, and document the admin exception.
+  (Reported as R3-13.) *Fixed in 0.6.0-beta.2 (`2db5f24`).* Follow-up: refuse query and fragment in
+  the issuer, return only the status, and document the admin exception. The error of any admin-set
+  address is its status and, for JSON, an OAuth `error` code; the start of the body goes to the
+  debug log. The admin exception (admin-set hosts may be private) is written down in docs/uwu-api.md
+  §21.3.
 - **SV-L20 Low, OIDC endpoints are not bound to the issuer.** A hostile https provider can name an
   http token endpoint on loopback, so the client secret goes to a local service. (Reported as
-  R3-14.) *Open (accepted for 0.6.0-beta.1).* Follow-up: loopback http only when the issuer is on
+  R3-14.) *Fixed in 0.6.0-beta.2 (`2db5f24`).* Follow-up: loopback http only when the issuer is on
   loopback.
-- **SV-L21 Low, OIDC discovery failures are not remembered.** Every anonymous authorize call
-  fetches again while the provider fails, and the key refetch has the same herd. (Reported as
-  R3-15.) *Open (accepted for 0.6.0-beta.1).* Follow-up: keep a failure for 30 to 60 seconds and
-  fetch once for everybody waiting.
+- **SV-L21 Low, OIDC discovery failures are not remembered.** Every anonymous authorize call fetches
+  again while the provider fails, and the key refetch has the same herd. (Reported as R3-15.) *Fixed
+  in 0.6.0-beta.2 (`2db5f24`).* Follow-up: keep a failure for 30 to 60 seconds and fetch once for
+  everybody waiting. A failure is kept for 30 seconds; while one fetch runs, everybody else waits
+  for it.
 - **SV-L22 Low, log lines for Loki have no size cap.** The portal's buffer cuts lines, the Loki
-  queue counts entries, not bytes. (Reported as R3-16.) *Open (accepted for 0.6.0-beta.1).*
-  Follow-up: cut each line to `LINE_MAX` before it is queued.
+  queue counts entries, not bytes. (Reported as R3-16.) *Fixed in 0.6.0-beta.2 (`2db5f24`).*
+  Follow-up: cut each line to `LINE_MAX` before it is queued. Too long, a line keeps half its
+  message and 256 bytes of each field, with `truncated: true`.
 
 Sends and file requests:
 
 - **SV-L23 Low, a dot at the end of the host opens the vault on a send domain.** `Host:
   send.example.com.` is not the listed send domain, so the vault, the login and the admin portal
   answer there with the send domain's certificate; the separation of §14.1 is gone, though it is
-  still the real server. (Reported as R3-20.) *Open (accepted for 0.6.0-beta.1).* Follow-up: drop
-  one trailing dot when reading the host, with a test.
-- **SV-L24 Low, a Send's email code can be guessed slowly, and a recipient locked out.** Five
-  tries for each of five codes an hour against a million give about 2 % over a month; five wrong
-  tries end the real code. The whole link is needed. (Reported as R3-21.) *Open (accepted for
-  0.6.0-beta.1).* Follow-up: a daily cap per Send and address, and 8 digits.
+  still the real server. (Reported as R3-20.) *Fixed in 0.6.0-beta.2 (`aae68a1`).* Follow-up: drop
+  one trailing dot when reading the host, with a test. Every dot at the end is dropped, not only
+  one.
+- **SV-L24 Low, a Send's email code can be guessed slowly, and a recipient locked out.** Five tries
+  for each of five codes an hour against a million give about 2 % over a month; five wrong tries end
+  the real code. The whole link is needed. (Reported as R3-21.) *Fixed in 0.6.0-beta.2 (`aae68a1`).*
+  Follow-up: a daily cap per Send and address, and 8 digits. Also: twenty wrong codes a day end
+  every code of the Send and address until the day is over.
 - **SV-L25 Low, Sends with listed addresses mail anyone.** A logged-in user can send about twelve
-  code mails an hour to any address, with fixed content. (Reported as R3-22.) *Open (accepted for
-  0.6.0-beta.1).* Follow-up: a limit per owner and per Send.
+  code mails an hour to any address, with fixed content. (Reported as R3-22.) *Fixed in 0.6.0-beta.2
+  (`aae68a1`).* Follow-up: a limit per owner and per Send. Ten code mails an hour per Send; thirty
+  an hour and a hundred a day for one owner's Sends.
 - **SV-L26 Low, file requests have no storage cap by default.** Uploads also go on after a request
-  is disabled or has run out, as long as the submission began before. (Reported as R3-23.)
-  *Open (accepted for 0.6.0-beta.1).* SV-M9 bounds the worst case. Follow-up: a byte cap per request
-  by default; check that the request is open when a file and a submission finish.
+  is disabled or has run out, as long as the submission began before. (Reported as R3-23.) *Fixed in
+  0.6.0-beta.2 (`aae68a1`).* SV-M9 bounds the worst case. Follow-up: a byte cap per request by
+  default; check that the request is open when a file and a submission finish.
+  `fileRequests.maxRequestMb`, 2048 by default (0 for no cap), answers 422 `request_full`.
 
 Off-site backups:
 
-- **SV-L27 Low, SFTP sends the password before the host key is confirmed.** On first use the key
-  is trusted and the password already sent; a restore on the command line without `--host-key`
-  takes any key. (Reported as Backups L1.) *Open (accepted for 0.6.0-beta.1).* Follow-up: confirm
-  the key before authenticating; require it on the command line.
+- **SV-L27 Low, SFTP sends the password before the host key is confirmed.** On first use the key is
+  trusted and the password already sent; a restore on the command line without `--host-key` takes
+  any key. (Reported as Backups L1.) *Fixed in 0.6.0-beta.2 (`02b82f6`, `8b7cafc`).* Follow-up:
+  confirm the key before authenticating; require it on the command line. The portal shows the key
+  and asks before it is trusted (`confirmed: false`, then a test with `hostKey`).
 - **SV-L28 Low, a restore that fails at the files leaves the database replaced.** Without the audit
-  entry and the steps after a restore. (Reported as Backups L2.) *Open (accepted for
-  0.6.0-beta.1).* Follow-up: put the files back first, or finish the restore steps on failure too.
+  entry and the steps after a restore. (Reported as Backups L2.) *Fixed in 0.6.0-beta.2
+  (`02b82f6`).* Follow-up: put the files back first, or finish the restore steps on failure too. The
+  steps after a restore run and the audit entry is written; the files are not put back first,
+  because the snapshot's `secret.key` comes with them and would not fit the live database if the
+  database step failed. No test: it needs a disk that fails halfway.
 - **SV-L29 Low, the storage server's error text goes into admin alerts.** Up to 64 KiB, unfiltered,
-  which lets a hostile storage server write to the admins. (Reported as Backups L3.) *Open (accepted
-  for 0.6.0-beta.1).* Follow-up: a fixed text with the status, the rest in the log.
+  which lets a hostile storage server write to the admins. (Reported as Backups L3.) *Fixed in
+  0.6.0-beta.2 (`a9fa7fd`).* Follow-up: a fixed text with the status, the rest in the log. The alert
+  says the kind of failure with the HTTP status or S3 error code, never the storage server's words;
+  the portal's status keeps at most 500 characters.
 - **SV-L30 Low, the command line shows the recovery key as it is typed.** (Reported as Backups L4.)
-  *Open (accepted for 0.6.0-beta.1).* Follow-up: read it without echo.
+  *Fixed in 0.6.0-beta.2 (`02b82f6`).* Follow-up: read it without echo.
 - **SV-L31 Low, the storage owner can hide newer snapshots.** The command line restores the newest
   one listed without saying so. Encryption keeps it from being changed. (Reported as Backups L5.)
-  *Open (accepted for 0.6.0-beta.1).* Follow-up: show the snapshot's date and ask; remember the
-  newest one seen.
+  *Fixed in 0.6.0-beta.2 (`02b82f6`, `8b7cafc`).* Follow-up: show the snapshot's date and ask;
+  remember the newest one seen. A new machine has nothing to remember, so the command line shows the
+  newest snapshot with its date and asks. The running server compares the listing with the last
+  snapshot it wrote, and the portal warns when that one is missing.
 
 Web vault:
 
 - **SV-L32 Low, "Share as Send" skips the re-prompt.** Every other way to a secret checks the
   master-password re-prompt inside the WASM module; sharing an item as a Send did not, and the
   button is live while the item loads. Someone at an unlocked vault can share a protected item's
-  password. (Reported as R4-3.) *Open (accepted for 0.6.0-beta.1).* Follow-up: check the re-prompt in
-  `share_item` and `shareable`, as `orgs::share` does, and disable the button until the item is
+  password. (Reported as R4-3.) *Fixed in 0.6.0-beta.2 (`679fa6e`).* Follow-up: check the re-prompt
+  in `share_item` and `shareable`, as `orgs::share` does, and disable the button until the item is
   there.
 
 Importers (all of them run in the user's own tab, on a file the user chose; the worst is the tab
 hanging):
 
-- **SV-L33 Low, no limit on unpacking.** A KDBX with gzip, a 1PUX or a Proton zip can unpack
-  without bound, and the file size has no cap. (Reported as Importers L1.) *Open (accepted for
-  0.6.0-beta.1).* Follow-up: caps on input, unpacked size and entries.
+- **SV-L33 Low, no limit on unpacking.** A KDBX with gzip, a 1PUX or a Proton zip can unpack without
+  bound, and the file size has no cap. (Reported as Importers L1.) *Fixed in 0.6.0-beta.2
+  (`95961ae`).* Follow-up: caps on input, unpacked size and entries. Input at most 256 MiB, unpacked
+  at most 512 MiB, at most 50,000 zip entries (the importers read no ZIP64, so fewer than the
+  suggested 100,000).
 - **SV-L34 Low, KeePass KDF parameters from the file are not capped.** AES-KDF rounds and Argon2
   passes run on the main thread before the HMAC check, cannot be cancelled, and leave the WASM
-  memory grown. (Reported as Importers L2.) *Open (accepted for 0.6.0-beta.1).* Follow-up: ceilings
-  like the vault's own KDF, in a worker.
+  memory grown. (Reported as Importers L2.) *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: ceilings
+  like the vault's own KDF, in a worker. Deviation: the KDF still runs on the page thread, not in a
+  worker, because the WASM module only loads there. The ceilings (Argon2 at most 1 GiB of memory,
+  memory times passes at most 10 GiB, 256 lanes; AES-KDF at most 100 million rounds) are wider than
+  the vault's own ranges so real KeePassXC files still import.
 - **SV-L35 Low, a quadratic regex in the Chrome CSV importer.** (Reported as Importers L3.)
-  *Open (accepted for 0.6.0-beta.1).* Follow-up: parse the Android address without the regex.
+  *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: parse the Android address without the regex.
 - **SV-L36 Low, the DOCTYPE/ENTITY guard can be padded past and runs after `DOMParser`.** The
   browser does not fetch external entities, so this is about size. (Reported as Importers L4.)
-  *Open (accepted for 0.6.0-beta.1).* Follow-up: check the whole prolog before parsing.
-- **SV-L37 Low, many folders take quadratic time.** (Reported as Importers L5.) *Open (accepted
-  for 0.6.0-beta.1).* Follow-up: a map by name instead of a search.
-- **SV-L38 Low, the KDBX 3.1 header hash is not checked.** The block hashes are, so a changed
-  header gives garbage or an error, not a quiet change. (Reported as Importers L6.) *Open (accepted
-  for 0.6.0-beta.1).* Follow-up: compare `Meta/HeaderHash`.
+  *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: check the whole prolog before parsing. The whole
+  prolog is checked in `parseXml()` before `DOMParser` sees the text.
+- **SV-L37 Low, many folders take quadratic time.** (Reported as Importers L5.) *Fixed in
+  0.6.0-beta.2 (`95961ae`).* Follow-up: a map by name instead of a search.
+- **SV-L38 Low, the KDBX 3.1 header hash is not checked.** The block hashes are, so a changed header
+  gives garbage or an error, not a quiet change. (Reported as Importers L6.) *Fixed in 0.6.0-beta.2
+  (`95961ae`).* Follow-up: compare `Meta/HeaderHash`.
 - **SV-L39 Low, one bad value stops the import with a raw error.** The message can show part of the
-  file on screen. (Reported as Importers L7.) *Open (accepted for 0.6.0-beta.1).* Follow-up: skip
-  the entry and name it, without the value.
+  file on screen. (Reported as Importers L7.) *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: skip
+  the entry and name it, without the value. The entry is skipped and named in the import summary,
+  without its value.
 - **SV-L40 Low, a 1PUX authenticator key in a section can become a visible text field.** (Reported
-  as Importers L8.) *Open (accepted for 0.6.0-beta.1).* Follow-up: map section TOTP fields to the
-  TOTP or a hidden field.
+  as Importers L8.) *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: map section TOTP fields to the
+  TOTP or a hidden field. A section's TOTP becomes the item's TOTP, or a hidden field when there is
+  one already.
 - **SV-L41 Low, KeePass key files 2.0 without a hash are refused.** A functional gap, no 32-byte
-  check either. (Reported as Importers L9.) *Open (accepted for 0.6.0-beta.1).* Follow-up: accept
-  them and check the length.
+  check either. (Reported as Importers L9.) *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: accept
+  them and check the length. Without a hash the key must be exactly 32 bytes.
 
 ## Info
 
 - **SV-I1 Info, a missing `secret.key` is replaced quietly.** Every sealed value then fails with a
-  bare 500. (Reported as a note in R3.) *Open (accepted for 0.6.0-beta.1).* Follow-up: refuse to
-  start when sealed values exist and the key is gone.
+  bare 500. (Reported as a note in R3.) *Fixed in 0.6.0-beta.2 (`a9fa7fd`).* Follow-up: refuse to
+  start when sealed values exist and the key is gone. `UWULOCK_NEW_SECRET_KEY=1` for one start
+  empties the sealed values instead (docs/deployment.md).
 - **SV-I2 Info, the admin's UwUMail check has no rate limit.** Admin only. (Reported as a note in
-  R3.) *Open (accepted for 0.6.0-beta.1).* Follow-up: the admin limiter.
+  R3.) *Fixed in 0.6.0-beta.2 (`2db5f24`).* Follow-up: the admin limiter. The check has its own
+  bucket in the connect limiter: ten, one back every six minutes.
 - **SV-I3 Info, the LastPass importer looks up inherited properties.** Nothing comes of it with
-  the fields LastPass writes. (Reported as Importers Info.) *Open (accepted for 0.6.0-beta.1).*
+  the fields LastPass writes. (Reported as Importers Info.) *Fixed in 0.6.0-beta.2 (`95961ae`).*
   Follow-up: `Object.hasOwn`.
 - **SV-I4 Info, imported addresses keep any scheme.** `javascript:` and `data:` come through; the
   web vault never links them and its CSP would stop them, but clients that open an item's address
-  should check. (Reported as Importers Info.) *Open (accepted for 0.6.0-beta.1).* Follow-up: keep
-  them as text, and the clients open only http and https (UwULock's already do).
+  should check. (Reported as Importers Info.) *Fixed in 0.6.0-beta.2 (`95961ae`).* Follow-up: keep
+  them as text, and the clients open only http and https (UwULock's already do). `javascript:`,
+  `vbscript:`, `data:`, `file:` and `blob:` addresses become a text field "URL".
 
 ## The clients, the extension, UwUSSH and UwURDP
 

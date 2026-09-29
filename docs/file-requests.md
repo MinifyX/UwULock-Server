@@ -43,7 +43,11 @@ anything there.
 ## Limits
 
 - Storage: what arrives counts to your storage on the server (with your attachments and Send
-  files). If the admin set a limit and it is full, uploads are refused.
+  files). If the admin set a limit and it is full, uploads are refused. One request holds at most
+  2 GB in all by default (`fileRequests.maxRequestMb`, 0 for no cap); then new submissions are
+  refused.
+- A request that is switched off or runs out takes nothing more, not even the rest of a
+  submission that began before.
 - An upload that was started but not finished is deleted after a day.
 - Abuse: wrong passwords are counted per request (ten, then one more a minute), and one address
   can make ten submissions an hour. Every request that expired, is full, disabled or unknown looks

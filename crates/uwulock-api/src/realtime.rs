@@ -7,7 +7,7 @@
 //! updates are handed to as well ([`crate::notify::publish`]).
 
 use crate::AppState;
-use crate::auth::Session;
+use crate::auth::{ClientIp, Session};
 use crate::sync::{Areas, Cursor};
 use axum::Router;
 use axum::extract::State;
@@ -17,6 +17,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use serde::Deserialize;
 use serde_json::json;
+use std::net::IpAddr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use uwulock_notify::realtime::Live;
 
@@ -36,12 +38,62 @@ const MOST_MESSAGE: usize = 4096;
 /// Client messages: one a second on average, ten at once.
 const BURST: f64 = 10.0;
 const PER_SECOND: f64 = 1.0;
+/// Connections that have not said `auth` yet, per address (an IPv6 /64) and in all: as the
+/// anonymous hub has it.
+#[cfg(not(test))]
+const WAITING_PER_NETWORK: u32 = 25;
+#[cfg(test)]
+const WAITING_PER_NETWORK: u32 = 3;
+const WAITING_MOST: u32 = 1000;
+
+/// Who waits for their `auth`, by network.
+#[derive(Default)]
+pub struct Waiting(parking_lot::Mutex<std::collections::HashMap<IpAddr, u32>>);
+
+/// A place among the waiting, given back when dropped.
+struct WaitingSlot {
+    waiting: Arc<Waiting>,
+    network: IpAddr,
+}
+
+impl Waiting {
+    fn take(self: &Arc<Self>, ip: IpAddr) -> Option<WaitingSlot> {
+        let network = crate::limits::network_of(ip);
+        let mut counts = self.0.lock();
+        if counts.values().sum::<u32>() >= WAITING_MOST {
+            return None;
+        }
+        let count = counts.entry(network).or_default();
+        if *count >= WAITING_PER_NETWORK {
+            return None;
+        }
+        *count += 1;
+        Some(WaitingSlot { waiting: self.clone(), network })
+    }
+}
+
+impl Drop for WaitingSlot {
+    fn drop(&mut self) {
+        let mut counts = self.waiting.0.lock();
+        if let Some(count) = counts.get_mut(&self.network) {
+            *count = count.saturating_sub(1);
+            if *count == 0 {
+                counts.remove(&self.network);
+            }
+        }
+    }
+}
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new().route("/uwu/v1/realtime", get(connect))
 }
 
-async fn connect(State(state): State<AppState>, headers: HeaderMap, upgrade: WebSocketUpgrade) -> Response {
+async fn connect(
+    State(state): State<AppState>,
+    ClientIp(ip): ClientIp,
+    headers: HeaderMap,
+    upgrade: WebSocketUpgrade,
+) -> Response {
     let offered = headers
         .get_all("sec-websocket-protocol")
         .iter()
@@ -51,12 +103,16 @@ async fn connect(State(state): State<AppState>, headers: HeaderMap, upgrade: Web
     if !offered {
         return (StatusCode::BAD_REQUEST, "The realtime channel speaks uwu.realtime.v1 only.").into_response();
     }
+    // Checked before the upgrade: a socket that never logs in holds a place until its `auth`.
+    let Some(slot) = state.realtime_waiting.take(ip) else {
+        return (StatusCode::TOO_MANY_REQUESTS, "Too many connections from this address.").into_response();
+    };
     upgrade
         .protocols([PROTOCOL])
         .read_buffer_size(MOST_MESSAGE)
         .max_message_size(MOST_MESSAGE)
         .max_frame_size(MOST_MESSAGE)
-        .on_upgrade(move |socket| serve(state, socket))
+        .on_upgrade(move |socket| serve(state, socket, slot))
 }
 
 #[derive(Deserialize)]
@@ -174,9 +230,10 @@ impl Rate {
     }
 }
 
-async fn serve(state: AppState, mut socket: WebSocket) {
+async fn serve(state: AppState, mut socket: WebSocket, slot: WaitingSlot) {
     // ── `auth` first ──
     let first = tokio::time::timeout(AUTH_WITHIN, socket.recv()).await;
+    drop(slot);
     let text = match first {
         Err(_) => {
             let _ = socket.send(close(4408, "No auth in time.")).await;

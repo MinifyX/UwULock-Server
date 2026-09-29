@@ -70,7 +70,8 @@ pub(crate) fn password_changed(tx: &Transaction<'_>, before: &Cipher, after: &Ci
 }
 
 impl Store {
-    /// The account's reminders, without those of items travel mode hides.
+    /// The account's reminders, without those of items travel mode hides or the account does not
+    /// see (any more).
     pub async fn reminders(&self, user_id: &str) -> Result<Vec<Reminder>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
@@ -84,7 +85,9 @@ impl Store {
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             let mut shown = Vec::with_capacity(reminders.len());
             for reminder in reminders {
-                if !crate::travel::is_hidden(conn, &user_id, &reminder.cipher_id)? {
+                if crate::organizations::sees(conn, &user_id, &reminder.cipher_id)?
+                    && !crate::travel::is_hidden(conn, &user_id, &reminder.cipher_id)?
+                {
                     shown.push(reminder);
                 }
             }
@@ -118,7 +121,8 @@ impl Store {
     }
 
     /// Accounts with reminders that became due by `today` and were not mailed for that day yet,
-    /// with those reminders' items; the hidden ones (travel mode) wait.
+    /// with those reminders' items; the hidden ones (travel mode) wait, and those of items the
+    /// account does not see (any more) are not mailed.
     pub async fn reminders_to_mail(&self, today: &str) -> Result<Vec<(String, Vec<String>)>> {
         let today = today.to_string();
         self.sqlite_read(move |conn| {
@@ -131,7 +135,8 @@ impl Store {
                 .collect::<rusqlite::Result<_>>()?;
             let mut by_user: Vec<(String, Vec<String>)> = Vec::new();
             for (user, cipher) in due {
-                if crate::travel::is_hidden(conn, &user, &cipher)? {
+                if !crate::organizations::sees(conn, &user, &cipher)? || crate::travel::is_hidden(conn, &user, &cipher)?
+                {
                     continue;
                 }
                 match by_user.last_mut() {

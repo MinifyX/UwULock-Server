@@ -149,6 +149,29 @@ impl Store {
         .await
     }
 
+    /// How many values in the database are sealed with the server secret (`secret.key`): the
+    /// settings' passwords, the channels' tokens, the tokens of masked addresses.
+    pub async fn sealed_values(&self) -> Result<u64> {
+        self.sqlite_read(|conn| {
+            conn.query_row(
+                "SELECT (SELECT count(*) FROM server WHERE value LIKE '%\"v1.%')
+                      + (SELECT count(*) FROM notification_channels WHERE config LIKE '%\"v1.%')
+                      + (SELECT count(*) FROM masked_connections
+                         WHERE refresh_token LIKE 'v1.%' OR access_token LIKE 'v1.%')",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map(|count| count.max(0) as u64)
+        })
+        .await
+    }
+
+    /// Empties every sealed value: for a server whose `secret.key` is lost for good. The admin
+    /// enters them again; masked addresses connect again.
+    pub async fn forget_sealed_values(&self) -> Result<()> {
+        self.sqlite_write(|tx| empty_sealed(tx)).await
+    }
+
     /// A setting the server keeps for itself, like the mail server or a signing key.
     pub async fn setting(&self, key: &str) -> Result<Option<String>> {
         let key = key.to_string();
@@ -359,6 +382,37 @@ impl Store {
         })
         .await
     }
+}
+
+/// Empties every value sealed with `secret.key`: the strings in the settings and the channels'
+/// configs, and the connections of masked addresses. For a lost key, and for an unencrypted
+/// backup, which leaves the key out.
+pub(crate) fn empty_sealed(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    fn empty(value: &mut serde_json::Value) -> bool {
+        match value {
+            serde_json::Value::String(text) if crate::secret::is_sealed(text) => {
+                text.clear();
+                true
+            }
+            serde_json::Value::Array(items) => items.iter_mut().fold(false, |any, item| empty(item) | any),
+            serde_json::Value::Object(fields) => fields.values_mut().fold(false, |any, item| empty(item) | any),
+            _ => false,
+        }
+    }
+    for (table, key, column) in [("server", "key", "value"), ("notification_channels", "id", "config")] {
+        let rows: Vec<(String, String)> = conn
+            .prepare(&format!("SELECT {key}, {column} FROM {table} WHERE {column} LIKE '%\"v1.%'"))?
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        for (id, text) in rows {
+            let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+            if empty(&mut value) {
+                conn.execute(&format!("UPDATE {table} SET {column} = ?2 WHERE {key} = ?1"), [id, value.to_string()])?;
+            }
+        }
+    }
+    conn.execute("DELETE FROM masked_connections WHERE refresh_token LIKE 'v1.%' OR access_token LIKE 'v1.%'", [])?;
+    Ok(())
 }
 
 #[cfg(test)]

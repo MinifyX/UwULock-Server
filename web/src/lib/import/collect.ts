@@ -35,6 +35,17 @@ export function some(value: string | null | undefined): string | null {
   return blank(value) ? null : value;
 }
 
+/** Schemes that run or show something in place of a page: never kept as an item's address. */
+const UNSAFE_SCHEMES = ['javascript:', 'vbscript:', 'data:', 'file:', 'blob:'];
+
+/** Whether `uri` has a scheme from `UNSAFE_SCHEMES`, as a browser would read it. */
+export function unsafeUri(uri: string): boolean {
+  // Browsers skip line breaks and tabs inside an address, and spaces and controls around it.
+  // eslint-disable-next-line no-control-regex
+  const plain = uri.replace(/[\x00-\x20\x7f]/g, '').toLowerCase();
+  return UNSAFE_SCHEMES.some((scheme) => plain.startsWith(scheme));
+}
+
 /** An address as the vault keeps it: with a scheme, "example.com" becomes https://example.com. */
 export function fixUri(uri: string): string | null {
   const trimmed = uri.trim();
@@ -119,6 +130,27 @@ export class Collector {
   private extras = new Set<ExportItem>();
   private attachments = 0;
   private warnings: string[] = [];
+  private entries = 0;
+  private skipped: string[] = [];
+
+  /**
+   * Reads one entry of the file with `read`. When that breaks on a value, the entry is left out
+   * and the preview names it by its title (or its place in the file), never by the value.
+   */
+  entry(title: unknown, read: () => void) {
+    const index = ++this.entries;
+    const extras = this.extras.size;
+    const attachments = this.attachments;
+    try {
+      read();
+    } catch {
+      // What the broken entry had noted so far goes with it.
+      [...this.extras].slice(extras).forEach((item) => this.extras.delete(item));
+      this.attachments = attachments;
+      const name = typeof title === 'string' ? title.trim().slice(0, 80) : '';
+      this.skipped.push(name || `#${index}`);
+    }
+  }
 
   item(type: ItemType, name?: string | null): ExportItem {
     const item: ExportItem = {
@@ -181,6 +213,11 @@ export class Collector {
   uris(item: ExportItem, ...uris: (string | null | undefined)[]) {
     if (!item.login) return;
     for (const uri of uris) {
+      // javascript:, data: and the like: kept, as text, but not as an address to open.
+      if (uri && unsafeUri(uri)) {
+        this.extra(item, 'URL', uri.trim(), FieldType.Text);
+        continue;
+      }
       const fixed = uri ? fixUri(uri) : null;
       if (fixed && !item.login.uris.some((known) => known.uri === fixed)) {
         item.login.uris.push({ uri: fixed, match: null });
@@ -263,6 +300,16 @@ export class Collector {
         ),
       );
     }
+    if (this.skipped.length > 0) {
+      const shown = this.skipped.slice(0, 10).join(', ');
+      const more = this.skipped.length - 10;
+      warnings.push(
+        t('{n} Einträge ließen sich nicht lesen und bleiben weg: {names}', {
+          n: this.skipped.length,
+          names: more > 0 ? `${shown} ${t('… und {n} weitere', { n: more })}` : shown,
+        }),
+      );
+    }
     if (this.attachments > 0) {
       warnings.push(
         t(
@@ -271,14 +318,16 @@ export class Collector {
         ),
       );
     }
-    // Only folders something is in, or that something is in below them.
+    // Only folders something is in, or that something is in below them: the used ones and
+    // every folder on their paths.
     const used = new Set(this.items.map((item) => item.folderId));
-    const names = new Set(
-      this.folders.filter((folder) => used.has(folder.id)).map((folder) => folder.name),
-    );
-    const folders = this.folders.filter((folder) =>
-      [...names].some((name) => name === folder.name || name.startsWith(`${folder.name}/`)),
-    );
+    const keep = new Set<string>();
+    for (const folder of this.folders) {
+      if (!used.has(folder.id)) continue;
+      const parts = folder.name.split('/');
+      for (let i = 1; i <= parts.length; i++) keep.add(parts.slice(0, i).join('/'));
+    }
+    const folders = this.folders.filter((folder) => keep.has(folder.name));
     return { data: { encrypted: false, folders, items: this.items }, warnings };
   }
 }

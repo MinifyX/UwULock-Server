@@ -9,6 +9,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
 use uwulock_store::Store;
+use uwulock_store::secret::{ServerSecret, is_sealed};
 
 use crate::{BackupReport, Error, Manifest, RepoKey, Repository, Retention, Source, Storage, TEMP_DIR, Target};
 
@@ -88,6 +89,28 @@ impl OffsiteSettings {
         Ok(())
     }
 
+    /// Each password or key in the settings, with what it is for.
+    fn secrets(&mut self, mut each: impl FnMut(&mut Option<String>, &str) -> Result<(), String>) -> Result<(), String> {
+        let mut text = |value: &mut String, purpose: &str| {
+            let mut field = Some(std::mem::take(value));
+            let done = each(&mut field, purpose);
+            *value = field.unwrap_or_default();
+            done
+        };
+        match self.target.as_mut() {
+            Some(Target::S3(s3)) => text(&mut s3.secret_key, "offsite.s3.secretKey")?,
+            Some(Target::Sftp(sftp)) => match &mut sftp.login {
+                crate::Login::Password { password } => text(password, "offsite.sftp.password")?,
+                crate::Login::Key { private_key } => text(private_key, "offsite.sftp.privateKey")?,
+            },
+            Some(Target::Folder(_)) | None => {}
+        }
+        if let Some(key) = self.key.as_mut() {
+            text(key, "offsite.recoveryKey")?;
+        }
+        Ok(())
+    }
+
     /// Backups without encryption to another machine: not any more. Only a folder of this
     /// machine may take them unencrypted — it holds nothing the data directory does not.
     /// Settings from before are kept, but do not run until they are saved with encryption.
@@ -99,6 +122,9 @@ impl OffsiteSettings {
 /// Why settings that send backups unencrypted to SFTP or S3 do not run.
 pub const PLAIN_ELSEWHERE: &str = "backups to SFTP or S3 are encrypted; save the settings again with encryption on (at a new place, since the backups there are not encrypted)";
 
+/// How much of an error the portal shows.
+const ERROR_SHOWN: usize = 500;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct OffsiteStatus {
@@ -109,6 +135,8 @@ pub struct OffsiteStatus {
     /// Seconds the last run took.
     pub last_duration: Option<i64>,
     pub last_error: Option<String>,
+    /// The error in our own words, for the alerts (see `Error::summary`).
+    pub last_failure: Option<String>,
     pub last_report: Option<BackupReport>,
 }
 
@@ -125,6 +153,8 @@ struct Inner {
     backing_up: AtomicBool,
     /// [`RUN_DEADLINE`], shorter in tests.
     deadline: Duration,
+    /// Seals the passwords and keys in the settings (`secret.key` in the data directory).
+    secret: Arc<ServerSecret>,
 }
 
 /// The off-site backups of one server. Cheap to clone.
@@ -166,6 +196,7 @@ impl Offsite {
                 busy: Arc::new(Mutex::new(())),
                 backing_up: AtomicBool::new(false),
                 deadline: RUN_DEADLINE,
+                secret: Arc::new(ServerSecret::new(data_dir)),
             }),
         }
     }
@@ -178,7 +209,19 @@ impl Offsite {
         offsite
     }
 
+    /// The server's secret for values at rest, which the rest of the server shares.
+    pub fn secret(&self) -> Arc<ServerSecret> {
+        self.inner.secret.clone()
+    }
+
+    /// The settings, with the passwords and keys opened.
     pub async fn settings(&self) -> Result<OffsiteSettings, Error> {
+        let mut settings = self.stored_settings().await?;
+        settings.secrets(|field, purpose| self.inner.secret.open_field(field, purpose)).map_err(Error::Config)?;
+        Ok(settings)
+    }
+
+    async fn stored_settings(&self) -> Result<OffsiteSettings, Error> {
         Ok(match self.inner.store.setting(SETTINGS_KEY).await? {
             Some(raw) => serde_json::from_str(&raw)
                 .map_err(|_| Error::Config("the off-site backup settings are damaged".into()))?,
@@ -186,10 +229,34 @@ impl Offsite {
         })
     }
 
+    /// Saved with the passwords, keys and the recovery key sealed (SV-L18).
     pub async fn save_settings(&self, settings: &OffsiteSettings) -> Result<(), Error> {
         settings.check()?;
-        let raw = serde_json::to_string(settings).expect("settings serialize");
+        let mut sealed = settings.clone();
+        sealed.secrets(|field, purpose| self.inner.secret.seal_field(field, purpose)).map_err(Error::Config)?;
+        let raw = serde_json::to_string(&sealed).expect("settings serialize");
         self.inner.store.set_setting(SETTINGS_KEY, &raw).await?;
+        Ok(())
+    }
+
+    /// Seals what an older server kept in plain. Once, at the start.
+    pub async fn seal_stored(&self) -> Result<(), Error> {
+        let mut stored = self.stored_settings().await?;
+        let mut plain = false;
+        stored
+            .secrets(|field, _| {
+                plain |= field.as_deref().is_some_and(|value| !value.is_empty() && !is_sealed(value));
+                Ok(())
+            })
+            .map_err(Error::Config)?;
+        if plain {
+            let settings = self.settings().await?;
+            let mut sealed = settings.clone();
+            sealed.secrets(|field, purpose| self.inner.secret.seal_field(field, purpose)).map_err(Error::Config)?;
+            let raw = serde_json::to_string(&sealed).expect("settings serialize");
+            self.inner.store.set_setting(SETTINGS_KEY, &raw).await?;
+            tracing::info!("the off-site backup secrets are sealed now");
+        }
         Ok(())
     }
 
@@ -221,36 +288,37 @@ impl Offsite {
         tokio::time::timeout(timeout, self.inner.wakeup.notified()).await.is_ok()
     }
 
-    /// Opens the repository, remembering an SFTP server's host key the first time.
+    /// Opens the repository. An SFTP server's host key must be confirmed already (see
+    /// [`Offsite::test`]).
     async fn open(&self, settings: &mut OffsiteSettings, create: bool) -> Result<Repository, Error> {
         let target = settings.target.as_mut().ok_or_else(|| Error::Config("no backup target is set up".into()))?;
         let storage = Storage::open(target).await?;
-        if let (Some(sftp), Some(seen)) = (target.as_sftp_mut(), storage.host_key())
-            && sftp.host_key.is_none()
-        {
-            sftp.host_key = Some(seen.to_owned());
-            self.save_settings(settings).await?;
-        }
         let key = settings.key.as_deref().map(RepoKey::from_recovery_text).transpose()?;
         if create { Repository::open(storage, key, now()).await } else { Repository::open_existing(storage, key).await }
     }
 
     /// Connects to the target and writes a small file there and takes it away: whether backups
-    /// can go there. Remembers an SFTP server's host key the first time. Answers the host key,
-    /// and whether it was known before.
-    pub async fn test(&self) -> Result<(Option<String>, bool), Error> {
+    /// can go there. Answers the host key, and whether it was known before.
+    ///
+    /// An SFTP server's key is confirmed first (SV-L27): without one known, the test only looks
+    /// at the key the server shows and answers it, with nothing sent to the server and nothing
+    /// saved (`Error::HostKeyUnconfirmed`). Tested again with that key as `confirm`, the key is
+    /// trusted for this connection, and remembered once the test worked.
+    pub async fn test(&self, confirm: Option<&str>) -> Result<(Option<String>, bool), Error> {
         let mut settings = self.settings().await?;
         let target = settings.target.as_mut().ok_or_else(|| Error::Config("no backup target is set up".into()))?;
         let known = target.as_sftp().is_some_and(|sftp| sftp.host_key.is_some());
+        if let Some(sftp) = target.as_sftp_mut()
+            && sftp.host_key.is_none()
+        {
+            sftp.host_key = confirm.map(str::to_owned);
+        }
         let storage = Storage::open(target).await?;
         let host_key = storage.host_key().map(str::to_owned);
         let written = storage.check_writable().await;
         storage.close().await;
         written?;
-        if let (Some(sftp), Some(seen)) = (target.as_sftp_mut(), &host_key)
-            && sftp.host_key.is_none()
-        {
-            sftp.host_key = Some(seen.clone());
+        if !known && target.as_sftp().is_some() && host_key.is_some() {
             self.save_settings(&settings).await?;
         }
         Ok((host_key, known))
@@ -295,11 +363,14 @@ impl Offsite {
             Ok(report) => {
                 status.last_success = Some(finished);
                 status.last_error = None;
+                status.last_failure = None;
                 status.last_report = Some(report.clone());
                 tracing::info!(snapshot = %report.snapshot, uploaded = report.uploaded, "off-site backup done");
             }
             Err(error) => {
-                status.last_error = Some(error.to_string());
+                // The portal shows it; a storage server's long answer is cut there.
+                status.last_error = Some(error.to_string().chars().take(ERROR_SHOWN).collect());
+                status.last_failure = Some(error.summary());
                 tracing::warn!(%error, "off-site backup failed");
             }
         }
@@ -432,6 +503,29 @@ mod tests {
             minute: 15,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn alerts_get_our_words_not_the_storage_servers() {
+        let summary = |text: &str| Error::Storage(text.into()).summary();
+        assert_eq!(
+            summary("s3.example.com answered 503 Service Unavailable: whatever"),
+            "the backup server answered 503"
+        );
+        assert_eq!(
+            summary("s3.example.com answered AccessDenied: <script>"),
+            "the backup server answered AccessDenied"
+        );
+        assert_eq!(
+            summary("s3.example.com answered Hi-admins!: call me"),
+            "the backup server could not be reached or did not work"
+        );
+        assert_eq!(
+            summary("connecting to 192.0.2.1:22: refused"),
+            "the backup server could not be reached or did not work"
+        );
+        let damaged = Error::Damaged("chunk 1 said hello".into()).summary();
+        assert!(!damaged.contains("hello"));
     }
 
     #[test]

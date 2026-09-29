@@ -132,5 +132,9 @@
   "Ohne Verschlüsselung vergisst der Server den Wiederherstellungsschlüssel. Die verschlüsselten Backups lassen sich dann nur noch mit dem Schlüssel lesen, den du aufgehoben hast.": "Without encryption the server forgets the recovery key. The encrypted backups can then only be read with the key you kept.",
   "Hier entscheidet sich, wohin die ganze Datenbank geht. Deshalb braucht jede Änderung dein Master-Passwort.": "This decides where the whole database goes, so every change needs your master password.",
   "Host-Schlüssel vergessen?": "Forget the host key?",
-  "Der nächste Test vertraut dem Schlüssel, den der Backup-Server dann zeigt. Tu das nur, wenn du weißt, warum er sich geändert hat.": "The next test trusts whatever key the backup server shows then. Only do this when you know why it changed."
+  "Der nächste Test vertraut dem Schlüssel, den der Backup-Server dann zeigt. Tu das nur, wenn du weißt, warum er sich geändert hat.": "The next test trusts whatever key the backup server shows then. Only do this when you know why it changed.",
+  "Der letzte Stand, den dieser Server geschrieben hat, fehlt am Ziel. Wer das Ziel verwaltet, kann Stände verstecken: Spiel nichts zurück, bevor du weißt, warum.": "The last snapshot this server wrote is missing at the target. Whoever runs the target can hide snapshots: restore nothing before you know why.",
+  "Host-Schlüssel bestätigen?": "Confirm the host key?",
+  "Schlüssel vertrauen": "Trust the key",
+  "Der Backup-Server zeigt diesen Host-Schlüssel. Vergleiche ihn mit dem des Servers (dort: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Erst danach meldet sich dieser Server dort an.": "The backup server shows this host key. Compare it with the server's own (there: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub). Only then does this server log in there."
 }

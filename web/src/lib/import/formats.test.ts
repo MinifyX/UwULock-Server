@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { t } from '../i18n';
+import { androidApp } from './browsers';
+import { Collector } from './collect';
 import { detect, readImport, summarize } from './index';
+import { checkFileSize, MAX_FILE_BYTES, MAX_ZIP_ENTRIES } from './limits';
 import type { ExportItem, Parsed, Source } from './types';
 
 const fixture = (name: string) =>
@@ -361,5 +364,138 @@ describe('the preview', () => {
     await expect(read('protonpass.zip', 'lastpass')).rejects.toThrow(
       t('Diese Datei ist kein Export, den UwULock von {app} kennt.', { app: 'LastPass' }),
     );
+  });
+});
+
+/** 1Password's export.data with the given items in one vault, as the importer takes it alone. */
+const onePux = (items: unknown[]) =>
+  bytes(JSON.stringify({ accounts: [{ vaults: [{ attrs: { name: 'Privat' }, items }] }] }));
+
+describe('hardening', () => {
+  it('turns away files and zips beyond the limits', async () => {
+    expect(() => checkFileSize(MAX_FILE_BYTES)).not.toThrow();
+    expect(() => checkFileSize(MAX_FILE_BYTES + 1)).toThrow(
+      t('Die Datei ist zu groß für den Import (mehr als {size} MiB).', { size: 256 }),
+    );
+    // A zip whose end record lists one entry too many.
+    const zip = new Uint8Array(4 + 22);
+    zip.set([0x50, 0x4b, 3, 4]);
+    const view = new DataView(zip.buffer);
+    view.setUint32(4, 0x06054b50, true);
+    view.setUint16(4 + 10, MAX_ZIP_ENTRIES + 1, true);
+    await expect(read('x.zip', '1password', zip)).rejects.toThrow(
+      t('Die ZIP-Datei hat mehr als {n} Einträge, das importiert UwULock nicht.', {
+        n: MAX_ZIP_ENTRIES,
+      }),
+    );
+  });
+
+  it('reads the Android app of an address without a regex, and fast', () => {
+    expect(androidApp('android://aBc-Hash==@com.example.app/')).toBe('com.example.app');
+    expect(androidApp('android://x@y@com.example.app')).toBe('com.example.app');
+    expect(androidApp('android://x@com.example.app/z')).toBeNull();
+    expect(androidApp('https://example.com/@x')).toBeNull();
+    expect(androidApp(`android://${'@'.repeat(200_000)}/x`)).toBeNull();
+  });
+
+  it('keeps many folders, and only those in use, in linear time', () => {
+    const collector = new Collector();
+    collector.folder('Leer');
+    for (let i = 0; i < 20_000; i++) collector.add(collector.login(`n${i}`), `Oben/F${i}`);
+    const { data } = collector.result();
+    expect(data.folders.length).toBe(20_001);
+    expect(data.folders[0]!.name).toBe('Oben');
+    expect(data.folders.some((f) => f.name === 'Leer')).toBe(false);
+  });
+
+  it('skips an entry with a broken value and names it, without the value', async () => {
+    const { parsed } = await read(
+      'export.data',
+      '1password',
+      onePux([
+        { categoryUuid: '001', overview: { title: 'Gut' }, details: { password: 'x' } },
+        {
+          categoryUuid: '003',
+          overview: { title: 'Kaputt' },
+          details: { sections: [{ fields: [{ title: 'Datum', value: { date: 1e20 } }] }] },
+        },
+      ]),
+    );
+    expect(parsed.data.items.map((i) => i.name)).toEqual(['Gut']);
+    expect(parsed.warnings).toContain(
+      t('{n} Einträge ließen sich nicht lesen und bleiben weg: {names}', {
+        n: 1,
+        names: 'Kaputt',
+      }),
+    );
+    await expect(read('export.data', '1password', bytes('{"accounts":5}'))).rejects.toThrow(
+      t('Die Datei ließ sich nicht lesen: Sie ist beschädigt oder anders aufgebaut als erwartet.'),
+    );
+  });
+
+  it('keeps a 1PUX authenticator key in a section hidden, or as the TOTP', async () => {
+    const { byName } = await read(
+      'export.data',
+      '1password',
+      onePux([
+        {
+          categoryUuid: '001',
+          overview: { title: 'Zwei' },
+          details: {
+            loginFields: [{ designation: 'username', value: 'nyu' }],
+            sections: [
+              {
+                title: 'OTP',
+                fields: [
+                  { title: 'Erster', id: 'TOTP_a', value: { totp: 'JBSWY3DPEHPK3PXP' } },
+                  { title: 'Zweiter', id: 'b', value: { totp: 'GEZDGNBVGY3TQOJQ' } },
+                ],
+              },
+            ],
+          },
+        },
+        {
+          categoryUuid: '003',
+          overview: { title: 'Notiz' },
+          details: {
+            sections: [{ fields: [{ title: 'Code', value: { totp: 'JBSWY3DPEHPK3PXP' } }] }],
+          },
+        },
+      ]),
+    );
+    expect(byName('Zwei').login!.totp).toBe('JBSWY3DPEHPK3PXP');
+    expect(field(byName('Zwei'), 'Zweiter')).toEqual({
+      name: 'Zweiter',
+      value: 'GEZDGNBVGY3TQOJQ',
+      type: 1,
+    });
+    expect(field(byName('Notiz'), 'Code')?.type).toBe(1);
+  });
+
+  it('looks up only LastPass’s own form fields', async () => {
+    const text =
+      'url,username,password,totp,extra,name,grouping,fav\n' +
+      'http://sn,,,,"NoteType:Credit Card\nconstructor:abc\nNumber:4111111111111111",Karte,,0\n';
+    const { byName } = await read('lastpass.csv', 'lastpass', bytes(text));
+    expect(byName('Karte').card!.number).toBe('4111111111111111');
+    expect(field(byName('Karte'), 'constructor')?.value).toBe('abc');
+  });
+
+  it('keeps addresses with a scheme that runs something as text, not as addresses', async () => {
+    const text =
+      'name,url,username,password\n' +
+      'Skript,javascript:alert(1),nyu,pw\n' +
+      'Daten," DATA:text/html,x",nyu,pw\n' +
+      'Web,https://example.com,nyu,pw\n';
+    const { byName } = await read('chrome.csv', 'chrome', bytes(text));
+    expect(uris(byName('Skript'))).toEqual([]);
+    expect(field(byName('Skript'), 'URL')).toEqual({
+      name: 'URL',
+      value: 'javascript:alert(1)',
+      type: 0,
+    });
+    expect(uris(byName('Daten'))).toEqual([]);
+    expect(field(byName('Daten'), 'URL')?.value).toBe('DATA:text/html,x');
+    expect(uris(byName('Web'))).toEqual(['https://example.com']);
   });
 });

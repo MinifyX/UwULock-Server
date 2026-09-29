@@ -48,7 +48,10 @@ The server looks at itself every minute and tells its admins when
 
 An event goes to a channel when it starts, at most once an hour however often it comes and goes,
 and once more when it is over. The admin portal's overview lists what is going on right now.
-Messages name no account, only counts, dates and sizes.
+Messages name no account, only counts, dates and sizes. What another server said (the mail
+server's refusal, the push relay's or the backup storage's error) stays in the portal and the log;
+channels get a fixed text with the status code, like "Mails do not go out (SMTP 550)" or "The
+off-site backup did not work (the backup server answered 503)".
 
 ### Channels
 
@@ -65,12 +68,14 @@ A server starts with **Mail** to every admin (for everything but `updateAvailabl
   Invite that account to the room first. Messages are plain text; the room is not encrypted by
   the server.
 
-Tokens stay on the server: the portal shows only whether one is saved, and a token left empty on
+Tokens stay on the server, sealed (AES-256-GCM) under `secret.key` in the data directory like
+the other secrets in the settings: the portal shows only whether one is saved, and a token left empty on
 saving is kept — as long as the address stays the same. Sent to another address, it has to be
 typed again.
 
 The addresses may be in your own network — only an admin can set them. The server speaks only
-http and https to them, follows no redirect and gives up after ten seconds. A channel that does
+http and https to them, follows no redirect and gives up after ten seconds. A failing test says
+the status the address answered, not what it wrote. A channel that does
 not take a message keeps it and is tried again a minute later, then two, four, up to an hour; the
 overview shows it as failing. A message nobody took for a day is dropped.
 

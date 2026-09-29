@@ -62,5 +62,11 @@
   "Schlüsseldatei (wenn die Datei eine hat)": "Key file (if the file has one)",
   "Schlüssel (SSH)": "SSH key",
   "… und {n} weitere": "… and {n} more",
-  "UwULock erkennt nicht, aus welcher App diese Datei kommt. Wähl die App bitte aus.": "UwULock can’t tell which app this file comes from. Please choose the app."
+  "UwULock erkennt nicht, aus welcher App diese Datei kommt. Wähl die App bitte aus.": "UwULock can’t tell which app this file comes from. Please choose the app.",
+  "Die Datei ist zu groß für den Import (mehr als {size} MiB).": "The file is too large to import (more than {size} MiB).",
+  "Die Datei entpackt sich zu mehr als {size} MiB, das importiert UwULock nicht.": "The file unpacks to more than {size} MiB; UwULock doesn’t import that.",
+  "Die ZIP-Datei hat mehr als {n} Einträge, das importiert UwULock nicht.": "The ZIP file has more than {n} entries; UwULock doesn’t import that.",
+  "Die Schlüsselableitung dieser KeePass-Datei ist aufwendiger, als UwULock beim Import zulässt. Stell sie in KeePassXC oder KeePass bei den Datenbank-Einstellungen niedriger, speichere und importiere die Datei noch einmal.": "This KeePass file’s key derivation is more costly than UwULock allows for an import. Lower it in the database settings of KeePassXC or KeePass, save, and import the file again.",
+  "Die Datei ließ sich nicht lesen: Sie ist beschädigt oder anders aufgebaut als erwartet.": "The file couldn’t be read: it is damaged or built differently than expected.",
+  "{n} Einträge ließen sich nicht lesen und bleiben weg: {names}": "{n} items couldn’t be read and are left out: {names}"
 }

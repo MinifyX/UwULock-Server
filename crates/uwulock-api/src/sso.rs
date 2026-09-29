@@ -124,6 +124,10 @@ pub struct SsoSettings {
     /// After pairing with UwUAuth: its roles `admin` and `user` in place of the two groups.
     pub roles_claim: Option<String>,
     pub paired: Option<Paired>,
+    /// Browser extensions besides the released UwULock extension that may log in with
+    /// `client_id=uwulock-extension`: the id in their `identity` redirect address (Chromium's
+    /// 32 letters a–p, or the 40 hex digits Firefox makes of the add-on id). For self-built ones.
+    pub extension_ids: Vec<String>,
 }
 
 impl Default for SsoSettings {
@@ -146,6 +150,7 @@ impl Default for SsoSettings {
             groups_claim: "groups".into(),
             roles_claim: None,
             paired: None,
+            extension_ids: Vec::new(),
         }
     }
 }
@@ -162,7 +167,7 @@ impl SsoSettings {
 
     pub fn check(&self) -> Result<(), String> {
         if !self.issuer.trim().is_empty() {
-            oidc::checked_endpoint(&self.issuer, "The issuer")?;
+            oidc::checked_issuer(&self.issuer)?;
         }
         if self.enabled && (self.issuer.trim().is_empty() || self.client_id.trim().is_empty()) {
             return Err("SSO needs the provider's issuer address and the client id.".into());
@@ -190,6 +195,11 @@ impl SsoSettings {
         let claim_ok = |claim: &str| !claim.trim().is_empty() && claim.len() <= 100;
         if !claim_ok(&self.groups_claim) || self.roles_claim.as_deref().is_some_and(|claim| !claim_ok(claim)) {
             return Err("A claim's name has 1 to 100 characters.".into());
+        }
+        if self.extension_ids.len() > 20 || !self.extension_ids.iter().all(|id| extension_id_ok(id)) {
+            return Err(
+                "An extension id is 32 letters a to p (Chromium) or 40 hex digits (Firefox), at most 20.".into()
+            );
         }
         for group in [&self.user_group, &self.admin_group].into_iter().flatten() {
             if group.trim().is_empty() || group.len() > 200 {
@@ -345,8 +355,21 @@ fn loopback_redirect(uri: &str) -> bool {
     })
 }
 
-/// The redirect address of a browser extension's `identity` API: Chromium's or Firefox's.
-fn extension_redirect(uri: &str) -> bool {
+/// The redirect host id of the released UwULock extension for Firefox: the SHA-1 of its add-on
+/// id `uwulock@minifyx.de`, as Firefox makes its `identity` redirect address. The Chromium build
+/// is installed by hand, so its id differs per browser; it is added in the settings.
+const RELEASED_EXTENSIONS: [&str; 1] = ["e2a48da41bf871b17a40262b242249e7cd857b53"];
+
+/// Whether `id` looks like the id in an extension's redirect host: Chromium's or Firefox's.
+fn extension_id_ok(id: &str) -> bool {
+    (id.len() == 32 && id.bytes().all(|byte| (b'a'..=b'p').contains(&byte)))
+        || (id.len() == 40 && id.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f')))
+}
+
+/// The redirect address of a browser extension's `identity` API, Chromium's or Firefox's, of
+/// the released UwULock extension or one the admin listed. Any other extension with the
+/// `identity` permission could otherwise get a silent login where the provider asks nothing.
+fn extension_redirect(uri: &str, listed: &[String]) -> bool {
     let Ok(url) = reqwest::Url::parse(uri) else { return false };
     let Some(host) = url.host_str() else { return false };
     let plain = url.scheme() == "https"
@@ -360,16 +383,18 @@ fn extension_redirect(uri: &str) -> bool {
     let firefox = host
         .strip_suffix(".extensions.allizom.org")
         .is_some_and(|id| id.len() == 40 && id.bytes().all(|byte| byte.is_ascii_hexdigit()));
-    plain && (chromium || firefox)
+    let known = |id: &str| RELEASED_EXTENSIONS.contains(&id) || listed.iter().any(|listed| listed == id);
+    let id = host.strip_suffix(".chromiumapp.org").or_else(|| host.strip_suffix(".extensions.allizom.org"));
+    plain && (chromium || firefox) && id.is_some_and(known)
 }
 
 /// Whether `client_id` may be sent back to `uri` (§19.2 step 3).
-fn redirect_allowed(public: &str, client_id: &str, uri: &str) -> bool {
+fn redirect_allowed(public: &str, client_id: &str, uri: &str, extensions: &[String]) -> bool {
     match client_id {
         "web" | "browser" => uri == format!("{public}/sso-connector.html"),
         "mobile" => uri == "bitwarden://sso-callback",
         "desktop" => uri == "bitwarden://sso-callback" || loopback_redirect(uri),
-        "uwulock-extension" => extension_redirect(uri),
+        "uwulock-extension" => extension_redirect(uri, extensions),
         other if SUITE_CLIENTS.contains(&other) => loopback_redirect(uri),
         _ => false,
     }
@@ -442,7 +467,7 @@ async fn authorize(
     let get = |name: &str| query.get(name).map(|value| value.trim()).filter(|value| !value.is_empty());
     let client_id = get("client_id").ok_or_else(|| ApiError::bad("client_id is missing."))?;
     let redirect_uri = get("redirect_uri").ok_or_else(|| ApiError::bad("redirect_uri is missing."))?;
-    if !redirect_allowed(&state.config.public, client_id, redirect_uri) {
+    if !redirect_allowed(&state.config.public, client_id, redirect_uri, &sso.extension_ids) {
         return Err(ApiError::bad("This redirect_uri is not allowed for this client."));
     }
     if get("response_type") != Some("code") {
@@ -1140,6 +1165,8 @@ async fn put_settings(
     new.admin_group = clean(new.admin_group);
     new.roles_claim = clean(new.roles_claim);
     new.groups_claim = new.groups_claim.trim().to_string();
+    new.extension_ids =
+        new.extension_ids.iter().map(|id| id.trim().to_ascii_lowercase()).filter(|id| !id.is_empty()).collect();
     new.paired = current.paired.clone();
     // The secret left out: kept for the same provider and client only, so that an admin session
     // cannot send it to a provider of its own.
@@ -1163,7 +1190,7 @@ async fn put_settings(
     }
     all.sso = new;
     all.check().map_err(ApiError::bad)?;
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     state.oidc.forget();
     crate::admin::record(&state, &admin, "changed the SSO settings".into()).await;
@@ -1204,7 +1231,7 @@ async fn scim_token(State(state): State<AppState>, admin: Admin) -> ApiResult<Js
     let token = auth::random_token(32);
     let mut all = state.settings();
     all.scim.token_hash = Some(crate::metrics::hex(&auth::sha256(token.as_bytes())));
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     crate::admin::record(&state, &admin, "made a new SCIM token".into()).await;
     Ok(Json(json!({ "token": token })))
@@ -1370,12 +1397,13 @@ async fn pair(State(state): State<AppState>, admin: Admin, Json(data): Json<Pair
             manage_url: text("manageUrl"),
             date: clock::now(),
         }),
+        extension_ids: previous.extension_ids,
     };
     if let Some(token) = text("scimToken") {
         all.scim.token_hash = Some(crate::metrics::hex(&auth::sha256(token.as_bytes())));
     }
     all.check().map_err(ApiError::bad)?;
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     crate::admin::record(&state, &admin, format!("paired with UwUAuth at {base}")).await;
     Ok(Json(settings_json(&state)))
@@ -1388,7 +1416,7 @@ async fn unpair(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<V
     };
     all.sso = SsoSettings { identifier: all.sso.identifier.clone(), ..SsoSettings::default() };
     all.scim.token_hash = None;
-    all.save(&state.store).await?;
+    all.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
     state.apply_settings(all);
     state.oidc.forget();
     crate::admin::record(&state, &admin, format!("ended the pairing with UwUAuth at {}", paired.url)).await;

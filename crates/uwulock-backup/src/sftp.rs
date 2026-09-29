@@ -75,7 +75,8 @@ impl client::Handler for HostKeyCheck {
     async fn check_server_key(&mut self, key: &PublicKeyOrCertificate) -> Result<bool, Self::Error> {
         let PublicKeyOrCertificate::PublicKey { key, .. } = key else { return Ok(false) };
         let fingerprint = key.fingerprint(HashAlg::Sha256).to_string();
-        let trusted = self.expected.as_ref().is_none_or(|expected| *expected == fingerprint);
+        // Without a confirmed key, only look: the connection ends before any login is sent.
+        let trusted = self.expected.as_ref().is_some_and(|expected| *expected == fingerprint);
         *self.seen.lock().expect("host key lock") = Some(fingerprint);
         Ok(trusted)
     }
@@ -101,6 +102,9 @@ fn not_found(err: &russh_sftp::client::error::Error) -> bool {
 }
 
 impl Sftp {
+    /// Connects and logs in, only to a server showing the confirmed host key. Without one, the
+    /// connection ends at the key and [`Error::HostKeyUnconfirmed`] names it: nothing of the
+    /// login goes to a server nobody confirmed (SV-L27).
     pub async fn connect(target: &SftpTarget) -> Result<Sftp, Error> {
         let config = client::Config {
             inactivity_timeout: Some(Duration::from_secs(300)),
@@ -118,6 +122,7 @@ impl Sftp {
                     (Some(seen), Some(expected)) if &seen != expected => {
                         Error::HostKeyChanged { expected: expected.clone(), seen }
                     }
+                    (Some(seen), None) => Error::HostKeyUnconfirmed { seen },
                     _ => Error::Storage(format!("connecting to {}:{}: {err}", target.host, target.port)),
                 });
             }

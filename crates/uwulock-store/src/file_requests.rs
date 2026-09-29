@@ -82,6 +82,8 @@ pub enum Refusal {
     Gone,
     /// The owner's storage is full.
     Quota,
+    /// The request holds all the bytes it may.
+    RequestFull,
 }
 
 /// Submissions that were started but never completed go after this long.
@@ -589,9 +591,15 @@ impl Store {
     }
 
     /// Starts a submission with its files announced, if the request still takes one: open, with
-    /// submissions left (those on their way count), and room in the owner's storage (`limit`
-    /// bytes, none for no limit).
-    pub async fn start_submission(&self, submission: Submission, limit: Option<i64>) -> Result<Result<(), Refusal>> {
+    /// submissions left (those on their way count), room in the owner's storage (`limit` bytes,
+    /// none for no limit) and in the request (`request_limit` bytes, all its submissions'
+    /// files together).
+    pub async fn start_submission(
+        &self,
+        submission: Submission,
+        limit: Option<i64>,
+        request_limit: Option<i64>,
+    ) -> Result<Result<(), Refusal>> {
         let now = clock::now();
         self.sqlite_write(move |tx| {
             let request = tx
@@ -614,11 +622,22 @@ impl Store {
                     return Ok(Err(Refusal::Gone));
                 }
             }
+            let adding: i64 = submission.files.iter().map(|file| file.size).sum();
             if let Some(limit) = limit {
                 let used: i64 = tx.query_row(USER_BYTES, [&request.user_id], |row| row.get(0))?;
-                let adding: i64 = submission.files.iter().map(|file| file.size).sum();
                 if used + adding > limit {
                     return Ok(Err(Refusal::Quota));
+                }
+            }
+            if let Some(limit) = request_limit {
+                let held: i64 = tx.query_row(
+                    "SELECT coalesce(sum(f.size), 0) FROM file_request_files f \
+                     JOIN file_request_submissions s ON s.id = f.submission_id WHERE s.request_id = ?1",
+                    [&request.id],
+                    |row| row.get(0),
+                )?;
+                if held + adding > limit {
+                    return Ok(Err(Refusal::RequestFull));
                 }
             }
             tx.execute(
@@ -638,15 +657,19 @@ impl Store {
     }
 
     /// A file of a submission still on its way, with its size: what an upload may bring. Not
-    /// one that arrived already: it is never written again.
+    /// one that arrived already: it is never written again. Only while the request is open:
+    /// neither disabled nor run out since the submission began (SV-L26).
     pub async fn pending_file(&self, request_id: &str, submission_id: &str, file_id: &str) -> Result<Option<i64>> {
         let (request_id, submission_id, file_id) =
             (request_id.to_string(), submission_id.to_string(), file_id.to_string());
+        let now = clock::now();
         self.sqlite_read(move |conn| {
             conn.query_row(
                 "SELECT f.size FROM file_request_files f JOIN file_request_submissions s ON s.id = f.submission_id \
-                 WHERE f.id = ?1 AND s.id = ?2 AND s.request_id = ?3 AND s.completed IS NULL AND NOT f.uploaded",
-                params![file_id, submission_id, request_id],
+                 JOIN file_requests r ON r.id = s.request_id \
+                 WHERE f.id = ?1 AND s.id = ?2 AND s.request_id = ?3 AND s.completed IS NULL AND NOT f.uploaded \
+                 AND NOT r.disabled AND r.expiration > ?4",
+                params![file_id, submission_id, request_id, now],
                 |row| row.get(0),
             )
             .optional()
@@ -668,7 +691,7 @@ impl Store {
 
     /// The uploader is done. `Ok(Some((request, mail)))`: the request as it is now, and whether
     /// its owner should get a mail about it (the last one was long enough ago). `Ok(None)`: no
-    /// such submission on its way. `Err(())` inside: a file is still missing.
+    /// such submission on its way, or the request was disabled or ran out meanwhile. `Err(())` inside: a file is still missing.
     #[allow(clippy::type_complexity)]
     pub async fn complete_submission(
         &self,
@@ -682,8 +705,10 @@ impl Store {
             let pending: Option<i64> = tx
                 .query_row(
                     "SELECT (SELECT count(*) FROM file_request_files WHERE submission_id = s.id AND NOT uploaded) \
-                     FROM file_request_submissions s WHERE s.id = ?1 AND s.request_id = ?2 AND s.completed IS NULL",
-                    [&id, &request_id],
+                     FROM file_request_submissions s JOIN file_requests r ON r.id = s.request_id \
+                     WHERE s.id = ?1 AND s.request_id = ?2 AND s.completed IS NULL \
+                     AND NOT r.disabled AND r.expiration > ?3",
+                    params![id, request_id, now],
                     |row| row.get(0),
                 )
                 .optional()?;
@@ -807,10 +832,21 @@ mod tests {
         assert!(store.create_file_request(request(&user, "r1"), 1).await.unwrap());
         assert!(!store.create_file_request(request(&user, "r2"), 1).await.unwrap(), "one per account here");
 
-        assert_eq!(store.start_submission(submission("r1", "s1", 600), Some(500)).await.unwrap(), Err(Refusal::Quota));
-        assert_eq!(store.start_submission(submission("r1", "s1", 600), None).await.unwrap(), Ok(()));
+        assert_eq!(
+            store.start_submission(submission("r1", "s1", 600), Some(500), None).await.unwrap(),
+            Err(Refusal::Quota)
+        );
+        assert_eq!(
+            store.start_submission(submission("r1", "s1", 600), None, Some(599)).await.unwrap(),
+            Err(Refusal::RequestFull)
+        );
+        assert_eq!(store.start_submission(submission("r1", "s1", 600), None, Some(600)).await.unwrap(), Ok(()));
         assert_eq!(store.storage_used(&user).await.unwrap(), 600, "counted while on its way");
-        assert_eq!(store.start_submission(submission("r1", "s2", 1), None).await.unwrap(), Err(Refusal::Gone), "full");
+        assert_eq!(
+            store.start_submission(submission("r1", "s2", 1), None, None).await.unwrap(),
+            Err(Refusal::Gone),
+            "full"
+        );
         assert_eq!(store.complete_submission("r1", "s1").await.unwrap(), Some(Err(())), "a file is missing");
         assert_eq!(store.pending_file("r1", "s1", "s1-f").await.unwrap(), Some(600));
         store.request_file_uploaded("s1", "s1-f").await.unwrap();

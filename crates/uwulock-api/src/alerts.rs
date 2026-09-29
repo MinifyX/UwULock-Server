@@ -54,11 +54,25 @@ pub const CERTIFICATE_DAYS: i64 = 14;
 pub struct Detail {
     pub de: String,
     pub en: String,
+    /// What the channels get instead, when the text above holds what only the portal should show
+    /// (another server's words, with addresses or ids in them).
+    pub channels: Option<Box<Detail>>,
 }
 
 impl Detail {
     pub fn new(de: impl Into<String>, en: impl Into<String>) -> Self {
-        Detail { de: de.into(), en: en.into() }
+        Detail { de: de.into(), en: en.into(), channels: None }
+    }
+
+    /// With a text of its own for the channels.
+    pub fn for_channels(mut self, de: impl Into<String>, en: impl Into<String>) -> Self {
+        self.channels = Some(Box::new(Detail::new(de, en)));
+        self
+    }
+
+    /// The text for ntfy, Gotify, Matrix, webhooks and mail.
+    pub fn channel_text(&self) -> &Detail {
+        self.channels.as_deref().unwrap_or(self)
     }
 
     pub fn in_language(&self, language: Language) -> &str {
@@ -262,23 +276,47 @@ pub async fn evaluate(state: &AppState) -> BTreeMap<String, (&'static str, Detai
     let failing = |success: Option<u64>, error: &Option<(u64, String)>| {
         error.as_ref().filter(|(at, _)| now.saturating_sub(*at) < 3600 && success.is_none_or(|ok| ok < *at)).cloned()
     };
+    // Their own words (with addresses, or the relay's address with push ids) only in the portal
+    // and the log; the channels get a fixed text with the status.
     let relay = state.relay.health();
     if state.settings().push.is_some()
         && let Some((_, error)) = failing(relay.last_success, &relay.last_error)
     {
-        found.insert(
-            "pushRelayFailing".into(),
-            ("warning", Detail::new(format!("Das Push-Relay sagt: {error}"), format!("The push relay says: {error}"))),
-        );
+        let status = status_code(&error).map(|code| format!(" (HTTP {code})")).unwrap_or_default();
+        let detail = Detail::new(format!("Das Push-Relay sagt: {error}"), format!("The push relay says: {error}"))
+            .for_channels(
+                format!("Das Push-Relay nimmt nichts an{status}. Mehr im Admin-Portal."),
+                format!("The push relay takes nothing{status}. More in the admin portal."),
+            );
+        found.insert("pushRelayFailing".into(), ("warning", detail));
     }
     let mail = state.mailer.health();
     if let Some((_, error)) = failing(mail.last_success, &mail.last_error) {
-        found.insert(
-            "mailFailing".into(),
-            ("warning", Detail::new(format!("Der Mailserver sagt: {error}"), format!("The mail server says: {error}"))),
-        );
+        let status = status_code(&error).map(|code| format!(" (SMTP {code})")).unwrap_or_default();
+        let detail = Detail::new(format!("Der Mailserver sagt: {error}"), format!("The mail server says: {error}"))
+            .for_channels(
+                format!("Mails gehen nicht hinaus{status}. Mehr im Admin-Portal."),
+                format!("Mails do not go out{status}. More in the admin portal."),
+            );
+        found.insert("mailFailing".into(), ("warning", detail));
     }
     found
+}
+
+/// The first status code in another server's error text: three digits from 100 to 599 that
+/// stand alone (SMTP's `550`, HTTP's `503`).
+pub(crate) fn status_code(text: &str) -> Option<u16> {
+    let bytes = text.as_bytes();
+    (0..bytes.len().saturating_sub(2)).find_map(|at| {
+        let alone = (at == 0 || !bytes[at - 1].is_ascii_alphanumeric())
+            && bytes.get(at + 3).is_none_or(|next| !next.is_ascii_alphanumeric() && *next != b'.');
+        let digits = &bytes[at..at + 3];
+        if !alone || !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        let code: u16 = std::str::from_utf8(digits).ok()?.parse().ok()?;
+        (100..600).contains(&code).then_some(code)
+    })
 }
 
 /// Look at how things are, queue what changed for the channels, and send what is due.
@@ -394,7 +432,7 @@ async fn deliver(state: &AppState, channel: &Channel) {
             state,
             channel,
             &next.event,
-            next.detail.in_language(state.settings().default_language),
+            next.detail.channel_text().in_language(state.settings().default_language),
             next.resolved,
         )
         .await;
@@ -456,8 +494,39 @@ struct MatrixConfig {
     access_token: Option<String>,
 }
 
+/// A channel's config with its tokens sealed (`seal`) or opened (SV-L18).
+fn config_secrets(secret: &crate::secret::ServerSecret, config: &str, seal: bool) -> Result<String, String> {
+    let Ok(mut value) = serde_json::from_str::<Value>(config) else { return Ok(config.to_string()) };
+    let Some(fields) = value.as_object_mut() else { return Ok(config.to_string()) };
+    for name in ["token", "accessToken"] {
+        let Some(Value::String(text)) = fields.get(name) else { continue };
+        let mut field = Some(text.clone());
+        let purpose = format!("alerts.{name}");
+        if seal {
+            secret.seal_field(&mut field, &purpose)?;
+        } else {
+            secret.open_field(&mut field, &purpose)?;
+        }
+        fields.insert(name.into(), Value::String(field.unwrap_or_default()));
+    }
+    Ok(value.to_string())
+}
+
+/// Seals the tokens an older server kept in plain. Once, at the start.
+pub async fn seal_stored(store: &uwulock_store::Store, secret: &crate::secret::ServerSecret) -> Result<(), String> {
+    for mut channel in store.channels().await.map_err(|error| error.to_string())? {
+        let sealed = config_secrets(secret, &channel.config, true)?;
+        if sealed != channel.config {
+            channel.config = sealed;
+            store.put_channel(channel).await.map_err(|error| error.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 /// Send one message to a channel. `event` is one of [`EVENTS`], or `test`.
 async fn send(state: &AppState, channel: &Channel, event: &str, detail: &str, resolved: bool) -> Result<(), String> {
+    let opened = config_secrets(&state.secret, &channel.config, false)?;
     let language = state.settings().default_language;
     let server = state.host().to_string();
     let (title, text) = uwulock_mail::alert_text(event, detail, resolved, &server, language);
@@ -484,7 +553,7 @@ async fn send(state: &AppState, channel: &Channel, event: &str, detail: &str, re
             return Ok(());
         }
         "ntfy" => {
-            let config: NtfyConfig = serde_json::from_str(&channel.config).map_err(|error| error.to_string())?;
+            let config: NtfyConfig = serde_json::from_str(&opened).map_err(|error| error.to_string())?;
             let tags = if resolved {
                 "white_check_mark"
             } else if event == "test" {
@@ -506,7 +575,7 @@ async fn send(state: &AppState, channel: &Channel, event: &str, detail: &str, re
             request
         }
         "gotify" => {
-            let config: GotifyConfig = serde_json::from_str(&channel.config).map_err(|error| error.to_string())?;
+            let config: GotifyConfig = serde_json::from_str(&opened).map_err(|error| error.to_string())?;
             let body = json!({ "title": title, "message": text, "priority": config.priority.unwrap_or(5) });
             client
                 .post(format!("{}/message", config.url))
@@ -514,7 +583,7 @@ async fn send(state: &AppState, channel: &Channel, event: &str, detail: &str, re
                 .json(&body)
         }
         "matrix" => {
-            let config: MatrixConfig = serde_json::from_str(&channel.config).map_err(|error| error.to_string())?;
+            let config: MatrixConfig = serde_json::from_str(&opened).map_err(|error| error.to_string())?;
             let body = if text.is_empty() { title.clone() } else { format!("{title}\n\n{text}") };
             let url = format!(
                 "{}/_matrix/client/v3/rooms/{}/send/m.room.message/{}",
@@ -624,8 +693,9 @@ fn yes() -> bool {
     true
 }
 
-/// A checked config for `data`, the secrets of `old` kept where the target stayed the same.
-fn checked(data: &ChannelData, old: Option<&Channel>) -> ApiResult<String> {
+/// A checked config for `data`, the secrets of `old` kept where the target stayed the same,
+/// sealed.
+fn checked(state: &AppState, data: &ChannelData, old: Option<&Channel>) -> ApiResult<String> {
     let bad = |message: String| ApiError::bad(message);
     let name = data.name.trim();
     if name.is_empty() || name.chars().count() > 64 {
@@ -634,7 +704,10 @@ fn checked(data: &ChannelData, old: Option<&Channel>) -> ApiResult<String> {
     if let Some(event) = data.events.iter().find(|event| !EVENTS.contains(&event.as_str())) {
         return Err(ApiError::bad(format!("{event} is no event this server knows.")));
     }
-    let old_config = old.filter(|old| old.kind == data.kind).map(|old| old.config.clone()).unwrap_or_default();
+    let old_config = match old.filter(|old| old.kind == data.kind) {
+        Some(old) => config_secrets(&state.secret, &old.config, false).map_err(ApiError::internal)?,
+        None => String::new(),
+    };
     let secret = |given: Option<String>, old: Option<String>, same_target: bool| -> Option<String> {
         match given.map(|given| given.trim().to_string()) {
             Some(given) if !given.is_empty() => Some(given),
@@ -699,11 +772,11 @@ fn checked(data: &ChannelData, old: Option<&Channel>) -> ApiResult<String> {
         }
         _ => return Err(ApiError::bad("A channel is mail, ntfy, gotify or matrix.")),
     };
-    Ok(config.to_string())
+    config_secrets(&state.secret, &config.to_string(), true).map_err(ApiError::internal)
 }
 
 async fn create(State(state): State<AppState>, admin: Admin, Json(data): Json<ChannelData>) -> ApiResult<Json<Value>> {
-    let config = checked(&data, None)?;
+    let config = checked(&state, &data, None)?;
     let channel = Channel {
         id: uuid::Uuid::new_v4().to_string(),
         kind: data.kind.clone(),
@@ -727,7 +800,7 @@ async fn update(
     Json(data): Json<ChannelData>,
 ) -> ApiResult<Json<Value>> {
     let old = state.store.channel(&id).await?.ok_or_else(|| ApiError::not_found("No such channel."))?;
-    let config = checked(&data, Some(&old))?;
+    let config = checked(&state, &data, Some(&old))?;
     let channel = Channel {
         kind: data.kind.clone(),
         name: data.name.trim().to_string(),
@@ -813,6 +886,8 @@ mod tests {
         assert_eq!(created["config"]["tokenSet"], true);
         assert!(!created.to_string().contains("tk_secret"), "the token never comes back");
         let id = created["id"].as_str().unwrap().to_string();
+        let stored = server.state.store.channel(&id).await.unwrap().unwrap();
+        assert!(!stored.config.contains("tk_secret") && stored.config.contains("\"v1."), "sealed: {}", stored.config);
 
         let test =
             server.call("POST", &format!("/uwu/v1/admin/notifications/{id}/test"), Some(&admin.token), json!({})).await;
@@ -901,6 +976,34 @@ mod tests {
         tick(&server.state).await;
         let (_, _, _, sent) = gotify_told.recv().await.unwrap();
         assert!(sent["title"].as_str().unwrap().contains("wieder in Ordnung"), "{sent}");
+    }
+
+    #[test]
+    fn status_codes_are_found_alone() {
+        assert_eq!(status_code("550 5.1.1 <someone@example.com>: no such user"), Some(550));
+        assert_eq!(status_code("relay answered: HTTP 503 Service Unavailable"), Some(503));
+        assert_eq!(status_code("connection refused"), None);
+        assert_eq!(status_code("5.1.1 id 12345 at 192.0.2.1"), None);
+    }
+
+    #[tokio::test]
+    async fn channels_get_a_fixed_text_and_the_portal_the_whole() {
+        let server = TestServer::new().await;
+        let admin = admin(&server).await;
+        let (gotify, mut told) = fake(200).await;
+        let body = json!({"kind": "gotify", "name": "Gotify", "events": ["mailFailing"], "config": {"url": gotify, "token": "app"}});
+        server.call("POST", "/uwu/v1/admin/notifications", Some(&admin.token), body).await;
+        let error = "550 5.1.1 <someone@example.com>: Recipient address rejected";
+        let status = status_code(error).map(|code| format!(" (SMTP {code})")).unwrap_or_default();
+        let detail = Detail::new(format!("Der Mailserver sagt: {error}"), format!("The mail server says: {error}"))
+            .for_channels(format!("Mails gehen nicht hinaus{status}."), format!("Mails do not go out{status}."));
+        server.state.alerts.report("mailFailing", Some(("warning", detail)));
+        tick(&server.state).await;
+        let (_, _, _, sent) = told.recv().await.unwrap();
+        assert_eq!(sent["message"], "Mails gehen nicht hinaus (SMTP 550).");
+        assert!(!sent.to_string().contains("someone@example.com"), "{sent}");
+        let overview = json(server.get_as(&admin.token, "/uwu/v1/admin/overview").await).await;
+        assert!(overview["alerts"].to_string().contains("someone@example.com"), "the portal shows it all");
     }
 
     #[tokio::test]

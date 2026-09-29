@@ -604,9 +604,18 @@ async fn start(
         files: files.clone(),
         ..Submission::default()
     };
-    match state.store.start_submission(submission, state.settings().storage_limit()).await? {
+    let settings = state.settings();
+    let request_limit = settings.file_requests.request_limit();
+    match state.store.start_submission(submission, settings.storage_limit(), request_limit).await? {
         Ok(()) => {}
         Err(Refusal::Gone) => return Err(gone()),
+        Err(Refusal::RequestFull) => {
+            return Err(ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "This file request holds all it may. Ask its owner for a new one.",
+            )
+            .code("request_full"));
+        }
         Err(Refusal::Quota) => {
             return Err(ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -986,6 +995,8 @@ mod tests {
         assert_eq!(refused.status(), StatusCode::PAYLOAD_TOO_LARGE);
         let ok = server.call_from("192.0.2.8", "POST", &format!("{public}/submissions"), &token, big.clone()).await;
         assert_eq!(ok.status(), StatusCode::OK);
+        let begun = json(ok).await;
+        let (begun_id, begun_url) = (begun["id"].as_str().unwrap(), begun["files"][0]["url"].as_str().unwrap());
         // Two submissions at most; the third looks as if there were no request.
         let second = server.call_from("192.0.2.8", "POST", &format!("{public}/submissions"), &token, big.clone()).await;
         assert_eq!(second.status(), StatusCode::OK);
@@ -997,6 +1008,14 @@ mod tests {
         off["disabled"] = json!(true);
         server.call("PUT", &format!("/uwu/v1/file-requests/{id}"), Some(&owner.token), off).await;
         assert_eq!(json(server.get(&public).await).await["code"], "gone");
+        // SV-L26: a submission begun before goes no further.
+        let late = server.send(put_file(begun_url, &token, encrypted(900))).await;
+        assert_eq!(json(late).await["code"], "gone");
+        let complete = format!("{public}/submissions/{begun_id}/complete");
+        assert_eq!(
+            json(server.call_from("192.0.2.8", "POST", &complete, &token, json!({})).await).await["code"],
+            "gone"
+        );
         assert_eq!(json(server.get("/uwu/v1/public/file-requests/AAAAAAAAAAAAAAAAAAAAAA").await).await["code"], "gone");
 
         // Beyond what the settings allow.
@@ -1010,6 +1029,30 @@ mod tests {
             server.call("POST", "/uwu/v1/file-requests", Some(&owner.token), many).await.status(),
             StatusCode::BAD_REQUEST
         );
+    }
+
+    #[tokio::test]
+    async fn a_request_holds_only_so_much() {
+        let server = TestServer::new().await;
+        let mut settings = server.state.settings();
+        settings.file_requests.max_request_mb = 1;
+        server.state.apply_settings(settings);
+        let owner = server.account("nyu@example.com").await;
+        let mut made = body(None);
+        made["maxFileBytes"] = json!(1024 * 1024);
+        made["maxSubmissions"] = serde_json::Value::Null;
+        let made = json(server.call("POST", "/uwu/v1/file-requests", Some(&owner.token), made).await).await;
+        let access = made["accessId"].as_str().unwrap().to_string();
+        let public = format!("/uwu/v1/public/file-requests/{access}");
+        let token = open(&server, &access, None).await;
+        let file = |size: i64| json!({ "wrappedKey": type4(), "files": [ { "fileName": type2(), "key": type2(), "size": size } ] });
+        let first =
+            server.call_from("192.0.2.9", "POST", &format!("{public}/submissions"), &token, file(700 * 1024)).await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let second =
+            server.call_from("192.0.2.9", "POST", &format!("{public}/submissions"), &token, file(400 * 1024)).await;
+        assert_eq!(second.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json(second).await["code"], "request_full");
     }
 
     #[tokio::test]

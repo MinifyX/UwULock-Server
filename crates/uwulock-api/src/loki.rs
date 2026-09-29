@@ -323,10 +323,32 @@ pub(crate) fn json_line(
     message: &str,
     mut fields: serde_json::Map<String, Value>,
 ) -> String {
-    let mut all = serde_json::Map::new();
-    all.insert("message".into(), Value::String(message.to_string()));
-    all.append(&mut fields);
-    json!({ "timestamp": time, "level": level.to_ascii_uppercase(), "fields": all, "target": target }).to_string()
+    use crate::logs::{LINE_MAX, cut};
+    let build = |message: &str, fields: &serde_json::Map<String, Value>| {
+        let mut all = serde_json::Map::new();
+        all.insert("message".into(), Value::String(message.to_string()));
+        all.extend(fields.clone());
+        json!({ "timestamp": time, "level": level.to_ascii_uppercase(), "fields": all, "target": target }).to_string()
+    };
+    let line = build(message, &fields);
+    if line.len() <= LINE_MAX {
+        return line;
+    }
+    // Too long: cut before it is queued, so the queue's bytes stay bounded too (SV-L22). The
+    // message keeps half, each other field a little; many fields go altogether.
+    for value in fields.values_mut() {
+        if let Value::String(text) = value {
+            *text = cut(text, 256).into_owned();
+        }
+    }
+    fields.insert("truncated".into(), Value::Bool(true));
+    let line = build(&cut(message, LINE_MAX / 2), &fields);
+    if line.len() <= LINE_MAX {
+        return line;
+    }
+    // Escapes can make a character six: an eighth always fits.
+    let only = serde_json::Map::from_iter([("truncated".to_string(), Value::Bool(true))]);
+    build(&cut(message, LINE_MAX / 8), &only)
 }
 
 /// One stream per level; the error says whether to try again.
@@ -415,6 +437,24 @@ mod tests {
             )
             .contains("secret")
         );
+    }
+
+    #[test]
+    fn long_lines_are_cut_before_they_are_queued() {
+        use crate::logs::LINE_MAX;
+        let short = json_line("t", "info", "x", "hello", serde_json::Map::new());
+        assert!(short.contains("hello") && !short.contains("truncated"));
+        let long = "a".repeat(100_000);
+        let fields = serde_json::Map::from_iter([("path".to_string(), Value::String(long.clone()))]);
+        let line = json_line("t", "info", "x", &long, fields);
+        assert!(line.len() <= LINE_MAX && line.contains("\"truncated\":true"), "{}", line.len());
+        let parsed: Value = serde_json::from_str(&line).unwrap();
+        assert!(parsed["fields"]["message"].as_str().unwrap().starts_with("aaa"));
+        let escapes = "\u{1}".repeat(10_000);
+        let many = (0..200).map(|n| (format!("f{n}"), Value::String("b".repeat(300)))).collect();
+        let line = json_line("t", "info", "x", &escapes, many);
+        assert!(line.len() <= LINE_MAX, "{}", line.len());
+        serde_json::from_str::<Value>(&line).unwrap();
     }
 
     #[test]
@@ -535,7 +575,9 @@ mod tests {
         off["loki"]["enabled"] = json!(false);
         server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), off).await;
         assert!(!server.state.logs.loki().wanted());
-        let stored = crate::Settings::load(&server.state.store, &crate::Settings::default()).await.unwrap();
+        let stored = crate::Settings::load(&server.state.store, &crate::Settings::default(), &server.state.secret)
+            .await
+            .unwrap();
         assert_eq!(stored.loki.password.as_deref(), Some("glc_secret"), "kept for later");
     }
 }

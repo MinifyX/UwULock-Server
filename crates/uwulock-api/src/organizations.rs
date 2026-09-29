@@ -75,15 +75,19 @@ pub(crate) async fn attachments_of(state: &AppState, ciphers: &[OrgCipher]) -> A
     }
     Ok(grouped
         .into_iter()
-        .map(|(id, list)| (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS).to_string()))
+        .map(|(id, list)| {
+            let viewer = ciphers.first().map(|item| item.viewer.as_str());
+            (id, crate::attachments::render(state, &list, crate::files::SYNC_LINK_SECONDS, viewer).to_string())
+        })
         .collect())
 }
 
 /// An organisation's item as the clients read it, for the user who asked.
 pub(crate) async fn org_cipher_json(state: &AppState, item: &OrgCipher) -> ApiResult<String> {
     let attachments = state.store.attachments(&item.cipher.id).await?;
-    let rendered = (!attachments.is_empty())
-        .then(|| crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS).to_string());
+    let rendered = (!attachments.is_empty()).then(|| {
+        crate::attachments::render(state, &attachments, crate::files::SYNC_LINK_SECONDS, Some(&item.viewer)).to_string()
+    });
     Ok(out::cipher(
         &item.cipher,
         &View { attachments: rendered.as_deref(), collection_ids: &item.collection_ids, access: item.access },

@@ -12,8 +12,8 @@
  */
 
 import { t } from '../i18n';
-import { ImportError, text } from './bytes';
-import { blank, cardBrand, Collector, some, splitName } from './collect';
+import { ImportError, parseJson } from './bytes';
+import { blank, cardBrand, Collector, some, splitName, unsafeUri } from './collect';
 import type { CsvTable } from './csv';
 import { FieldType, ItemType, type ExportItem } from './types';
 import type { Archive } from './zip';
@@ -143,6 +143,7 @@ function place(item: ExportItem, category: string | undefined, field: Field, val
     else if (!login.totp && (id.startsWith('TOTP_') || v.totp != null)) login.totp = value;
     else if (
       login.uris.length === 0 &&
+      !unsafeUri(value) &&
       ((category === Category.Server && id === 'url') || (api && title === 'hostname'))
     )
       login.uris.push({ uri: value, match: null });
@@ -279,7 +280,11 @@ function read1puxItem(collector: Collector, entry: Item1pux): ExportItem {
       if (field.title === 'password' && item.passwordHistory?.some((h) => h.password === value)) {
         continue;
       }
-      const hidden = v.concealed != null || v.sshKey != null ? FieldType.Hidden : undefined;
+      // An authenticator key the login has no room for (or an item that isn't a login) stays
+      // hidden, like a password.
+      const secret =
+        v.concealed != null || v.sshKey != null || v.totp != null || field.id?.startsWith('TOTP_');
+      const hidden = secret ? FieldType.Hidden : undefined;
       collector.field(item, name, value, hidden);
       if (v.email?.provider) collector.field(item, 'provider', v.email.provider);
     }
@@ -297,20 +302,24 @@ export async function read1pux(zip: Archive, collector: Collector) {
   if (!zip.names.includes('export.data')) {
     throw new ImportError(t('Das ist keine 1PUX-Datei von 1Password (export.data fehlt).'));
   }
-  const data = JSON.parse(text(await zip.read('export.data'))) as ExportData;
+  const data = parseJson(await zip.read('export.data')) as ExportData;
   const vaults = (data.accounts ?? []).flatMap((account) => account.vaults ?? []);
   const several = vaults.length > 1;
   let archived = 0;
   for (const vault of vaults) {
     const folder = several ? (vault.attrs?.name ?? null) : null;
     for (const entry of vault.items ?? []) {
-      if (entry.state === 'archived') archived++;
-      collector.add(read1puxItem(collector, entry), folder);
+      collector.entry(entry?.overview?.title, () => {
+        collector.add(read1puxItem(collector, entry), folder);
+        if (entry.state === 'archived') archived++;
+      });
     }
   }
   // Documents and files attached to items, stored beside export.data.
   const files = zip.names.filter((name) => name.startsWith('files/') && !name.endsWith('/'));
-  const counted = vaults.flatMap((v) => v.items ?? []).filter((i) => i.details?.documentAttributes);
+  const counted = vaults
+    .flatMap((v) => v.items ?? [])
+    .filter((i) => i?.details?.documentAttributes);
   if (files.length > counted.length) collector.attachment(files.length - counted.length);
   if (archived) {
     collector.warn(t('{n} archivierte Einträge kommen als normale Einträge mit.', { n: archived }));

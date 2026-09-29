@@ -582,7 +582,9 @@ is taken from the access token).
 Otherwise: exponential backoff from 1 s to 60 s with ±30 % jitter, reset after a connection
 lived 60 s. On every reconnect the client sends its cursor, so nothing is missed. At most 20
 connections per account (the 21st is closed with 4429); the server rechecks the session (security
-stamp, device) at every heartbeat, like the SignalR hub.
+stamp, device) at every heartbeat, like the SignalR hub. Connections that have not sent their
+`auth` yet are limited before the upgrade, as on the anonymous hub: 25 per address (an IPv6 /64)
+and 1,000 in all; more answer the upgrade with HTTP 429.
 
 **Clients:** UwULock desktop (replaces its polling), browser extension (from the background
 service worker; MV3 keeps it alive by the heartbeat traffic, and the extension falls back to a
@@ -691,8 +693,15 @@ All take `user` (any space) or `suite` (its own space only; others are 403 `scop
 - `POST /uwu/v1/suite/spaces/{space}/records` — push. Body limit 8 MiB, at most 500 records:
 
   ```json
-  { "schema": 2, "records": [envelope…] }
+  { "schema": 2, "spaceId": "<the space's id>", "records": [envelope…] }
   ```
+
+  `spaceId` (since 0.6.0-beta.2; UwUSSH and UwURDP send it from their next releases on) is the
+  space id the records were sealed for. When the space was rekeyed since (its id is another),
+  the push is refused as a whole with 409 `space_changed`, and nothing is written: the device
+  fetches the space (`GET /uwu/v1/suite/spaces`), opens the new key, pulls with `since=0` and
+  seals again. A push without `spaceId` is still taken as before (older apps), with only the
+  apps' own check before pushing against a rekey in between.
 
   Answer `{ "object": "suitePush", "accepted": [{ "id": "…", "seq": 182 }], "conflicts": [envelope…], "cursor": 182 }`.
   Exactly UwUSync's semantics: a record is accepted when `baseSeq` equals the stored `seq` (0 for
@@ -1097,8 +1106,10 @@ ciphers, their attachments, own icons, versions and reminders are left out of, o
 
 `/api/sync`, `/api/ciphers`, `/api/ciphers/{id}` and all its sub-paths (details, attachments,
 downloads), `/api/ciphers/organization-details` rows *for this account*, `/uwu/v1/sync`,
-`/uwu/v1/ciphers/{id}/versions`, `/uwu/v1/icons/own/*`, `/uwu/v1/reminders`, and emergency access
-views and takeover of this account's vault.
+`/uwu/v1/ciphers/{id}/versions`, `/uwu/v1/icons/own/*`, `/uwu/v1/reminders`, the masked
+addresses (§13: a hidden item's link is left out of `/uwu/v1/masked/links` and `uwu.maskedLinks`,
+and the address linked to it out of `GET /uwu/v1/masked/addresses`, since it names the item and
+the site), and emergency access views and takeover of this account's vault.
 
 Writes to a hidden cipher are 404 as well. Moving a visible cipher into a marked folder hides it.
 
@@ -1106,7 +1117,8 @@ The marked folders themselves are hidden too while the mode is on (left out of `
 `/api/folders`; renaming or deleting one answers as for a folder that does not exist), so their
 names do not show either. `PUT /uwu/v1/travel/folders` still takes their ids. While it is on,
 `POST /api/ciphers/purge` and both key rotations (§3) answer 400 `travel_active`; download links
-of a hidden item's attachments issued before stop working.
+of a hidden item's attachments issued before stop working — for an organisation's item, the
+link is bound to the member it was made for and follows that member's travel mode.
 Organization-wide views of admins (`/api/ciphers/organization-details` as an organization admin,
 organization export) are organization data and are not filtered.
 
@@ -1251,7 +1263,10 @@ full requests are the same 404 `gone`, so a link cannot be probed.
 
   Checks: at least a text or a file; `text` only if `textAllowed`; at most `maxFiles` files; each
   `size` at most `maxFileBytes + 65` (the EncArrayBuffer's header and padding); submissions left;
-  the owner's storage (422 `quota`); per IP 10 submissions an hour (429). Answer:
+  the owner's storage (422 `quota`); the request's own cap, all its submissions' files together
+  (`fileRequests.maxRequestMb`, default 2048, 0 for none; 422 `request_full`); per IP 10
+  submissions an hour (429). Uploads and `complete` answer 404 `gone` once the request is
+  disabled or has run out, also for a submission begun before. Answer:
 
   ```json
   {
@@ -1489,10 +1504,14 @@ UwUMail's OAuth scope `mail` opens the whole mailbox. New scope **`maskedemail`*
 The admin lists the UwUMail servers the Lock server may talk to (§21.8). The Lock server talks
 only to those origins, follows no redirects, and uses only endpoints on the same origin as the
 server's discovery document. Admin-listed servers may be on private addresses (the admin trusts
-them); nothing else may.
+them); nothing else may. A listed server is reached by https; plain http only for an address in
+the local network (a private or loopback IP, a single-label or local name) — otherwise saving the
+settings is 400 (since 0.6.0-beta.2).
 
 1. `POST /uwu/v1/masked/connect` — body `{ "server": "https://mail.example.com" }` (must be listed:
-   403 `server_not_allowed`). The Lock server:
+   403 `server_not_allowed`). Only while the Lock server's public address is https (or http on
+   loopback): otherwise 400 `https_required`, since the binding cookie could be planted on http.
+   The Lock server:
    - reads `<server>/.well-known/oauth-authorization-server` (its `issuer` is remembered, and
      `maskedemail` must be in `scopes_supported`, else 502 `upstream`);
    - registers itself once per UwUMail server (RFC 7591 `POST <registration_endpoint>`,
@@ -1513,7 +1532,9 @@ them); nothing else may.
    (account id from `primaryAccounts["https://www.fastmail.com/dev/maskedemail"]`, `username`,
    domains and default domain), stores the connection, deletes the cookie, writes notice
    `maskedConnected`, and answers `303` to `<public>/#/settings/masked?result=connected` or
-   `?result=error&reason=denied|expired|invalid_state|upstream|busy`.
+   `?result=error&reason=denied|expired|invalid_state|upstream|busy`. It does so under the
+   account's lock, and a grant it replaces — another mailbox's, or an earlier one of the same —
+   is revoked at UwUMail (RFC 7009, best effort).
    UwUMail refuses every token request from one address after 30 refused ones in 15 minutes,
    refreshes of other accounts included, so the Lock server guards that budget: a `code` that
    is not 1–512 URL-safe characters is not sent on (`invalid_state`); codes UwUMail refuses count
@@ -1836,11 +1857,13 @@ Bitwarden's older way of opening a Send (`POST /api/sends/access/{accessId}` wit
 hash in the body, and `/api/sends/{id}/access/file/{fileId}`) answers 401 for a Send with
 addresses: only the grant opens those.
 
-The code: 6 digits (`auth::random_code(6)`), stored hashed per (Send, address), 5 minutes,
-single use, compared in constant time. UwULock adds limits Bitwarden leaves out: 5 wrong codes
-per (Send, address) end the code; at most one mail per (Send, address) a minute and 5 an hour;
-the per-IP anonymous limit and the existing per-address mail limit apply. The mail ("Your Send
-verification code is 123456") is in the server's default language, with the branding of the host
+The code: 8 digits since 0.6.0-beta.2 (`auth::random_code(8)`; 6 before), stored hashed per
+(Send, address), 5 minutes, single use, compared in constant time. UwULock adds limits Bitwarden
+leaves out: 5 wrong codes per (Send, address) end the code, and 20 wrong codes a day end every
+code of that pair until the day is over; at most one mail per (Send, address) a minute, 5 an hour
+and 10 a day; at most 10 code mails an hour per Send, and 30 an hour and 100 a day for all Sends
+of one owner; the per-IP anonymous limit and the existing per-address mail limit apply. The mail
+("Your Send verification code is 12345678") is in the server's default language, with the branding of the host
 the page was opened on. After the token: **[BW]** `POST /api/sends/access` and
 `POST /api/sends/access/file/{fileId}` with `Authorization: Bearer`, as today. The access count
 goes up when the text or file is handed out, as today.
@@ -2339,8 +2362,10 @@ Bitwarden's; how the server does it mirrors Vaultwarden 1.34+ (`src/sso.rs`, `sr
      `client_id=desktop` and uses loopback, since `bitwarden://` belongs to Bitwarden's app);
      `cli`, `uwussh`, `uwurdp`, `uwumail`, `uwusuite`: `http://localhost:<port>/…`
      or `http://127.0.0.1:<port>/…`; `uwulock-extension`: `https://<32 letters a–p>.chromiumapp.org/…`
-     or `https://<40 hex>.extensions.allizom.org/…` (the extensions' `identity` redirect URLs).
-     Anything else: 400.
+     or `https://<40 hex>.extensions.allizom.org/…` (the extensions' `identity` redirect URLs),
+     only for the released extension (Firefox: `e2a48da4…`, the SHA-1 of `uwulock@minifyx.de`) and
+     the ids the admin lists in `extensionIds` of the SSO settings (self-built or unpacked builds;
+     since 0.6.0-beta.2). Anything else: 400.
    - stores `{ sha256(state) → client_id, redirect_uri, client state, client code_challenge,
      nonce, own PKCE verifier, sha256(binding), expires in 10 minutes }`, sets
      `__Host-uwu-sso=<binding>; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=600`, and answers
@@ -2541,6 +2566,12 @@ app on the UwUAuth side is deleted there.
 - Wrong SCIM tokens: 30 per address, then one every 30 seconds (429 before that).
 - The client secret is sealed (AES-256-GCM) under `secret.key` in the data directory (§13.2);
   a value set on the command line unsealed is taken as it is.
+- Since 0.6.0-beta.2 the other secrets in the database are sealed the same way: the SMTP and Loki
+  passwords and the push relay's installation key in the settings, the tokens of notification
+  channels, and the S3 secret key, SFTP password or key and recovery key of the off-site backups.
+  A server seals what an older one kept in plain when it starts, and after a restore. It refuses
+  to start when sealed values exist but `secret.key` is gone (`UWULOCK_NEW_SECRET_KEY=1` empties
+  them instead, docs/deployment.md).
 
 Other suite apps pair the same way with their own `app` values (UwUMail, UwUSync for
 UwUSSH/UwURDP).
@@ -2568,7 +2599,14 @@ policies (Stufe 5) are Bitwarden's and separate.
 without an enabled provider:
 
 - gets a token only for `client_id=web` (UwULock's web vault), which then shows nothing but the
-  two-step setup until one is enabled;
+  two-step setup until one is enabled. The token has the scope `uwu.twofactor-setup` (since
+  0.6.0-beta.2): it reaches `/api/two-factor/…`, `/uwu/v1/devices…`, `/uwu/v1/security/notices…`,
+  `PUT /uwu/v1/account/language` and `GET` of `/api/sync` (the profile only, every list empty),
+  `/api/accounts/profile`, `/api/accounts/revision-date` and `/uwu/v1/account`; anything else
+  answers 403 `two_factor_required`. Once a provider is enabled, the same token opens everything;
+  its refresh gives `api offline_access` again;
+- keeps the client it logged in with at a refresh: another client's refresh token cannot be
+  refreshed as `web` (400 `invalid_grant` as below);
 - from every other client (official or ours), `POST /identity/connect/token` — every grant that
   logs in an account: password, `refresh_token`, `client_credentials`, `webauthn` — answers 400
   `{ "error": "invalid_grant", "error_description": "two_factor_required", "ErrorModel": { "Message": "This server requires two-step login. Set it up in the web vault at https://lock.example.com, then log in again.", "Object": "error" } }`
@@ -2665,13 +2703,20 @@ again — and which would say which websites the accounts use — so it is left 
   on the first save and keeps it whatever the target; the view shows its `publicKey` line for
   `authorized_keys`. The host key is kept while host and port stay the same. A folder must be an
   absolute path outside the data directory (400).
-- `POST …/offsite/test` → `{ "kind", "hostKey": "…" | null, "known": true }` (SFTP: first contact
-  shows and remembers the host key); `POST …/offsite/forget-host-key` `{ "masterPasswordHash" }` →
+- `POST …/offsite/test` (body `{}` or `{ "hostKey": "SHA256:…" }`) →
+  `{ "kind", "hostKey": "…" | null, "known": true, "confirmed": true }`. SFTP without a confirmed
+  host key (since 0.6.0-beta.2): the server is only asked for its key, the connection ends before
+  any login, nothing is saved, and the answer is `"confirmed": false` with the key; testing again
+  with that `hostKey` trusts it for the test and remembers it once the test worked. Backups,
+  listings and restores refuse an SFTP target without a confirmed key.
+  `POST …/offsite/forget-host-key` `{ "masterPasswordHash" }` →
   the `GET` body. The test
   writes a small file there, reads it back and removes it.
 - `POST …/offsite/run` → 202; progress in `GET`. 409 `conflict` while one runs.
 - `GET …/offsite/snapshots` → list `{ id, date, bytes, version }`, newest first, each also with
-  `hostname` (the public host of the server that made it) and `uploaded`.
+  `hostname` (the public host of the server that made it) and `uploaded`; beside `data`,
+  `lastWritten` (the last snapshot this server wrote, or `null`) and `lastWrittenMissing` (it is not
+  listed: whoever keeps the storage hid it; the portal warns).
 - Errors of the target itself (unreachable, login refused, host key changed, damaged backup)
   are 502 `upstream` with the reason; settings that cannot work are 400.
 - `POST …/offsite/restore` — `{ "snapshot", "masterPasswordHash" }`: like the local restore (a
@@ -2679,12 +2724,17 @@ again — and which would say which websites the accounts use — so it is left 
   unencrypted one: 400, it goes back only with the command line); bumps the server
   epoch (§4.3). Answer `{ "restored", "before", "files" }` (`before`: the local backup of how it
   was; `files`: how many files came back). The off-site settings and status stay those from
-  before the restore; so they do when a local backup goes back.
+  before the restore; so they do when a local backup goes back. When putting back the files
+  fails after the database was replaced, the steps after a restore still run and the audit log
+  says so; then the error is answered.
 - `POST …/offsite/recovery-key` — `{ "masterPasswordHash" }` → `{ "recoveryKey" }`.
 - Command line (not HTTP): `uwulock-server backup restore --sftp … | --s3 … | --folder … --into /data`
   for a new machine, keys from the environment (`UWULOCK_BACKUP_KEY`,
   `UWULOCK_BACKUP_SFTP_PASSWORD`, `UWULOCK_BACKUP_S3_ACCESS_KEY`, `UWULOCK_BACKUP_S3_SECRET_KEY`);
-  `--list`, `--snapshot`, `--host-key`, `--ssh-key`, `--endpoint`, `--region`, `--path-style`. It
+  `--list`, `--snapshot`, `--host-key`, `--ssh-key`, `--endpoint`, `--region`, `--path-style`.
+  SFTP needs `--host-key`: without it the command shows the server's key and stops before logging
+  in. The recovery key is read without echo. Without `--snapshot` it shows the newest snapshot with
+  its date and asks before putting it back (not at a terminal: `--snapshot` is needed). It
   switches the off-site backups off in the restored database. `uwulock-server backup offsite`
   and `backup list` back up and list with the portal's settings ([backups.md](backups.md)).
 - Too old (`warnAfterHours`): an alert (§21.3), a warning on the overview, the metric of §22.
@@ -2702,7 +2752,11 @@ again — and which would say which websites the accounts use — so it is left 
   `POST /uwu/v1/admin/notifications/{id}/test` → 200 or 502 `upstream` with the reason.
 - Every channel also has `status: { lastSuccess, lastError, lastErrorDate, queued }`; the test
   answers `{ "object": "notificationTest", "ok": true }`. A new server has one `mail` channel.
-- Sending: admin-configured hosts may be private (an ntfy in the LAN); no redirects; 10 s timeout;
+- Sending: admin-configured hosts may be private (an ntfy in the LAN) — the admin exception to
+  the rule that the server never asks the local network; the admin networks and the admin right
+  guard it. What such a host answers comes back to the portal only as the HTTP status (and an
+  OAuth `error` code), never the body, so the test buttons do not read the local network; the
+  body's start goes to the debug log. No redirects; 10 s timeout;
   a failing channel is retried with backoff (1, 2, 4 … 60 minutes, given up after a day) and shown
   on the overview. Messages name no account data beyond counts. An event is sent when it starts —
   at most once an hour per channel however often it comes and goes — and once when it is over.
@@ -2754,8 +2808,11 @@ names others or `off`, GitHub only while the update check is on; warning over 30
   which is merged into the stored result. `proxy.clientIp` and `proxy.publicUrl` come from the
   admin's `POST`; in the run after an update they, like the browser checks, are `skipped` until
   the portal runs it. Texts come in the admin's language. The upload answers 413 `too_large` past
-  the largest allowed file (plus 1 MiB). The WebSocket takes the token as `?access_token=`, like
-  the hub, since a browser cannot set a header on one.
+  the largest allowed file (plus 1 MiB). A browser cannot set a header on a WebSocket, so the
+  page first gets a one-time ticket, `POST /uwu/v1/admin/diagnosis/websocket-ticket` →
+  `{ "ticket": "…", "expiresIn": 30 }` (an admin request with every rule of the portal), and
+  opens the socket with `?ticket=`; the access token never goes into an address (since
+  0.6.0-beta.2; before, `?access_token=`). A ticket works once, for 30 seconds; 401 otherwise.
 
 ### 21.6 Overview additions
 

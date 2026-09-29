@@ -67,6 +67,9 @@ pub enum Error {
     LoginRefused(String),
     #[error("the backup server's host key changed from {expected} to {seen}; if that is expected, forget the old key")]
     HostKeyChanged { expected: String, seen: String },
+    /// The SFTP server's key is not confirmed yet: nothing was sent to it (SV-L27).
+    #[error("confirm the backup server's host key {seen} first (test the connection in the admin portal)")]
+    HostKeyUnconfirmed { seen: String },
     #[error("{0}")]
     Config(String),
     /// Something else has the backup server right now: a backup, a restore. Try again later.
@@ -76,6 +79,37 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Store(#[from] uwulock_store::StoreError),
+}
+
+impl Error {
+    /// A short text of our own for the alerts: what kind of thing went wrong, with the storage
+    /// server's status or S3 error code, but none of its words (a hostile storage server would
+    /// otherwise write to the admins). The whole error goes to the log and the portal.
+    pub fn summary(&self) -> String {
+        match self {
+            Error::Storage(text) => match answered(text) {
+                Some(code) => format!("the backup server answered {code}"),
+                None => "the backup server could not be reached or did not work".into(),
+            },
+            Error::Damaged(_) => "the backup is damaged".into(),
+            Error::Io(_) => "a file error on this server".into(),
+            Error::Store(_) => "a database error on this server".into(),
+            Error::LoginRefused(_) => "the backup server refused the login".into(),
+            Error::HostKeyChanged { .. } => "the backup server's host key changed".into(),
+            Error::HostKeyUnconfirmed { .. } => "the backup server's host key is not confirmed yet".into(),
+            // Our own words, without anything from the storage server.
+            Error::WrongKey | Error::Crypto | Error::Config(_) | Error::Busy(_) => self.to_string(),
+        }
+    }
+}
+
+/// The status or S3 error code after "answered " in a storage error, when it looks like one.
+fn answered(text: &str) -> Option<&str> {
+    let (_, rest) = text.split_once(" answered ")?;
+    let word = rest.split([' ', ':']).next()?;
+    let status = word.len() == 3 && word.bytes().all(|byte| byte.is_ascii_digit());
+    let code = (1..=40).contains(&word.len()) && word.bytes().all(|byte| byte.is_ascii_alphabetic());
+    (status || code).then_some(word)
 }
 
 /// An opened repository.

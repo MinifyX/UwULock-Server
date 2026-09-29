@@ -350,13 +350,31 @@ async fn save(State(state): State<AppState>, admin: Admin, Json(body): Json<Save
     Ok(Json(view))
 }
 
-async fn test(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct TestBody {
+    /// The SFTP server's host key the admin confirmed, from the answer before.
+    #[serde(default)]
+    host_key: Option<String>,
+}
+
+/// Tests the target. An SFTP server without a confirmed host key is only asked for its key:
+/// the answer has `confirmed: false` and the key, and the admin tests again with `hostKey`
+/// (SV-L27).
+async fn test(State(state): State<AppState>, admin: Admin, body: Option<Json<TestBody>>) -> ApiResult<Json<Value>> {
     let settings = state.offsite.settings().await.map_err(failed)?;
     let kind =
         settings.target.as_ref().map(Target::kind).ok_or_else(|| ApiError::bad("Say where the backups go first."))?;
-    let (host_key, known) = state.offsite.test().await.map_err(failed)?;
+    let confirm = body.and_then(|Json(body)| body.host_key).filter(|key| !key.trim().is_empty());
+    let (host_key, known, confirmed) = match state.offsite.test(confirm.as_deref().map(str::trim)).await {
+        Ok((host_key, known)) => (host_key, known, true),
+        Err(uwulock_backup::Error::HostKeyUnconfirmed { seen }) => (Some(seen), false, false),
+        Err(error) => return Err(failed(error)),
+    };
     crate::admin::record(&state, &admin, "tested the off-site backup target".into()).await;
-    Ok(Json(json!({ "object": "offsiteTest", "kind": kind, "hostKey": host_key, "known": known })))
+    Ok(Json(json!({
+        "object": "offsiteTest", "kind": kind, "hostKey": host_key, "known": known, "confirmed": confirmed,
+    })))
 }
 
 /// Trusting whatever host key the backup server shows next: the master password first, as for
@@ -411,6 +429,10 @@ async fn run(State(state): State<AppState>, admin: Admin) -> ApiResult<(StatusCo
 
 async fn snapshots(State(state): State<AppState>, _admin: Admin) -> ApiResult<Json<Value>> {
     let list = state.offsite.snapshots().await.map_err(failed)?;
+    // The last snapshot this server wrote is never pruned: when the storage does not list it,
+    // whoever keeps the storage hides it, and the portal says so (SV-L31).
+    let written = state.offsite.status().await.last_report.map(|report| report.snapshot);
+    let newest_missing = written.as_ref().is_some_and(|written| !list.iter().any(|manifest| &manifest.name == written));
     let data: Vec<Value> = list
         .iter()
         .map(|manifest| {
@@ -425,7 +447,10 @@ async fn snapshots(State(state): State<AppState>, _admin: Admin) -> ApiResult<Js
             })
         })
         .collect();
-    Ok(Json(json!({ "object": "list", "data": data, "continuationToken": null })))
+    Ok(Json(json!({
+        "object": "list", "data": data, "continuationToken": null,
+        "lastWritten": written, "lastWrittenMissing": newest_missing,
+    })))
 }
 
 #[derive(Deserialize)]
@@ -454,22 +479,36 @@ async fn restore(State(state): State<AppState>, admin: Admin, Json(body): Json<R
         let status = state.offsite.status().await;
         let before = crate::admin::backup_before_restore(&state).await?;
         state.store.restore_online(&fetched.database).await.map_err(ApiError::bad)?;
-        state.offsite.save_settings(&settings).await.map_err(failed)?;
-        state.offsite.save_status(&status).await;
-        let files = fetched.put_files(&state.config.data).await.map_err(failed)?;
-        crate::admin::after_restore(&state).await?;
-        Ok((before, files))
+        // The database is the snapshot's now: whatever happens with the files, the steps after a
+        // restore run and the audit log says so (SV-L28).
+        let files = fetched.put_files(&state.config.data).await;
+        // The snapshot's `secret.key` may have come with the files.
+        state.secret.forget();
+        let finished = async {
+            state.offsite.save_settings(&settings).await.map_err(failed)?;
+            state.offsite.save_status(&status).await;
+            crate::admin::after_restore(&state).await
+        }
+        .await;
+        Ok((before, files, finished))
     }
     .await;
     let manifest = fetched.manifest.clone();
     fetched.close().await;
-    let (before, files) = result?;
+    let (before, files, finished) = result?;
+    let outcome = match (&files, &finished) {
+        (Ok(_), Ok(())) => String::new(),
+        (Err(error), _) => format!("; putting back the files failed: {}", error.summary()),
+        (_, Err(error)) => format!("; the steps after it failed ({})", error.status),
+    };
     crate::admin::record(
         &state,
         &admin,
-        format!("restored the off-site snapshot {} (what was there before: {before})", manifest.name),
+        format!("restored the off-site snapshot {} (what was there before: {before}){outcome}", manifest.name),
     )
     .await;
+    let files = files.map_err(failed)?;
+    finished?;
     Ok(Json(json!({ "restored": manifest.name, "before": before, "files": files })))
 }
 
@@ -497,13 +536,16 @@ pub async fn problems(state: &AppState) -> Vec<(&'static str, &'static str, Deta
     }
     let status = state.offsite.status().await;
     let mut found = Vec::new();
-    if let Some(error) = &status.last_error {
+    // Our own words with the status (SV-L29); the storage server's text is in the log and the
+    // portal's status.
+    if status.last_error.is_some() {
+        let failure = status.last_failure.as_deref().unwrap_or("see the admin portal");
         found.push((
             "backupFailed",
             "error",
             Detail::new(
-                format!("Das Backup außer Haus ging nicht: {error}"),
-                format!("The off-site backup did not work: {error}"),
+                format!("Das Backup außer Haus ging nicht ({failure})."),
+                format!("The off-site backup did not work ({failure})."),
             ),
         ));
     }
@@ -630,6 +672,17 @@ mod tests {
         let list = json(server.get_as(&admin.token, &format!("{path}/snapshots")).await).await;
         let snapshot = list["data"][0]["id"].as_str().unwrap().to_string();
         assert_eq!(list["data"][0]["version"], "0.0.0-test");
+        assert_eq!(
+            (list["lastWritten"].as_str(), list["lastWrittenMissing"].as_bool()),
+            (Some(&*snapshot), Some(false))
+        );
+        // SV-L31: the storage hides the newest snapshot; the portal hears of it.
+        let stored = target.path().join("snapshots").join(&snapshot);
+        let aside = target.path().join("aside");
+        std::fs::rename(&stored, &aside).unwrap();
+        let hidden = json(server.get_as(&admin.token, &format!("{path}/snapshots")).await).await;
+        assert_eq!(hidden["lastWrittenMissing"], true, "{hidden}");
+        std::fs::rename(&aside, &stored).unwrap();
 
         // Something changes after the backup, and a file goes missing; the restore brings both back.
         server.state.store.set_setting("marker", "after").await.unwrap();
@@ -666,10 +719,20 @@ mod tests {
         let found = problems(&server.state).await;
         assert_eq!(found.iter().map(|(event, ..)| *event).collect::<Vec<_>>(), ["backupStale"]);
 
-        let status = OffsiteStatus { last_error: Some("the NAS is off".into()), ..OffsiteStatus::default() };
+        // The storage server's words stay out of the alert, its status goes in.
+        let error = uwulock_backup::Error::Storage(
+            "s3.example.com answered 503 Service Unavailable: <b>Hi admins, mail me at evil@example.com</b>".into(),
+        );
+        let status = OffsiteStatus {
+            last_error: Some(error.to_string()),
+            last_failure: Some(error.summary()),
+            ..OffsiteStatus::default()
+        };
         server.state.offsite.save_status(&status).await;
         let evaluated = crate::alerts::evaluate(&server.state).await;
-        assert!(evaluated["backupFailed"].1.en.contains("the NAS is off"), "{evaluated:?}");
+        let failed = &evaluated["backupFailed"].1;
+        assert!(failed.en.contains("answered 503"), "{evaluated:?}");
+        assert!(!failed.en.contains("evil") && !failed.de.contains("evil"), "{evaluated:?}");
         assert!(evaluated["backupStale"].1.en.contains("no successful off-site backup"), "{evaluated:?}");
 
         run_now(&server.state).await.unwrap();
@@ -700,6 +763,8 @@ mod tests {
         json(server.call("PUT", path, Some(&admin.token), body).await).await;
         let settings = server.state.offsite.settings().await.unwrap();
         assert!(matches!(&settings.target, Some(Target::S3(s3)) if s3.secret_key == "geheim"));
+        let raw = server.state.store.setting("offsite.settings").await.unwrap().unwrap();
+        assert!(!raw.contains("geheim") && raw.contains("\"v1."), "sealed in the database: {raw}");
 
         // SFTP with a key: the server makes its own and shows only the public half.
         let body = json!({

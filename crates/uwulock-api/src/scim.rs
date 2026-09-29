@@ -4,7 +4,8 @@
 //! - **People.** Somebody without an account becomes a provisioned entry: an address that may
 //!   sign up through SSO, even while sign-ups need an invitation. An account is found by its
 //!   address (a `POST` for it is 409, and the provider then finds it by filter). `active: false`
-//!   disables the account and ends its sessions; `DELETE` disables or deletes it, as the admin
+//!   disables the account and ends its sessions; `active: true` enables only an account SCIM
+//!   disabled itself, never one an admin did; `DELETE` disables or deletes it, as the admin
 //!   chose. The address itself never changes this way: it is the salt of the account's keys, so
 //!   its owner changes it in the vault.
 //! - **Groups** are kept only to know who is in the admin group between logins: whoever leaves
@@ -602,7 +603,9 @@ async fn put_user(
         ));
     }
     let change = PersonChange {
-        active: Some(boolean(&body["active"]).unwrap_or(true)),
+        // Without `active` the state stays as it is: a provider that leaves it out does not
+        // mean to enable anybody.
+        active: boolean(&body["active"]),
         display_name: Some(display_name(&body).filter(|name| !name.is_empty())),
         external_id: Some(text(&body["externalId"], 255)),
     };
@@ -643,6 +646,7 @@ async fn disable(state: &AppState, user: &User) -> ScimResult<()> {
             user.security_stamp = uuid::Uuid::new_v4().to_string();
         })
         .await?;
+    state.store.mark_scim_disabled(&user.id).await?;
     crate::notify::logout(state, &user.id, None, "disabled");
     log(state, Some(user), &user.email, "disabled the account".into()).await;
     Ok(())
@@ -671,9 +675,14 @@ async fn apply(state: &AppState, person: Person, change: PersonChange) -> ScimRe
                     keep_last_admin(state, &user).await?;
                     disable(state, &user).await?;
                 }
-                Some(true) if user.disabled => {
+                // Only what SCIM disabled itself: an account an admin disabled stays so.
+                Some(true) if user.disabled && state.store.scim_disabled(&user.id).await? => {
                     state.store.update_user(&user.id, |user| user.disabled = false).await?;
                     log(state, Some(&user), &user.email, "enabled the account".into()).await;
+                }
+                Some(true) if user.disabled => {
+                    log(state, Some(&user), &user.email, "left the account disabled: an admin disabled it".into())
+                        .await;
                 }
                 _ => {}
             }

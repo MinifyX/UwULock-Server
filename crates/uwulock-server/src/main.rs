@@ -66,7 +66,8 @@ struct OffsiteRestore {
     /// environment.
     #[arg(long)]
     ssh_key: Option<PathBuf>,
-    /// The SFTP server's host key as `SHA256:…`, to check it.
+    /// The SFTP server's host key as `SHA256:…`. Needed for SFTP: without it, the server is
+    /// only asked for its key, which is then shown.
     #[arg(long)]
     host_key: Option<String>,
     /// An S3 bucket: `s3://bucket/folder`.
@@ -83,7 +84,7 @@ struct OffsiteRestore {
     /// A folder on this machine, like a mounted disk.
     #[arg(long, group = "target")]
     folder: Option<PathBuf>,
-    /// The snapshot to put back; the newest without it.
+    /// The snapshot to put back; without it, the newest, shown and confirmed first.
     #[arg(long)]
     snapshot: Option<String>,
     /// Only list the snapshots there.
@@ -269,7 +270,9 @@ async fn invite(
 /// `uwulock-server settings list | get <key> | set <key> <value>`.
 async fn settings(config: Config, action: SettingsAction) -> Result<(), String> {
     let store = uwulock_server::open_store(&config)?;
-    let current = uwulock_api::Settings::load(&store, &config.start_settings).await?;
+    let secret = uwulock_api::secret::ServerSecret::new(&config.data_dir);
+    uwulock_api::secret::check_key(&store, &secret).await?;
+    let current = uwulock_api::Settings::load(&store, &config.start_settings, &secret).await?;
     let find = |value: &serde_json::Value, key: &str| {
         key.split('.').filter(|part| !part.is_empty()).try_fold(value.clone(), |value, part| value.get(part).cloned())
     };
@@ -292,7 +295,7 @@ async fn settings(config: Config, action: SettingsAction) -> Result<(), String> 
             // JSON, or else the text as it is.
             let parsed = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
             let new = current.with(&key, parsed)?;
-            new.save(&store).await.map_err(|error| error.to_string())?;
+            new.save(&store, &secret).await?;
             let shown = find(&new.for_portal(), &key).unwrap_or(serde_json::Value::Null);
             println!("{key} is now {shown}.");
             if key != "adminNetworks" {
@@ -335,7 +338,8 @@ async fn features(config: Config, action: FeaturesAction) -> Result<(), String> 
 /// `uwulock-server import-vaultwarden <path> [--dry-run] [--admin <email>]…`.
 async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins: Vec<String>) -> Result<(), String> {
     let store = uwulock_server::open_store(&config)?;
-    let settings = uwulock_api::Settings::load(&store, &config.start_settings).await?;
+    let secret = uwulock_api::secret::ServerSecret::new(&config.data_dir);
+    let settings = uwulock_api::Settings::load(&store, &config.start_settings, &secret).await?;
     if !dry_run {
         let backup = backups::write(&store, &config.backups(), None).await?;
         println!("Backup of this server first: {}", backup.display());
@@ -439,7 +443,22 @@ async fn offsite(
                 return Ok(());
             }
             let into = args.into.unwrap_or_else(|| config.data_dir.clone());
-            let manifest = cli::restore(&target, key.as_deref(), args.snapshot.as_deref(), &into).await?;
+            // The newest one there, said with its date and confirmed: whoever keeps the storage
+            // could have hidden newer ones (SV-L31).
+            let snapshot = match args.snapshot {
+                Some(name) => name,
+                None => {
+                    let snapshots = cli::list(&target, key.as_deref()).await?;
+                    let newest = snapshots.first().ok_or("There are no snapshots there.")?;
+                    println!("The newest snapshot there ({} in all):", snapshots.len());
+                    cli::print_snapshots(std::slice::from_ref(newest));
+                    if !cli::confirm("Put this one back? If newer ones should be there, answer no.")? {
+                        return Err("Nothing restored. Pick one with --snapshot <name> (--list shows them).".into());
+                    }
+                    newest.name.clone()
+                }
+            };
+            let manifest = cli::restore(&target, key.as_deref(), Some(&snapshot), &into).await?;
             println!(
                 "Restored the snapshot {} of {} (UwULock Server {}) into {}.",
                 manifest.name,

@@ -527,7 +527,7 @@ mod tests {
         let saved =
             json(server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), settings.clone()).await).await;
         assert_eq!(saved["metrics"], json!({"enabled": true, "tokenSet": true, "listen": null}), "never the token");
-        let stored = Settings::load(&server.state.store, &Settings::default()).await.unwrap();
+        let stored = Settings::load(&server.state.store, &Settings::default(), &server.state.secret).await.unwrap();
         assert!(!serde_json::to_string(&stored).unwrap().contains(token), "only its hash is kept");
 
         assert_eq!(scrape(&server, None).await.status(), StatusCode::UNAUTHORIZED);

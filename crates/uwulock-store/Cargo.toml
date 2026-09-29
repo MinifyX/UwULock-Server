@@ -12,8 +12,10 @@ rust-version.workspace = true
 doctest = false
 
 [dependencies]
+base64.workspace = true
 libc.workspace = true
 parking_lot.workspace = true
+ring.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

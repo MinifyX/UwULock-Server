@@ -691,7 +691,7 @@ pub(crate) async fn grant(
                 if listed && state.limits.mail.take(email.clone()) {
                     // In the look of the host the page was opened on (§14.3).
                     let brand = crate::branding::mail_brand_for(state, headers).await;
-                    mail_code(state, &send.id, &email, brand);
+                    mail_code(state, &send, &email, brand);
                 }
                 return Err(request("email_and_otp_required", "email and otp are required."));
             }
@@ -729,8 +729,8 @@ pub(crate) async fn grant(
 
 /// A new code for `email`, mailed on the side so the answer takes as long whether it went or
 /// not; nothing when the address had its mails for now.
-fn mail_code(state: &AppState, send_id: &str, email: &str, brand: Option<uwulock_mail::Brand>) {
-    let Some(code) = state.send_codes.issue(send_id, email) else { return };
+fn mail_code(state: &AppState, send: &uwulock_store::sends::Send, email: &str, brand: Option<uwulock_mail::Brand>) {
+    let Some(code) = state.send_codes.issue(&send.id, &send.user_id, email) else { return };
     let (mailer, email) = (state.mailer.clone(), email.to_string());
     let language = state.settings().default_language;
     tokio::spawn(async move {

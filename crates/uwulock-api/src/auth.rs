@@ -110,6 +110,10 @@ struct LinkClaims {
     /// For a Send only given addresses may open: the address that proved itself.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     email: Option<String>,
+    /// For a download link of an organisation's item: the member it was made for, whose travel
+    /// mode the download follows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    viewer: Option<String>,
 }
 
 impl Tokens {
@@ -135,6 +139,20 @@ impl Tokens {
         client_id: &str,
         sso: bool,
     ) -> (String, i64) {
+        self.access_token_for(user, device, device_type, client_id, sso, false)
+    }
+
+    /// Like [`Tokens::access_token`]; `setup_only` makes a token for the two-step login setup
+    /// alone ([`SETUP_SCOPE`]).
+    pub fn access_token_for(
+        &self,
+        user: &User,
+        device: &str,
+        device_type: i64,
+        client_id: &str,
+        sso: bool,
+        setup_only: bool,
+    ) -> (String, i64) {
         let now = now_seconds();
         let claims = Claims {
             nbf: now,
@@ -152,6 +170,8 @@ impl Tokens {
             // A suite app's token opens its space and nothing else (docs/uwu-api.md §6.5).
             scope: if crate::suite::space_of_client(client_id).is_some() {
                 vec![crate::suite::SCOPE.into(), "offline_access".into()]
+            } else if setup_only {
+                vec![SETUP_SCOPE.into(), "offline_access".into()]
             } else {
                 vec!["api".into(), "offline_access".into()]
             },
@@ -162,18 +182,29 @@ impl Tokens {
 
     /// A token for one file, `subject`, that works for `seconds`: download links carry it.
     pub fn file_token(&self, subject: &str, seconds: i64) -> String {
+        self.file_token_for(subject, seconds, None)
+    }
+
+    /// Like [`Tokens::file_token`], made for `viewer` (see [`Tokens::file_token_viewer`]).
+    pub fn file_token_for(&self, subject: &str, seconds: i64, viewer: Option<&str>) -> String {
         let claims = LinkClaims {
             sub: subject.to_string(),
             exp: now_seconds() + seconds,
             iss: self.link_issuer("file"),
             email: None,
+            viewer: viewer.map(str::to_string),
         };
         self.sign(&claims)
     }
 
     /// Whether `token` is a file token for `subject` that has not run out.
     pub fn check_file_token(&self, token: &str, subject: &str) -> bool {
-        self.verify_link(token, "file").is_some_and(|claims| claims.sub == subject)
+        self.file_token_viewer(token, subject).is_some()
+    }
+
+    /// For a valid file token for `subject`: whom it was made for, if for anybody.
+    pub fn file_token_viewer(&self, token: &str, subject: &str) -> Option<Option<String>> {
+        self.verify_link(token, "file").filter(|claims| claims.sub == subject).map(|claims| claims.viewer)
     }
 
     /// A token that opens one Send, `send_id`, for a short while: what the send access grant
@@ -185,6 +216,7 @@ impl Tokens {
             exp: now_seconds() + seconds,
             iss: self.link_issuer("send"),
             email: email.map(str::to_string),
+            viewer: None,
         };
         (self.sign(&claims), seconds)
     }
@@ -203,14 +235,20 @@ impl Tokens {
             exp: now_seconds() + seconds,
             iss: self.link_issuer("filerequest"),
             email: None,
+            viewer: None,
         };
         (self.sign(&claims), seconds)
     }
 
     /// What `/identity/sso/prevalidate` hands out, for `/identity/connect/authorize`: two minutes.
     pub fn sso_token(&self) -> String {
-        let claims =
-            LinkClaims { sub: "sso".into(), exp: now_seconds() + 2 * 60, iss: self.link_issuer("sso"), email: None };
+        let claims = LinkClaims {
+            sub: "sso".into(),
+            exp: now_seconds() + 2 * 60,
+            iss: self.link_issuer("sso"),
+            email: None,
+            viewer: None,
+        };
         self.sign(&claims)
     }
 
@@ -232,6 +270,7 @@ impl Tokens {
             exp: now_seconds() + 5 * 86_400,
             iss: self.link_issuer("orginvite"),
             email: Some(email.to_string()),
+            viewer: None,
         };
         self.sign(&claims)
     }
@@ -514,6 +553,27 @@ fn canonical(ip: IpAddr) -> IpAddr {
 
 // ── The session of a request ──────────────────────────────
 
+/// The scope of a web vault token for an account that has to set up two-step login first
+/// (docs/uwu-api.md §20): it opens that setup and what the web vault needs around it, nothing
+/// else, until the account has a second step.
+pub const SETUP_SCOPE: &str = "uwu.twofactor-setup";
+
+/// What a setup-only session may reach: the two-step login setup, and what the web vault needs to
+/// unlock and show it (the sync hands out only the profile then).
+fn setup_allows(method: &axum::http::Method, path: &str) -> bool {
+    let read = method == axum::http::Method::GET;
+    path.starts_with("/api/two-factor/")
+        || path == "/api/two-factor"
+        || path.starts_with("/uwu/v1/devices")
+        || path.starts_with("/uwu/v1/security/notices")
+        || path == "/uwu/v1/account/language"
+        || (read
+            && matches!(
+                path,
+                "/api/sync" | "/api/accounts/revision-date" | "/api/accounts/profile" | "/uwu/v1/account"
+            ))
+}
+
 /// A request with a valid access token: who it is from, and on which device.
 #[derive(Debug, Clone)]
 pub struct Session {
@@ -528,6 +588,9 @@ pub struct Session {
     pub space: Option<&'static str>,
     /// When the access token runs out, in Unix seconds.
     pub expires: i64,
+    /// A web vault token for the two-step login setup only ([`SETUP_SCOPE`]), while the account
+    /// still has no second step.
+    pub setup_only: bool,
 }
 
 /// The bearer token of a request: Bitwarden takes what follows the last "Bearer ", or the whole
@@ -541,7 +604,9 @@ impl FromRequestParts<AppState> for Session {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        Session::from_token(state, bearer(parts)).await
+        let session = Session::from_token(state, bearer(parts)).await?;
+        session.check_setup(parts)?;
+        Ok(session)
     }
 }
 
@@ -554,7 +619,9 @@ impl FromRequestParts<AppState> for AnySession {
     type Rejection = ApiError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        Session::from_any_token(state, bearer(parts)).await.map(AnySession)
+        let session = Session::from_any_token(state, bearer(parts)).await?;
+        session.check_setup(parts)?;
+        Ok(AnySession(session))
     }
 }
 
@@ -575,9 +642,13 @@ impl Session {
             return Err(ApiError::unauthorized());
         }
         let claims = state.tokens.verify(token).ok_or_else(ApiError::unauthorized)?;
+        let mut setup_only = false;
         let space = if claims.scope.iter().any(|scope| scope == crate::suite::SCOPE) {
             Some(crate::suite::space_of_client(&claims.client_id).ok_or_else(ApiError::unauthorized)?)
         } else if claims.scope.iter().any(|scope| scope == "api") {
+            None
+        } else if claims.scope.iter().any(|scope| scope == SETUP_SCOPE) {
+            setup_only = true;
             None
         } else {
             return Err(ApiError::unauthorized());
@@ -589,7 +660,39 @@ impl Session {
             return Err(ApiError::unauthorized());
         }
         let sso = claims.amr.iter().any(|method| method == "sso");
-        Ok(Session { user, device: claims.device, client_id: claims.client_id, sso, space, expires: claims.exp })
+        // Once there is a second step (or the rule is gone), the same token opens everything:
+        // the web vault goes on without logging in again.
+        if setup_only && !crate::identity::must_set_up_two_factor(state, &user).await? {
+            setup_only = false;
+        }
+        Ok(Session {
+            user,
+            device: claims.device,
+            client_id: claims.client_id,
+            sso,
+            space,
+            expires: claims.exp,
+            setup_only,
+        })
+    }
+
+    /// A setup-only session reaches only the two-step login setup: 403 `two_factor_required`.
+    fn check_setup(&self, parts: &Parts) -> Result<(), ApiError> {
+        if self.setup_only && !setup_allows(&parts.method, parts.uri.path()) {
+            return Err(ApiError::forbidden("This server requires two-step login. Set it up first.")
+                .code("two_factor_required"));
+        }
+        Ok(())
+    }
+
+    /// Whether the session may use an admin's rights outside the admin portal (invitations
+    /// without a quota): an admin, from inside the admin networks, and through SSO where the
+    /// portal asks for it — the same rules as [`Admin`].
+    pub fn acts_as_admin(&self, state: &AppState, ip: IpAddr) -> bool {
+        let settings = state.settings.read();
+        self.user.admin
+            && crate::networks::allowed(&settings.admin_networks, ip)
+            && (self.sso || !(settings.sso.enabled && settings.sso.admins_only_with_sso))
     }
 
     /// Whether this is a suite app's session.
@@ -709,6 +812,11 @@ mod tests {
         let (login, _) = tokens.access_token(&user(), "d", 3, "browser", false);
         assert!(!tokens.check_file_token(&login, "u1"), "an access token opens no file");
         assert!(!tokens.check_file_token(&tokens.file_token("c1/a1", -1), "c1/a1"), "ran out");
+        // A link for an organisation's item names the member it was made for (SV-L8).
+        let bound = tokens.file_token_for("c1/a1", 60, Some("u1"));
+        assert_eq!(tokens.file_token_viewer(&bound, "c1/a1"), Some(Some("u1".to_string())));
+        assert_eq!(tokens.file_token_viewer(&file, "c1/a1"), Some(None));
+        assert_eq!(tokens.file_token_viewer(&bound, "c1/a2"), None);
     }
 
     #[tokio::test]

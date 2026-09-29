@@ -215,13 +215,15 @@ export function readProtonJson(data: ProtonExport, collector: Collector) {
   for (const vault of vaults) {
     const folder = vaults.length > 1 ? (vault.name ?? null) : null;
     for (const entry of vault.items ?? []) {
-      if (entry.state === TRASHED) {
-        trashed++;
-        continue;
-      }
-      const item = readItem(collector, entry);
-      if (item) collector.add(item, folder);
-      else unknown++;
+      collector.entry(entry?.data?.metadata?.name, () => {
+        if (entry.state === TRASHED) {
+          trashed++;
+          return;
+        }
+        const item = readItem(collector, entry);
+        if (item) collector.add(item, folder);
+        else unknown++;
+      });
     }
   }
   if (trashed) {

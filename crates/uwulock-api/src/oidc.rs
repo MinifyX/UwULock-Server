@@ -27,6 +27,9 @@ const REFETCH: Duration = Duration::from_secs(60);
 const MAX_ANSWER: usize = 512 * 1024;
 /// Clocks may differ this much.
 const LEEWAY: i64 = 60;
+/// How long a failed fetch is remembered: while the provider fails, anonymous authorize calls
+/// do not each ask it again (SV-L21).
+const FAILED: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Discovery {
@@ -69,11 +72,13 @@ struct JwkSet {
 /// Something fetched, and when.
 type Fetched<T> = Mutex<HashMap<String, (Instant, Arc<T>)>>;
 
-/// What was fetched, by address.
+/// What was fetched, by address; what failed lately; and who is fetching right now.
 #[derive(Default)]
 pub struct Cache {
     discovery: Fetched<Discovery>,
     keys: Fetched<Vec<Jwk>>,
+    failed: Mutex<HashMap<String, (Instant, String)>>,
+    fetching: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Cache {
@@ -81,7 +86,63 @@ impl Cache {
     pub fn forget(&self) {
         self.discovery.lock().clear();
         self.keys.lock().clear();
+        self.failed.lock().clear();
     }
+
+    /// Why fetching `url` failed, if it did within [`FAILED`].
+    fn failed_lately(&self, url: &str) -> Option<String> {
+        let mut failed = self.failed.lock();
+        failed.retain(|_, (when, _)| when.elapsed() < FAILED);
+        failed.get(url).map(|(_, error)| error.clone())
+    }
+
+    /// Fetches `url` once for everybody waiting: whoever comes while it runs waits and then
+    /// finds the answer (or the failure) there.
+    async fn once<T>(
+        &self,
+        url: &str,
+        cached: impl Fn() -> Option<Arc<T>>,
+        fetch: impl std::future::Future<Output = Result<Arc<T>, String>>,
+    ) -> Result<Arc<T>, String> {
+        if let Some(error) = self.failed_lately(url) {
+            return Err(error);
+        }
+        let lock = self.fetching.lock().entry(url.to_string()).or_default().clone();
+        let _held = lock.lock().await;
+        if let Some(found) = cached() {
+            return Ok(found);
+        }
+        if let Some(error) = self.failed_lately(url) {
+            return Err(error);
+        }
+        let result = fetch.await;
+        if let Err(error) = &result {
+            self.failed.lock().insert(url.to_string(), (Instant::now(), error.clone()));
+        }
+        self.fetching.lock().remove(url);
+        result
+    }
+}
+
+/// The issuer: an address of the provider's without a query, which would turn the fixed
+/// discovery path into one (SV-L19).
+pub fn checked_issuer(url: &str) -> Result<reqwest::Url, String> {
+    let parsed = checked_endpoint(url, "The issuer")?;
+    if parsed.query().is_some() || url.contains('?') {
+        return Err(format!("The issuer: {url} cannot have a ?query."));
+    }
+    Ok(parsed)
+}
+
+/// An endpoint the discovery document names: http on loopback only when the issuer is on
+/// loopback too, so a provider out there cannot send the client secret to a local service
+/// (SV-L20).
+fn checked_for(url: &str, what: &str, issuer: &reqwest::Url) -> Result<reqwest::Url, String> {
+    let parsed = checked_endpoint(url, what)?;
+    if parsed.scheme() == "http" && !issuer.host_str().is_some_and(is_loopback) {
+        return Err(format!("{what}: {url} has to be an https address, like the issuer."));
+    }
+    Ok(parsed)
 }
 
 /// An address of the provider's: https, or http on a loopback address.
@@ -141,22 +202,28 @@ pub async fn discover(cache: &Cache, issuer: &str) -> Result<Arc<Discovery>, Str
     {
         return Ok(found.clone());
     }
-    let base = checked_endpoint(issuer, "The issuer")?;
-    let url = reqwest::Url::parse(&format!("{}/.well-known/openid-configuration", base.as_str().trim_end_matches('/')))
-        .map_err(|error| error.to_string())?;
-    let found: Discovery = get_json(&url, "The discovery document").await?;
-    if found.issuer.trim_end_matches('/') != issuer {
-        return Err(format!("The discovery document names another issuer: {}", found.issuer));
-    }
-    checked_endpoint(&found.authorization_endpoint, "The authorization endpoint")?;
-    checked_endpoint(&found.token_endpoint, "The token endpoint")?;
-    checked_endpoint(&found.jwks_uri, "The key set")?;
-    if let Some(userinfo) = &found.userinfo_endpoint {
-        checked_endpoint(userinfo, "The userinfo endpoint")?;
-    }
-    let found = Arc::new(found);
-    cache.discovery.lock().insert(issuer.to_string(), (Instant::now(), found.clone()));
-    Ok(found)
+    let base = checked_issuer(issuer)?;
+    let cached =
+        || cache.discovery.lock().get(issuer).filter(|(when, _)| when.elapsed() < KEEP).map(|(_, found)| found.clone());
+    let fetch = async {
+        let url =
+            reqwest::Url::parse(&format!("{}/.well-known/openid-configuration", base.as_str().trim_end_matches('/')))
+                .map_err(|error| error.to_string())?;
+        let found: Discovery = get_json(&url, "The discovery document").await?;
+        if found.issuer.trim_end_matches('/') != issuer {
+            return Err(format!("The discovery document names another issuer: {}", found.issuer));
+        }
+        checked_for(&found.authorization_endpoint, "The authorization endpoint", &base)?;
+        checked_for(&found.token_endpoint, "The token endpoint", &base)?;
+        checked_for(&found.jwks_uri, "The key set", &base)?;
+        if let Some(userinfo) = &found.userinfo_endpoint {
+            checked_for(userinfo, "The userinfo endpoint", &base)?;
+        }
+        let found = Arc::new(found);
+        cache.discovery.lock().insert(issuer.to_string(), (Instant::now(), found.clone()));
+        Ok(found)
+    };
+    cache.once(&format!("discovery {issuer}"), cached, fetch).await
 }
 
 /// The provider's signing keys; `again` fetches them anew unless that happened a minute ago.
@@ -168,10 +235,23 @@ pub async fn keys(cache: &Cache, discovery: &Discovery, again: bool) -> Result<A
         }
     }
     let url = checked_endpoint(&discovery.jwks_uri, "The key set")?;
-    let set: JwkSet = get_json(&url, "The key set").await?;
-    let keys = Arc::new(set.keys.into_iter().filter(|key| key.usage.as_deref() != Some("enc")).collect::<Vec<_>>());
-    cache.keys.lock().insert(discovery.jwks_uri.clone(), (Instant::now(), keys.clone()));
-    Ok(keys)
+    // Whoever waited while another fetched takes what that one found.
+    let asked = Instant::now();
+    let cached = || {
+        cache
+            .keys
+            .lock()
+            .get(&discovery.jwks_uri)
+            .filter(|(when, _)| *when >= asked || (!again && when.elapsed() < KEEP))
+            .map(|(_, found)| found.clone())
+    };
+    let fetch = async {
+        let set: JwkSet = get_json(&url, "The key set").await?;
+        let keys = Arc::new(set.keys.into_iter().filter(|key| key.usage.as_deref() != Some("enc")).collect::<Vec<_>>());
+        cache.keys.lock().insert(discovery.jwks_uri.clone(), (Instant::now(), keys.clone()));
+        Ok(keys)
+    };
+    cache.once(&format!("keys {}", discovery.jwks_uri), cached, fetch).await
 }
 
 /// What the token endpoint answered.
@@ -532,5 +612,45 @@ pub(crate) mod tests {
         {
             assert!(checked_endpoint(bad, "t").is_err(), "{bad}");
         }
+        // SV-L19: no query in the issuer; SV-L20: loopback http only for a loopback issuer.
+        assert!(checked_issuer("https://auth.example.com/realms/x").is_ok());
+        for bad in ["https://auth.example.com/?", "https://auth.example.com/x?a=b", "https://auth.example.com/#x"] {
+            assert!(checked_issuer(bad).is_err(), "{bad}");
+        }
+        let out_there = checked_issuer("https://auth.example.com").unwrap();
+        let local = checked_issuer("http://127.0.0.1:9000").unwrap();
+        assert!(checked_for("http://127.0.0.1:8200/token", "t", &out_there).is_err());
+        assert!(checked_for("https://auth.example.com/token", "t", &out_there).is_ok());
+        assert!(checked_for("http://127.0.0.1:9000/token", "t", &local).is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_failing_provider_is_asked_once_and_then_left_alone() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counter = asked.clone();
+        let app = axum::Router::new().fallback(move || {
+            let counter = counter.clone();
+            async move {
+                counter.fetch_add(1, Ordering::SeqCst);
+                axum::http::StatusCode::SERVICE_UNAVAILABLE
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let issuer = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let cache = Arc::new(Cache::default());
+        let mut all = tokio::task::JoinSet::new();
+        for _ in 0..8 {
+            let (cache, issuer) = (cache.clone(), issuer.clone());
+            all.spawn(async move { discover(&cache, &issuer).await.is_err() });
+        }
+        assert!(all.join_all().await.into_iter().all(|failed| failed));
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "once for everybody waiting");
+        assert!(discover(&cache, &issuer).await.unwrap_err().contains("503"));
+        assert_eq!(asked.load(Ordering::SeqCst), 1, "the failure is remembered");
+        cache.forget();
+        assert!(discover(&cache, &issuer).await.is_err());
+        assert_eq!(asked.load(Ordering::SeqCst), 2, "asked again once the settings change");
     }
 }

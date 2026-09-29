@@ -545,23 +545,31 @@ async fn the_server_s_own_two_step_login_still_applies() {
 #[test]
 fn every_client_goes_back_only_where_it_may() {
     let public = "https://vault.example.com";
-    assert!(redirect_allowed(public, "web", CONNECTOR));
-    assert!(redirect_allowed(public, "browser", CONNECTOR));
-    assert!(!redirect_allowed(public, "web", "https://evil.example.com/sso-connector.html"));
-    assert!(redirect_allowed(public, "mobile", "bitwarden://sso-callback"));
-    assert!(redirect_allowed(public, "desktop", "bitwarden://sso-callback"));
-    assert!(redirect_allowed(public, "desktop", "http://localhost:8065/"));
-    assert!(redirect_allowed(public, "cli", "http://127.0.0.1:8070/callback"));
-    assert!(!redirect_allowed(public, "cli", "http://192.0.2.1:8070/"));
-    assert!(!redirect_allowed(public, "cli", "https://localhost:8070/"));
-    assert!(!redirect_allowed(public, "cli", "http://localhost/"), "a port");
-    assert!(redirect_allowed(public, "uwussh", "http://localhost:9000/"));
+    assert!(redirect_allowed(public, "web", CONNECTOR, &[]));
+    assert!(redirect_allowed(public, "browser", CONNECTOR, &[]));
+    assert!(!redirect_allowed(public, "web", "https://evil.example.com/sso-connector.html", &[]));
+    assert!(redirect_allowed(public, "mobile", "bitwarden://sso-callback", &[]));
+    assert!(redirect_allowed(public, "desktop", "bitwarden://sso-callback", &[]));
+    assert!(redirect_allowed(public, "desktop", "http://localhost:8065/", &[]));
+    assert!(redirect_allowed(public, "cli", "http://127.0.0.1:8070/callback", &[]));
+    assert!(!redirect_allowed(public, "cli", "http://192.0.2.1:8070/", &[]));
+    assert!(!redirect_allowed(public, "cli", "https://localhost:8070/", &[]));
+    assert!(!redirect_allowed(public, "cli", "http://localhost/", &[]), "a port");
+    assert!(redirect_allowed(public, "uwussh", "http://localhost:9000/", &[]));
+    // The released extension, and only the others the admin listed (SV-L3).
+    let released = "https://e2a48da41bf871b17a40262b242249e7cd857b53.extensions.allizom.org/";
+    assert!(redirect_allowed(public, "uwulock-extension", released, &[]));
     let chromium = format!("https://{}.chromiumapp.org/", "a".repeat(32));
     let firefox = format!("https://{}.extensions.allizom.org/", "0f".repeat(20));
-    assert!(redirect_allowed(public, "uwulock-extension", &chromium));
-    assert!(redirect_allowed(public, "uwulock-extension", &firefox));
-    assert!(!redirect_allowed(public, "uwulock-extension", "https://zz.chromiumapp.org/"));
-    assert!(!redirect_allowed(public, "made-up", CONNECTOR));
+    assert!(!redirect_allowed(public, "uwulock-extension", &chromium, &[]), "any extension");
+    assert!(!redirect_allowed(public, "uwulock-extension", &firefox, &[]));
+    let listed = ["a".repeat(32), "0f".repeat(20)];
+    assert!(redirect_allowed(public, "uwulock-extension", &chromium, &listed));
+    assert!(redirect_allowed(public, "uwulock-extension", &firefox, &listed));
+    let other = format!("https://{}.chromiumapp.org/", "b".repeat(32));
+    assert!(!redirect_allowed(public, "uwulock-extension", &other, &listed));
+    assert!(!redirect_allowed(public, "uwulock-extension", "https://zz.chromiumapp.org/", &["zz".into()]));
+    assert!(!redirect_allowed(public, "made-up", CONNECTOR, &[]));
 }
 
 #[tokio::test]

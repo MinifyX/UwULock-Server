@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use uwulock_mail::{Language, SmtpSettings};
 use uwulock_store::Store;
+use uwulock_store::secret::{ServerSecret, is_sealed};
 
 const KEY: &str = "settings";
 
@@ -117,6 +118,19 @@ impl MaskedSettings {
         for server in &mut self.servers {
             server.url = crate::outbound::checked_url(&server.url, "UwUMail server")?;
             let parsed = reqwest::Url::parse(&server.url).map_err(|error| error.to_string())?;
+            // Tokens go there: in the clear only inside this machine or the local network.
+            let local = match parsed.host() {
+                Some(url::Host::Ipv4(ip)) => !crate::icon_fetch::public(ip.into()),
+                Some(url::Host::Ipv6(ip)) => !crate::icon_fetch::public(ip.into()),
+                Some(url::Host::Domain(name)) => crate::icon_fetch::normalize_host(name).is_none(),
+                None => false,
+            };
+            if parsed.scheme() != "https" && !local {
+                return Err(format!(
+                    "UwUMail server: {} has to be reached by https (http only for an address in the local network).",
+                    server.url
+                ));
+            }
             if parsed.path() != "/" || parsed.query().is_some() {
                 return Err(format!(
                     "UwUMail server: {} has to be the server's address alone, without a path.",
@@ -225,11 +239,21 @@ pub struct FileRequestSettings {
     pub max_days: u32,
     /// Files one submission may bring.
     pub max_files: u32,
+    /// Megabytes one request may hold, all its submissions together; 0 for no cap beyond the
+    /// owner's storage (SV-L26).
+    pub max_request_mb: u32,
 }
 
 impl Default for FileRequestSettings {
     fn default() -> Self {
-        FileRequestSettings { per_user: 50, max_days: 90, max_files: 20 }
+        FileRequestSettings { per_user: 50, max_days: 90, max_files: 20, max_request_mb: 2048 }
+    }
+}
+
+impl FileRequestSettings {
+    /// [`FileRequestSettings::max_request_mb`] in bytes, `None` for no cap.
+    pub fn request_limit(&self) -> Option<i64> {
+        (self.max_request_mb > 0).then(|| i64::from(self.max_request_mb) * 1024 * 1024)
     }
 }
 
@@ -280,16 +304,61 @@ impl Settings {
 }
 
 impl Settings {
-    /// What the database holds, or `start` for a server that never saved any.
-    pub async fn load(store: &Store, start: &Settings) -> Result<Settings, String> {
+    /// What the database holds, or `start` for a server that never saved any. The passwords
+    /// and keys come opened.
+    pub async fn load(store: &Store, start: &Settings, secret: &ServerSecret) -> Result<Settings, String> {
         match store.setting(KEY).await.map_err(|error| error.to_string())? {
-            Some(json) => serde_json::from_str(&json).map_err(|error| format!("the settings in the database: {error}")),
+            Some(json) => {
+                let mut settings: Settings =
+                    serde_json::from_str(&json).map_err(|error| format!("the settings in the database: {error}"))?;
+                settings.secrets(|field, purpose| secret.open_field(field, purpose))?;
+                Ok(settings)
+            }
             None => Ok(start.clone()),
         }
     }
 
-    pub async fn save(&self, store: &Store) -> Result<(), uwulock_store::StoreError> {
-        store.set_setting(KEY, &serde_json::to_string(self).expect("settings serialize")).await
+    /// Saved with the passwords and keys sealed with the server secret (SV-L18).
+    pub async fn save(&self, store: &Store, secret: &ServerSecret) -> Result<(), String> {
+        let mut sealed = self.clone();
+        sealed.secrets(|field, purpose| secret.seal_field(field, purpose))?;
+        store
+            .set_setting(KEY, &serde_json::to_string(&sealed).expect("settings serialize"))
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    /// Seals what an older server kept in plain. Once, at the start.
+    pub async fn seal_stored(store: &Store, secret: &ServerSecret) -> Result<(), String> {
+        let Some(json) = store.setting(KEY).await.map_err(|error| error.to_string())? else { return Ok(()) };
+        let Ok(mut stored) = serde_json::from_str::<Settings>(&json) else { return Ok(()) };
+        let mut plain = false;
+        stored.secrets(|field, _| {
+            plain |= field.as_deref().is_some_and(|value| !value.is_empty() && !is_sealed(value));
+            Ok(())
+        })?;
+        if plain {
+            let settings = Settings::load(store, &Settings::default(), secret).await?;
+            settings.save(store, secret).await?;
+            tracing::info!("the passwords in the settings are sealed now");
+        }
+        Ok(())
+    }
+
+    /// Each password or key in the settings, with what it is for. The SSO client secret is
+    /// sealed where it is set (`sso.rs`).
+    fn secrets(&mut self, mut each: impl FnMut(&mut Option<String>, &str) -> Result<(), String>) -> Result<(), String> {
+        if let Some(smtp) = self.smtp.as_mut() {
+            each(&mut smtp.password, "settings.smtp.password")?;
+        }
+        each(&mut self.loki.password, "settings.loki.password")?;
+        if let Some(push) = self.push.as_mut() {
+            let mut key = Some(std::mem::take(&mut push.installation_key));
+            let done = each(&mut key, "settings.push.installationKey");
+            push.installation_key = key.unwrap_or_default();
+            done?;
+        }
+        Ok(())
     }
 
     /// The settings as the portal (and `uwulock-server settings get`) shows them: passwords,
@@ -424,11 +493,37 @@ mod tests {
     async fn start_values_until_something_is_saved() {
         let dir = tempfile::tempdir().unwrap();
         let store = Store::open_sqlite(&dir.path().join("db"), &uwulock_store::Options { readers: 1 }).unwrap();
+        let secret = ServerSecret::new(dir.path());
         let start = Settings { invitation_days: 3, ..Settings::default() };
-        assert_eq!(Settings::load(&store, &start).await.unwrap(), start);
+        assert_eq!(Settings::load(&store, &start, &secret).await.unwrap(), start);
         let saved = Settings { invitation_days: 14, default_language: Language::En, ..Settings::default() };
-        saved.save(&store).await.unwrap();
-        assert_eq!(Settings::load(&store, &start).await.unwrap(), saved, "the database wins");
+        saved.save(&store, &secret).await.unwrap();
+        assert_eq!(Settings::load(&store, &start, &secret).await.unwrap(), saved, "the database wins");
+    }
+
+    #[tokio::test]
+    async fn passwords_are_sealed_in_the_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_sqlite(&dir.path().join("db"), &uwulock_store::Options { readers: 1 }).unwrap();
+        let secret = ServerSecret::new(dir.path());
+        let smtp = SmtpSettings {
+            host: "mail.example.com".into(),
+            port: 587,
+            from: "vault@example.com".into(),
+            password: Some("smtp-geheim".into()),
+            ..SmtpSettings::default()
+        };
+        let mut settings = Settings { smtp: Some(smtp), ..Settings::default() };
+        settings.loki.password = Some("loki-geheim".into());
+        // What an older server wrote: in plain. Sealed at the start.
+        store.set_setting(KEY, &serde_json::to_string(&settings).unwrap()).await.unwrap();
+        Settings::seal_stored(&store, &secret).await.unwrap();
+        let raw = store.setting(KEY).await.unwrap().unwrap();
+        assert!(!raw.contains("geheim") && raw.contains("\"v1."), "{raw}");
+        assert_eq!(Settings::load(&store, &Settings::default(), &secret).await.unwrap(), settings);
+        settings.save(&store, &secret).await.unwrap();
+        assert!(!store.setting(KEY).await.unwrap().unwrap().contains("geheim"));
+        assert_eq!(Settings::load(&store, &Settings::default(), &secret).await.unwrap(), settings);
     }
 
     #[test]

@@ -179,14 +179,18 @@ async fn switched_off_and_out_of_tries() {
     assert_eq!(info["icons"]["automatic"], false);
 
     let limits = crate::Limits {
-        icons: crate::limits::Limiter::new(1, std::time::Duration::from_secs(3600)),
+        icons: crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600)),
         ..crate::Limits::generous()
     };
     let server = TestServer::new().await.with_upstream(upstream(port, true)).with_limits(limits);
     assert_eq!(icon(&server, "plain.example.net").await.0, StatusCode::OK);
-    let (status, cache, _) = icon(&server, "shop.example.com").await;
-    assert_eq!((status, cache.as_str()), (StatusCode::NOT_FOUND, "no-store"), "out of tries, not remembered");
     assert_eq!(icon(&server, "plain.example.net").await.0, StatusCode::OK, "the cache costs nothing");
+    icon(&server, "shop.example.com").await;
+    let (status, cache, _) = icon(&server, "other.example.org").await;
+    assert_eq!((status, cache.as_str()), (StatusCode::NOT_FOUND, "no-store"), "out of tries, not remembered");
+    // Out of tries, a cached host answers the same: nobody learns which sites are known (SV-L12).
+    let (status, cache, _) = icon(&server, "plain.example.net").await;
+    assert_eq!((status, cache.as_str()), (StatusCode::NOT_FOUND, "no-store"));
 }
 
 #[tokio::test]

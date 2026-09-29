@@ -224,8 +224,10 @@ try {
   await nyu.locator('.modal').getByLabel('Name').fill('Virtuell');
   await nyu.locator('.modal input[type=password]').fill(password);
   await nyu.getByRole('button', { name: 'Weiter' }).click();
-  await nyu.getByText(/Passkey hinzugefügt/).waitFor({ timeout: 30000 });
-  const unlocks = await nyu.getByText('Meldet an und entsperrt den Tresor.').isVisible();
+  // The toast says whether the passkey unlocks too; the list below may render a moment later.
+  const added = nyu.getByText(/Passkey hinzugefügt/);
+  await added.waitFor({ timeout: 30000 });
+  const unlocks = /entsperrt auch/.test(await added.textContent());
   await snap(nyu, 'passkey');
   await nyu.keyboard.press('Escape');
   await logOut(nyu);

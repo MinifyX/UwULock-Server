@@ -331,6 +331,23 @@ async fn a_new_key_makes_a_new_space_id_and_older_pulls_start_over() {
     assert_eq!(blobs, vec![b64(b"A"), b64(b"B")]);
     let listed = json(server.get_as(&token, "/uwu/v1/suite/spaces").await).await;
     assert_eq!(listed["data"][0]["id"], new_id);
+
+    // A device that still has the old space pushes records sealed for it: refused whole (SV-L10).
+    let fresh_r1 = fresh["records"][0]["baseSeq"].as_i64().unwrap();
+    let stale =
+        json!({ "schema": 2, "spaceId": SPACE_ID, "records": [record(R1, fresh_r1, b"old"), record(R3, 0, b"x")] });
+    let (status, body) =
+        code_of(server.call("POST", "/uwu/v1/suite/spaces/ssh/records", Some(&token), stale).await).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::CONFLICT, Some("space_changed")));
+    assert_eq!(pull(&server, &token, "since=0").await["records"].as_array().unwrap().len(), 2, "nothing written");
+    let current = json!({ "schema": 2, "spaceId": new_id, "records": [record(R3, 0, b"c")] });
+    let (status, _) =
+        code_of(server.call("POST", "/uwu/v1/suite/spaces/ssh/records", Some(&token), current).await).await;
+    assert_eq!(status, StatusCode::OK, "the space's own id");
+    let (status, _) =
+        code_of(push(&server, &token, vec![record(R2, fresh["records"][1]["baseSeq"].as_i64().unwrap(), b"d")]).await)
+            .await;
+    assert_eq!(status, StatusCode::OK, "without spaceId, as older apps push");
 }
 
 #[tokio::test]

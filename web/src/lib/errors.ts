@@ -18,7 +18,7 @@ export function errorText(error: unknown): string {
   const code = errorCode(error);
   if (code === 'rate_limited')
     return t('Zu viele Anfragen auf einmal. Versuch es in einer Minute noch einmal.');
-  if (code === 'quota')
+  if (code === 'quota' || code === 'request_full')
     return t('Mehr geht nicht: {reason}', { reason: (error as ApiError).message });
   if (code === 'feature_off') return t('Das ist auf diesem Server ausgeschaltet.');
   const f: Failure = failure(error);

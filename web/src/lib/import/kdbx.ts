@@ -30,6 +30,14 @@ import {
   u64le,
   utf8,
 } from './bytes';
+import {
+  MAX_AES_KDF_ROUNDS,
+  MAX_ARGON2_COST_KIB,
+  MAX_ARGON2_LANES,
+  MAX_ARGON2_MEMORY_KIB,
+  MAX_UNPACKED_BYTES,
+  unpacksTooMuch,
+} from './limits';
 import { ChaCha20, Salsa20 } from './stream';
 import type { Credentials, KdbxKdf } from './types';
 
@@ -50,6 +58,35 @@ const SALSA20_NONCE = new Uint8Array([0xe8, 0x30, 0x09, 0x4b, 0x97, 0x20, 0x5d, 
 
 const damaged = () => new ImportError(t('Die KeePass-Datei ist beschädigt oder unvollständig.'));
 const wrongKey = () => new ImportError(t('Das Passwort oder die Schlüsseldatei stimmt nicht.'));
+const tooCostly = () =>
+  new ImportError(
+    t(
+      'Die Schlüsselableitung dieser KeePass-Datei ist aufwendiger, als UwULock beim Import zulässt. Stell sie in KeePassXC oder KeePass bei den Datenbank-Einstellungen niedriger, speichere und importiere die Datei noch einmal.',
+    ),
+  );
+
+/**
+ * XML without a DOCTYPE, parsed; null when it doesn't parse. The prolog (everything before the
+ * root element: the XML declaration, processing instructions, comments) is checked before the
+ * parser sees the text, so no entity is ever expanded, however far down the DOCTYPE stands.
+ */
+export function parseXml(xml: string): Document | null {
+  for (let at = 0; ;) {
+    const open = xml.indexOf('<', at);
+    if (open < 0) return null;
+    const close = xml.startsWith('<?', open) ? '?>' : xml.startsWith('<!--', open) ? '-->' : null;
+    if (close === null) {
+      // The root element; anything else starting with "<!" is a DOCTYPE (or broken).
+      if (xml.startsWith('<!', open)) return null;
+      break;
+    }
+    const end = xml.indexOf(close, open + 2);
+    if (end < 0) return null;
+    at = end + close.length;
+  }
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  return doc.querySelector('parsererror') ? null : doc;
+}
 
 export function isKdbx(bytes: Uint8Array): boolean {
   if (bytes.length < 12) return false;
@@ -69,16 +106,29 @@ export async function keyFileKey(bytes: Uint8Array): Promise<Uint8Array> {
     // Binary: not XML, not hex.
   }
   if (text !== null && text.trimStart().startsWith('<')) {
-    const doc = new DOMParser().parseFromString(text, 'application/xml');
-    const version = doc.querySelector('KeyFile > Meta > Version')?.textContent?.trim() ?? '';
-    const data = doc.querySelector('KeyFile > Key > Data');
-    if (data && !doc.querySelector('parsererror')) {
-      if (version.startsWith('1.')) return fromBase64(data.textContent ?? '');
+    const doc = parseXml(text);
+    const version = doc?.querySelector('KeyFile > Meta > Version')?.textContent?.trim() ?? '';
+    const data = doc?.querySelector('KeyFile > Key > Data');
+    const broken = () => new ImportError(t('Die Schlüsseldatei ist beschädigt.'));
+    if (data) {
+      if (version.startsWith('1.')) {
+        let key: Uint8Array;
+        try {
+          key = fromBase64(data.textContent ?? '');
+        } catch {
+          throw broken();
+        }
+        if (key.length !== 32) throw broken();
+        return key;
+      }
       if (version.startsWith('2.')) {
+        // The check hash (the key's SHA-256, its first 4 bytes) is optional.
         const key = fromHex(data.textContent ?? '');
-        const check = fromHex(data.getAttribute('Hash') ?? '');
-        if (!key || (check && !equal((await sha256(key)).subarray(0, 4), check))) {
-          throw new ImportError(t('Die Schlüsseldatei ist beschädigt.'));
+        const hash = data.getAttribute('Hash');
+        const check = hash === null ? null : fromHex(hash);
+        if (!key || key.length !== 32) throw broken();
+        if (hash !== null && (!check || !equal((await sha256(key)).subarray(0, 4), check))) {
+          throw broken();
         }
         return key;
       }
@@ -154,7 +204,11 @@ async function derive(
     if (typeof value !== 'number') throw damaged();
     return value;
   };
-  if (KDF_AES.includes(id)) return kdf.aesKdf(composite, bytes('S'), number('R'));
+  if (KDF_AES.includes(id)) {
+    const rounds = number('R');
+    if (rounds > MAX_AES_KDF_ROUNDS) throw tooCostly();
+    return kdf.aesKdf(composite, bytes('S'), rounds);
+  }
   if (id === KDF_ARGON2D || id === KDF_ARGON2ID) {
     for (const extra of ['K', 'A']) {
       const value = params.get(extra);
@@ -164,14 +218,24 @@ async function derive(
         );
       }
     }
+    const memoryKiB = Math.floor(number('M') / 1024);
+    const iterations = number('I');
+    const lanes = number('P');
+    if (
+      memoryKiB > MAX_ARGON2_MEMORY_KIB ||
+      memoryKiB * iterations > MAX_ARGON2_COST_KIB ||
+      lanes > MAX_ARGON2_LANES
+    ) {
+      throw tooCostly();
+    }
     return kdf.argon2(
       id === KDF_ARGON2ID,
       number('V'),
       composite,
       bytes('S'),
-      Math.floor(number('M') / 1024),
-      number('I'),
-      number('P'),
+      memoryKiB,
+      iterations,
+      lanes,
     );
   }
   throw new ImportError(
@@ -213,6 +277,11 @@ async function innerStream(id: number, key: Uint8Array): Promise<ChaCha20 | Sals
     t('Diese KeePass-Datei nutzt eine Verschlüsselung, die UwULock nicht kennt.'),
   );
 }
+
+const gunzip = (data: Uint8Array) =>
+  inflate(data, 'gzip', MAX_UNPACKED_BYTES, unpacksTooMuch).catch((error) =>
+    Promise.reject(error instanceof ImportError ? error : damaged()),
+  );
 
 export type Kdbx = { doc: Document; version: string };
 
@@ -286,7 +355,7 @@ export async function openKdbx(
     }
     const key = await sha256(masterSeed, transformed);
     let plain = await decrypt(cipher, key, iv, concat(...blocks));
-    if (compressed) plain = await inflate(plain, 'gzip').catch(() => Promise.reject(damaged()));
+    if (compressed) plain = await gunzip(plain);
 
     const inner = new Reader(plain, damaged);
     let streamId = 0;
@@ -302,6 +371,7 @@ export async function openKdbx(
     payload = plain.subarray(inner.at);
   } else {
     const rounds = new Reader(field(6), damaged).u64();
+    if (rounds > MAX_AES_KDF_ROUNDS) throw tooCostly();
     const transformed = await kdf.aesKdf(composite, field(5), rounds);
     const key = await sha256(masterSeed, transformed);
     const plain = await decrypt(cipher, key, iv, file.subarray(reader.at));
@@ -317,15 +387,24 @@ export async function openKdbx(
       parts.push(data);
     }
     payload = concat(...parts);
-    if (compressed) payload = await inflate(payload, 'gzip').catch(() => Promise.reject(damaged()));
+    if (compressed) payload = await gunzip(payload);
     stream = await innerStream(new Reader(field(10), damaged).u32(), field(8));
   }
 
-  const xml = utf8(payload);
-  if (/<!DOCTYPE|<!ENTITY/i.test(xml.slice(0, 2000))) throw damaged();
-  const doc = new DOMParser().parseFromString(xml, 'application/xml');
-  if (doc.querySelector('parsererror') || doc.documentElement.nodeName !== 'KeePassFile') {
-    throw damaged();
+  const doc = parseXml(utf8(payload));
+  if (!doc || doc.documentElement.nodeName !== 'KeePassFile') throw damaged();
+  if (major === 3) {
+    // KDBX 3.1 keeps the header's SHA-256 in the XML (KDBX 4 before the payload, checked above).
+    const stored = doc.querySelector('KeePassFile > Meta > HeaderHash')?.textContent?.trim();
+    if (stored) {
+      let hash: Uint8Array;
+      try {
+        hash = fromBase64(stored);
+      } catch {
+        throw damaged();
+      }
+      if (!equal(hash, await sha256(header))) throw damaged();
+    }
   }
   // One key stream for all protected values, in the order they stand in the file.
   for (const element of Array.from(doc.getElementsByTagName('*'))) {

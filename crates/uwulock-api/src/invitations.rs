@@ -1,9 +1,11 @@
 //! `/uwu/v1/invitations`: people inviting people. Admins invite in the portal; here every account
 //! may, when an admin allows it, up to the quota the settings give — and never as an admin.
+//! An admin counts as one here only as in the portal: inside the admin networks, and through SSO
+//! where the portal asks for it.
 
 use crate::AppState;
 use crate::admin::{invite, invite_as_user};
-use crate::auth::Session;
+use crate::auth::{ClientIp, Session};
 use crate::errors::{ApiError, ApiResult};
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -11,6 +13,7 @@ use axum::routing::{delete, get};
 use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::net::IpAddr;
 use uwulock_store::{clock, normalize_email};
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -20,15 +23,17 @@ pub(crate) fn routes() -> Router<AppState> {
 }
 
 /// Whether `session` may invite here, and how many more.
-async fn allowance(state: &AppState, session: &Session) -> ApiResult<(bool, i64, i64)> {
+/// Whether `session` may invite here, how many, how many it did, and whether as an admin.
+async fn allowance(state: &AppState, session: &Session, ip: IpAddr) -> ApiResult<(bool, i64, i64, bool)> {
     let settings = state.settings();
     let quota = i64::from(settings.invitations_per_user);
     let used = state.store.invitations_used(&session.user.id).await?;
-    Ok((settings.users_may_invite || session.user.admin, quota, used))
+    let admin = session.acts_as_admin(state, ip);
+    Ok((settings.users_may_invite || admin, quota, used, admin))
 }
 
-async fn mine(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
-    let (allowed, quota, used) = allowance(&state, &session).await?;
+async fn mine(State(state): State<AppState>, session: Session, ClientIp(ip): ClientIp) -> ApiResult<Json<Value>> {
+    let (allowed, quota, used, admin) = allowance(&state, &session, ip).await?;
     let now = clock::now();
     let list: Vec<Value> = state
         .store
@@ -47,7 +52,7 @@ async fn mine(State(state): State<AppState>, session: Session) -> ApiResult<Json
     Ok(Json(json!({
         "allowed": allowed,
         // Admins invite without a quota, in the portal as here.
-        "quota": if session.user.admin { Value::Null } else { quota.into() },
+        "quota": if admin { Value::Null } else { quota.into() },
         "used": used,
         "invitations": list,
     })))
@@ -61,9 +66,10 @@ struct NewInvitation {
 async fn create(
     State(state): State<AppState>,
     session: Session,
+    ClientIp(ip): ClientIp,
     Json(data): Json<NewInvitation>,
 ) -> ApiResult<Json<Value>> {
-    let (allowed, quota, _) = allowance(&state, &session).await?;
+    let (allowed, quota, _, admin) = allowance(&state, &session, ip).await?;
     if !allowed {
         return Err(ApiError::forbidden("Only admins invite people to this server."));
     }
@@ -75,7 +81,7 @@ async fn create(
         return Err(ApiError::bad("There is an invitation for this address already."));
     }
     crate::identity::mail_allowed(&state, &email, Some(&session.user.id))?;
-    let invited = if session.user.admin {
+    let invited = if admin {
         invite(&state, &email, false, Some(session.user.id.clone())).await?
     } else {
         invite_as_user(&state, &email, &session.user, quota).await?
@@ -157,6 +163,29 @@ mod tests {
         let response =
             server.call("POST", "/uwu/v1/invitations", Some(&nyu.token), json!({"email": "c@example.com"})).await;
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn an_admin_invites_as_one_only_where_the_portal_is_open() {
+        let settings = Settings { admin_networks: vec!["192.0.2.0/24".into()], ..Settings::default() };
+        let server = TestServer::with_settings(settings).await;
+        let boss = server.account("boss@example.com").await;
+        server.state.store.update_user(&boss.id, |user| user.admin = true).await.unwrap();
+        let body = json!({"email": "friend@example.com"});
+        let response = server.call("POST", "/uwu/v1/invitations", Some(&boss.token), body.clone()).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "outside the admin networks, an account like any");
+
+        // Inside them it is an admin again; with "admins only with SSO" not without SSO.
+        let mut settings = server.state.settings();
+        settings.admin_networks = Vec::new();
+        server.state.apply_settings(settings.clone());
+        let mine = json(server.get_as(&boss.token, "/uwu/v1/invitations").await).await;
+        assert!(mine["allowed"] == true && mine["quota"].is_null());
+        settings.sso.enabled = true;
+        settings.sso.admins_only_with_sso = true;
+        server.state.apply_settings(settings);
+        let response = server.call("POST", "/uwu/v1/invitations", Some(&boss.token), body).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "a password session of an SSO-only admin");
     }
 
     #[tokio::test]

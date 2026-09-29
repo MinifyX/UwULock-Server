@@ -528,7 +528,7 @@ export function ItemDetail({
               </button>
               <button
                 className="icon-button"
-                disabled={busy || summary.broken || !!d?.locked}
+                disabled={busy || summary.broken || !d || d.locked}
                 title={t('Als Send teilen')}
                 aria-label={t('Als Send teilen')}
                 aria-haspopup="dialog"

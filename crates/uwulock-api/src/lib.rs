@@ -193,6 +193,10 @@ pub struct AppState {
     pub settings_changed: Arc<tokio::sync::Notify>,
     /// When the admin networks were last read again from the database, as seconds since 1970.
     pub admin_reloaded: Arc<std::sync::atomic::AtomicI64>,
+    /// One-time tickets for the admin portal's WebSocket check.
+    pub socket_tickets: Arc<diagnosis::SocketTickets>,
+    /// Realtime connections that have not said `auth` yet.
+    pub realtime_waiting: Arc<realtime::Waiting>,
     /// The backups to another system: SFTP, S3 or a mounted folder.
     pub offsite: uwulock_backup::Offsite,
     /// The key for secrets at rest, like the OpenID Connect client secret.
@@ -221,7 +225,14 @@ impl AppState {
         version: &'static str,
         logs: Arc<LogBuffer>,
     ) -> Result<Self, String> {
-        let settings = Settings::load(&store, &config.start_settings).await?;
+        let host = config.public.split_once("://").map_or(config.public.as_str(), |(_, rest)| rest).to_string();
+        let offsite = uwulock_backup::Offsite::new(store.clone(), &config.data, &host, version);
+        let secret = offsite.secret();
+        secret::check_key(&store, &secret).await?;
+        Settings::seal_stored(&store, &secret).await?;
+        alerts::seal_stored(&store, &secret).await?;
+        offsite.seal_stored().await.map_err(|error| format!("the off-site backup settings: {error}"))?;
+        let settings = Settings::load(&store, &config.start_settings, &secret).await?;
         let features = Features::load(&store, &config.start_features).await?;
         let mailer = Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
         let tokens = Tokens::load(&store, &config.public).await?;
@@ -229,10 +240,7 @@ impl AppState {
         let limits = Arc::new(Limits::with_login_attempts(config.login_attempts));
         let legacy_rounds = store.legacy_rounds().await.map_err(|error| error.to_string())?;
         logs.loki().configure(&settings.loki);
-        let host = config.public.split_once("://").map_or(config.public.as_str(), |(_, rest)| rest).to_string();
-        let offsite = uwulock_backup::Offsite::new(store.clone(), &config.data, &host, version);
         let alerts = Arc::new(alerts::Alerts::default());
-        let config_data = config.data.clone();
         store.set_version_rule(settings.versions.rule(features.on(Feature::Versions)));
         let icons = Arc::new(icons::Icons::new(&config.data, icon_fetch::Upstream::default()));
         if let Some(success) = offsite.status().await.last_success {
@@ -264,7 +272,9 @@ impl AppState {
             certificate: Arc::default(),
             settings_changed: Arc::default(),
             admin_reloaded: Arc::default(),
-            secret: Arc::new(secret::ServerSecret::new(&config_data)),
+            socket_tickets: Arc::default(),
+            realtime_waiting: Arc::default(),
+            secret,
             offsite,
             oidc: Arc::default(),
             icons,

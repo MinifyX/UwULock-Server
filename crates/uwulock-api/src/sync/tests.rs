@@ -273,6 +273,120 @@ async fn a_shared_item_is_counted_once_and_reaches_every_member() {
 }
 
 #[tokio::test]
+async fn a_member_hears_only_of_what_they_could_see() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let mio = server.account("mio@example.com").await;
+    let (org, reached) = family_with(&server, &nyu, &mio).await;
+    let other = json!({ "name": type2(), "users": [] });
+    let other =
+        json(server.call("POST", &format!("/api/organizations/{org}/collections"), Some(&nyu.token), other).await)
+            .await["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    let shared = |collection: &str| {
+        let mut item = login_item("2.shared|s|s");
+        item["organizationId"] = json!(org);
+        json!({ "cipher": item, "collectionIds": [collection] })
+    };
+    let mut items = Vec::new();
+    for collection in [&reached, &other] {
+        let response = server.call("POST", "/api/ciphers/create", Some(&nyu.token), shared(collection)).await;
+        let id = json(response).await["id"].as_str().unwrap().to_string();
+        let icon = json!({ "data": type2(), "keyType": "organization" });
+        let path = format!("/uwu/v1/icons/own/{id}");
+        assert_eq!(server.call("PUT", &path, Some(&nyu.token), icon).await.status(), StatusCode::OK);
+        items.push(id);
+    }
+    let full = sync(&server, &mio.token, "include=vault,uwu").await;
+    for id in &items {
+        let path = format!("/uwu/v1/icons/own/{id}");
+        assert_eq!(
+            server
+                .call("PUT", &path, Some(&nyu.token), json!({ "data": type2(), "keyType": "organization" }))
+                .await
+                .status(),
+            StatusCode::OK
+        );
+    }
+    let changed = since_for(&server, &mio.token, "vault,uwu", &full["cursor"]).await;
+    let icons: Vec<&str> =
+        changed["uwu"]["icons"].as_array().unwrap().iter().map(|icon| icon["cipherId"].as_str().unwrap()).collect();
+    assert_eq!(icons, vec![items[0].as_str()], "the other collection's icon is not the member's business (SV-L7)");
+
+    for id in &items {
+        let path = format!("/uwu/v1/icons/own/{id}");
+        assert_eq!(server.call("DELETE", &path, Some(&nyu.token), json!({})).await.status(), StatusCode::OK);
+    }
+    let unset = since_for(&server, &mio.token, "vault,uwu", &changed["cursor"]).await;
+    assert_eq!(unset["uwu"]["iconsDeleted"], json!([items[0]]));
+    for id in &items {
+        server.call("DELETE", &format!("/api/ciphers/{id}"), Some(&nyu.token), json!({})).await;
+    }
+    let gone = since_for(&server, &mio.token, "vault,uwu", &unset["cursor"]).await;
+    assert_eq!(gone["vault"]["deleted"]["ciphers"], json!([items[0]]));
+    let owner = sync(&server, &nyu.token, "include=vault,uwu").await;
+    let everything = since_for(&server, &nyu.token, "vault,uwu", &owner["cursor"]).await;
+    assert_eq!(everything["reset"], false);
+}
+
+#[tokio::test]
+async fn reminders_and_masked_links_go_with_the_membership() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let mio = server.account("mio@example.com").await;
+    let (org, collection) = family_with(&server, &nyu, &mio).await;
+    let mut item = login_item("2.shared|s|s");
+    item["organizationId"] = json!(org);
+    let body = json!({ "cipher": item, "collectionIds": [collection] });
+    let shared = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), body).await).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let path = format!("/uwu/v1/reminders/{shared}");
+    assert_eq!(
+        server.call("PUT", &path, Some(&mio.token), json!({ "due": "2020-01-01" })).await.status(),
+        StatusCode::OK
+    );
+    let link = uwulock_store::masked::MaskedLink {
+        masked_id: "m1".into(),
+        cipher_id: shared.clone(),
+        email: "m1@masked.example.com".into(),
+        state: None,
+    };
+    server.state.store.link_masked(&mio.id, link).await.unwrap().unwrap();
+    assert_eq!(server.state.store.reminders_to_mail("2020-01-02").await.unwrap().len(), 1);
+
+    // Without access to the collection: not shown, not mailed.
+    let members = json(server.get_as(&nyu.token, &format!("/api/organizations/{org}/users")).await).await;
+    let member = members["data"].as_array().unwrap().iter().find(|m| m["email"] == mio.email).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let other = json!({ "name": type2(), "users": [] });
+    let other =
+        json(server.call("POST", &format!("/api/organizations/{org}/collections"), Some(&nyu.token), other).await)
+            .await["id"]
+            .clone();
+    let moved = json!({ "collectionIds": [other] });
+    let response = server.call("PUT", &format!("/api/ciphers/{shared}/collections"), Some(&nyu.token), moved).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+    assert!(json(server.get_as(&mio.token, "/uwu/v1/reminders").await).await["data"].as_array().unwrap().is_empty());
+    assert!(server.state.store.reminders_to_mail("2020-01-02").await.unwrap().is_empty());
+    assert!(server.state.store.masked_links(&mio.id).await.unwrap().is_empty());
+
+    // Out of the family: gone for good (SV-L9).
+    let path = format!("/api/organizations/{org}/users/{member}");
+    assert_eq!(server.call("DELETE", &path, Some(&nyu.token), json!({})).await.status(), StatusCode::OK);
+    let moved = json!({ "collectionIds": [collection] });
+    server.call("PUT", &format!("/api/ciphers/{shared}/collections"), Some(&nyu.token), moved).await;
+    let left = server.state.store.reminders_to_mail("2020-01-02").await.unwrap();
+    assert!(left.is_empty(), "{left:?}");
+    assert!(server.state.store.masked_links(&mio.id).await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn uwulocks_own_things_come_beside_the_vault() {
     let server = TestServer::new().await;
     let nyu = server.account("nyu@example.com").await;

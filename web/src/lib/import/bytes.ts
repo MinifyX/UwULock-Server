@@ -3,6 +3,8 @@
  * inflating with the browser's own DecompressionStream (gzip for KeePass, raw deflate for zips).
  */
 
+import { t } from '../i18n';
+
 /** Something the user can act on, in their language; `errorText` shows it as it is. */
 export class ImportError extends Error {
   readonly kind = 'invalid';
@@ -70,6 +72,15 @@ export function text(bytes: Uint8Array): string {
   return utf8(bytes).replace(/^\uFEFF/, '');
 }
 
+/** JSON, or an `ImportError` without the parser's message (which quotes the file). */
+export function parseJson(bytes: Uint8Array): unknown {
+  try {
+    return JSON.parse(text(bytes)) as unknown;
+  } catch {
+    throw new ImportError(t('Die Datei ist kein gültiges JSON.'));
+  }
+}
+
 /** A fresh ArrayBuffer-backed copy, as WebCrypto's types want it. */
 function buffer(bytes: Uint8Array): Uint8Array<ArrayBuffer> {
   return new Uint8Array(bytes);
@@ -106,10 +117,15 @@ export async function aesCbcDecrypt(
   );
 }
 
-/** gzip (KeePass) or raw deflate (zip entries), by the browser. */
+/**
+ * gzip (KeePass) or raw deflate (zip entries), by the browser. Stops with `tooMuch()` once the
+ * output passes `limit` bytes (limits.ts), before it is all in memory.
+ */
 export async function inflate(
   data: Uint8Array,
   format: 'gzip' | 'deflate-raw',
+  limit: number,
+  tooMuch: () => Error,
 ): Promise<Uint8Array> {
   const stream = new DecompressionStream(format);
   const writer = stream.writable.getWriter();
@@ -118,9 +134,15 @@ export async function inflate(
   writer.close().catch(() => {});
   const reader = stream.readable.getReader();
   const parts: Uint8Array[] = [];
+  let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    total += value.length;
+    if (total > limit) {
+      await reader.cancel().catch(() => {});
+      throw tooMuch();
+    }
     parts.push(value);
   }
   return concat(...parts);
