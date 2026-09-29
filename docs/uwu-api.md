@@ -221,7 +221,7 @@ Unchanged keys plus:
 {
   "sendDomainId": null,
   "travel": { "enabled": false },
-  "families": { "mayCreate": true, "maxMembers": 6 },
+  "families": { "mayCreate": true, "maxMembers": 6, "owned": 0, "perUser": 1 },
   "policy": { "twoFactorRequired": false, "twoFactorDeadline": null, "kdfBelowMinimum": false },
   "maskedConnected": false,
   "securityNoticesUnseen": 0,
@@ -1308,6 +1308,8 @@ account's language. The Stufe 5 event log builds on the same table.
 | `kdfBelowMinimum` | §20 | `{}` |
 | `ssoLinked` | an SSO identity was linked to the account for the first time (§19) | `{ "issuer": "https://auth.example.com" }` |
 | `maskedConnected`, `maskedDisconnected` | §13 | `{ "server": "https://mail.example.com" }` |
+| `organizationJoined`, `organizationRemoved` | §16: confirmed into a family; removed, or it was deleted | `{ "organization": "Katzen" }` |
+| `organizationRoleChanged` | §16: the account's role changed | `{ "organization": "Katzen", "type": 0 }` |
 
 Every notice has the time, the client IP, and the device (name, type, app) where there is one.
 
@@ -1820,46 +1822,74 @@ EnterpriseAnnually 20 (server `src/Core/AdminConsole/Enums/*`, `src/Core/Billing
 
 - `POST /api/organizations` (server `OrganizationsController.cs`, model
   `OrganizationCreateRequestModel.cs`): body `{ "name" (≤ 50), "billingEmail", "planType",
-  "key" (the organization key under the user key), "keys": { "publicKey", "encryptedPrivateKey" },
-  "collectionName" (EncString, the first collection) }`; billing fields are ignored. UwULock reads
-  `planType`: **22 → family**, **20 → organization** (Stufe 5); anything else 400. Who may: §16.4
-  (403 `forbidden` with a message). The creator becomes Owner, Confirmed; the first collection is
-  made with them in it. Answer: `OrganizationResponseModel` (`object: "organization"`).
+  "key" (the organization key RSA-wrapped for the creator's own public key, `"4.…"`, as
+  Bitwarden's clients send it — the only form the profile hands out), "keys": { "publicKey",
+  "encryptedPrivateKey" }, "collectionName" (EncString, the first collection) }`; billing fields
+  are ignored. UwULock reads `planType`: **22 → family**, **20 → organization** (Stufe 5; 400 until
+  then); anything else 400. `key` of another type, missing `keys`, or an account without a key
+  pair: 400. Who may: §16.4 (403 `forbidden` with a message; the per-account limit reached: 400).
+  The creator becomes Owner, Confirmed; the first collection is made (owners reach every
+  collection without being in it). Answer: `OrganizationResponseModel` (`object: "organization"`).
 - `GET /api/organizations/{id}` → `OrganizationResponseModel`; `PUT /api/organizations/{id}`
-  `{ name, billingEmail }` (Owner); `DELETE /api/organizations/{id}` `{ masterPasswordHash }` (Owner);
+  `{ name, billingEmail }` (Owner); `DELETE /api/organizations/{id}` (and `POST …/delete`)
+  `{ masterPasswordHash }` (Owner; everything in it goes, its items too);
   `POST /api/organizations/{id}/leave` (a member leaves; the last Owner cannot, 400);
   `GET /api/organizations/{id}/keys` → `{ "object": "organizationKeys", "publicKey", "privateKey" }`;
   `GET /api/organizations/{id}/public-key` → `{ "object": "organizationPublicKey", "publicKey" }`.
 
-For a family, `OrganizationResponseModel` and the profile organization (`profileOrganization` in
-the sync, `organizations.rs::profile_organization`) say: `productTierType: 1`, `planType: 22`,
+Who may: every endpoint answers 404 to somebody who is not a confirmed member (as if there were
+no such organization), 403 to a member for what only an Owner does. Managing (members,
+collections, rename, delete) works for families; an organization with more (admins, groups,
+policies; §16.5) answers 400 until Stufe 5.
+
+The profile lists memberships in both `organizations` and `organizationsNew` (newer clients read
+the second when it is there). For a family, `OrganizationResponseModel` and the profile
+organization (`profileOrganization` in the sync, `families.rs::profile_organization`) say: `productTierType: 1`, `planType: 22`,
 `seats: <maxMembers>`, `maxCollections: null`, `usersGetPremium: true`, `selfHost: true`,
 `hasPublicAndPrivateKeys: true`, `usePasswordManager: true`, `useTotp: true`,
 `limitCollectionCreation: true`, `limitCollectionDeletion: true`, `limitItemDeletion: false`,
-`allowAdminAccessToAllCollectionItems: true`, and every other `use*` flag `false`.
+`allowAdminAccessToAllCollectionItems: true`, and every other `use*` flag `false`. An Owner's
+`permissions` say `createNewCollections`, `editAnyCollection`, `deleteAnyCollection`,
+`manageUsers: true`.
 
 ### 16.2 Members — [BW]
 
 Server `OrganizationUsersController.cs` (`/api/organizations/{orgId}/users`):
 
-- `GET …/users?includeCollections=true&includeGroups=false` → list of
+- `GET …/users?includeCollections=true&includeGroups=false` → list (for every confirmed member;
+  `collections` only for an Owner) of
   `organizationUserUserDetails` (`id, userId, type, status, externalId, name, email, avatarColor,
   twoFactorEnabled, collections[{id, readOnly, hidePasswords, manage}], groups[], hasMasterPassword,
   resetPasswordEnrolled, ssoBound, permissions, creationDate`).
 - `GET …/users/{id}` → the same for one.
 - `POST …/users/invite` — `{ "emails": [], "type": 0 | 2, "collections": [{ "id", "readOnly", "hidePasswords": false, "manage": false }], "groups": [], "permissions": null, "accessSecretsManager": false }`.
-  A family refuses other types (400). At most `seats` members counting invited ones (400 with
-  Bitwarden's wording "You have reached the maximum number of users"). Answer 200, empty.
+  A family refuses other types and any group (400). At most `seats` members counting invited ones
+  (400 with Bitwarden's wording "You have reached the maximum number of users"); an address that
+  is a member or invited already: 400. 1–20 addresses per call; 30 invitations per account, one
+  back every 2 minutes (429). The mail goes out only when the server sends mail, at most as often
+  as the per-address mail limit allows. Answer 200, empty.
 - `POST …/users/{id}/reinvite`, `POST …/users/reinvite` `{ "ids": [] }` → bulk result
   `{ object: "list", data: [{ "object": "OrganizationBulkConfirmResponseModel", "id", "error": "" }] }`.
-- `POST …/users/{id}/accept` — `{ "token", "resetPasswordKey": null }`, by the invited account.
+- `POST …/users/{id}/accept` — `{ "token", "resetPasswordKey": null }`, by the invited account
+  (logged in with the address the invitation went to). UwULock addition: without `token` (or
+  `null`) when logged in with that address — the web vault's list below.
+- UwULock: `GET /uwu/v1/organizations/invitations` → list of `{ "object": "organizationInvitation",
+  "id" (membership), "organizationId", "organizationName", "family", "type", "creationDate" }`: the
+  invitations to the account's address; `DELETE /uwu/v1/organizations/invitations/{id}` turns one
+  down.
 - `POST …/users/public-keys` — `{ "ids": [] }` → list of
   `{ "object": "organizationUserPublicKeyResponseModel", "id", "userId", "key" }`.
 - `POST …/users/{id}/confirm` — `{ "key": "4.…" }` (the organization key wrapped for the member's
   public key); `POST …/users/confirm` — `{ "keys": [{ "id", "key" }] }` → bulk result.
 - `PUT …/users/{id}` (and `POST`) — `{ "type", "collections": [], "groups": [], "permissions", "accessSecretsManager" }`.
 - `DELETE …/users/{id}`, `DELETE …/users` `{ "ids": [] }`.
-- `PUT …/users/{id}/revoke`, `PUT …/users/{id}/restore` (and the bulk `PUT …/users/revoke|restore` `{ ids }`).
+- `PUT …/users/{id}/revoke`, `PUT …/users/{id}/restore` (and the bulk `PUT …/users/revoke|restore` `{ ids }`):
+  Stufe 5; a family answers 400 (remove instead).
+
+An organization keeps a confirmed Owner: demoting or removing the last one, or the last one
+leaving, is 400. Making somebody an Owner counts against their `perUser` (400). An account that is
+the only confirmed Owner of an organization with others in it is not deleted (`DELETE
+/api/accounts` and the admin portal's delete: 400 naming it).
 
 **Invitation mail and link** (server `OrganizationUserInvitedViewModel.cs`):
 `<public>/#/accept-organization?organizationId=…&organizationUserId=…&email=<urlencoded>&organizationName=<urlencoded>&token=<urlencoded>&initOrganization=False&orgUserHasExistingUser=True|False`
@@ -1869,7 +1899,16 @@ membership id and address, 5 days). An address with an account: the web vault lo
 (like a server invitation, and counted against the inviter's quota of §21 unless the inviter is an
 admin); `POST /identity/accounts/register/finish` **[BW]** takes `orgInviteToken` and
 `organizationUserId` beside the usual fields (server `RegisterFinishRequestModel.cs`) and accepts
-the membership in the same step.
+the membership in the same step. Only when the inviter may invite people (`usersMayInvite` or an
+admin) and has quota left: then the server invitation is made with the family's, its own link
+never sent. Otherwise the mail says to ask for an account first, and `register/finish` refuses
+the token alone (400).
+
+**Mails** (German and English): the invitation (to the invited address; says whether to log in,
+to register with the link, or to ask for an account first), "accepted, waits to be confirmed" (to
+the confirmed Owners), "confirmed" (to the member). **Security notices** (§12.1):
+`organizationJoined` on being confirmed, `organizationRemoved` on being removed or the
+organization deleted, `organizationRoleChanged` on a changed `type`.
 
 **Confirming** needs the fingerprint phrase: the web vault fetches the member's public key
 (`public-keys`), shows `uwulock_core::crypto::fingerprint(<member userId>, <public key>)` to the
@@ -1885,14 +1924,20 @@ Server `CollectionsController.cs` (`/api/organizations/{orgId}/collections`):
   `groups[], users[{id, readOnly, hidePasswords, manage}], assigned, readOnly, hidePasswords, manage`
   (`object: "collectionAccessDetails"`).
 - `POST …/collections`, `PUT …/collections/{id}` — `{ "name": "2.…", "externalId": null, "groups": [], "users": [{ "id": "<organization user id>", "readOnly": false, "hidePasswords": false, "manage": false }] }`.
-  A family uses only `readOnly` (read or write, the plan's two rights); Owners manage everything.
+  A family's web vault sets only `readOnly` (read or write, the plan's two rights); the server
+  keeps all three as sent (the sync honours `hidePasswords`), but managing stays the Owners'.
+  `users` left out keeps who reaches it; ids of other organizations' members are ignored. Answer:
+  `collectionAccessDetails`. `GET …/collections/{id}/users` → the `users` list (Owner).
+- `GET …/collections` lists the collections the member reaches (an Owner: all).
 - `DELETE …/collections/{id}`, `DELETE …/collections` `{ "ids": [] }`.
 - `GET /api/collections` (the account's, exists) and moving items in
   (`PUT /api/ciphers/{id}/share` `{ cipher, collectionIds }`, `PUT /api/ciphers/share`,
   `…/collections_v2`, all exist) — the official clients use these too.
 
 Changes to membership, rights or collections bump the affected accounts' sync epochs (§4.3) and
-notify `SyncOrgKeys`/`SyncVault` as Bitwarden does.
+notify `SyncOrgKeys`/`SyncVault` as Bitwarden does: `SyncOrgKeys` to whoever's memberships changed
+(accepted, confirmed, removed, left, a new role, the organization renamed or deleted), `SyncVault`
+to the members when collections or someone's access changed.
 
 Organizations imported from Vaultwarden are families if they use only Owners and Users and no
 groups or policies; otherwise organizations (§16.5).
@@ -1905,7 +1950,8 @@ account may own, 0–10, default 1). `organizations` (Stufe 5) the same keys wit
 `admins`, 500, 5.
 
 `GET /uwu/v1/account` carries `"families": { "mayCreate": true, "maxMembers": 6, "owned": 0, "perUser": 1 }`
-and `"organizations": { "mayCreate": false, … }`. Nothing else is UwULock's own: families are
+(`mayCreate` false also when `owned` reached `perUser`) and, from Stufe 5 on,
+`"organizations": { "mayCreate": false, … }`. Nothing else is UwULock's own: families are
 plain Bitwarden organizations.
 
 ### 16.5 Stufe 5 organizations — [BW]

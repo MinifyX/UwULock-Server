@@ -33,7 +33,8 @@ teams and SSO.
 > and push, and the official Bitwarden apps, browser extension and CLI on top; a web vault of its
 > own that works on a phone, and an admin portal. `uwulock-server import-vaultwarden` moves a
 > Vaultwarden over, devices and all. Organisations come along from Vaultwarden and work as they
-> are; creating and managing them is next. The [UwULock app](https://github.com/MinifyX/UwULock-Client)
+> are; families are made and managed here from the next release on, companies' organisations
+> after that. The [UwULock app](https://github.com/MinifyX/UwULock-Client)
 > fits from 0.2.0-beta.3 on. The [plan](docs/plan.md) has every step (in German).
 
 ## What is in 0.4
@@ -84,6 +85,9 @@ Coming with the next release (on `main` already):
   Send**, **Sends only for given addresses** with a code by mail, and the report **"2FA possible,
   not set up"** ([docs/sharing.md](docs/sharing.md)); the server's own **branding**
   ([docs/branding.md](docs/branding.md)).
+- **Families**: share items with a few people in collections, read or write per member, like
+  Bitwarden's Families and seen by the official apps too; members are confirmed with a
+  fingerprint phrase ([docs/families.md](docs/families.md)).
 
 ## What it will and won't do
 
@@ -206,6 +210,7 @@ GitHub release with the scripts.
 - [Sharing](docs/sharing.md) — an item as a Send, Sends only for given addresses, the 2FA report
 - [Branding](docs/branding.md) — the server's own name, colour, logos and favicon
 - [Accessibility](docs/accessibility.md) — keyboard shortcuts, high contrast, screen readers, what axe checks
+- [Families](docs/families.md) — sharing with a few people: invitations, the fingerprint phrase, collections, the admin's settings
 - [SSO](docs/sso.md) — logging in through UwUAuth or another OpenID Connect provider, SCIM, pairing
 - [Metrics](docs/metrics.md) and [notifications](docs/notifications.md) — Prometheus, Loki, and alerts to the admins
 - [Performance](docs/performance.md) — how it is measured, and the numbers
