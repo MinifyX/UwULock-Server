@@ -172,3 +172,48 @@ async fn a_certificate_from_an_acme_ca() {
     }
     panic!("no certificate after two minutes: {last}");
 }
+
+/// A send domain gets a certificate of its own from the same CA, beside the main one, and a
+/// client asking for that name (SNI) is shown it.
+#[tokio::test]
+#[ignore = "needs an ACME CA: Pebble, see the Tests job in .github/workflows/ci.yml"]
+async fn a_send_domain_certificate_from_an_acme_ca() {
+    let directory = std::env::var("UWULOCK_TEST_PEBBLE").expect("UWULOCK_TEST_PEBBLE");
+    let ca = std::env::var("UWULOCK_TEST_PEBBLE_CA").expect("UWULOCK_TEST_PEBBLE_CA");
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = config_in(dir.path());
+    let acme = uwulock_server::config::Acme {
+        domain: "vault.uwulock.test".into(),
+        email: Some("admin@example.com".into()),
+        directory,
+        directory_ca: Some(ca.into()),
+    };
+    config.send_domain_acme = uwulock_server::config::Acme { domain: String::new(), ..acme.clone() };
+    config.tls = TlsMode::Acme(acme);
+    uwulock_server::open_store(&config).unwrap().add_send_domain("send.uwulock.test", "acme").await.unwrap();
+    let server = start(config.clone()).await;
+    config.listen = server.addr;
+
+    let probe = uwulock_api::certificate::Probe { connect: server.addr.to_string(), name: "send.uwulock.test".into() };
+    let mut last = String::new();
+    for _ in 0..240 {
+        let seen = uwulock_api::certificate::look(&probe).await;
+        // Pebble's certificates chain to a root nobody trusts; what matters is that it is one
+        // for this name, not the main one.
+        let problem = seen.problem.unwrap_or_default();
+        if seen.expires.is_some() && !problem.contains("not valid for name") {
+            // The two orders run side by side: the main name gets its own, maybe a moment later.
+            match uwulock_server::health::check(&config).await {
+                Ok(()) => {
+                    server.stop().await;
+                    return;
+                }
+                Err(error) => last = format!("the main name: {error}"),
+            }
+        } else {
+            last = problem;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    panic!("no certificate for the send domain after two minutes: {last}");
+}

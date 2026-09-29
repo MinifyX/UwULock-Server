@@ -78,6 +78,7 @@ pub async fn run(
     if state.mailer.enabled() {
         tracing::info!("mail is set up");
     }
+    let send_domains = state.send_domains.clone();
     let app = uwulock_api::router(state);
 
     let handle = Handle::new();
@@ -107,7 +108,7 @@ pub async fn run(
     if let Some(ready) = ready {
         let _ = ready.send(local);
     }
-    tls::serve(listener, app, &config, handle).await
+    tls::serve(listener, app, &config, handle, send_domains).await
 }
 
 /// Files of attachments and Sends nothing claims any more, a week after.

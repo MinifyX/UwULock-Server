@@ -67,7 +67,7 @@ jobs:
       # Libraries, the integration tests in each crate's tests/integration; no doc tests and no
       # empty test harnesses for the binaries (see each crate's Cargo.toml).
       - run: cargo test --workspace --locked
-      - name: A certificate from an ACME CA, and served
+      - name: Certificates from an ACME CA, for the main name and a send domain, and served
         env:
           UWULOCK_TEST_PEBBLE: https://localhost:14000/dir
         run: |
@@ -76,7 +76,7 @@ jobs:
             https://raw.githubusercontent.com/letsencrypt/pebble/v2.10.1/test/certs/pebble.minica.pem
           # The same selection of crates as the step before, so nothing is built again.
           UWULOCK_TEST_PEBBLE_CA="$RUNNER_TEMP/pebble.minica.pem" cargo test --workspace --locked -- \
-            --ignored --exact serve::a_certificate_from_an_acme_ca
+            --ignored --exact serve::a_certificate_from_an_acme_ca serve::a_send_domain_certificate_from_an_acme_ca
 
   scripts:
     name: Scripts
