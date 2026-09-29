@@ -45,6 +45,8 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
   useLanguage();
   const [dialog, setDialog] = useState<Dialog>(null);
   const on = (kind: number) => info?.twoFactor.includes(kind) ?? false;
+  // While travelling, two-step login is what switches travel mode off: the server keeps it as it is.
+  const travelling = info?.travel?.enabled ?? false;
   const refresh = async () => onInfo(await account());
   const done = async (message: string) => {
     setDialog(null);
@@ -59,6 +61,13 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
           'Mit einem zweiten Schritt reicht dein Master-Passwort allein nicht mehr zum Anmelden. Die Browser-Erweiterung, die Apps und UwULock fragen dann zusätzlich nach einem Code.',
         )}
       </p>
+      {travelling && (
+        <p className="settings-lead" role="status">
+          {t(
+            'Der Reisemodus ist an. Bis du ihn ausschaltest, bleibt die Zwei-Schritt-Anmeldung, wie sie ist: nichts lässt sich einrichten, ausschalten oder anzeigen.',
+          )}
+        </p>
+      )}
       <Row
         label={t('Authenticator-App')}
         description={
@@ -68,11 +77,19 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
         }
       >
         {on(AUTHENTICATOR) ? (
-          <button className="danger" onClick={() => setDialog({ disable: AUTHENTICATOR })}>
+          <button
+            className="danger"
+            onClick={() => setDialog({ disable: AUTHENTICATOR })}
+            disabled={travelling}
+          >
             {t('Ausschalten …')}
           </button>
         ) : (
-          <button className="primary" onClick={() => setDialog('authenticator')}>
+          <button
+            className="primary"
+            onClick={() => setDialog('authenticator')}
+            disabled={travelling}
+          >
             {t('Einrichten …')}
           </button>
         )}
@@ -88,11 +105,15 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
         }
       >
         {on(EMAIL) ? (
-          <button className="danger" onClick={() => setDialog({ disable: EMAIL })}>
+          <button
+            className="danger"
+            onClick={() => setDialog({ disable: EMAIL })}
+            disabled={travelling}
+          >
             {t('Ausschalten …')}
           </button>
         ) : (
-          <button onClick={() => setDialog('email')} disabled={!info?.mail}>
+          <button onClick={() => setDialog('email')} disabled={!info?.mail || travelling}>
             {t('Einrichten …')}
           </button>
         )}
@@ -107,7 +128,7 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
               : t('Dieser Browser kann keine Sicherheitsschlüssel.')
         }
       >
-        <button onClick={() => setDialog('keys')} disabled={!available()}>
+        <button onClick={() => setDialog('keys')} disabled={!available() || travelling}>
           {on(WEBAUTHN) ? t('Verwalten …') : t('Einrichten …')}
         </button>
       </Row>
@@ -117,7 +138,10 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
           'Schaltet die Zwei-Schritt-Anmeldung aus, wenn du keinen Code mehr bekommst. Schreib ihn auf und heb ihn getrennt vom Rechner auf.',
         )}
       >
-        <button onClick={() => setDialog('recovery')} disabled={!info?.twoFactor.length}>
+        <button
+          onClick={() => setDialog('recovery')}
+          disabled={!info?.twoFactor.length || travelling}
+        >
           {t('Anzeigen …')}
         </button>
       </Row>

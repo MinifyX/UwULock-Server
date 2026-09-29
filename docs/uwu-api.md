@@ -1022,10 +1022,22 @@ everything, and the official clients drop them locally at their next sync.
   JSON object (the assertion itself). A wrong password on `send-email` and `webauthn-challenge`
   counts and is noticed the same way; both answer 400 `invalid` while the mode is off, and
   `send-email` 400 `invalid` without two-step login by mail (or without a mail server).
-  When the account has no usable second step any more (the recovery code was used, an admin
-  reset it), the master password alone switches the mode off — otherwise nothing ever could;
-  `twoFactorProvider`/`twoFactorToken` are then ignored. `GET /uwu/v1/versions` leaves out the
+  When the account has no second step any more (an admin reset it, an emergency contact took the
+  account over), the master password alone switches the mode off — otherwise nothing ever could;
+  `twoFactorProvider`/`twoFactorToken` are then ignored. When a second step is still set up but
+  cannot be used (mail only, and the server sends none any more): 400 `two_factor_unusable` (an
+  admin resets two-step login first). `GET /uwu/v1/versions` leaves out the
   versions of hidden items.
+
+### 9.3 Two-step login stays as it is while travelling
+
+Travel mode protects against a device that is taken and unlocked, with the master password forced
+out of its owner. So while it is on, the account's sessions cannot change two-step login or read
+its secrets: `POST /api/two-factor/get-recover`, `…/disable` (POST/PUT), `…/get-authenticator`,
+`…/authenticator` (POST/PUT/DELETE), `…/get-email`, `…/send-email`, `PUT …/email`,
+`…/get-webauthn-challenge` and `…/webauthn` (POST/PUT/DELETE) answer 400 `travel_active`, before
+the master password is checked. The recovery code is refused at login (400) — it would remove two-step
+login. `GET /api/two-factor` and `…/get-webauthn` (key names only) keep working.
 
 Switching on or off: sync epoch bumped (§4.3), the account's revision date bumped, notify
 `SyncVault` (Bitwarden `PushType` 5) to all devices including the one that did it, security

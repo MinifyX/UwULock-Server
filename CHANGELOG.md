@@ -205,6 +205,14 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   The tests take about half the time (the crypto and SQLite are built optimised in the dev
   profile too), and CI starts the end-to-end tests about two minutes sooner (a job per binary).
 
+**The security review of 0.6.** What it found high or medium is fixed:
+
+- While travel mode is on, two-step login stays as it is: no provider can be set up, replaced
+  or switched off, the authenticator key and the recovery code are not shown, and the recovery
+  code does not work at login. Before, the master password on a seized device was enough to take
+  the second step away and switch travel mode off. A second step that is set up but cannot be
+  used is no longer given up either; an admin resets it.
+
 ## 0.4.0-beta.2
 
 **The rest of the security review.** 0.4.0-beta.1 fixed what the review before it found high
