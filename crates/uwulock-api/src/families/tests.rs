@@ -121,6 +121,8 @@ async fn a_family_from_the_invitation_to_a_shared_item() {
     .await;
     assert_eq!(keys["data"][0]["userId"], mio.id.as_str());
     assert_eq!(keys["data"][0]["key"], "MIIBpublic");
+    // The member's devices hear of it, to sync the family's key.
+    let mut listening = server.state.hub.listen(&mio.id).unwrap();
     let path = format!("/api/organizations/{org}/users/{id}/confirm");
     let bad = server.call("POST", &path, Some(&owner.token), json!({ "key": type2() })).await;
     assert_eq!(bad.status(), StatusCode::BAD_REQUEST, "only an RSA wrap");
@@ -128,6 +130,7 @@ async fn a_family_from_the_invitation_to_a_shared_item() {
         server.call("POST", &path, Some(&owner.token), json!({ "key": type4() })).await.status(),
         StatusCode::OK
     );
+    assert!(listening.messages.try_recv().is_ok(), "SyncOrgKeys went out");
     server
         .wait_for_mail(|mail| {
             mail.to == "mio@example.com"
