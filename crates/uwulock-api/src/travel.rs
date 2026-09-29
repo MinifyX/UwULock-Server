@@ -208,6 +208,7 @@ async fn not_travelling_is_fine(state: &AppState, user: &User) -> ApiResult<()> 
 struct Disable {
     #[serde(default)]
     master_password_hash: String,
+    #[serde(default)]
     two_factor_provider: i64,
     #[serde(default, deserialize_with = "token_text")]
     two_factor_token: String,
@@ -236,21 +237,26 @@ async fn disable(
         return Err(failed(&state, &session, ip).await);
     }
     let factors = state.store.two_factors(&user.id).await?;
-    if !usable(&state, &factors).contains(&body.two_factor_provider) {
-        return Err(failed(&state, &session, ip).await);
-    }
-    let checked = crate::two_factor::verify_code(
-        &state,
-        user,
-        &factors,
-        body.two_factor_provider,
-        body.two_factor_token.trim(),
-        &format!("travel:{}", user.id),
-        TRAVEL_CODE,
-    )
-    .await;
-    if checked.is_err() {
-        return Err(failed(&state, &session, ip).await);
+    let usable = usable(&state, &factors);
+    // Two-step login can go after the mode was switched on — the recovery code, an admin, an
+    // emergency takeover. Then the master password alone switches it off, or nothing ever would.
+    if !usable.is_empty() {
+        if !usable.contains(&body.two_factor_provider) {
+            return Err(failed(&state, &session, ip).await);
+        }
+        let checked = crate::two_factor::verify_code(
+            &state,
+            user,
+            &factors,
+            body.two_factor_provider,
+            body.two_factor_token.trim(),
+            &format!("travel:{}", user.id),
+            TRAVEL_CODE,
+        )
+        .await;
+        if checked.is_err() {
+            return Err(failed(&state, &session, ip).await);
+        }
     }
     state.limits.travel.give_back(&user.id);
     if state.store.set_travelling(&user.id, false).await? {

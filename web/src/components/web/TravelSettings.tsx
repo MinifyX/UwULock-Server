@@ -158,6 +158,8 @@ function DisableForm({
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Without two-step login any more (the recovery code was used), the password alone does it.
+  const needsCode = providers.length > 0;
   const label = (kind: number) =>
     kind === 0
       ? t('Authenticator-App')
@@ -200,7 +202,7 @@ function DisableForm({
           </select>
         </label>
       )}
-      {provider === 1 && (
+      {needsCode && provider === 1 && (
         <button
           type="button"
           className="quiet"
@@ -210,7 +212,7 @@ function DisableForm({
           {sent ? t('Neuen Code senden') : t('Code per Mail senden')}
         </button>
       )}
-      {provider !== 7 && (
+      {needsCode && provider !== 7 && (
         <label className="field">
           <span>{t('Code')}</span>
           <input
@@ -231,9 +233,11 @@ function DisableForm({
         <button
           type="submit"
           className="primary"
-          disabled={busy || !password || (provider !== 7 && !code.trim())}
+          disabled={busy || !password || (needsCode && provider !== 7 && !code.trim())}
         >
-          {provider === 7 ? t('Mit Sicherheitsschlüssel ausschalten') : t('Ausschalten')}
+          {needsCode && provider === 7
+            ? t('Mit Sicherheitsschlüssel ausschalten')
+            : t('Ausschalten')}
         </button>
       </div>
     </form>

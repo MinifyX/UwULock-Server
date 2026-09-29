@@ -999,6 +999,10 @@ everything, and the official clients drop them locally at their next sync.
   JSON object (the assertion itself). A wrong password on `send-email` and `webauthn-challenge`
   counts and is noticed the same way; both answer 400 `invalid` while the mode is off, and
   `send-email` 400 `invalid` without two-step login by mail (or without a mail server).
+  When the account has no usable second step any more (the recovery code was used, an admin
+  reset it), the master password alone switches the mode off — otherwise nothing ever could;
+  `twoFactorProvider`/`twoFactorToken` are then ignored. `GET /uwu/v1/versions` leaves out the
+  versions of hidden items.
 
 Switching on or off: sync epoch bumped (§4.3), the account's revision date bumped, notify
 `SyncVault` (Bitwarden `PushType` 5) to all devices including the one that did it, security

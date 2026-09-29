@@ -158,7 +158,13 @@ async fn personal(
     if query.scope.as_deref().is_some_and(|scope| scope != "personal") {
         return Err(ApiError::bad("Only scope=personal is there.").code("invalid"));
     }
-    let versions = state.store.personal_versions(&session.user.id).await?;
+    let mut versions = state.store.personal_versions(&session.user.id).await?;
+    // Those of items travel mode hides stay hidden (a rotation waits until it is off anyway).
+    if state.store.travelling(&session.user.id).await? {
+        let seen: std::collections::HashSet<String> =
+            state.store.ciphers(&session.user.id).await?.into_iter().map(|cipher| cipher.id).collect();
+        versions.retain(|version| seen.contains(&version.cipher_id));
+    }
     Ok(Json(out::list(versions.iter().map(version_json).collect())))
 }
 

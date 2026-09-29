@@ -15,7 +15,8 @@ extensions too, at their next sync — until you switch it off again.
 Switching it off needs the **master password and the second step of your login** (authenticator
 app, a code by mail, or a security key; not the recovery code). So travel mode needs two-step
 login. Five wrong tries, and the next one waits a few minutes; every wrong try is listed under
-*Settings → Security* and mailed to you.
+*Settings → Security* and mailed to you. If two-step login is gone meanwhile — you used the
+recovery code, or an admin reset it — the master password alone switches it off.
 
 While it is on:
 

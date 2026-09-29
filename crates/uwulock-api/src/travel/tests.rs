@@ -73,6 +73,8 @@ async fn hidden_folders_leave_every_view_until_the_second_step_brings_them_back(
     }
     assert!(json(server.get_as(&nyu.token, "/uwu/v1/reminders").await).await["data"].as_array().unwrap().is_empty());
     assert!(json(server.get_as(&nyu.token, "/uwu/v1/icons/own").await).await["data"].as_array().unwrap().is_empty());
+    let personal = json(server.get_as(&nyu.token, "/uwu/v1/versions?scope=personal").await).await;
+    assert!(personal["data"].as_array().unwrap().is_empty(), "the hidden item's version too");
     let purge = json!({"masterPasswordHash": password_hash("nyu@example.com")});
     let response = server.call("POST", "/api/ciphers/purge", Some(&nyu.token), purge).await;
     assert_eq!(json(response).await["code"], "travel_active");
@@ -146,4 +148,23 @@ async fn the_authenticator_switches_it_off_and_wrong_tries_run_out() {
     let response = server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), wrong).await;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(json(response).await["code"], "rate_limited");
+}
+
+#[tokio::test]
+async fn without_two_step_login_any_more_the_password_alone_switches_it_off() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let folder = json(server.call("POST", "/api/folders", Some(&nyu.token), json!({"name": "2.f|f|f"})).await).await;
+    server.call("PUT", "/uwu/v1/travel/folders", Some(&nyu.token), json!({"folderIds": [folder["id"]]})).await;
+    server.state.store.set_two_factor(&nyu.id, 0, "JBSWY3DPEHPK3PXP".into(), "RECOVER".into()).await.unwrap();
+    assert_eq!(
+        server.call("POST", "/uwu/v1/travel/enable", Some(&nyu.token), json!({})).await.status(),
+        StatusCode::OK
+    );
+    let bare = json!({"masterPasswordHash": password_hash("nyu@example.com")});
+    let response = server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), bare.clone()).await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the second step is still there");
+    server.state.store.remove_two_factor(&nyu.id, None).await.unwrap();
+    let off = json(server.call("POST", "/uwu/v1/travel/disable", Some(&nyu.token), bare).await).await;
+    assert_eq!(off["enabled"], false);
 }
