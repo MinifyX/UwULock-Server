@@ -158,8 +158,10 @@ pub fn profile(user: &User, two_factor: bool, organizations: Vec<Value>) -> Valu
         "privateKey": user.private_key,
         "accountKeys": account_keys(user),
         "securityStamp": user.security_stamp,
+        // Newer clients take `organizationsNew` over `organizations` when it is there: an empty
+        // list would hide every organisation from them.
+        "organizationsNew": organizations.clone(),
         "organizations": organizations,
-        "organizationsNew": [],
         "providers": [],
         "providerOrganizations": [],
         "forcePasswordReset": false,

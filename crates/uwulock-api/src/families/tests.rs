@@ -76,6 +76,7 @@ async fn a_family_from_the_invitation_to_a_shared_item() {
     assert_eq!((profile["productTierType"].as_i64(), profile["planType"].as_i64()), (Some(1), Some(22)));
     assert_eq!((profile["type"].as_i64(), profile["status"].as_i64()), (Some(0), Some(2)));
     assert_eq!(profile["key"], type4());
+    assert_eq!(mine["profile"]["organizationsNew"][0]["id"], org.as_str(), "newer clients read this list");
     assert_eq!((profile["seats"].as_i64(), profile["useGroups"].as_bool()), (Some(6), Some(false)));
     assert_eq!(mine["collections"].as_array().unwrap().len(), 1);
 
