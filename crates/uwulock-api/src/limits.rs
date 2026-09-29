@@ -167,9 +167,15 @@ impl Default for Limits {
 }
 
 impl Limits {
-    /// The defaults, with `attempts` logins at once per address.
+    /// The defaults, with `attempts` logins at once per address. Many people behind one address
+    /// also make more requests without an account (prelogin, SSO, Sends), so that bucket grows
+    /// with it: five for each login, never fewer than the default 50.
     pub fn with_login_attempts(attempts: u32) -> Self {
-        Limits { login: Limiter::new(attempts, Duration::from_secs(60)), ..Limits::default() }
+        Limits {
+            login: Limiter::new(attempts, Duration::from_secs(60)),
+            anonymous: Limiter::new(attempts.saturating_mul(5).max(50), Duration::from_secs(60)),
+            ..Limits::default()
+        }
     }
 
     /// Limits no test runs into.
