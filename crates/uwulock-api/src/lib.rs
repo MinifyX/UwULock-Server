@@ -26,6 +26,7 @@ mod cors;
 pub mod diagnosis;
 pub mod emergency;
 mod errors;
+mod families;
 pub mod file_requests;
 pub mod files;
 mod folders;
@@ -48,6 +49,8 @@ mod notifications;
 pub(crate) mod notify;
 pub mod offsite;
 pub(crate) mod oidc;
+mod org_collections;
+mod org_members;
 mod organizations;
 pub(crate) mod outbound;
 mod palette;
@@ -312,6 +315,9 @@ pub fn router(state: AppState) -> Router {
         .merge(hibp::routes())
         .merge(notifications::routes())
         .merge(organizations::routes())
+        .merge(families::routes())
+        .merge(org_members::routes())
+        .merge(org_collections::routes())
         .merge(folders::routes())
         .merge(two_factor::routes())
         .merge(meta::routes())

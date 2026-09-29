@@ -636,6 +636,12 @@ struct RegisterData {
     master_password_authentication: Option<MasterPasswordAuthentication>,
     #[serde(default)]
     master_password_unlock: Option<MasterPasswordUnlock>,
+    /// Registering from an organisation's invitation (docs/uwu-api.md §16.2): its token and the
+    /// membership it is for.
+    #[serde(default)]
+    org_invite_token: Option<String>,
+    #[serde(default)]
+    organization_user_id: Option<String>,
 }
 
 const BY_INVITATION: &str = "Registration is by invitation only. Open the link from your invitation.";
@@ -661,13 +667,22 @@ async fn register_finish(
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
     }
     let email = normalize_email(&data.email);
-    let token = data.email_verification_token.as_deref().ok_or_else(|| ApiError::bad(BY_INVITATION))?;
-    let invitation = state
-        .store
-        .invitation_by_token(auth::sha256(token.trim().as_bytes()))
-        .await?
-        .filter(|invitation| invitation.email == email)
-        .ok_or_else(|| ApiError::bad("This invitation is not valid (any more). Ask for a new one."))?;
+    let not_valid = || ApiError::bad("This invitation is not valid (any more). Ask for a new one.");
+    // An organisation's invitation also registers, when the server invitation that came with it
+    // (from an inviter who may invite people) is still there.
+    let joining = match (data.org_invite_token.as_deref(), data.organization_user_id.as_deref()) {
+        (Some(token), Some(member)) => Some(
+            crate::org_members::invitation_for(&state, token.trim(), member, &email).await?.ok_or_else(not_valid)?,
+        ),
+        _ => None,
+    };
+    let invitation = match (data.email_verification_token.as_deref(), &joining) {
+        (Some(token), _) => state.store.invitation_by_token(auth::sha256(token.trim().as_bytes())).await?,
+        (None, Some(_)) => state.store.invitation(&email).await?.filter(|invitation| invitation.expires > clock::now()),
+        (None, None) => return Err(ApiError::bad(BY_INVITATION)),
+    }
+    .filter(|invitation| invitation.email == email)
+    .ok_or_else(|| if joining.is_some() { ApiError::bad(BY_INVITATION) } else { not_valid() })?;
 
     let (password, key, kdf) = match (data.master_password_authentication, data.master_password_unlock) {
         (Some(authentication), Some(unlock)) => {
@@ -719,6 +734,11 @@ async fn register_finish(
         Err(error) => return Err(error.into()),
     };
     tracing::info!(email = %user.email, admin = user.admin, "account registered");
+    if let Some((org, member)) = joining
+        && let Err(error) = crate::org_members::accept_as(&state, &org, &member.id, &user).await
+    {
+        tracing::warn!(error = %error.message(), "the organisation's invitation was not taken with the registration");
+    }
     let event = Event {
         kind: "register".into(),
         user_id: Some(user.id.clone()),

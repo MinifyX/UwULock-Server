@@ -15,6 +15,7 @@ import { RequestPage } from './components/web/RequestPage';
 import { SendPage } from './components/web/SendPage';
 import { errorText } from './lib/errors';
 import { acceptContact } from './lib/features';
+import { acceptInvitation } from './lib/families';
 import { toast } from './lib/toast';
 import { lock, setSecurity, touch, vaultStatus, type Status } from './lib/api';
 import { account, type AccountInfo } from './lib/account';
@@ -124,6 +125,12 @@ export function App() {
       return path ? [path[0], path[1], location.hash.replace(/^#/, '')] : null;
     })();
   const fileRequest = route.path.match(/^\/file-requests\/([^/]+)$/)?.[1] ?? null;
+  // A family's page: the desktop app and the mails link here.
+  const family = route.path.match(/^\/organizations\/([^/]+)$/)?.[1] ?? null;
+  // The link from a family's invitation: somebody without an account registers with it.
+  const joining = route.path === '/accept-organization' ? route.query : null;
+  const joinNew =
+    joining?.get('orgUserHasExistingUser') === 'False' && status?.state === 'logged-out';
   // Bitwarden's extension, desktop app and CLI start their SSO login here.
   const ssoForward = route.path === '/sso' && route.query.get('clientId') ? route.query : null;
 
@@ -138,6 +145,19 @@ export function App() {
         toast(
           t('Du bist jetzt Notfallkontakt ✧ Sobald du bestätigt bist, kannst du Zugriff anfragen.'),
         ),
+      (e) => toast(errorText(e), 'error'),
+    );
+  }, [route, unlocked]);
+
+  // The link from a family's invitation: accepted once the vault is open.
+  useEffect(() => {
+    if (route.path !== '/accept-organization' || !unlocked) return;
+    const orgId = route.query.get('organizationId') ?? '';
+    const memberId = route.query.get('organizationUserId') ?? '';
+    const token = route.query.get('token') ?? '';
+    location.hash = '';
+    void acceptInvitation(orgId, memberId, token).then(
+      () => toast(t('Angenommen ✧ Sobald dich jemand bestätigt, siehst du, was geteilt ist.')),
       (e) => toast(errorText(e), 'error'),
     );
   }, [route, unlocked]);
@@ -216,6 +236,20 @@ export function App() {
             <SendPage accessId={sendLink[1]!} urlKey={sendLink[2]!} />
           ) : requestLink ? (
             <RequestPage accessId={requestLink[1]!} secret={requestLink[2]!} />
+          ) : joinNew && joining ? (
+            <RegisterScreen
+              token=""
+              email={joining.get('email') ?? ''}
+              family={{
+                token: joining.get('token') ?? '',
+                memberId: joining.get('organizationUserId') ?? '',
+                name: joining.get('organizationName') ?? '',
+              }}
+              onDone={(next) => {
+                location.hash = '';
+                setStatus(next);
+              }}
+            />
           ) : registering ? (
             <RegisterScreen
               token={route.query.get('token') ?? ''}
@@ -247,6 +281,8 @@ export function App() {
                 onAddAccount={() => undefined}
                 openRequest={fileRequest}
                 openDue={route.path === '/vault' && route.query.get('due') === '1'}
+                openFamily={family}
+                familyRules={info?.families ?? null}
               />
             </div>
           )}

@@ -41,6 +41,8 @@ export type AccountInfo = {
   sso?: boolean;
   /** The admin portal takes only sessions from an SSO login. */
   adminNeedsSso?: boolean;
+  /** Whether this account may make a family, and how large one may be (§16.4). */
+  families?: { mayCreate: boolean; maxMembers: number; owned: number; perUser: number };
 };
 
 export type MinimumKdf = {
@@ -148,6 +150,8 @@ export async function register(input: {
   password: string;
   hint: string;
   kdf: Kdf;
+  /** A family's invitation instead of the server's (docs/uwu-api.md §16.2). */
+  family?: { token: string; memberId: string };
 }): Promise<void> {
   const pair = await crypto.subtle.generateKey(
     {
@@ -179,7 +183,9 @@ export async function register(input: {
       kdfMemory: kdf.memory,
       kdfParallelism: kdf.parallelism,
       keys: { publicKey, encryptedPrivateKey: made.encryptedPrivateKey },
-      emailVerificationToken: input.token,
+      ...(input.family
+        ? { orgInviteToken: input.family.token, organizationUserId: input.family.memberId }
+        : { emailVerificationToken: input.token }),
     },
   });
 }
@@ -193,6 +199,8 @@ export async function setInitialPassword(input: {
   password: string;
   hint: string;
   kdf: Kdf;
+  /** A family's invitation instead of the server's (docs/uwu-api.md §16.2). */
+  family?: { token: string; memberId: string };
 }): Promise<void> {
   const pair = await crypto.subtle.generateKey(
     {

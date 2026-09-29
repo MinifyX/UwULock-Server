@@ -1,4 +1,5 @@
 import { ComfortSettings } from './ComfortSettings';
+import { FamilySettings } from './FamilySettings';
 import { useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import { ResultLine, Row, Segmented, Toggle, type Result } from '../components/web/controls';
@@ -393,6 +394,8 @@ export function AdminSettings({ me }: { me: string }) {
       </Row>
 
       <ComfortSettings draft={draft} setDraft={setDraft} />
+
+      <FamilySettings draft={draft} setDraft={setDraft} />
 
       <h2 className="settings-heading">{t('Push für die Handy-Apps')}</h2>
       <p className="settings-lead">

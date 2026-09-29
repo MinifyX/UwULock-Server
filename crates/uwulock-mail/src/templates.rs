@@ -65,6 +65,23 @@ pub enum Mail {
     AdminAlert { event: String, detail: String, resolved: bool, server: String },
     /// The code that opens a Send only given addresses may open.
     SendCode { code: String },
+    /// Somebody invites the reader into a family (`family`) or an organisation; `link` accepts.
+    OrgInvited { organization: String, inviter: String, link: String, family: bool, joining: Joining, server: String },
+    /// To the owners: `member` accepted and waits to be confirmed.
+    OrgAccepted { member: String, organization: String, family: bool },
+    /// To the member: they are confirmed and see what is shared with them.
+    OrgConfirmed { organization: String, family: bool },
+}
+
+/// How the reader of an organisation's invitation gets in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Joining {
+    /// With the account they have.
+    Account,
+    /// The link makes their account too.
+    Register,
+    /// They need an account first, and an admin has to invite them to the server for it.
+    AskForAccount,
 }
 
 /// How the server's mail looks: its name, and the colour of the heading and the button. The
@@ -140,6 +157,12 @@ impl NoticeLine {
             ("emergencyAccessTakenOver", false) => format!("Account taken over through emergency access by {about}"),
             ("loginWithDeviceRequested", true) => "Anfrage „Mit Gerät anmelden“".into(),
             ("loginWithDeviceRequested", false) => "“Log in with device” request".into(),
+            ("organizationJoined", true) => format!("Aufgenommen in „{about}“"),
+            ("organizationJoined", false) => format!("Joined “{about}”"),
+            ("organizationRemoved", true) => format!("Nicht mehr in „{about}“"),
+            ("organizationRemoved", false) => format!("No longer in “{about}”"),
+            ("organizationRoleChanged", true) => format!("Deine Rolle in „{about}“ wurde geändert"),
+            ("organizationRoleChanged", false) => format!("Your role in “{about}” was changed"),
             ("extrasKeyReset", true) => "UwULock-Extras neu angefangen (Schlüssel zurückgesetzt)".into(),
             ("extrasKeyReset", false) => "UwULock extras started over (key reset)".into(),
             ("ssoLinked", true) => format!("Anmeldung über {about} mit dem Konto verknüpft"),
@@ -638,6 +661,84 @@ impl Mail {
                     footer,
                 }
             }
+            Mail::OrgInvited { organization, inviter, link, family, joining, server } => {
+                let what = match (de, family) {
+                    (true, true) => format!("die Familie „{organization}“"),
+                    (true, false) => format!("die Organisation „{organization}“"),
+                    (false, true) => format!("the family “{organization}”"),
+                    (false, false) => format!("the organisation “{organization}”"),
+                };
+                let next = match (de, joining) {
+                    (true, Joining::Account) => "Melde dich an und nimm die Einladung an:".to_string(),
+                    (true, Joining::Register) => "Leg mit diesem Link dein Konto an, dann bist du dabei:".to_string(),
+                    (true, Joining::AskForAccount) => format!(
+                        "Dafür brauchst du ein Konto auf {server}. Bitte die Verwaltung des Servers um eine Einladung und öffne danach diesen Link:"
+                    ),
+                    (false, Joining::Account) => "Log in and accept the invitation:".to_string(),
+                    (false, Joining::Register) => "Create your account with this link, and you're in:".to_string(),
+                    (false, Joining::AskForAccount) => format!(
+                        "For that you need an account on {server}. Ask whoever runs the server for an invitation, then open this link:"
+                    ),
+                };
+                Text {
+                    subject: if de { format!("{inviter} lädt dich in {what} ein") } else { format!("{inviter} invites you to {what}") },
+                    lines: vec![
+                        if de {
+                            format!("{inviter} lädt dich in {what} auf UwULock ({server}) ein, um Passwörter und mehr zu teilen. {next}")
+                        } else {
+                            format!("{inviter} invites you to {what} on UwULock ({server}) to share passwords and more. {next}")
+                        },
+                        if de {
+                            "Der Link gilt fünf Tage; danach braucht es eine neue Einladung."
+                        } else {
+                            "The link works for five days; after that, you need a new invitation."
+                        }
+                        .into(),
+                    ],
+                    highlight: None,
+                    button: Some((if de { "Einladung annehmen" } else { "Accept invitation" }.into(), link.clone())),
+                    footer,
+                }
+            }
+            Mail::OrgAccepted { member, organization, family } => Text {
+                subject: match (de, family) {
+                    (true, true) => format!("{member} möchte in die Familie „{organization}“"),
+                    (true, false) => format!("{member} möchte in die Organisation „{organization}“"),
+                    (false, _) => format!("{member} wants to join “{organization}”"),
+                },
+                lines: vec![
+                    if de {
+                        format!("{member} hat die Einladung angenommen und wartet darauf, bestätigt zu werden.")
+                    } else {
+                        format!("{member} accepted the invitation and waits to be confirmed.")
+                    },
+                    if de {
+                        "Bestätige im Web-Tresor unter „Mitglieder“. Vergleiche dabei den Fingerabdruck-Satz mit ihm oder ihr: Nur dann landet der Schlüssel beim Richtigen."
+                    } else {
+                        "Confirm them in the web vault under “Members”, and compare the fingerprint phrase with them: only then does the key end up with the right person."
+                    }
+                    .into(),
+                ],
+                highlight: None,
+                button: None,
+                footer,
+            },
+            Mail::OrgConfirmed { organization, family } => Text {
+                subject: match (de, family) {
+                    (true, true) => format!("Du bist jetzt in der Familie „{organization}“"),
+                    (true, false) => format!("Du bist jetzt in der Organisation „{organization}“"),
+                    (false, _) => format!("You're in “{organization}” now"),
+                },
+                lines: vec![if de {
+                    "Du bist bestätigt. Was mit dir geteilt wird, siehst du ab jetzt in deinem Tresor, auf jedem Gerät nach dem nächsten Sync."
+                } else {
+                    "You're confirmed. What is shared with you shows up in your vault from now on, on every device after its next sync."
+                }
+                .into()],
+                highlight: None,
+                button: None,
+                footer,
+            },
             Mail::AdminAlert { event, detail, resolved, server } => {
                 let (title, _) = alert_text(event, detail, *resolved, server, language);
                 let mut lines = vec![title.clone()];
@@ -757,6 +858,16 @@ mod tests {
                 notices: vec![NoticeLine { kind: "failedLogins".into(), count: Some(5), ..NoticeLine::default() }],
                 link: "https://vault.example.com/".into(),
             },
+            Mail::OrgInvited {
+                organization: "Katzen".into(),
+                inviter: "Nyu".into(),
+                link: "https://vault.example.com/#/accept-organization".into(),
+                family: true,
+                joining: Joining::Register,
+                server: "vault.example.com".into(),
+            },
+            Mail::OrgAccepted { member: "Mio".into(), organization: "Katzen".into(), family: true },
+            Mail::OrgConfirmed { organization: "Katzen".into(), family: true },
             Mail::AdminAlert {
                 event: "diskLow".into(),
                 detail: "2 GB free".into(),

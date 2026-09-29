@@ -30,6 +30,12 @@ impl Drop for Running {
 
 /// A server on a free port, and an invitation for [`EMAIL`]: the token of its link.
 pub(crate) async fn start() -> (Running, String) {
+    let (running, mut tokens) = start_for(&[EMAIL]).await;
+    (running, tokens.remove(0))
+}
+
+/// A server on a free port, and an invitation for each of `emails`: the tokens of their links.
+pub(crate) async fn start_for(emails: &[&str]) -> (Running, Vec<String>) {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let dir = tempfile::tempdir().unwrap();
     let mut config = uwulock_server::Config { data_dir: dir.path().to_path_buf(), ..Default::default() };
@@ -57,9 +63,12 @@ pub(crate) async fn start() -> (Running, String) {
 
     config.public = Some(url.clone());
     let state = uwulock_server::app_state(&config, store, logs).await.unwrap();
-    let invited = uwulock_api::invite(&state, EMAIL, true, None).await.unwrap();
-    let token = invited.link.split("token=").nth(1).unwrap().split('&').next().unwrap().to_string();
-    (Running { url, stop: Some(stop), _dir: dir }, token)
+    let mut tokens = Vec::new();
+    for email in emails {
+        let invited = uwulock_api::invite(&state, email, true, None).await.unwrap();
+        tokens.push(invited.link.split("token=").nth(1).unwrap().split('&').next().unwrap().to_string());
+    }
+    (Running { url, stop: Some(stop), _dir: dir }, tokens)
 }
 
 /// Register the way a client does: a user key, wrapped under the master key.

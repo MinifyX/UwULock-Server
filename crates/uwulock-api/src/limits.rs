@@ -152,6 +152,8 @@ pub struct Limits {
     pub icons: Limiter,
     /// Wrong tries to switch travel mode off, per account: five, one back every 3 minutes.
     pub travel: Limiter<String>,
+    /// Invitations to organisations, per account: thirty, one back every two minutes.
+    pub invites: Limiter<String>,
 }
 
 impl Default for Limits {
@@ -168,6 +170,7 @@ impl Default for Limits {
             scim_refused: Limiter::new(30, Duration::from_secs(30)),
             icons: Limiter::new(60, Duration::from_secs(1)),
             travel: Limiter::new(5, Duration::from_secs(3 * 60)),
+            invites: Limiter::new(30, Duration::from_secs(2 * 60)),
         }
     }
 }
@@ -201,6 +204,7 @@ impl Limits {
             scim_refused: generous(),
             icons: generous(),
             travel: generous(),
+            invites: generous(),
         }
     }
 }

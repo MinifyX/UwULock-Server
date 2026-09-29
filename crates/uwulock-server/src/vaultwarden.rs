@@ -464,6 +464,8 @@ pub fn read_vaultwarden(
                 billing_email: row.get(2)?,
                 public_key: row.get(3)?,
                 private_key: row.get(4)?,
+                // A family or not: the import decides from its members, groups and policies.
+                plan_type: uwulock_store::organizations::ORGANIZATION,
                 created: now.clone(),
                 revision: now,
             })

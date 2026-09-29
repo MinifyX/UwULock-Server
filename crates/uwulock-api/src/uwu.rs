@@ -147,8 +147,10 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         state.store.travelling(&session.user.id),
     )?;
     let require = &settings.policies.require_two_factor;
+    let families = crate::families::account_info(&state, &session).await?;
     Ok(Json(json!({
         "object": "account",
+        "families": families,
         "policy": {
             "twoFactorRequired": require.enabled,
             "twoFactorDeadline": require.deadline.as_ref().filter(|_| require.enabled),

@@ -1712,3 +1712,61 @@ fieldset.send-access > legend {
   color: var(--uwu-muted);
   font-size: 13px;
 }
+
+/* ── Families (Stufe 4d) ─────────────────────────────────── */
+
+.list-head .segmented[role='tablist'] {
+  margin-top: 8px;
+}
+
+.segmented button[aria-selected='true'] {
+  background: var(--uwu-surface);
+  color: var(--uwu-ink);
+  box-shadow: 0 1px 2px rgba(20, 16, 22, 0.12);
+}
+
+.segmented button .badge {
+  margin-left: 6px;
+}
+
+.family-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--uwu-hairline);
+}
+
+.family-save {
+  display: flex;
+  justify-content: flex-end;
+  margin: 12px 0;
+}
+
+.detail-row .select {
+  flex: none;
+  width: auto;
+}
+
+.family-invitation {
+  margin: 6px 8px;
+  padding: 10px 12px;
+  border-radius: var(--uwu-radius-card);
+  background: var(--uwu-pink-tint);
+}
+
+.family-invitation p {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.family-invitation .buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.nav-note {
+  margin: 2px 12px 6px;
+  font-size: 12.5px;
+  color: var(--uwu-muted);
+}

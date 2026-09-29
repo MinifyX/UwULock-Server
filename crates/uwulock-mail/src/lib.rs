@@ -11,7 +11,7 @@
 
 mod templates;
 
-pub use templates::{Brand, Mail, NoticeLine, alert_text};
+pub use templates::{Brand, Joining, Mail, NoticeLine, alert_text};
 
 use lettre::message::{Mailbox, MultiPart};
 use lettre::transport::smtp::authentication::Credentials;

@@ -186,9 +186,18 @@ impl Store {
                 }
                 for org in &migration.organizations {
                     tx.execute(
-                        "INSERT INTO organizations (id, name, billing_email, public_key, private_key, created, revision) \
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                        params![org.id, org.name, org.billing_email, org.public_key, org.private_key, org.created, org.revision],
+                        "INSERT INTO organizations (id, name, billing_email, public_key, private_key, created, revision, \
+                         plan_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![
+                            org.id,
+                            org.name,
+                            org.billing_email,
+                            org.public_key,
+                            org.private_key,
+                            org.created,
+                            org.revision,
+                            org.plan_type
+                        ],
                     )?;
                 }
                 for member in &migration.members {
@@ -264,6 +273,9 @@ impl Store {
                         "INSERT INTO policies (id, org_id, type, enabled, data, revision) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         params![policy.id, policy.org_id, policy.kind, policy.enabled, policy.data, policy.revision],
                     )?;
+                }
+                for org in &migration.organizations {
+                    crate::organizations::classify(tx, &org.id)?;
                 }
                 for cipher in &migration.ciphers {
                     write_cipher(tx, cipher)?;

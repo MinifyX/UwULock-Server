@@ -1,6 +1,6 @@
-//! Organisations, as far as 0.4 goes: what a vault brought from Vaultwarden shows up in the
-//! sync, and its members save its items where their collections let them — moving an item of
-//! their own in, too. Making and managing organisations is for later (Stufe 5).
+//! Organisations in the vault: what the sync shows of them, and their members saving items where
+//! their collections let them — moving an item of their own in, too. Making and managing them is
+//! in `families`, `org_members` and `org_collections`.
 
 use crate::auth::Session;
 use crate::ciphers::{CipherData, apply, json_text};
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use uwulock_notify::{Kind, Subject, Update};
-use uwulock_store::organizations::{Collection, Member, Organization, Policy};
+use uwulock_store::organizations::{Collection, Policy};
 use uwulock_store::{Access, Attachment, Cipher, OrgCipher};
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -27,79 +27,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/ciphers/{id}/collections", post(set_collections).put(set_collections))
         .route("/api/ciphers/{id}/collections_v2", post(set_collections_v2).put(set_collections_v2))
         .route("/api/ciphers/{id}/collections-admin", post(set_collections).put(set_collections))
-}
-
-/// A membership, as the profile lists it (`profileOrganization`).
-pub(crate) fn profile_organization(org: &Organization, member: &Member) -> Value {
-    json!({
-        "id": org.id,
-        "name": org.name,
-        "identifier": null,
-        "seats": null,
-        "maxCollections": null,
-        "usersGetPremium": true,
-        "use2fa": true,
-        "useDirectory": false,
-        "useEvents": false,
-        "useGroups": true,
-        "useTotp": true,
-        "useScim": false,
-        "usePolicies": true,
-        "useApi": false,
-        "selfHost": true,
-        "hasPublicAndPrivateKeys": org.public_key.is_some() && org.private_key.is_some(),
-        "resetPasswordEnrolled": member.reset_password_key.is_some(),
-        "useResetPassword": false,
-        "ssoBound": false,
-        "useSso": false,
-        "useKeyConnector": false,
-        "useSecretsManager": false,
-        "usePasswordManager": true,
-        "useCustomPermissions": false,
-        "useActivateAutofillPolicy": false,
-        "useRiskInsights": false,
-        "useOrganizationDomains": false,
-        "useAdminSponsoredFamilies": false,
-        "organizationUserId": member.id,
-        "providerId": null,
-        "providerName": null,
-        "providerType": null,
-        "familySponsorshipFriendlyName": null,
-        "familySponsorshipAvailable": false,
-        "productTierType": 3,
-        "keyConnectorEnabled": false,
-        "keyConnectorUrl": null,
-        "accessSecretsManager": false,
-        // Managing the organisation comes with Stufe 5: nobody creates or deletes collections yet.
-        "limitCollectionCreation": true,
-        "limitCollectionDeletion": true,
-        "limitItemDeletion": false,
-        "allowAdminAccessToAllCollectionItems": true,
-        "userIsManagedByOrganization": false,
-        "userIsClaimedByOrganization": false,
-        "permissions": {
-            "accessEventLogs": false,
-            "accessImportExport": false,
-            "accessReports": false,
-            "createNewCollections": false,
-            "editAnyCollection": false,
-            "deleteAnyCollection": false,
-            "manageGroups": false,
-            "managePolicies": false,
-            "manageSso": false,
-            "manageUsers": false,
-            "manageResetPassword": false,
-            "manageScim": false,
-        },
-        "maxStorageGb": 32767,
-        "userId": member.user_id,
-        // Only a confirmed member holds the organisation's key.
-        "key": if member.status == uwulock_store::organizations::CONFIRMED { member.key.clone() } else { None },
-        "status": member.status,
-        "type": member.kind,
-        "enabled": true,
-        "object": "profileOrganization",
-    })
 }
 
 pub(crate) fn collection_json(collection: &Collection, access: &Access) -> Value {
@@ -129,7 +56,11 @@ pub(crate) fn policy_json(policy: &Policy) -> Value {
 /// The organisations the user is in, as the profile carries them.
 pub(crate) async fn profile_organizations(state: &AppState, user_id: &str) -> ApiResult<Vec<Value>> {
     let vault = state.store.org_vault(user_id).await?;
-    Ok(vault.memberships.iter().map(|(org, member)| profile_organization(org, member)).collect())
+    Ok(vault
+        .memberships
+        .iter()
+        .map(|(org, member)| crate::families::profile_organization(state, org, member))
+        .collect())
 }
 
 /// Attachments of organisations' items, as JSON by item id.
@@ -387,6 +318,7 @@ mod tests {
                 billing_email: owner.email.clone(),
                 public_key: None,
                 private_key: None,
+                plan_type: uwulock_store::organizations::FAMILY,
                 created: now.clone(),
                 revision: now.clone(),
             }],

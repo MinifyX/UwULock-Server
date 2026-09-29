@@ -62,6 +62,9 @@ export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'vaultExported', label: N_('Tresor exportiert') },
   { kind: 'kdfBelowMinimum', label: N_('Schlüsselableitung schwächer als verlangt') },
   { kind: 'ssoLinked', label: N_('Anmeldung über SSO verknüpft') },
+  { kind: 'organizationJoined', label: N_('In eine Familie aufgenommen') },
+  { kind: 'organizationRemoved', label: N_('Aus einer Familie entfernt') },
+  { kind: 'organizationRoleChanged', label: N_('Rolle in einer Familie geändert') },
 ];
 
 const PROVIDERS: Record<number, string> = {
@@ -153,6 +156,16 @@ export function noticeText(notice: Pick<Notice, 'kind' | 'detail'>): string {
       return t('Maskierte Adressen sind nicht mehr mit {server} verbunden.', {
         server: text('server'),
       });
+    case 'organizationJoined':
+      return t('Du bist jetzt in „{name}“ und siehst, was dort geteilt ist.', {
+        name: text('organization'),
+      });
+    case 'organizationRemoved':
+      return t('Du bist nicht mehr in „{name}“.', { name: text('organization') });
+    case 'organizationRoleChanged':
+      return detail.type === 0
+        ? t('Du bist jetzt Eigentümer von „{name}“.', { name: text('organization') })
+        : t('Deine Rolle in „{name}“ wurde geändert.', { name: text('organization') });
     default:
       return notice.kind;
   }

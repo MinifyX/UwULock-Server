@@ -345,16 +345,23 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
 Teilen in der Familie, ohne auf alles aus Stufe 5 zu warten: eine schlanke Organisation, wie
 Bitwardens „Families".
 
-- Eine Familie anlegen im Web-Tresor (der Admin legt fest, wer das darf und wie viele Mitglieder
-  eine Familie höchstens hat); Rollen nur Eigentümer und Mitglied.
-- Mitglieder einladen: Konten dieses Servers direkt, neue Leute über die bestehenden
-  Einladungsregeln; bestätigen mit dem Fingerabdruck-Satz, damit der Schlüssel der Familie beim
-  Richtigen landet.
-- Sammlungen anlegen, umbenennen, löschen, mit Lese- oder Schreibrecht pro Mitglied; Einträge
-  hinein verschieben aus Web-Tresor, UwULock-Client und den offiziellen Clients (die Verwaltung
-  selbst nur im Web-Tresor, wie bei Bitwarden).
-- Aus Vaultwarden übernommene Organisationen lassen sich damit verwalten, soweit sie nur
-  Eigentümer und Mitglieder brauchen.
+- [x] Eine Familie anlegen im Web-Tresor (der Admin legt fest, wer das darf, wie viele Mitglieder
+      eine Familie höchstens hat und wie viele ein Konto besitzen darf); Rollen nur Eigentümer
+      und Mitglied. Der Schlüssel der Familie wird im Browser gemacht und für den öffentlichen
+      Schlüssel des Eigentümers verpackt, wie bei Bitwardens Clients.
+- [x] Mitglieder einladen: Konten dieses Servers direkt (per Mail-Link oder im eigenen Tresor
+      annehmen), neue Leute über die bestehenden Einladungsregeln (die Einladung in die Familie
+      ist dann zugleich die auf den Server und zählt für das Kontingent); bestätigen mit dem
+      Fingerabdruck-Satz, damit der Schlüssel der Familie beim Richtigen landet. Entfernen,
+      verlassen, übergeben (ein weiterer Eigentümer), löschen; Mails auf Deutsch und Englisch,
+      Sicherheitshinweise, Live-Updates an die Clients.
+- [x] Sammlungen anlegen, umbenennen, löschen, mit Lese- oder Schreibrecht pro Mitglied; Einträge
+      hinein verschieben aus Web-Tresor, UwULock-Client und den offiziellen Clients (die Verwaltung
+      selbst nur im Web-Tresor, wie bei Bitwarden). Getestet mit zwei Konten und der Krypto des
+      UwULock-Clients sowie im Browser und mit Bitwardens CLI (`bw create item` in eine Sammlung,
+      `bw move`).
+- [x] Aus Vaultwarden übernommene Organisationen lassen sich damit verwalten, soweit sie nur
+      Eigentümer und Mitglieder brauchen.
 - Gruppen, Richtlinien, Account-Recovery, Ereignisprotokoll und alles Weitere bleiben in Stufe 5,
   die darauf aufbaut.
 

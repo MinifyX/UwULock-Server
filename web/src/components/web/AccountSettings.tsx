@@ -194,7 +194,9 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
         label={t('Fingerabdruck')}
         description={
           fingerprint ??
-          t('Den Satz vergleicht jemand mit dir, bevor er dich als Notfallkontakt bestätigt.')
+          t(
+            'Den Satz vergleicht jemand mit dir, bevor er dich als Notfallkontakt oder in einer Familie bestätigt.',
+          )
         }
       >
         {!fingerprint && <button onClick={() => void showFingerprint()}>{t('Anzeigen')}</button>}

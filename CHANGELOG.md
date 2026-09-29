@@ -5,6 +5,23 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+**Families (Stufe 4d).**
+
+- **Share with your family**: make a family in the web vault, invite people by address, and
+  confirm each one after comparing the fingerprint phrase of their key — only then does the
+  family's key reach them. Collections with read or read-and-write access per member; items move
+  in from the web vault, the UwULock app and the official Bitwarden apps and CLI, and every
+  client sees the family like any Bitwarden organisation. Owners hand over, remove, rename and
+  delete; members leave. Somebody without an account registers with the family's invitation when
+  the inviter may invite people to the server ([docs/families.md](docs/families.md)).
+- The admin decides who may make a family (everyone, admins, nobody), how many members one has
+  and how many one account owns, and lists and deletes families in the portal. Organisations moved
+  over from Vaultwarden with only owners and members are managed the same way.
+- Mails for invitations, members waiting to be confirmed and being confirmed, in German and
+  English; security notices for joining, leaving and a changed role; live updates to every device.
+- Newer Bitwarden apps did not list organisations at all (the profile's `organizationsNew` was
+  empty); they do now.
+
 **Comfort in the vault (Stufe 4c).**
 
 - **Import from other password managers**, read in the browser — the server only ever sees what

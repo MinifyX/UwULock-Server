@@ -1,6 +1,6 @@
-//! Organisations, as far as 0.4 goes: those a vault brings from Vaultwarden, with their members,
-//! collections, groups and policies — shown in the sync, and their items saved by whoever may.
-//! Making and managing organisations comes later.
+//! Organisations in the vault: those a vault brings from Vaultwarden, with their members,
+//! collections, groups and policies, and the families made here (Stufe 4d) — shown in the sync,
+//! and their items saved by whoever may. Making and managing them is in `org_management`.
 //!
 //! Who sees what, the way Bitwarden has it: a confirmed member sees the items of the collections
 //! they are given, directly or by a group; owners, admins and members with `access_all` see every
@@ -17,6 +17,11 @@ use std::collections::{HashMap, HashSet};
 
 pub const OWNER: i64 = 0;
 pub const ADMIN: i64 = 1;
+pub const USER: i64 = 2;
+
+/// Bitwarden's plans, as far as they matter here: what an organisation is.
+pub const FAMILY: i64 = 22;
+pub const ORGANIZATION: i64 = 20;
 
 pub const REVOKED: i64 = -1;
 pub const INVITED: i64 = 0;
@@ -30,8 +35,16 @@ pub struct Organization {
     pub billing_email: String,
     pub public_key: Option<String>,
     pub private_key: Option<String>,
+    /// [`FAMILY`] or [`ORGANIZATION`].
+    pub plan_type: i64,
     pub created: String,
     pub revision: String,
+}
+
+impl Organization {
+    pub fn is_family(&self) -> bool {
+        self.plan_type == FAMILY
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,23 +135,38 @@ pub struct OrgVault {
     pub policies: Vec<Policy>,
 }
 
-const ORG_COLUMNS: &str = "id, name, billing_email, public_key, private_key, created, revision";
-const MEMBER_COLUMNS: &str = "id, org_id, user_id, email, key, status, type, access_all, permissions, external_id, \
+pub(crate) const ORG_COLUMNS: &str = "id, name, billing_email, public_key, private_key, plan_type, created, revision";
+pub(crate) const MEMBER_COLUMNS: &str = "id, org_id, user_id, email, key, status, type, access_all, permissions, external_id, \
      reset_password_key, created, revision";
 
-fn org_from(row: &Row<'_>) -> rusqlite::Result<Organization> {
+pub(crate) fn org_from(row: &Row<'_>) -> rusqlite::Result<Organization> {
     Ok(Organization {
         id: row.get(0)?,
         name: row.get(1)?,
         billing_email: row.get(2)?,
         public_key: row.get(3)?,
         private_key: row.get(4)?,
-        created: row.get(5)?,
-        revision: row.get(6)?,
+        plan_type: row.get(5)?,
+        created: row.get(6)?,
+        revision: row.get(7)?,
     })
 }
 
-fn member_from(row: &Row<'_>, at: usize) -> rusqlite::Result<Member> {
+/// Make an organisation that came from elsewhere a family if it needs no more than a family
+/// has: owners and members only, no groups, no policies. Otherwise it is an organisation.
+pub(crate) fn classify(tx: &Transaction<'_>, org_id: &str) -> rusqlite::Result<()> {
+    tx.execute(
+        "UPDATE organizations SET plan_type = CASE WHEN \
+             NOT EXISTS (SELECT 1 FROM org_members m WHERE m.org_id = ?1 AND m.type NOT IN (0, 2)) \
+             AND NOT EXISTS (SELECT 1 FROM groups g WHERE g.org_id = ?1) \
+             AND NOT EXISTS (SELECT 1 FROM policies p WHERE p.org_id = ?1) \
+         THEN ?2 ELSE ?3 END WHERE id = ?1",
+        params![org_id, FAMILY, ORGANIZATION],
+    )?;
+    Ok(())
+}
+
+pub(crate) fn member_from(row: &Row<'_>, at: usize) -> rusqlite::Result<Member> {
     Ok(Member {
         id: row.get(at)?,
         org_id: row.get(at + 1)?,
@@ -156,7 +184,7 @@ fn member_from(row: &Row<'_>, at: usize) -> rusqlite::Result<Member> {
     })
 }
 
-fn collection_from(row: &Row<'_>) -> rusqlite::Result<Collection> {
+pub(crate) fn collection_from(row: &Row<'_>) -> rusqlite::Result<Collection> {
     Ok(Collection {
         id: row.get(0)?,
         org_id: row.get(1)?,
@@ -175,19 +203,19 @@ impl Member {
 }
 
 /// The user's memberships that count: accepted or confirmed, by organisation.
-fn memberships(conn: &rusqlite::Connection, user_id: &str) -> rusqlite::Result<Vec<(Organization, Member)>> {
+pub(crate) fn memberships(conn: &rusqlite::Connection, user_id: &str) -> rusqlite::Result<Vec<(Organization, Member)>> {
     let columns = ORG_COLUMNS.split(", ").map(|c| format!("o.{c}")).collect::<Vec<_>>().join(", ");
     let members = MEMBER_COLUMNS.split(", ").map(|c| format!("m.{c}")).collect::<Vec<_>>().join(", ");
     conn.prepare_cached(&format!(
         "SELECT {columns}, {members} FROM org_members m JOIN organizations o ON o.id = m.org_id \
          WHERE m.user_id = ?1 AND m.status IN (1, 2) ORDER BY o.name"
     ))?
-    .query_map([user_id], |row| Ok((org_from(row)?, member_from(row, 7)?)))?
+    .query_map([user_id], |row| Ok((org_from(row)?, member_from(row, 8)?)))?
     .collect()
 }
 
 /// The collections a confirmed member reaches, with the most they may do in each.
-fn reachable(conn: &rusqlite::Connection, member: &Member) -> rusqlite::Result<HashMap<String, Access>> {
+pub(crate) fn reachable(conn: &rusqlite::Connection, member: &Member) -> rusqlite::Result<HashMap<String, Access>> {
     let mut access: HashMap<String, Access> = HashMap::new();
     if member.status != CONFIRMED {
         return Ok(access);
