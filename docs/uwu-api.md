@@ -1501,10 +1501,14 @@ UwUMail's OAuth scope `mail` opens the whole mailbox. New scope **`maskedemail`*
 The admin lists the UwUMail servers the Lock server may talk to (§21.8). The Lock server talks
 only to those origins, follows no redirects, and uses only endpoints on the same origin as the
 server's discovery document. Admin-listed servers may be on private addresses (the admin trusts
-them); nothing else may.
+them); nothing else may. A listed server is reached by https; plain http only for an address in
+the local network (a private or loopback IP, a single-label or local name) — otherwise saving the
+settings is 400 (since 0.6.0-beta.2).
 
 1. `POST /uwu/v1/masked/connect` — body `{ "server": "https://mail.example.com" }` (must be listed:
-   403 `server_not_allowed`). The Lock server:
+   403 `server_not_allowed`). Only while the Lock server's public address is https (or http on
+   loopback): otherwise 400 `https_required`, since the binding cookie could be planted on http.
+   The Lock server:
    - reads `<server>/.well-known/oauth-authorization-server` (its `issuer` is remembered, and
      `maskedemail` must be in `scopes_supported`, else 502 `upstream`);
    - registers itself once per UwUMail server (RFC 7591 `POST <registration_endpoint>`,
@@ -1525,7 +1529,9 @@ them); nothing else may.
    (account id from `primaryAccounts["https://www.fastmail.com/dev/maskedemail"]`, `username`,
    domains and default domain), stores the connection, deletes the cookie, writes notice
    `maskedConnected`, and answers `303` to `<public>/#/settings/masked?result=connected` or
-   `?result=error&reason=denied|expired|invalid_state|upstream|busy`.
+   `?result=error&reason=denied|expired|invalid_state|upstream|busy`. It does so under the
+   account's lock, and a grant it replaces — another mailbox's, or an earlier one of the same —
+   is revoked at UwUMail (RFC 7009, best effort).
    UwUMail refuses every token request from one address after 30 refused ones in 15 minutes,
    refreshes of other accounts included, so the Lock server guards that budget: a `code` that
    is not 1–512 URL-safe characters is not sent on (`invalid_state`); codes UwUMail refuses count

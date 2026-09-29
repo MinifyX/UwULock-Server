@@ -398,6 +398,12 @@ async fn connect(
     Json(body): Json<ConnectBody>,
 ) -> ApiResult<Response> {
     check_on(&state)?;
+    // Without https the binding cookie can be neither `__Host-` nor `Secure`, and somebody on
+    // the way could plant one: connecting only where this server is reached by https.
+    if !public_is_safe(&state.config.public) {
+        return Err(ApiError::bad("Masked addresses can be connected only while this server is reached by https.")
+            .code("https_required"));
+    }
     let settings = state.settings();
     let server = settings.masked.server(&body.server).map(|server| server.url.clone()).ok_or_else(|| {
         ApiError::forbidden("This UwUMail server is not one this server may talk to.").code("server_not_allowed")
@@ -452,6 +458,18 @@ async fn connect(
     let mut response = Json(json!({ "object": "maskedConnect", "authorizeUrl": url.to_string() })).into_response();
     response.headers_mut().insert(header::SET_COOKIE, cookie(&state, &binding, PENDING.as_secs() as i64));
     Ok(response)
+}
+
+/// Whether the server's public address is https, or http on this machine alone.
+fn public_is_safe(public: &str) -> bool {
+    let Ok(url) = reqwest::Url::parse(public) else { return false };
+    url.scheme() == "https"
+        || match url.host() {
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            Some(url::Host::Domain(name)) => name == "localhost" || name.ends_with(".localhost"),
+            None => false,
+        }
 }
 
 #[derive(Deserialize)]
@@ -577,6 +595,9 @@ async fn finish(state: &AppState, pending: &Pending, code: &str) -> Result<(), S
     let now = auth::now_seconds();
     let user_id = &pending.user_id;
     let sealed = |kind: &str, plain: &str| state.secret.seal(plain, &purpose(kind, user_id, &pending.server));
+    // Under the account's lock, like a refresh: nothing uses or replaces the grant meanwhile.
+    let lock = state.masked.lock_for(user_id);
+    let _held = lock.lock().await;
     let previous = state.store.masked_connection(user_id).await.map_err(|error| error.to_string())?;
     let connection = MaskedConnection {
         user_id: user_id.clone(),
@@ -603,10 +624,13 @@ async fn finish(state: &AppState, pending: &Pending, code: &str) -> Result<(), S
         // Another mailbox: the links named its addresses, which this one does not have.
         state.store.delete_masked_connection(user_id).await.map_err(|error| error.to_string())?;
         links_changed(state, user_id, None);
-        end_grant(state, previous).await;
     }
     state.store.set_masked_connection(connection).await.map_err(|error| error.to_string())?;
     let _ = state.store.masked_client_used(&pending.server, &pending.client_id, now).await;
+    // The grant it replaces ends at UwUMail too, also when it was the same mailbox's.
+    if let Some(previous) = &previous {
+        end_grant(state, previous).await;
+    }
     Ok(())
 }
 

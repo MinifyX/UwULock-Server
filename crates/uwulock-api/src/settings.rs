@@ -117,6 +117,19 @@ impl MaskedSettings {
         for server in &mut self.servers {
             server.url = crate::outbound::checked_url(&server.url, "UwUMail server")?;
             let parsed = reqwest::Url::parse(&server.url).map_err(|error| error.to_string())?;
+            // Tokens go there: in the clear only inside this machine or the local network.
+            let local = match parsed.host() {
+                Some(url::Host::Ipv4(ip)) => !crate::icon_fetch::public(ip.into()),
+                Some(url::Host::Ipv6(ip)) => !crate::icon_fetch::public(ip.into()),
+                Some(url::Host::Domain(name)) => crate::icon_fetch::normalize_host(name).is_none(),
+                None => false,
+            };
+            if parsed.scheme() != "https" && !local {
+                return Err(format!(
+                    "UwUMail server: {} has to be reached by https (http only for an address in the local network).",
+                    server.url
+                ));
+            }
             if parsed.path() != "/" || parsed.query().is_some() {
                 return Err(format!(
                     "UwUMail server: {} has to be the server's address alone, without a path.",

@@ -182,6 +182,19 @@ async fn refresh_tokens_rotate_one_at_a_time_and_an_old_one_ends_the_grant() {
 }
 
 #[tokio::test]
+async fn connecting_again_ends_the_grant_it_replaces() {
+    let fake = Fake::start().await;
+    let (server, account) = server_with(&fake).await;
+    connect(&server, &account, &fake).await;
+    assert!(fake.inner.lock().revoked.is_empty());
+    connect(&server, &account, &fake).await;
+    assert_eq!(fake.inner.lock().revoked.len(), 1, "the old grant ended at UwUMail (SV-L14)");
+    fake.expire_access();
+    let list = server.get_as(&account.token, "/uwu/v1/masked/addresses").await;
+    assert_eq!(list.status(), StatusCode::OK, "the new one works");
+}
+
+#[tokio::test]
 async fn a_forgotten_client_registers_again_and_uwumail_asking_to_wait_is_said() {
     let fake = Fake::start().await;
     let (server, account) = server_with(&fake).await;
@@ -355,8 +368,28 @@ async fn the_admin_checks_a_server_before_listing_it() {
     assert_eq!(saved["masked"]["servers"][0]["url"], fake.url.as_str(), "kept without the slash");
     assert_eq!(saved["masked"]["servers"][0]["name"], "127.0.0.1");
     settings["masked"] = json!({ "servers": [{ "url": "https://mail.example.com/some/path", "name": "x" }] });
-    let refused = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), settings).await;
+    let refused = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), settings.clone()).await;
     assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    // Tokens in the clear only inside the local network (SV-L16).
+    settings["masked"] = json!({ "servers": [{ "url": "http://mail.example.com", "name": "x" }] });
+    let refused = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), settings.clone()).await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    for local in ["http://192.0.2.1:8080", "http://uwumail:8080", "http://mail.internal"] {
+        settings["masked"] = json!({ "servers": [{ "url": local, "name": "x" }] });
+        let saved = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), settings.clone()).await;
+        assert_eq!(saved.status(), StatusCode::OK, "{local}");
+    }
+}
+
+#[test]
+fn connecting_needs_the_server_on_https() {
+    // SV-L15: the binding cookie is `__Host-` and `Secure` only there.
+    for safe in ["https://vault.example.com", "http://localhost:8080", "http://127.0.0.1:8080", "http://[::1]:8080"] {
+        assert!(super::public_is_safe(safe), "{safe}");
+    }
+    for unsafe_ in ["http://vault.example.com", "http://192.0.2.1"] {
+        assert!(!super::public_is_safe(unsafe_), "{unsafe_}");
+    }
 }
 
 // ── The official clients' generators ─────────────────────
