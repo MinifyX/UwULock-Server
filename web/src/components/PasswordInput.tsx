@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import { Icon } from './Icon';
 
@@ -10,6 +10,10 @@ type Props = {
   autoComplete?: string;
   id?: string;
   label?: string;
+  /** The form's error is about this field: marked, and read out with it. */
+  invalid?: boolean;
+  /** The id of the text that explains the field or its error. */
+  describedBy?: string;
 };
 
 /** A password field with an eye to peek, and a hint when Caps Lock is on. */
@@ -21,10 +25,14 @@ export function PasswordInput({
   autoComplete = 'current-password',
   id,
   label,
+  invalid,
+  describedBy,
 }: Props) {
   useLanguage();
   const [visible, setVisible] = useState(false);
   const [caps, setCaps] = useState(false);
+  const capsId = useId();
+  const described = [describedBy, caps ? capsId : null].filter(Boolean).join(' ') || undefined;
   return (
     <span className="password-input">
       <input
@@ -40,6 +48,8 @@ export function PasswordInput({
         autoComplete={autoComplete}
         spellCheck={false}
         aria-label={label}
+        aria-invalid={invalid || undefined}
+        aria-describedby={described}
       />
       <button
         type="button"
@@ -47,11 +57,14 @@ export function PasswordInput({
         onClick={() => setVisible(!visible)}
         aria-label={visible ? t('Passwort verbergen') : t('Passwort zeigen')}
         aria-pressed={visible}
-        tabIndex={-1}
       >
         <Icon name={visible ? 'eyeOff' : 'eye'} size={16} />
       </button>
-      {caps && <small className="caps-hint">{t('Feststelltaste ist an')}</small>}
+      {caps && (
+        <small className="caps-hint" id={capsId}>
+          {t('Feststelltaste ist an')}
+        </small>
+      )}
     </span>
   );
 }

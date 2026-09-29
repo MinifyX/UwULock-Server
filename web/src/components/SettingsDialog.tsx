@@ -54,7 +54,8 @@ type Props = {
   onClose: () => void;
 };
 
-function Appearance() {
+/** How things look; the admin portal shows it on its own, without what only the vault has. */
+export function Appearance({ vault = true }: { vault?: boolean }) {
   const settings = useSettings();
   return (
     <>
@@ -98,27 +99,60 @@ function Appearance() {
         />
       </Row>
       <Row
-        label={t('Papierkorb zeigen')}
-        description={t('Gelöschte Einträge in einem eigenen Bereich der Seitenleiste.')}
+        label={t('Kontrast')}
+        description={t(
+          '„Hoch“ macht Schrift, Ränder und den Fokus kräftiger. „System“ folgt dem Wunsch des Systems nach mehr Kontrast.',
+        )}
       >
-        <Toggle
-          label={t('Papierkorb zeigen')}
-          checked={settings.showTrash}
-          onChange={(showTrash) => updateSettings({ showTrash })}
+        <Segmented
+          label={t('Kontrast')}
+          value={settings.contrast}
+          onChange={(contrast) => updateSettings({ contrast })}
+          options={[
+            { value: 'system', label: t('System') },
+            { value: 'normal', label: t('Normal') },
+            { value: 'high', label: t('Hoch') },
+          ]}
         />
       </Row>
       <Row
-        label={t('Website-Icons zeigen')}
+        label={t('Kürzel mit einer Taste')}
         description={t(
-          'Holt dieser Server von den Websites deiner Einträge. Eigene Icons zeigt der Tresor immer.',
+          'Etwa ? für die Übersicht der Tastenkürzel. Schalte sie aus, wenn sie deiner Spracheingabe oder deinem Screenreader in die Quere kommen.',
         )}
       >
         <Toggle
-          label={t('Website-Icons zeigen')}
-          checked={settings.showIcons}
-          onChange={(showIcons) => updateSettings({ showIcons })}
+          label={t('Kürzel mit einer Taste')}
+          checked={settings.singleKeys}
+          onChange={(singleKeys) => updateSettings({ singleKeys })}
         />
       </Row>
+      {vault && (
+        <>
+          <Row
+            label={t('Papierkorb zeigen')}
+            description={t('Gelöschte Einträge in einem eigenen Bereich der Seitenleiste.')}
+          >
+            <Toggle
+              label={t('Papierkorb zeigen')}
+              checked={settings.showTrash}
+              onChange={(showTrash) => updateSettings({ showTrash })}
+            />
+          </Row>
+          <Row
+            label={t('Website-Icons zeigen')}
+            description={t(
+              'Holt dieser Server von den Websites deiner Einträge. Eigene Icons zeigt der Tresor immer.',
+            )}
+          >
+            <Toggle
+              label={t('Website-Icons zeigen')}
+              checked={settings.showIcons}
+              onChange={(showIcons) => updateSettings({ showIcons })}
+            />
+          </Row>
+        </>
+      )}
     </>
   );
 }

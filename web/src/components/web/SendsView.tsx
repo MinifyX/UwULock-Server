@@ -17,6 +17,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
+import { listbox } from '../listbox';
 import { BackToList, Panes } from '../panes';
 import { PasswordInput } from '../PasswordInput';
 
@@ -48,6 +49,17 @@ export function SendsView() {
   );
   const current = sorted.find((send) => send.id === selected) ?? sorted[0] ?? null;
 
+  const list = listbox({
+    prefix: 'send',
+    ids: sorted.map((send) => send.id),
+    selected: current?.id ?? null,
+    onSelect: setSelected,
+    onOpen: (id) => {
+      setSelected(id);
+      showDetail();
+    },
+  });
+
   const copyLink = async (send: Send) => {
     await navigator.clipboard.writeText(sendLink(send));
     toast(t('Link kopiert ✧'));
@@ -55,7 +67,7 @@ export function SendsView() {
 
   return (
     <>
-      <section className="list-pane" aria-label={t('Sends')}>
+      <section className="list-pane" aria-label={t('Sends')} tabIndex={-1} data-main-content>
         <div className="list-head">
           <p className="list-title">
             <span>{t('Sends')}</span>
@@ -72,10 +84,11 @@ export function SendsView() {
           </p>
         </div>
         {sorted.length ? (
-          <ul className="item-list" role="listbox" aria-label={t('Sends')}>
+          <ul className="item-list" aria-label={t('Sends')} {...list.listProps}>
             {sorted.map((send) => (
               <li
                 key={send.id}
+                id={list.optionId(send.id)}
                 role="option"
                 aria-selected={send.id === current?.id}
                 className="item-row"
@@ -137,7 +150,12 @@ export function SendsView() {
                   <Icon name="pencil" size={15} />
                   {t('Bearbeiten')}
                 </button>
-                <button className="quiet danger-text" onClick={() => setDeleting(current)}>
+                <button
+                  className="quiet danger-text"
+                  onClick={() => setDeleting(current)}
+                  title={t('Löschen')}
+                  aria-label={t('Löschen')}
+                >
                   <Icon name="trash" size={15} />
                 </button>
               </div>

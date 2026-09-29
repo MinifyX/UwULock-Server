@@ -184,6 +184,7 @@ export function AdminSettings({ me }: { me: string }) {
       >
         <select
           className="select"
+          aria-label={t('Einladungen gelten')}
           value={draft.invitationDays}
           onChange={(e) => setDraft({ ...draft, invitationDays: Number(e.target.value) })}
         >
@@ -215,6 +216,7 @@ export function AdminSettings({ me }: { me: string }) {
         >
           <select
             className="select"
+            aria-label={t('Einladungen pro Nutzer')}
             value={draft.invitationsPerUser}
             onChange={(e) => setDraft({ ...draft, invitationsPerUser: Number(e.target.value) })}
           >
@@ -278,6 +280,7 @@ export function AdminSettings({ me }: { me: string }) {
       >
         <select
           className="select"
+          aria-label={t('Größte Datei')}
           value={draft.maxFileMb}
           onChange={(e) => setDraft({ ...draft, maxFileMb: Number(e.target.value) })}
         >

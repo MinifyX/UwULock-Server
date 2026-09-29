@@ -261,7 +261,11 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
           'Beim ersten Mal legt man sein Master-Passwort selbst fest. Einladungen gehen immer, und Adressen, die SCIM angelegt hat, auch.',
         )}
       >
-        <select value={draft.signups} onChange={(e) => set({ signups: e.target.value as Signups })}>
+        <select
+          aria-label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
+          value={draft.signups}
+          onChange={(e) => set({ signups: e.target.value as Signups })}
+        >
           <option value="off">{t('Niemand – nur bestehende Konten')}</option>
           <option value="invitation">{t('Nur mit Einladung oder über SCIM')}</option>
           <option value="group">{t('Wer in der Nutzergruppe ist')}</option>
@@ -379,6 +383,7 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
         )}
       >
         <select
+          aria-label={t('Wenn der Anbieter jemanden löscht')}
           value={current.scimOnDelete ?? 'disable'}
           onChange={(e) => void onDelete(e.target.value as 'disable' | 'delete')}
           disabled={busy}

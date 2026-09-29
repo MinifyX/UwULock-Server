@@ -5,6 +5,8 @@ import { Nyu } from './nyu/Nyu';
 
 type Props = {
   onSettings?: () => void;
+  /** What the settings button opens: the settings, or in the admin portal only the look. */
+  settingsLabel?: string;
   /** New security notices: a count on the settings button. */
   badge?: number;
   /** What the bar is for: nothing for the vault, "Admin" for the admin portal. */
@@ -22,7 +24,7 @@ const ICONS = {
  * portal), its actions, and the settings. The same bar the desktop app draws, without the
  * window buttons: here the browser has those.
  */
-export function TitleBar({ onSettings, badge = 0, area, children }: Props) {
+export function TitleBar({ onSettings, settingsLabel, badge = 0, area, children }: Props) {
   useLanguage();
   const branding = useBranding();
   const name = branding?.name ?? 'UwULock';
@@ -45,8 +47,9 @@ export function TitleBar({ onSettings, badge = 0, area, children }: Props) {
         <button
           className="titlebar-action"
           onClick={onSettings}
-          title={t('Einstellungen (Strg+,)')}
-          aria-label={t('Einstellungen')}
+          title={settingsLabel ? `${settingsLabel} (${t('Strg')}+,)` : t('Einstellungen (Strg+,)')}
+          aria-label={settingsLabel ?? t('Einstellungen')}
+          aria-keyshortcuts="Control+,"
           aria-describedby={badge > 0 ? 'settings-badge' : undefined}
         >
           <svg viewBox="0 0 24 24" aria-hidden>
@@ -65,6 +68,30 @@ export function TitleBar({ onSettings, badge = 0, area, children }: Props) {
         </span>
       )}
     </header>
+  );
+}
+
+/**
+ * The first thing Tab reaches: past the bar, straight to what the page is about — the element
+ * marked `data-main-content` (the vault's list, the admin page), or else `<main>`. A plain link
+ * to `#main` would change the route, which lives in the part after `#`.
+ */
+export function SkipLink() {
+  useLanguage();
+  return (
+    <a
+      className="skip-link"
+      href="#main"
+      onClick={(event) => {
+        event.preventDefault();
+        const target =
+          document.querySelector<HTMLElement>('[data-main-content]') ??
+          document.getElementById('main');
+        target?.focus();
+      }}
+    >
+      {t('Zum Inhalt springen')}
+    </a>
   );
 }
 

@@ -31,6 +31,7 @@ import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { ItemTile } from '../ItemTile';
 import { Modal } from '../Modal';
+import { radioArrows } from './controls';
 
 /**
  * What the web vault adds to an item: its icon, a reminder to renew its password, and its
@@ -357,11 +358,17 @@ function ReminderCard({
       )}
       {editing && (
         <div className="comfort-form">
-          <div className="segmented" role="radiogroup" aria-label={t('Wann')}>
+          <div
+            className="segmented"
+            role="radiogroup"
+            aria-label={t('Wann')}
+            onKeyDown={radioArrows}
+          >
             <button
               type="button"
               role="radio"
               aria-checked={mode === 'months'}
+              tabIndex={mode === 'months' ? 0 : -1}
               onClick={() => setMode('months')}
             >
               {t('Nach Monaten')}
@@ -370,6 +377,7 @@ function ReminderCard({
               type="button"
               role="radio"
               aria-checked={mode === 'day'}
+              tabIndex={mode === 'day' ? 0 : -1}
               onClick={() => setMode('day')}
             >
               {t('An einem Tag')}

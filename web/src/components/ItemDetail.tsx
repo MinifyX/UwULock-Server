@@ -486,6 +486,9 @@ export function ItemDetail({
                 className="primary"
                 disabled={busy || summary.broken || !!d?.locked}
                 onClick={onEdit}
+                title={t('Bearbeiten (E)')}
+                aria-keyshortcuts="E"
+                data-edit
               >
                 <Icon name="pencil" size={15} />
                 {t('Bearbeiten')}

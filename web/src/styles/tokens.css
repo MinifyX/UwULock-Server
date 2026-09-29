@@ -16,6 +16,9 @@
   --uwu-muted: #716672;
   --uwu-hairline: #f2e8ee;
   --uwu-border: #e9dde4;
+  /* The outline of what takes input — fields, selects, switches: 3:1 against the page
+     (WCAG 1.4.11), where the soft --uwu-border stays for cards and dividers. */
+  --uwu-control: #8a7d8b;
 
   --uwu-pink: #ff4d8d;
   --uwu-pink-solid: #e11d74;
@@ -46,6 +49,7 @@
   --uwu-muted: #b3a8b3;
   --uwu-hairline: #2c2430;
   --uwu-border: #3a3040;
+  --uwu-control: #7d7185;
 
   --uwu-pink: #ff7fac;
   --uwu-pink-solid: #ff7fac;
@@ -57,6 +61,65 @@
   --uwu-online: #5cc7ac;
   --uwu-offline: #6d6474;
   --uwu-alarm: #d8a25c;
+}
+
+/*
+ * High contrast (Settings → Darstellung → Kontrast, or the system's wish for more contrast):
+ * black on white and white on black, text and borders at 7:1 or more, no pale greys, an accent
+ * dark or light enough to be text. `html:root[…]` is more specific than the accent colours an
+ * admin chooses (`<style id="uwu-branding">`, see lib/branding.ts), so high contrast wins over
+ * them in both themes.
+ */
+html:root[data-contrast='high'] {
+  --uwu-canvas: #ffffff;
+  --uwu-surface: #ffffff;
+  --uwu-elevated: #eeeeee;
+  --uwu-ink: #000000;
+  --uwu-muted: #333333;
+  --uwu-hairline: #595959;
+  --uwu-border: #333333;
+  --uwu-control: #000000;
+
+  --uwu-pink: #8a0046;
+  --uwu-pink-solid: #8a0046;
+  --uwu-pink-solid-hover: #6e0038;
+  --uwu-on-pink: #ffffff;
+  --uwu-pink-ink: #7a003c;
+  --uwu-pink-tint: #ffe4ef;
+  --uwu-pink-tint-strong: #ffc2d9;
+  --uwu-account-pink: #8a0046;
+  --uwu-toast-accent: #8a0046;
+  --uwu-focus: 0 0 0 3px #000000;
+
+  --uwu-online: #00564a;
+  --uwu-offline: #595959;
+  --uwu-alarm: #5c3d00;
+}
+
+html:root[data-contrast='high'][data-theme='dark'] {
+  --uwu-canvas: #000000;
+  --uwu-surface: #000000;
+  --uwu-elevated: #1f1f1f;
+  --uwu-ink: #ffffff;
+  --uwu-muted: #e6e6e6;
+  --uwu-hairline: #8c8c8c;
+  --uwu-border: #d9d9d9;
+  --uwu-control: #ffffff;
+
+  --uwu-pink: #ffa6c9;
+  --uwu-pink-solid: #ffa6c9;
+  --uwu-pink-solid-hover: #ffc2d9;
+  --uwu-on-pink: #000000;
+  --uwu-pink-ink: #ffc2d9;
+  --uwu-pink-tint: #4a0f2c;
+  --uwu-pink-tint-strong: #5c1236;
+  --uwu-account-pink: #ffa6c9;
+  --uwu-toast-accent: #ffa6c9;
+  --uwu-focus: 0 0 0 3px #ffffff;
+
+  --uwu-online: #7fe0c6;
+  --uwu-offline: #a8a8a8;
+  --uwu-alarm: #ffd08a;
 }
 
 /* Animations off collapses every transition to nothing and holds Nyu still. */

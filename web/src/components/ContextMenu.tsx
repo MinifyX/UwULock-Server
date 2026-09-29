@@ -20,13 +20,22 @@ type Props = {
 };
 
 /**
- * A small menu at the pointer, for right-clicks. Arrow keys move, Enter picks,
- * Escape or a click anywhere else closes. It moves itself inside the window
- * when it would stick out.
+ * A small menu at the pointer, for right-clicks. Arrow keys, Home and End move,
+ * Enter picks, Escape, Tab or a click anywhere else closes — and focus goes back
+ * to where it was. It moves itself inside the window when it would stick out.
  */
 export function ContextMenu({ x, y, items, onClose, label }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
+
+  // Focus goes back to the button that opened the menu. A dialog the menu opens takes focus from
+  // there, and gives it back there when it closes.
+  useLayoutEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
 
   useLayoutEffect(() => {
     const menu = ref.current;
@@ -51,14 +60,24 @@ export function ContextMenu({ x, y, items, onClose, label }: Props) {
         onClose();
         return;
       }
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
       event.preventDefault();
       const buttons = [
         ...(ref.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? []),
       ];
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      buttons[(index + step + buttons.length) % buttons.length]?.focus();
+      const next =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? buttons.length - 1
+            : (index + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next]?.focus();
     };
     window.addEventListener('pointerdown', close, true);
     window.addEventListener('keydown', key, true);

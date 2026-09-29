@@ -61,10 +61,17 @@ export function LockScreen({ status, onUnlocked, onLoggedOut, onAddAccount }: Pr
         </p>
         <label className="field">
           <span>{t('Master-Passwort')}</span>
-          <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+          <PasswordInput
+            value={password}
+            onChange={setPassword}
+            autoFocus
+            disabled={busy}
+            invalid={Boolean(error)}
+            describedBy={error ? 'lock-error' : undefined}
+          />
         </label>
         {error && (
-          <p className="form-error" role="alert">
+          <p className="form-error" role="alert" id="lock-error">
             {error}
           </p>
         )}

@@ -19,6 +19,7 @@ import { N_, t, useLanguage } from '../lib/i18n';
 import { dueItems, useComfort } from '../lib/comfort';
 import { KIND_LABEL } from '../lib/items';
 import { useSettings } from '../lib/settings';
+import { singleKey, typing } from '../lib/shortcuts';
 import { toast } from '../lib/toast';
 import { AccountCard } from './AccountCard';
 import { ContextMenu, type MenuItem } from './ContextMenu';
@@ -26,6 +27,7 @@ import { Icon, type IconName } from './Icon';
 import { ItemDetail } from './ItemDetail';
 import { ItemEditor } from './ItemEditor';
 import { ItemTile } from './ItemTile';
+import { listbox } from './listbox';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
 import { DeviceRequests } from './web/DeviceRequests';
@@ -138,7 +140,8 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [lastChecked, setLastChecked] = useState<string | null>(null);
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const listRef = useRef<HTMLUListElement>(null);
+  const newButtonRef = useRef<HTMLButtonElement>(null);
+  const detailRef = useRef<HTMLElement>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -205,17 +208,6 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
     if (selected && visible.some((i) => i.id === selected)) return;
     setSelected(visible[0]?.id ?? null);
   }, [visible, selected, loaded]);
-
-  const move = (step: number) => {
-    if (!visible.length) return;
-    const index = visible.findIndex((i) => i.id === selected);
-    const next = visible[Math.max(0, Math.min(visible.length - 1, index + step))];
-    if (!next) return;
-    setSelected(next.id);
-    listRef.current
-      ?.querySelector<HTMLElement>(`[data-id="${CSS.escape(next.id)}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
-  };
 
   const current = items.find((i) => i.id === selected) ?? null;
 
@@ -296,6 +288,63 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
     setLastChecked(id);
   };
 
+  /** Enter on the list: the item, and focus on it (on a phone, its own page). */
+  const open = (id: string) => {
+    setSelected(id);
+    setView('detail');
+    window.requestAnimationFrame(() => detailRef.current?.focus());
+  };
+
+  const list = listbox({
+    prefix: 'item',
+    ids: visible.map((item) => item.id),
+    selected,
+    onSelect: setSelected,
+    onOpen: open,
+    onMark: toggle,
+  });
+  const move = list.move;
+
+  // The shortcuts of a single key (see lib/shortcuts.ts): search, new, edit, next and previous,
+  // and the sections by number.
+  useEffect(() => {
+    const sections: Filter[] = [
+      { kind: 'all' },
+      { kind: 'favorites' },
+      { kind: 'sends' },
+      { kind: 'requests' },
+      { kind: 'health' },
+    ];
+    const onKey = (event: KeyboardEvent) => {
+      if (!singleKey(event)) return;
+      const items = !['sends', 'requests', 'health'].includes(filter.kind);
+      const key = event.key.toLowerCase();
+      if (key === '/' && items) {
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      } else if (key === 'n' && items && newButtonRef.current) {
+        newButtonRef.current.click();
+      } else if (key === 'e' && items) {
+        const edit = detailRef.current?.querySelector<HTMLButtonElement>('[data-edit]');
+        if (!edit || edit.disabled) return;
+        edit.click();
+      } else if ((key === 'j' || key === 'k') && items) {
+        move(key === 'j' ? 1 : -1);
+      } else if (/^[1-5]$/.test(key) && !event.shiftKey) {
+        const target = sections[Number(key) - 1]!;
+        setFilter(target);
+        setQuery('');
+        setChecked(new Set());
+        setView('list');
+      } else {
+        return;
+      }
+      event.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const bulk = async (work: () => Promise<void>, done: string) => {
     try {
       await work();
@@ -343,6 +392,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
   return (
     <Panes.Provider value={{ showDetail: () => setView('detail'), back: () => setView('list') }}>
       <div className="vault" data-view={view}>
+        <h1 className="sr-only">{t('Tresor')}</h1>
         <nav className="sidebar" aria-label={t('Tresor')}>
           <ul className="nav-list">
             {nav({ kind: 'all' }, 'layers', t('Alle Einträge'), counts.all)}
@@ -412,9 +462,12 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                       key={f.id}
                       onContextMenu={(event) => {
                         event.preventDefault();
+                        // Shift+F10 or the menu key: no pointer, so beside the folder.
+                        const rect = (event.target as HTMLElement).getBoundingClientRect();
+                        const keyboard = event.clientX === 0 && event.clientY === 0;
                         setFolderMenu({
-                          x: event.clientX,
-                          y: event.clientY,
+                          x: keyboard ? rect.left + 24 : event.clientX,
+                          y: keyboard ? rect.bottom : event.clientY,
                           id: f.id,
                         });
                       }}
@@ -488,7 +541,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
           />
         ) : (
           <>
-            <section className="list-pane" aria-label={title}>
+            <section className="list-pane" aria-label={title} tabIndex={-1} data-main-content>
               <div className="list-head">
                 <label className="search-box">
                   <Icon name="search" size={15} />
@@ -609,10 +662,12 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                     <span className="list-count">{visible.length}</span>
                     <span className="spacer" />
                     <button
+                      ref={newButtonRef}
                       className="new-item"
                       aria-haspopup="menu"
                       aria-expanded={Boolean(newMenu)}
-                      title={t('Neuer Eintrag')}
+                      title={t('Neuer Eintrag (N)')}
+                      aria-keyshortcuts="N"
                       onClick={(event) => {
                         const rect = event.currentTarget.getBoundingClientRect();
                         setNewMenu({ x: rect.right - 180, y: rect.bottom + 4 });
@@ -627,29 +682,19 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
 
               {visible.length > 0 ? (
                 <ul
-                  ref={listRef}
                   className="item-list"
-                  role="listbox"
                   aria-label={title}
-                  tabIndex={0}
-                  aria-activedescendant={selected ? `item-${selected}` : undefined}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                      e.preventDefault();
-                      move(e.key === 'ArrowDown' ? 1 : -1);
-                    } else if (e.key === 'Home' || e.key === 'End') {
-                      e.preventDefault();
-                      move(e.key === 'Home' ? -visible.length : visible.length);
-                    }
-                  }}
+                  aria-describedby="item-list-keys"
+                  {...list.listProps}
                 >
                   {visible.map((item) => (
                     <li
                       key={item.id}
-                      id={`item-${item.id}`}
+                      id={list.optionId(item.id)}
                       data-id={item.id}
                       role="option"
                       aria-selected={item.id === selected}
+                      aria-checked={checked.size > 0 ? checked.has(item.id) : undefined}
                       className="item-row"
                       data-checked={checked.has(item.id) || undefined}
                       onClick={(event) => {
@@ -662,17 +707,19 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                         }
                       }}
                     >
-                      <input
-                        type="checkbox"
+                      {/* For the mouse; the keyboard marks with Space, and the option says
+                          "checked" itself. Nothing focusable may sit inside an option. */}
+                      <span
                         className="item-check"
-                        checked={checked.has(item.id)}
-                        aria-label={t('{name} auswählen', { name: item.name || t('(ohne Namen)') })}
+                        aria-hidden="true"
+                        title={t('{name} auswählen', { name: item.name || t('(ohne Namen)') })}
                         onClick={(event) => {
                           event.stopPropagation();
                           toggle(item.id, event.shiftKey);
                         }}
-                        onChange={() => undefined}
-                      />
+                      >
+                        {checked.has(item.id) && <Icon name="check" size={12} />}
+                      </span>
                       <ItemTile item={item} />
                       <span className="item-text">
                         <span className="item-name">{item.name || t('(ohne Namen)')}</span>
@@ -681,7 +728,12 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                       <span className="item-badges">
                         {item.broken && (
                           <span title={t('Nicht alles ließ sich entschlüsseln')}>
-                            <Icon name="warning" size={13} className="badge-warning" />
+                            <Icon
+                              name="warning"
+                              size={13}
+                              className="badge-warning"
+                              title={t('Nicht alles ließ sich entschlüsseln')}
+                            />
                           </span>
                         )}
                         {item.reprompt && (
@@ -709,7 +761,7 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                   ))}
                 </ul>
               ) : (
-                <div className="list-empty">
+                <div className="list-empty" role="status">
                   {loaded && (
                     <>
                       <NyuScene
@@ -731,9 +783,27 @@ export function VaultScreen({ status, searchRef, onAddAccount, openRequest, open
                   )}
                 </div>
               )}
+              <p id="item-list-keys" className="sr-only">
+                {t(
+                  'Pfeiltasten wählen einen Eintrag, Eingabe öffnet ihn, Leertaste markiert ihn für mehrere auf einmal.',
+                )}
+              </p>
             </section>
 
-            <section className="detail-pane">
+            <section
+              className="detail-pane"
+              ref={detailRef}
+              tabIndex={-1}
+              onKeyDown={(event) => {
+                // Escape in the item: back to the list, where the keyboard came from.
+                if (event.key !== 'Escape' || event.defaultPrevented) return;
+                if (typing(event.target) || document.querySelector('.modal, .context-menu')) return;
+                event.preventDefault();
+                setView('list');
+                document.querySelector<HTMLElement>('.list-pane .item-list')?.focus();
+              }}
+              aria-label={current ? current.name || t('(ohne Namen)') : t('Eintrag')}
+            >
               <BackToList />
               {current ? (
                 <ItemDetail

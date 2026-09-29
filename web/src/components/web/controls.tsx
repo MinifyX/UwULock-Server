@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useId, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { Modal } from '../Modal';
@@ -25,6 +25,29 @@ export function Row({
   );
 }
 
+/**
+ * The arrow keys in a group of radio buttons: they move to the next choice and pick it. Only the
+ * picked one is in the Tab order (`tabIndex` from `radioTab`), as screen readers expect.
+ */
+export function radioArrows(event: KeyboardEvent<HTMLElement>) {
+  const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+  if (!step || event.altKey || event.ctrlKey || event.metaKey) return;
+  const radios = [
+    ...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]:not(:disabled)'),
+  ];
+  const index = radios.indexOf(document.activeElement as HTMLButtonElement);
+  const next = radios[(index + step + radios.length) % radios.length];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+  next.click();
+}
+
+/** The Tab order in a radio group: the picked choice, or the first when none is. */
+export function radioTab(checked: boolean, first: boolean, anyChecked: boolean): 0 | -1 {
+  return checked || (first && !anyChecked) ? 0 : -1;
+}
+
 export function Segmented<T extends string | number>({
   label,
   value,
@@ -37,13 +60,18 @@ export function Segmented<T extends string | number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="segmented" role="radiogroup" aria-label={label}>
-      {options.map((option) => (
+    <div className="segmented" role="radiogroup" aria-label={label} onKeyDown={radioArrows}>
+      {options.map((option, index) => (
         <button
           key={String(option.value)}
           type="button"
           role="radio"
           aria-checked={option.value === value}
+          tabIndex={radioTab(
+            option.value === value,
+            index === 0,
+            options.some((o) => o.value === value),
+          )}
           onClick={() => onChange(option.value)}
         >
           {option.label}
@@ -115,6 +143,7 @@ export function PasswordPrompt({
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const errorId = useId();
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
     if (!password) return;
@@ -154,10 +183,17 @@ export function PasswordPrompt({
         {children}
         <label className="field">
           <span>{t('Master-Passwort')}</span>
-          <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+          <PasswordInput
+            value={password}
+            onChange={setPassword}
+            autoFocus
+            disabled={busy}
+            invalid={Boolean(error)}
+            describedBy={error ? errorId : undefined}
+          />
         </label>
         {error && (
-          <p className="form-error" role="alert">
+          <p className="form-error" role="alert" id={errorId}>
             {error}
           </p>
         )}

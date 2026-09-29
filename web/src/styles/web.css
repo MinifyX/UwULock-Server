@@ -729,20 +729,43 @@ a {
 
 /* ── Several items at once ─────────────────────────────── */
 
+/* A box to tick with the mouse: 24 px to hit, 16 px to see. The keyboard ticks with Space. */
 .item-check {
   flex: none;
-  width: 16px;
-  height: 16px;
-  margin: 0 -4px 0 0;
-  accent-color: var(--uwu-pink-solid);
+  width: 24px;
+  height: 24px;
+  margin: -4px -8px -4px -4px;
+  display: grid;
+  place-items: center;
   opacity: 0;
   transition: opacity 120ms ease;
   cursor: pointer;
 }
 
+.item-check::before {
+  content: '';
+  grid-area: 1 / 1;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--uwu-control);
+  border-radius: 4px;
+  background: var(--uwu-surface);
+}
+
+.item-check .icon {
+  grid-area: 1 / 1;
+  position: relative;
+  color: var(--uwu-on-pink);
+  stroke-width: 3;
+}
+
+.item-row[data-checked] .item-check::before {
+  border-color: var(--uwu-pink-solid);
+  background: var(--uwu-pink-solid);
+}
+
 .item-row:hover .item-check,
-.item-check:focus-visible,
-.item-list:has(.item-check:checked) .item-check {
+.item-list:has(.item-row[data-checked]) .item-check {
   opacity: 1;
 }
 

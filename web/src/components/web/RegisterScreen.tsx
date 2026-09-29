@@ -16,6 +16,7 @@ import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
+import { radioArrows } from './controls';
 
 type Props = {
   token: string;
@@ -152,6 +153,12 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                 autoComplete="new-password"
                 autoFocus
                 disabled={Boolean(busy)}
+                invalid={Boolean(error) || Boolean(password && weak)}
+                describedBy={
+                  [password && weak ? 'register-weak' : '', error ? 'register-error' : '']
+                    .filter(Boolean)
+                    .join(' ') || undefined
+                }
               />
               {password && (
                 <span className="strength" data-level={level.level}>
@@ -165,7 +172,11 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                   <small>{t('Stärke: {level}', { level: level.text })}</small>
                 </span>
               )}
-              {password && weak && <small className="field-hint">{weak}</small>}
+              {password && weak && (
+                <small className="field-hint" id="register-weak">
+                  {weak}
+                </small>
+              )}
             </label>
             <label className="field">
               <span>{t('Master-Passwort wiederholen')}</span>
@@ -174,9 +185,13 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                 onChange={setRepeat}
                 autoComplete="new-password"
                 disabled={Boolean(busy)}
+                invalid={mismatch}
+                describedBy={mismatch ? 'register-mismatch' : undefined}
               />
               {mismatch && (
-                <small className="field-hint">{t('Die beiden stimmen nicht überein.')}</small>
+                <small className="field-hint" id="register-mismatch">
+                  {t('Die beiden stimmen nicht überein.')}
+                </small>
               )}
             </label>
             <label className="field">
@@ -186,8 +201,10 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                 onChange={(e) => setHint(e.target.value)}
                 maxLength={50}
                 disabled={Boolean(busy)}
+                aria-invalid={hintGivesAway || undefined}
+                aria-describedby="register-hint"
               />
-              <small className="field-hint">
+              <small className="field-hint" id="register-hint">
                 {hintGivesAway
                   ? t('Der Hinweis darf nicht das Passwort verraten.')
                   : t(
@@ -201,6 +218,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                 className="segmented wide"
                 role="radiogroup"
                 aria-label={t('Schlüsselableitung')}
+                onKeyDown={radioArrows}
               >
                 {(['argon2id', 'pbkdf2'] as const).map((kind) => (
                   <button
@@ -208,6 +226,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
                     type="button"
                     role="radio"
                     aria-checked={kdf === kind}
+                    tabIndex={kdf === kind ? 0 : -1}
                     onClick={() => setKdf(kind)}
                   >
                     {kind === 'argon2id' ? 'Argon2id' : 'PBKDF2'}
@@ -223,7 +242,7 @@ export function RegisterScreen({ token, email, onDone }: Props) {
               </small>
             </details>
             {error && (
-              <p className="form-error" role="alert">
+              <p className="form-error" role="alert" id="register-error">
                 {error}
               </p>
             )}
