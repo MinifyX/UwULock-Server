@@ -56,6 +56,7 @@ for test in "$@"; do
       fi
       case $test in
         operations) node_ scripts/e2e/operations.mjs "$origin" "$email" "$password" "$work/offsite" target/e2e-shots ;;
+        sso) node_ scripts/e2e/sso.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         *) node_ "scripts/e2e/$test.mjs" "$origin" "$email" "$password" ;;
       esac
       ;;
