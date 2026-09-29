@@ -127,10 +127,11 @@ impl Cache {
     }
 }
 
-/// Which branding a request to `host` gets. Until Stufe 6 brings send domains, always the
-/// server's; then a send domain's id, when it has branding of its own.
-pub(crate) fn scope_for_host(_state: &AppState, _host: Option<&str>) -> String {
-    SERVER.to_string()
+/// Which branding a request to `host` gets: a send domain's id on a send domain, the server's
+/// everywhere else. A send domain without branding of its own gets the server's (see
+/// [`for_request`]).
+pub(crate) fn scope_for_host(state: &AppState, host: Option<&str>) -> String {
+    host.and_then(|host| state.send_domains.by_host(host)).map_or_else(|| SERVER.to_string(), |domain| domain.id)
 }
 
 /// The host a request was made to, for [`scope_for_host`]: `Host`, or `X-Forwarded-Host` behind
@@ -167,8 +168,50 @@ pub(crate) async fn get_scope(state: &AppState, scope: &str) -> Arc<Loaded> {
 
 /// The branding a request gets, by the host it went to.
 pub(crate) async fn for_request(state: &AppState, headers: &HeaderMap) -> Arc<Loaded> {
+    for_request_at(state, headers).await.0
+}
+
+/// The branding a request gets, and the address its pictures are under: the send domain's for a
+/// request to one, the public address otherwise.
+pub(crate) async fn for_request_at(state: &AppState, headers: &HeaderMap) -> (Arc<Loaded>, String) {
+    let host = request_host(state, headers);
+    let scope = scope_for_host(state, host.as_deref());
+    let base = base_for(state, headers);
+    if scope == SERVER {
+        return (get_scope(state, SERVER).await, base);
+    }
+    let own = get_scope(state, &scope).await;
+    if own.custom() { (own, base) } else { (get_scope(state, SERVER).await, base) }
+}
+
+/// The address a request's answer names things under: the send domain's (with the port it was
+/// reached on) for a request to one, the public address otherwise.
+pub(crate) fn base_for(state: &AppState, headers: &HeaderMap) -> String {
+    let host = request_host(state, headers);
+    if host.is_some_and(|host| state.send_domains.by_host(&host).is_some()) {
+        crate::send_domains::url_of(state, &raw_host(state, headers).unwrap_or_default())
+    } else {
+        state.config.public.clone()
+    }
+}
+
+/// The host a request went to as it was written, with its port: for addresses under it.
+fn raw_host(state: &AppState, headers: &HeaderMap) -> Option<String> {
+    let forwarded = state.config.trust_forwarded.then(|| headers.get("x-forwarded-host")).flatten();
+    let value = forwarded.or_else(|| headers.get(header::HOST))?.to_str().ok()?;
+    let host = value.split(',').next()?.trim().to_ascii_lowercase();
+    (!host.is_empty() && host.bytes().all(|b| b.is_ascii_alphanumeric() || b"-.:[]".contains(&b))).then_some(host)
+}
+
+/// The look of mails a request makes the server send — a Send's code — when it went to a send
+/// domain with branding of its own; `None` for the server's.
+pub(crate) async fn mail_brand_for(state: &AppState, headers: &HeaderMap) -> Option<uwulock_mail::Brand> {
     let scope = scope_for_host(state, request_host(state, headers).as_deref());
-    get_scope(state, &scope).await
+    if scope == SERVER {
+        return None;
+    }
+    let own = get_scope(state, &scope).await;
+    own.custom().then(|| own.mail_brand())
 }
 
 /// After a change or a restore: read again, and the mails follow.
@@ -223,8 +266,8 @@ fn escape(text: &str) -> String {
 // ── Public ────────────────────────────────────────────────
 
 async fn public(State(state): State<AppState>, headers: HeaderMap) -> Json<Value> {
-    let loaded = for_request(&state, &headers).await;
-    let mut body = loaded.json(&state.config.public);
+    let (loaded, base) = for_request_at(&state, &headers).await;
+    let mut body = loaded.json(&base);
     body["object"] = json!("branding");
     Json(body)
 }
@@ -268,15 +311,42 @@ async fn favicon(State(state): State<AppState>, headers: HeaderMap) -> Response 
 
 // ── Admin ─────────────────────────────────────────────────
 
+/// Whose branding an admin request changes: the server's, or one send domain's.
+#[derive(Clone)]
+struct Scope {
+    id: String,
+    /// The address its pictures are under.
+    base: String,
+    /// For the admin event log.
+    label: String,
+}
+
+fn server_scope(state: &AppState) -> Scope {
+    Scope { id: SERVER.to_string(), base: state.config.public.clone(), label: "the branding".into() }
+}
+
+fn domain_scope(state: &AppState, id: &str) -> ApiResult<Scope> {
+    let domain = state.send_domains.by_id(id).ok_or_else(|| ApiError::not_found("No such send domain."))?;
+    Ok(Scope {
+        id: domain.id,
+        base: crate::send_domains::url_of(state, &domain.host),
+        label: format!("the branding of the send domain {}", domain.host),
+    })
+}
+
 /// What the admin portal shows: the public object, and the contrast of the colour.
-async fn admin_get(State(state): State<AppState>, _admin: Admin) -> Json<Value> {
-    let loaded = get_scope(&state, SERVER).await;
-    let mut body = loaded.json(&state.config.public);
+async fn admin_view(state: &AppState, scope: &Scope) -> Json<Value> {
+    let loaded = get_scope(state, &scope.id).await;
+    let mut body = loaded.json(&scope.base);
     body["object"] = json!("branding");
     body["nameSet"] = json!(loaded.stored.name.is_some());
     body["colorSet"] = json!(loaded.stored.color.is_some());
     body["contrast"] = contrast_of(loaded.stored.color.as_deref().unwrap_or(DEFAULT_COLOR));
     Json(body)
+}
+
+async fn admin_get(State(state): State<AppState>, _admin: Admin) -> Json<Value> {
+    admin_view(&state, &server_scope(&state)).await
 }
 
 fn contrast_of(color: &str) -> Value {
@@ -340,26 +410,31 @@ fn clean_color(color: Option<String>) -> ApiResult<Option<String>> {
     Ok(Some(color))
 }
 
-async fn admin_set(
-    State(state): State<AppState>,
-    admin: Admin,
-    Json(change): Json<TextChange>,
-) -> ApiResult<Json<Value>> {
+async fn set_text(state: &AppState, admin: &Admin, scope: &Scope, change: TextChange) -> ApiResult<Json<Value>> {
     let name = clean_name(change.name)?;
     let color = clean_color(change.color)?;
-    state.store.set_branding_text(SERVER, name.clone(), color.clone()).await?;
-    reload(&state).await;
+    state.store.set_branding_text(&scope.id, name.clone(), color.clone()).await?;
+    reload(state).await;
     crate::admin::record(
-        &state,
-        &admin,
+        state,
+        admin,
         format!(
-            "set the branding: name {}, colour {}",
+            "set {}: name {}, colour {}",
+            scope.label,
             name.as_deref().unwrap_or("UwULock's"),
             color.as_deref().unwrap_or("UwULock's")
         ),
     )
     .await;
-    Ok(admin_get(State(state), admin).await)
+    Ok(admin_view(state, scope).await)
+}
+
+async fn admin_set(
+    State(state): State<AppState>,
+    admin: Admin,
+    Json(change): Json<TextChange>,
+) -> ApiResult<Json<Value>> {
+    set_text(&state, &admin, &server_scope(&state), change).await
 }
 
 #[derive(Deserialize)]
@@ -395,18 +470,28 @@ fn reencode(body: &[u8], limit: usize, pixels: u32) -> ApiResult<Vec<u8>> {
     })
 }
 
-async fn set_image(state: &AppState, admin: &Admin, image: Image, png: Option<Vec<u8>>) -> ApiResult<()> {
+async fn set_image(
+    state: &AppState,
+    admin: &Admin,
+    scope: &Scope,
+    image: Image,
+    png: Option<Vec<u8>>,
+) -> ApiResult<Json<Value>> {
     let what = match image {
         Image::LogoLight => "the light logo",
         Image::LogoDark => "the dark logo",
         Image::Favicon => "the favicon",
     };
     let removed = png.is_none();
-    state.store.set_branding_image(SERVER, image, png).await?;
+    state.store.set_branding_image(&scope.id, image, png).await?;
     reload(state).await;
-    crate::admin::record(state, admin, format!("{} {what} of the branding", if removed { "removed" } else { "set" }))
-        .await;
-    Ok(())
+    crate::admin::record(
+        state,
+        admin,
+        format!("{} {what} of {}", if removed { "removed" } else { "set" }, scope.label),
+    )
+    .await;
+    Ok(admin_view(state, scope).await)
 }
 
 async fn upload_logo(
@@ -417,8 +502,7 @@ async fn upload_logo(
 ) -> ApiResult<Json<Value>> {
     let image = logo_image(&variant)?;
     let png = reencode(&body, LOGO_BYTES, LOGO_PIXELS)?;
-    set_image(&state, &admin, image, Some(png)).await?;
-    Ok(admin_get(State(state), admin).await)
+    set_image(&state, &admin, &server_scope(&state), image, Some(png)).await
 }
 
 async fn remove_logo(
@@ -426,19 +510,94 @@ async fn remove_logo(
     admin: Admin,
     Path(variant): Path<String>,
 ) -> ApiResult<Json<Value>> {
-    set_image(&state, &admin, logo_image(&variant)?, None).await?;
-    Ok(admin_get(State(state), admin).await)
+    set_image(&state, &admin, &server_scope(&state), logo_image(&variant)?, None).await
 }
 
 async fn upload_favicon(State(state): State<AppState>, admin: Admin, body: Bytes) -> ApiResult<Json<Value>> {
     let png = reencode(&body, FAVICON_BYTES, FAVICON_PIXELS)?;
-    set_image(&state, &admin, Image::Favicon, Some(png)).await?;
-    Ok(admin_get(State(state), admin).await)
+    set_image(&state, &admin, &server_scope(&state), Image::Favicon, Some(png)).await
 }
 
 async fn remove_favicon(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
-    set_image(&state, &admin, Image::Favicon, None).await?;
-    Ok(admin_get(State(state), admin).await)
+    set_image(&state, &admin, &server_scope(&state), Image::Favicon, None).await
+}
+
+// ── A send domain's own (docs/uwu-api.md §14.4) ────────────
+
+pub(crate) fn domain_routes() -> Router<AppState> {
+    Router::new()
+        .route("/uwu/v1/admin/send-domains/{id}/branding", get(domain_get).put(domain_set).delete(domain_reset))
+        .route("/uwu/v1/admin/send-domains/{id}/branding/preview", get(preview))
+        .route(
+            "/uwu/v1/admin/send-domains/{id}/branding/logo/{variant}",
+            put(domain_upload_logo).delete(domain_remove_logo),
+        )
+        .route(
+            "/uwu/v1/admin/send-domains/{id}/branding/favicon",
+            put(domain_upload_favicon).delete(domain_remove_favicon),
+        )
+}
+
+async fn domain_get(State(state): State<AppState>, _admin: Admin, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    Ok(admin_view(&state, &domain_scope(&state, &id)?).await)
+}
+
+async fn domain_set(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path(id): Path<String>,
+    Json(change): Json<TextChange>,
+) -> ApiResult<Json<Value>> {
+    set_text(&state, &admin, &domain_scope(&state, &id)?, change).await
+}
+
+/// Back to the server's branding: everything of the domain's own goes.
+async fn domain_reset(State(state): State<AppState>, admin: Admin, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    let scope = domain_scope(&state, &id)?;
+    state.store.delete_branding(&scope.id).await?;
+    reload(&state).await;
+    crate::admin::record(&state, &admin, format!("removed {}", scope.label)).await;
+    Ok(admin_view(&state, &scope).await)
+}
+
+async fn domain_upload_logo(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path((id, variant)): Path<(String, String)>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let scope = domain_scope(&state, &id)?;
+    let image = logo_image(&variant)?;
+    let png = reencode(&body, LOGO_BYTES, LOGO_PIXELS)?;
+    set_image(&state, &admin, &scope, image, Some(png)).await
+}
+
+async fn domain_remove_logo(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path((id, variant)): Path<(String, String)>,
+) -> ApiResult<Json<Value>> {
+    let scope = domain_scope(&state, &id)?;
+    set_image(&state, &admin, &scope, logo_image(&variant)?, None).await
+}
+
+async fn domain_upload_favicon(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> ApiResult<Json<Value>> {
+    let scope = domain_scope(&state, &id)?;
+    let png = reencode(&body, FAVICON_BYTES, FAVICON_PIXELS)?;
+    set_image(&state, &admin, &scope, Image::Favicon, Some(png)).await
+}
+
+async fn domain_remove_favicon(
+    State(state): State<AppState>,
+    admin: Admin,
+    Path(id): Path<String>,
+) -> ApiResult<Json<Value>> {
+    set_image(&state, &admin, &domain_scope(&state, &id)?, Image::Favicon, None).await
 }
 
 #[cfg(test)]

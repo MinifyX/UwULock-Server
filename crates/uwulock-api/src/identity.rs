@@ -55,10 +55,15 @@ impl TokenForm {
 async fn token(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
+    send_host: Option<axum::Extension<crate::send_hosts::SendHost>>,
     headers: HeaderMap,
     Form(raw): Form<HashMap<String, String>>,
 ) -> ApiResult<Response> {
     let form = TokenForm::new(raw);
+    // A send domain opens Sends, nothing else: no logins there.
+    if send_host.is_some() && form.get("granttype") != Some("send_access") {
+        return Err(ApiError::bad("Only Sends can be opened on this address."));
+    }
     let (grant, result) = match form.get("granttype") {
         Some("password") => ("password", password_login(&state, ip, &headers, &form).await),
         Some("refresh_token") => ("refresh_token", refresh(&state, ip, &form).await),
@@ -71,7 +76,7 @@ async fn token(
                 email: form.get("email"),
                 otp: form.get("otp"),
             };
-            ("send_access", crate::sends::grant(&state, ip, form.get("sendid"), proof).await)
+            ("send_access", crate::sends::grant(&state, ip, &headers, form.get("sendid"), proof).await)
         }
         _ => return Err(ApiError::bad("Invalid type")),
     };

@@ -27,6 +27,7 @@ pub mod organizations;
 mod passkeys;
 pub mod reminders;
 mod reports;
+pub mod send_domains;
 pub mod sends;
 mod sqlite;
 pub mod sso;
