@@ -24,6 +24,7 @@ pub mod organizations;
 mod passkeys;
 pub mod sends;
 mod sqlite;
+pub mod sso;
 mod vault;
 
 pub use accounts::{
@@ -41,6 +42,7 @@ pub use migrations::SCHEMA_VERSION;
 pub use notices::{Channel, NOTICE_DAYS, Notice};
 pub use organizations::{Access, OrgCipher, OrgVault};
 pub use passkeys::{MAX_PASSKEYS, Passkey};
+pub use sso::{ScimGroup, ScimUser, SsoCode, SsoIdentity, SsoState};
 pub use vault::{Bulk, Cipher, Folder, Rotation, VaultContents};
 
 use parking_lot::RwLock;

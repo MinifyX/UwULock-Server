@@ -233,6 +233,7 @@ impl Store {
                 [clock::in_seconds(-crate::NOTICE_DAYS * 86_400)],
             )?;
             tx.execute("DELETE FROM codes WHERE expires < ?1", [&now])?;
+            crate::sso::sweep(tx, &now)?;
             tx.execute(
                 "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL WHERE refresh_expires < ?1",
                 [&now],

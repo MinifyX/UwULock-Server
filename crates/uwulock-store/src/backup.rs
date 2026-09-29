@@ -170,6 +170,7 @@ mod tests {
                 refresh_hash: vec![1; 32],
                 refresh_expires: "2999-01-01T00:00:00.000000Z".into(),
                 remember: None,
+                sso: false,
             })
             .await
             .unwrap();
