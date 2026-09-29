@@ -45,6 +45,10 @@ export function connectFailureText(reason: Extract<ConnectResult, { ok: false }>
       );
     case 'upstream':
       return t('Nicht verbunden: UwUMail hat nicht wie erwartet geantwortet.');
+    case 'busy':
+      return t(
+        'Nicht verbunden: Gerade gab es zu viele Versuche. Warte eine Viertelstunde und versuch es dann noch einmal.',
+      );
     default:
       return t('Nicht verbunden: Etwas ist schiefgegangen.');
   }

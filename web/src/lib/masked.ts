@@ -145,7 +145,7 @@ export function forDomainOf(uri: string | null | undefined): string {
 
 export type ConnectResult =
   | { ok: true }
-  | { ok: false; reason: 'denied' | 'expired' | 'invalid_state' | 'upstream' | 'unknown' };
+  | { ok: false; reason: 'denied' | 'expired' | 'invalid_state' | 'upstream' | 'busy' | 'unknown' };
 
 /** The way back from UwUMail: `#/settings/masked?result=connected` or `?result=error&reason=…`. */
 export function connectResultOf(query: URLSearchParams): ConnectResult | null {
@@ -159,7 +159,8 @@ export function connectResultOf(query: URLSearchParams): ConnectResult | null {
       reason === 'denied' ||
       reason === 'expired' ||
       reason === 'invalid_state' ||
-      reason === 'upstream'
+      reason === 'upstream' ||
+      reason === 'busy'
         ? reason
         : 'unknown',
   };

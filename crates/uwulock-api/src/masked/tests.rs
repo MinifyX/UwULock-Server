@@ -220,6 +220,63 @@ async fn a_forgotten_client_registers_again_and_uwumail_asking_to_wait_is_said()
     assert_eq!(now["status"], "ok", "a busy UwUMail is no reason to connect again");
 }
 
+/// Review finding R3-5: UwUMail refuses every token request from this server's address after 30
+/// refused ones in 15 minutes, so no account may spend them: codes that are no codes are not sent
+/// on, few failures per account, a budget per UwUMail server, and nothing while it asks to wait.
+#[tokio::test]
+async fn refused_codes_cannot_spend_uwumail_s_limit_for_everybody() {
+    let fake = Fake::start().await;
+    let (server, account) = server_with(&fake).await;
+    let limits = crate::Limits {
+        masked_codes_account: crate::limits::Limiter::new(3, std::time::Duration::from_secs(3600)),
+        masked_codes_server: crate::limits::Limiter::new(4, std::time::Duration::from_secs(3600)),
+        ..crate::Limits::generous()
+    };
+    let server = server.with_limits(limits);
+    let other = server.account("other@example.com").await;
+    async fn bogus(server: &TestServer, account: &Account, fake: &Fake, code: &str) -> String {
+        let (authorize, cookie) = start_connect(server, account, fake).await;
+        let iss = crate::oidc::form_encode(&fake.url);
+        come_back(server, &format!("code={code}&state={}&iss={iss}", state_of(&authorize)), &cookie).await
+    }
+    let asked = || fake.inner.lock().token_requests;
+
+    assert!(bogus(&server, &account, &fake, "%3Cscript%3E").await.ends_with("reason=invalid_state"));
+    let long = "x".repeat(600);
+    assert!(bogus(&server, &account, &fake, &long).await.ends_with("reason=invalid_state"));
+    assert_eq!(asked(), 0, "not sent on");
+    for _ in 0..3 {
+        assert!(bogus(&server, &account, &fake, "not-a-code-at-all").await.ends_with("reason=upstream"));
+    }
+    assert!(bogus(&server, &account, &fake, "not-a-code-at-all").await.ends_with("reason=busy"), "three per account");
+    assert_eq!(asked(), 3);
+    assert!(bogus(&server, &other, &fake, "not-a-code-at-all").await.ends_with("reason=upstream"));
+    assert!(
+        bogus(&server, &other, &fake, "not-a-code-at-all").await.ends_with("reason=busy"),
+        "the server's budget is spent"
+    );
+    assert_eq!(asked(), 4);
+
+    // UwUMail says 429: its token endpoint is left alone for a while, refreshes included.
+    let fake = Fake::start().await;
+    let (server, account) = server_with(&fake).await;
+    connect(&server, &account, &fake).await;
+    fake.expire_access();
+    fake.inner.lock().token_busy = true;
+    let busy = server.get_as(&account.token, "/uwu/v1/masked/addresses").await;
+    assert_eq!(busy.status(), StatusCode::TOO_MANY_REQUESTS);
+    let asked = fake.inner.lock().token_requests;
+    fake.inner.lock().token_busy = false;
+    let still = server.get_as(&account.token, "/uwu/v1/masked/addresses").await;
+    assert_eq!(still.status(), StatusCode::TOO_MANY_REQUESTS);
+    let again =
+        server.call("POST", "/uwu/v1/masked/connect", Some(&account.token), json!({ "server": fake.url })).await;
+    assert_eq!(again.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(fake.inner.lock().token_requests, asked, "nothing asked while backing off");
+    let now = json(server.get_as(&account.token, "/uwu/v1/masked/connection").await).await;
+    assert_eq!(now["status"], "ok", "and nothing is ended for it");
+}
+
 #[tokio::test]
 async fn the_answer_has_to_come_back_to_the_browser_that_asked() {
     let fake = Fake::start().await;

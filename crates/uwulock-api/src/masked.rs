@@ -80,9 +80,28 @@ struct Pending {
 pub struct Masked {
     pending: Mutex<HashMap<Vec<u8>, Pending>>,
     refreshing: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// UwUMail servers that answered a token request with 429, and until when nothing more is
+    /// asked of their token endpoint: asking again would only keep the limit spent.
+    backing_off: Mutex<HashMap<String, Instant>>,
 }
 
+/// How long the token endpoint of a UwUMail server that said 429 is left alone: its window.
+const BACK_OFF: Duration = Duration::from_secs(15 * 60);
+
 impl Masked {
+    /// Whether `server` said "too many" a short while ago.
+    fn backing_off(&self, server: &str) -> bool {
+        let mut servers = self.backing_off.lock();
+        let now = Instant::now();
+        servers.retain(|_, until| *until > now);
+        servers.contains_key(server)
+    }
+
+    fn back_off(&self, server: &str) {
+        tracing::warn!(%server, "UwUMail asks to wait; its token endpoint is left alone for 15 minutes");
+        self.backing_off.lock().insert(server.to_string(), Instant::now() + BACK_OFF);
+    }
+
     fn lock_for(&self, user_id: &str) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self.refreshing.lock();
         // Locks nobody holds or waits for are dropped now and then, so the map stays small.
@@ -207,6 +226,9 @@ async fn access(state: &AppState, user_id: &str, stale: Option<&str>) -> Result<
             return Ok((connection, token));
         }
     }
+    if state.masked.backing_off(&connection.server) {
+        return Err(Refusal::RateLimited);
+    }
     let refresh = open(state, "refresh", &connection, &connection.refresh_token)?;
     match uwumail::refresh(&connection.token_endpoint, &connection.client_id, &refresh).await {
         Ok(tokens) => {
@@ -239,7 +261,10 @@ async fn access(state: &AppState, user_id: &str, stale: Option<&str>) -> Result<
             }
             Err(Refusal::Revoked)
         }
-        Err(Upstream::RateLimited) => Err(Refusal::RateLimited),
+        Err(Upstream::RateLimited) => {
+            state.masked.back_off(&connection.server);
+            Err(Refusal::RateLimited)
+        }
         Err(error) => {
             state.store.masked_status(user_id, "unreachable", None).await?;
             Err(Refusal::Upstream(error.text()))
@@ -380,6 +405,9 @@ async fn connect(
     if !state.limits.masked_connect.take(session.user.id.clone()) {
         return Err(ApiError::too_many("Too many tries to connect. Wait a few minutes and try again."));
     }
+    if state.masked.backing_off(&server) {
+        return Err(Refusal::RateLimited.into());
+    }
     let discovery = uwumail::discover(&server).await.map_err(|error| match error {
         Upstream::RateLimited => ApiError::from(Refusal::RateLimited),
         error => ApiError::upstream(format!("UwUMail: {}", error.text())),
@@ -477,10 +505,31 @@ async fn callback(
     if query.iss.as_deref() != Some(pending.issuer.as_str()) {
         return error("invalid_state");
     }
-    let Some(code) = query.code.as_deref().filter(|code| !code.is_empty()) else {
+    // An OAuth code is a short token of URL-safe characters (RFC 6749 §A.11 allows more, UwUMail
+    // sends base64url): anything else is not sent on.
+    let Some(code) = query.code.as_deref().filter(|code| {
+        (1..=512).contains(&code.len()) && code.bytes().all(|b| b.is_ascii_alphanumeric() || b"-._~".contains(&b))
+    }) else {
         return error("invalid_state");
     };
-    match finish(&state, &pending, code).await {
+    // Every code UwUMail refuses counts against this server's address there, for every account:
+    // so few per account, a budget per UwUMail server, and none while it asks to wait.
+    if state.masked.backing_off(&pending.server) {
+        return error("busy");
+    }
+    if !state.limits.masked_codes_account.take(pending.user_id.clone()) {
+        return error("busy");
+    }
+    if !state.limits.masked_codes_server.take(pending.server.clone()) {
+        state.limits.masked_codes_account.give_back(&pending.user_id);
+        return error("busy");
+    }
+    let finished = finish(&state, &pending, code).await;
+    if finished.is_ok() {
+        state.limits.masked_codes_account.give_back(&pending.user_id);
+        state.limits.masked_codes_server.give_back(&pending.server);
+    }
+    match finished {
         Ok(()) => {
             if let Ok(Some(user)) = state.store.user(&pending.user_id).await {
                 notices::record(
@@ -514,6 +563,9 @@ async fn finish(state: &AppState, pending: &Pending, code: &str) -> Result<(), S
     {
         Ok(tokens) => tokens,
         Err(error) => {
+            if error == Upstream::RateLimited {
+                state.masked.back_off(&pending.server);
+            }
             if error.is("invalid_client") {
                 // UwUMail forgot this server: it registers again on the next try.
                 let _ = state.store.forget_masked_client(&pending.server, &pending.client_id).await;

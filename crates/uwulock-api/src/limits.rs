@@ -156,6 +156,12 @@ pub struct Limits {
     pub invites: Limiter<String>,
     /// Connecting to UwUMail for masked addresses, per account: ten, one back every six minutes.
     pub masked_connect: Limiter<String>,
+    /// Codes from UwUMail that did not turn into tokens, per account: three, one back every 20
+    /// minutes; and per UwUMail server: ten, one back every 90 seconds. UwUMail refuses every
+    /// token request from this server's address after 30 failures in 15 minutes — other
+    /// accounts' refreshes too — so one account must not be able to spend them.
+    pub masked_codes_account: Limiter<String>,
+    pub masked_codes_server: Limiter<String>,
     /// New masked addresses per account or API key: thirty a minute…
     pub masked_minute: Limiter<String>,
     /// …and five hundred a day.
@@ -178,6 +184,8 @@ impl Default for Limits {
             travel: Limiter::new(5, Duration::from_secs(3 * 60)),
             invites: Limiter::new(30, Duration::from_secs(2 * 60)),
             masked_connect: Limiter::new(10, Duration::from_secs(6 * 60)),
+            masked_codes_account: Limiter::new(3, Duration::from_secs(20 * 60)),
+            masked_codes_server: Limiter::new(10, Duration::from_secs(90)),
             masked_minute: Limiter::new(30, Duration::from_secs(2)),
             masked_day: Limiter::new(500, Duration::from_millis(172_800)),
         }
@@ -215,6 +223,8 @@ impl Limits {
             travel: generous(),
             invites: generous(),
             masked_connect: generous(),
+            masked_codes_account: generous(),
+            masked_codes_server: generous(),
             masked_minute: generous(),
             masked_day: generous(),
         }

@@ -1467,7 +1467,15 @@ them); nothing else may.
    (account id from `primaryAccounts["https://www.fastmail.com/dev/maskedemail"]`, `username`,
    domains and default domain), stores the connection, deletes the cookie, writes notice
    `maskedConnected`, and answers `303` to `<public>/#/settings/masked?result=connected` or
-   `?result=error&reason=denied|expired|invalid_state|upstream`.
+   `?result=error&reason=denied|expired|invalid_state|upstream|busy`.
+   UwUMail refuses every token request from one address after 30 refused ones in 15 minutes,
+   refreshes of other accounts included, so the Lock server guards that budget: a `code` that
+   is not 1–512 URL-safe characters is not sent on (`invalid_state`); codes UwUMail refuses count
+   per account (3, one back every 20 minutes) and per UwUMail server (10, one back every 90
+   seconds; a success gives its try back) — past either, `busy` without asking UwUMail. When
+   UwUMail answers a token request with 429, its token endpoint is left alone for 15 minutes:
+   connects and callbacks answer `busy`/429, refreshes 429 `rate_limited`; no connection is
+   marked broken for it.
 
 Tokens at rest: access and refresh token encrypted with AES-256-GCM under a server secret kept in
 a file in the data directory (made on first use, mode 0600, part of every backup of §21.2), with

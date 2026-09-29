@@ -101,5 +101,6 @@
   "Zuletzt benutzt {when}.": "Last used {when}.",
   "Zustand": "State",
   "Zu viele Anfragen auf einmal. Versuch es in einer Minute noch einmal.": "Too many requests at once. Try again in a minute.",
-  "Das ist auf diesem Server ausgeschaltet.": "That is switched off on this server."
+  "Das ist auf diesem Server ausgeschaltet.": "That is switched off on this server.",
+  "Nicht verbunden: Gerade gab es zu viele Versuche. Warte eine Viertelstunde und versuch es dann noch einmal.": "Not connected: there were too many tries just now. Wait a quarter of an hour and try again."
 }

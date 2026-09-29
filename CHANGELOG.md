@@ -231,6 +231,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   forgets old entries once a day, keeps nothing while the disk is nearly full, and the admin
   portal shows the ceiling. Anybody could have filled the disk by asking for icons of made-up
   hosts.
+- Masked addresses: one account can no longer spend UwUMail's limit of refused token requests
+  for everybody. Codes that are no codes are not sent on, refused ones are limited per account
+  and per UwUMail server, and when UwUMail asks to wait (429) its token endpoint is left alone
+  for 15 minutes.
 
 ## 0.4.0-beta.2
 
