@@ -213,10 +213,10 @@ try {
   }
 
   step('the admin portal by keyboard, and in high contrast');
-  // "7" is the seventh page of the bar: Aussehen, the branding.
-  await page.keyboard.press('7');
+  // "8" is the eighth page of the bar: Aussehen, the branding.
+  await page.keyboard.press('8');
   await page.getByRole('heading', { name: 'Aussehen', exact: true }).waitFor();
-  if (!page.url().endsWith('#/branding')) throw new Error(`6 led to ${page.url()}`);
+  if (!page.url().endsWith('#/branding')) throw new Error(`8 led to ${page.url()}`);
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radio', { name: 'Hoch' }).click();
   await page.locator('html[data-contrast="high"]').waitFor({ state: 'attached' });
@@ -226,8 +226,10 @@ try {
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radiogroup', { name: 'Kontrast' }).getByRole('radio', { name: 'System' }).click();
   await page.keyboard.press('Escape');
-  // Back to the backups: the eleventh page, two after the ninth.
+  // Back to the backups: the twelfth page, three after the ninth.
   await page.keyboard.press('9');
+  await page.getByRole('heading', { name: 'Send-Domains', exact: true }).waitFor();
+  await page.keyboard.press('j');
   await page.getByRole('heading', { name: 'Ereignisse', exact: true }).waitFor();
   await page.keyboard.press('j');
   await page.getByRole('heading', { name: 'Log', exact: true }).waitFor();
