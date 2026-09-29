@@ -270,7 +270,8 @@ pub(crate) async fn grant(state: &AppState, ip: std::net::IpAddr, form: &TokenFo
         return Err(ApiError::bad("This account has been disabled."));
     }
     let known = state.store.device(&user.id, device_id).await?.is_some();
-    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false };
+    crate::sso::password_allowed(state, &user)?;
+    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false, sso: false };
     let mut body = finish_login(state, &user, ip, form, login).await?;
     if let (Some(user_key), Some(private_key)) = (&passkey.encrypted_user_key, &passkey.encrypted_private_key) {
         body["UserDecryptionOptions"]["WebAuthnPrfOption"] =

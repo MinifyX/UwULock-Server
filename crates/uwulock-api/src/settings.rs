@@ -49,6 +49,11 @@ pub struct Settings {
     /// How much an account may keep in files (attachments, Send files, file requests), in MiB;
     /// none for no limit.
     pub storage_per_user_mb: Option<u64>,
+    /// Logging in through an OpenID Connect provider (docs/uwu-api.md §19.1). Changed through its
+    /// own endpoints, `/uwu/v1/admin/sso`, never with the rest.
+    pub sso: crate::sso::SsoSettings,
+    /// SCIM from the provider: what a deleted person means, and the token's hash.
+    pub scim: crate::scim::ScimSettings,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,6 +102,8 @@ impl Default for Settings {
             loki: crate::loki::LokiSettings::default(),
             file_requests: FileRequestSettings::default(),
             storage_per_user_mb: None,
+            sso: crate::sso::SsoSettings::default(),
+            scim: crate::scim::ScimSettings::default(),
         }
     }
 }
@@ -137,6 +144,8 @@ impl Settings {
         hide("push", "installationKey", "installationKeySet");
         hide("metrics", "tokenHash", "tokenSet");
         hide("loki", "password", "passwordSet");
+        hide("sso", "clientSecret", "clientSecretSet");
+        hide("scim", "tokenHash", "tokenSet");
         value["mailEnabled"] = self.smtp.as_ref().is_some_and(|smtp| smtp.is_set()).into();
         value
     }
@@ -214,6 +223,7 @@ impl Settings {
         if self.storage_per_user_mb == Some(0) {
             return Err("The storage per account is at least 1 MB, or no limit.".into());
         }
+        self.sso.check()?;
         Ok(())
     }
 }

@@ -50,6 +50,9 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
     if settings.file_requests.enabled {
         features.push("file-requests");
     }
+    if settings.sso.active() {
+        features.push("sso");
+    }
     let rules = &settings.policies.master_password;
     Json(json!({
         "object": "info",
@@ -60,6 +63,12 @@ async fn info(State(state): State<AppState>) -> Json<Value> {
         "webVault": crate::web::is_built(),
         "mail": state.mailer.enabled(),
         "features": features,
+        "sso": {
+            "enabled": settings.sso.active(),
+            "only": settings.sso.active() && settings.sso.only,
+            "identifier": settings.sso.identifier,
+            "label": settings.sso.label,
+        },
         "policies": {
             "masterPassword": {
                 "minLength": rules.min_length,
@@ -120,6 +129,8 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "securityNoticesUnseen": unseen,
         "storage": { "usedBytes": used, "limitBytes": settings.storage_limit() },
         "admin": session.user.admin,
+        "hasMasterPassword": !session.user.user_key.is_empty(),
+        "sso": session.sso,
         "language": session.user.language,
         "mail": state.mailer.enabled(),
         "passwordHints": settings.password_hints,

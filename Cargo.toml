@@ -71,7 +71,7 @@ tower = { version = "0.5", features = ["util"] }
 tower-http = { version = "0.7", features = ["compression-br", "compression-gzip", "set-header", "limit", "timeout", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 webpki-roots = "1"
 
 # Tests only.

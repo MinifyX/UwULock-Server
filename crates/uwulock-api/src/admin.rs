@@ -418,6 +418,9 @@ async fn put_settings(
     Json(mut new): Json<Settings>,
 ) -> ApiResult<Json<Value>> {
     let current = state.settings();
+    // SSO and the SCIM token have endpoints of their own, for their secrets.
+    new.sso = current.sso.clone();
+    new.scim.token_hash = current.scim.token_hash.clone();
     new.metrics.take_token(&current.metrics).map_err(ApiError::bad)?;
     keep_loki_password(&mut new.loki, &current.loki);
     new.admin_networks =
@@ -771,6 +774,8 @@ pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
         tracing::warn!(%error, "the mail server of the restored settings");
     }
     state.relay.reset();
+    state.secret.forget();
+    state.oidc.forget();
     state.apply_settings(settings);
     state.count_legacy_hashes().await;
     Ok(())

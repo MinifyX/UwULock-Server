@@ -64,6 +64,7 @@ async fn token(
         Some("refresh_token") => ("refresh_token", refresh(&state, ip, &form).await),
         Some("client_credentials") => ("client_credentials", api_key_login(&state, ip, &form).await),
         Some("webauthn") => ("webauthn", crate::passkeys::grant(&state, ip, &form).await),
+        Some("authorization_code") => ("authorization_code", crate::sso::grant(&state, ip, &headers, &form).await),
         Some("send_access") => {
             ("send_access", crate::sends::grant(&state, ip, form.get("sendid"), form.get("passwordhashb64")).await)
         }
@@ -113,7 +114,8 @@ async fn password_login(
             .is_some_and(|request| request.user_id == found.id),
         (Some(_), None) => false,
         (None, _) => {
-            let known = user.as_ref().map(|user| user.password_hash.as_str());
+            // An account made through SSO has no master password until its owner sets one.
+            let known = user.as_ref().map(|user| user.password_hash.as_str()).filter(|hash| !hash.is_empty());
             let legacy_rounds = state.legacy_rounds.load(std::sync::atomic::Ordering::Relaxed);
             auth::verify_login(state.config.hash_cost, known, password, legacy_rounds).await
         }
@@ -136,6 +138,7 @@ async fn password_login(
         log(state, "login-failed", Some(&user), username, ip, device_type, "account disabled").await;
         return Err(ApiError::bad("This account has been disabled."));
     }
+    crate::sso::password_allowed(state, &user)?;
     // A hash that came over from Vaultwarden becomes one of this server's now that the password
     // is here to make it from.
     if by_request.is_none() && auth::is_legacy(&user.password_hash) {
@@ -170,6 +173,7 @@ async fn password_login(
         known: known_device.is_some(),
         remember,
         by_request: by_request.is_some(),
+        sso: false,
     };
     let body = finish_login(state, &user, ip, form, login).await?;
     Ok(Json(body).into_response())
@@ -187,6 +191,8 @@ pub(crate) struct Login<'a> {
     /// Let in by another device: the mail goes out whatever the device and the setting, since
     /// an approval is all it took — the approving device's session may be a stolen one.
     pub by_request: bool,
+    /// Through SSO: the tokens say so, also after a refresh.
+    pub sso: bool,
 }
 
 /// Everything after the credentials were checked: the device logged in, the event written, a
@@ -198,7 +204,7 @@ pub(crate) async fn finish_login(
     form: &TokenForm,
     login: Login<'_>,
 ) -> ApiResult<Value> {
-    let Login { device_id, device_name, device_type, known, remember, by_request } = login;
+    let Login { device_id, device_name, device_type, known, remember, by_request, sso } = login;
     let client_id = form.get("clientid").unwrap_or("undefined");
     two_factor_policy(state, user, client_id).await?;
     let refresh_token = auth::random_token(64);
@@ -216,6 +222,7 @@ pub(crate) async fn finish_login(
             remember: remember
                 .as_ref()
                 .map(|token| (auth::sha256(token.as_bytes()), clock::in_seconds(auth::REMEMBER_DAYS * 86_400))),
+            sso,
         })
         .await?;
     log(state, "login", Some(user), &user.email, ip, device_type, device_name).await;
@@ -244,7 +251,7 @@ pub(crate) async fn finish_login(
     }
     notices::kdf_below_minimum(state, user, &context).await;
 
-    let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id);
+    let (access_token, expires_in) = state.tokens.access_token(user, device_id, device_type, client_id, sso);
     let mut body = login_response(user, access_token, expires_in);
     body["MasterPasswordPolicy"] = state.settings().policies.master_password_policy();
     body["refresh_token"] = refresh_token.into();
@@ -299,7 +306,7 @@ async fn api_key_login(state: &AppState, ip: std::net::IpAddr, form: &TokenForm)
         return Err(ApiError::bad("This account has been disabled."));
     }
     let known = state.store.device(&user.id, device_id).await?.is_some();
-    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false };
+    let login = Login { device_id, device_name, device_type, known, remember: None, by_request: false, sso: false };
     let mut body = finish_login(state, &user, ip, form, login).await?;
     // Like Bitwarden: the CLI logs in with its key again rather than refreshing.
     if let Some(body) = body.as_object_mut() {
@@ -310,7 +317,7 @@ async fn api_key_login(state: &AppState, ip: std::net::IpAddr, form: &TokenForm)
 }
 
 /// What a successful password login answers, Bitwarden's mix of casings and all.
-fn login_response(user: &User, access_token: String, expires_in: i64) -> Value {
+pub(crate) fn login_response(user: &User, access_token: String, expires_in: i64) -> Value {
     let kdf = json!({
         "KdfType": user.kdf.kind,
         "Iterations": user.kdf.iterations,
@@ -389,7 +396,8 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
     }
     let client_id = form.get("clientid").unwrap_or("undefined");
     two_factor_policy(state, &session.user, client_id).await?;
-    let (access_token, expires_in) = state.tokens.access_token(&session.user, &device.id, device.kind, client_id);
+    let (access_token, expires_in) =
+        state.tokens.access_token(&session.user, &device.id, device.kind, client_id, device.sso);
     Ok(Json(json!({
         "access_token": access_token,
         "expires_in": expires_in,
@@ -400,7 +408,7 @@ async fn refresh(state: &AppState, ip: std::net::IpAddr, form: &TokenForm) -> Ap
     .into_response())
 }
 
-async fn log(
+pub(crate) async fn log(
     state: &AppState,
     kind: &str,
     user: Option<&User>,
@@ -572,27 +580,27 @@ impl KdfData {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct Keys {
-    encrypted_private_key: String,
-    public_key: String,
+pub(crate) struct Keys {
+    pub encrypted_private_key: String,
+    pub public_key: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MasterPasswordAuthentication {
-    kdf: KdfData,
-    salt: String,
+pub(crate) struct MasterPasswordAuthentication {
+    pub kdf: KdfData,
+    pub salt: String,
     #[serde(alias = "masterPasswordAuthenticationHash")]
-    hash: String,
+    pub hash: String,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct MasterPasswordUnlock {
-    kdf: KdfData,
-    salt: String,
+pub(crate) struct MasterPasswordUnlock {
+    pub kdf: KdfData,
+    pub salt: String,
     #[serde(alias = "masterKeyWrappedUserKey")]
-    key: String,
+    pub key: String,
 }
 
 #[derive(Deserialize)]

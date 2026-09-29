@@ -44,13 +44,17 @@ pub mod notices;
 mod notifications;
 pub(crate) mod notify;
 pub mod offsite;
+pub(crate) mod oidc;
 mod organizations;
 pub(crate) mod outbound;
 mod passkeys;
 pub mod policies;
+pub mod scim;
+pub mod secret;
 pub mod send_hosts;
 mod sends;
 mod settings;
+pub mod sso;
 mod totp;
 mod two_factor;
 mod uwu;
@@ -165,6 +169,10 @@ pub struct AppState {
     pub admin_reloaded: Arc<std::sync::atomic::AtomicI64>,
     /// The backups to another system: SFTP, S3 or a mounted folder.
     pub offsite: uwulock_backup::Offsite,
+    /// The key for secrets at rest, like the OpenID Connect client secret.
+    pub secret: Arc<secret::ServerSecret>,
+    /// What the OpenID Connect provider said about itself, and its keys.
+    pub oidc: Arc<oidc::Cache>,
 }
 
 impl AppState {
@@ -185,6 +193,7 @@ impl AppState {
         let host = config.public.split_once("://").map_or(config.public.as_str(), |(_, rest)| rest).to_string();
         let offsite = uwulock_backup::Offsite::new(store.clone(), &config.data, &host, version);
         let alerts = Arc::new(alerts::Alerts::default());
+        let config_data = config.data.clone();
         if let Some(success) = offsite.status().await.last_success {
             alerts.offsite_succeeded(success.max(0) as u64);
         }
@@ -212,7 +221,9 @@ impl AppState {
             certificate: Arc::default(),
             settings_changed: Arc::default(),
             admin_reloaded: Arc::default(),
+            secret: Arc::new(secret::ServerSecret::new(&config_data)),
             offsite,
+            oidc: Arc::default(),
         })
     }
 
@@ -287,6 +298,8 @@ pub fn router(state: AppState) -> Router {
         .merge(offsite::routes())
         .merge(keys::routes())
         .merge(file_requests::routes())
+        .merge(sso::routes())
+        .merge(scim::routes())
         .route("/metrics", axum::routing::get(metrics::public))
         .merge(whole_vault)
         .merge(web::routes())

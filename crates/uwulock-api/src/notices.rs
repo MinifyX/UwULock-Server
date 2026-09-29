@@ -167,7 +167,11 @@ fn line(notice: &Notice) -> NoticeLine {
         ip: notice.ip.clone(),
         device,
         count: detail["count"].as_i64(),
-        about: detail["grantee"].as_str().or_else(|| detail["format"].as_str()).map(str::to_string),
+        about: detail["grantee"]
+            .as_str()
+            .or_else(|| detail["format"].as_str())
+            .or_else(|| detail["issuer"].as_str())
+            .map(str::to_string),
     }
 }
 

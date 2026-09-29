@@ -110,6 +110,11 @@ impl Limiter<IpAddr> {
     }
 }
 
+/// The key of `ip`'s bucket, for a limiter that is asked before it is taken from.
+pub fn network_of(ip: IpAddr) -> IpAddr {
+    network(ip)
+}
+
 /// The address a bucket belongs to: an IPv4 address as it is, an IPv6 address by its /64.
 fn network(ip: IpAddr) -> IpAddr {
     match ip {
@@ -141,6 +146,8 @@ pub struct Limits {
     pub reports: Limiter<String>,
     /// Submissions to file requests, per address: ten an hour.
     pub file_request_uploads: Limiter,
+    /// Requests to `/scim/v2` with a wrong token, per address: 30, then one every 30 seconds.
+    pub scim_refused: Limiter,
 }
 
 impl Default for Limits {
@@ -154,6 +161,7 @@ impl Default for Limits {
             hibp: Limiter::new(2000, Duration::from_millis(200)),
             reports: Limiter::new(10, Duration::from_secs(6 * 60)),
             file_request_uploads: Limiter::new(10, Duration::from_secs(6 * 60)),
+            scim_refused: Limiter::new(30, Duration::from_secs(30)),
         }
     }
 }
@@ -178,6 +186,7 @@ impl Limits {
             hibp: generous(),
             reports: generous(),
             file_request_uploads: generous(),
+            scim_refused: generous(),
         }
     }
 }

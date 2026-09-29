@@ -114,6 +114,8 @@ impl NoticeLine {
             ("loginWithDeviceRequested", false) => "“Log in with device” request".into(),
             ("extrasKeyReset", true) => "UwULock-Extras neu angefangen (Schlüssel zurückgesetzt)".into(),
             ("extrasKeyReset", false) => "UwULock extras started over (key reset)".into(),
+            ("ssoLinked", true) => format!("Anmeldung über {about} mit dem Konto verknüpft"),
+            ("ssoLinked", false) => format!("Login through {about} linked to the account"),
             ("vaultExported", true) => "Tresor exportiert".into(),
             ("vaultExported", false) => "Vault exported".into(),
             ("kdfBelowMinimum", true) => {
