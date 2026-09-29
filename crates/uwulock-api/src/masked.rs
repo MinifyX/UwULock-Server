@@ -1080,8 +1080,16 @@ struct CheckBody {
 }
 
 /// Whether a UwUMail server would do: its discovery, the `maskedemail` scope, registration.
-async fn admin_check(_admin: Admin, Json(body): Json<CheckBody>) -> ApiResult<Json<Value>> {
+async fn admin_check(
+    State(state): State<AppState>,
+    admin: Admin,
+    Json(body): Json<CheckBody>,
+) -> ApiResult<Json<Value>> {
     let server = crate::outbound::checked_url(&body.url, "UwUMail server").map_err(ApiError::bad)?;
+    // The connect limiter's bucket of its own for the admin: ten, one back every six minutes (SV-I2).
+    if !state.limits.masked_connect.take(format!("check:{}", admin.0.user.id)) {
+        return Err(ApiError::too_many("Too many checks. Try again in a few minutes."));
+    }
     Ok(Json(uwumail::inspect(&server).await))
 }
 

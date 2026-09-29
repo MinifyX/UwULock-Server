@@ -74,7 +74,8 @@ saving is kept — as long as the address stays the same. Sent to another addres
 typed again.
 
 The addresses may be in your own network — only an admin can set them. The server speaks only
-http and https to them, follows no redirect and gives up after ten seconds. A channel that does
+http and https to them, follows no redirect and gives up after ten seconds. A failing test says
+the status the address answered, not what it wrote. A channel that does
 not take a message keeps it and is tried again a minute later, then two, four, up to an hour; the
 overview shows it as failing. A message nobody took for a day is dropped.
 

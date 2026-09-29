@@ -2735,7 +2735,11 @@ again — and which would say which websites the accounts use — so it is left 
   `POST /uwu/v1/admin/notifications/{id}/test` → 200 or 502 `upstream` with the reason.
 - Every channel also has `status: { lastSuccess, lastError, lastErrorDate, queued }`; the test
   answers `{ "object": "notificationTest", "ok": true }`. A new server has one `mail` channel.
-- Sending: admin-configured hosts may be private (an ntfy in the LAN); no redirects; 10 s timeout;
+- Sending: admin-configured hosts may be private (an ntfy in the LAN) — the admin exception to
+  the rule that the server never asks the local network; the admin networks and the admin right
+  guard it. What such a host answers comes back to the portal only as the HTTP status (and an
+  OAuth `error` code), never the body, so the test buttons do not read the local network; the
+  body's start goes to the debug log. No redirects; 10 s timeout;
   a failing channel is retried with backoff (1, 2, 4 … 60 minutes, given up after a day) and shown
   on the overview. Messages name no account data beyond counts. An event is sent when it starts —
   at most once an hour per channel however often it comes and goes — and once when it is over.

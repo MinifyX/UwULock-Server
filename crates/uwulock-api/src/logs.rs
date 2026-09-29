@@ -149,7 +149,19 @@ impl Visit for Fields {
 }
 
 /// The longest a line is kept: the buffer holds thousands, and a request can put a lot into one.
-const LINE_MAX: usize = 4096;
+pub(crate) const LINE_MAX: usize = 4096;
+
+/// `text` cut to at most `max` bytes (on a character's edge), with `…` where it was cut.
+pub(crate) fn cut(text: &str, max: usize) -> std::borrow::Cow<'_, str> {
+    if text.len() <= max {
+        return text.into();
+    }
+    let mut end = max;
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}…", &text[..end]).into()
+}
 
 /// One line, however much or whatever somebody put into it: a line break or an escape sequence
 /// from a request does not make a second, made-up line in the admin portal.
@@ -158,12 +170,7 @@ fn tidy(mut message: String) -> String {
         message = message.chars().map(|c| if c.is_control() { '\u{fffd}' } else { c }).collect();
     }
     if message.len() > LINE_MAX {
-        let mut end = LINE_MAX;
-        while !message.is_char_boundary(end) {
-            end -= 1;
-        }
-        message.truncate(end);
-        message.push('…');
+        message = cut(&message, LINE_MAX).into_owned();
     }
     message
 }

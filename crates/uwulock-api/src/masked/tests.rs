@@ -608,3 +608,20 @@ async fn links_come_with_the_delta_sync_and_on_the_realtime_channel() {
     let delta = uwu_sync(&server, &account, format!("&since={}", delta["cursor"].as_str().unwrap())).await;
     assert_eq!(delta["uwu"]["maskedLinks"], json!({}));
 }
+
+#[tokio::test]
+async fn the_admin_check_is_limited() {
+    let fake = Fake::start().await;
+    let limits = crate::Limits {
+        masked_connect: crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600)),
+        ..crate::Limits::generous()
+    };
+    let server = TestServer::new().await.with_limits(limits);
+    let token = server.invite("admin@example.com", true).await;
+    server.call("POST", "/identity/accounts/register/finish", None, register_body("admin@example.com", &token)).await;
+    let admin = server.login("admin@example.com", "device-1").await;
+    let check = || server.call("POST", "/uwu/v1/admin/masked/check", Some(&admin.token), json!({ "url": fake.url }));
+    assert_eq!(check().await.status(), StatusCode::OK);
+    assert_eq!(check().await.status(), StatusCode::OK);
+    assert_eq!(check().await.status(), StatusCode::TOO_MANY_REQUESTS);
+}

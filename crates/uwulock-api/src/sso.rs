@@ -167,7 +167,7 @@ impl SsoSettings {
 
     pub fn check(&self) -> Result<(), String> {
         if !self.issuer.trim().is_empty() {
-            oidc::checked_endpoint(&self.issuer, "The issuer")?;
+            oidc::checked_issuer(&self.issuer)?;
         }
         if self.enabled && (self.issuer.trim().is_empty() || self.client_id.trim().is_empty()) {
             return Err("SSO needs the provider's issuer address and the client id.".into());

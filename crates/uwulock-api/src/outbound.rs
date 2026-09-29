@@ -102,15 +102,28 @@ pub async fn read_start(mut response: reqwest::Response, max: usize) -> Vec<u8> 
     body
 }
 
-/// A response that is not a success, said in words: the status and the start of the body.
+/// A response that is not a success, said in words: the status, and an OAuth-style `error`
+/// code when the body is JSON with one. Nothing else of the body: the admin's test buttons reach
+/// any address, and must not read what a service in the local network answers (SV-L19). The
+/// start of the body goes to the debug log.
 pub async fn refused(response: reqwest::Response) -> String {
     let status = response.status();
     if status.is_redirection() {
         return format!("answered {status} and wants to send the request elsewhere, which is not followed");
     }
     let body = read_start(response, ERROR_BYTES).await;
-    let body: String = String::from_utf8_lossy(&body).trim().chars().take(200).collect();
-    if body.is_empty() { format!("answered {status}") } else { format!("answered {status}: {body}") }
+    let code = serde_json::from_slice::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| value.get("error").and_then(serde_json::Value::as_str).map(str::to_owned))
+        .filter(|code| {
+            (1..=40).contains(&code.len()) && code.bytes().all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+        });
+    let start: String = String::from_utf8_lossy(&body).trim().chars().take(200).collect();
+    tracing::debug!(%status, body = %start, "an error answer");
+    match code {
+        Some(code) => format!("answered {status} ({code})"),
+        None => format!("answered {status}"),
+    }
 }
 
 #[cfg(test)]
@@ -133,14 +146,22 @@ mod tests {
                 axum::routing::get(move || async move { (axum::http::StatusCode::INTERNAL_SERVER_ERROR, endless()) }),
             )
             .route("/long", axum::routing::get(|| async { vec![b'y'; 2 * 1024 * 1024] }))
-            .route("/short", axum::routing::get(|| async { "fine" }));
+            .route("/short", axum::routing::get(|| async { "fine" }))
+            .route(
+                "/oauth",
+                axum::routing::get(|| async {
+                    (axum::http::StatusCode::BAD_REQUEST, r#"{"error":"invalid_client","error_description":"inside"}"#)
+                }),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
         let get = |path: &str| client().unwrap().get(format!("{base}{path}")).send();
 
         let text = refused(get("/endless").await.unwrap()).await;
-        assert!(text.starts_with("answered 500 Internal Server Error: xxx") && text.len() < 300, "{}", text.len());
+        assert_eq!(text, "answered 500 Internal Server Error", "only the status (SV-L19)");
+        let text = refused(get("/oauth").await.unwrap()).await;
+        assert_eq!(text, "answered 400 Bad Request (invalid_client)");
         assert!(read_limited(get("/endless").await.unwrap(), JSON_BYTES).await.is_err());
         assert!(read_limited(get("/long").await.unwrap(), JSON_BYTES).await.is_err(), "by its length");
         assert_eq!(read_limited(get("/short").await.unwrap(), JSON_BYTES).await.unwrap(), b"fine");
