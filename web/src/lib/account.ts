@@ -8,6 +8,7 @@ import { currentProfile, lock, logout, prelogin } from './api';
 import { t } from './i18n';
 import { call, callJson } from './web/core';
 import { openExtras } from './requests';
+import { type SendDomain } from './links';
 import { ApiError, deviceId, request } from './web/http';
 
 export type AccountInfo = {
@@ -43,6 +44,10 @@ export type AccountInfo = {
   adminNeedsSso?: boolean;
   /** Whether this account may make a family, and how large one may be (§16.4). */
   families?: { mayCreate: boolean; maxMembers: number; owned: number; perUser: number };
+  /** The send domain new Sends get (§14.2); null: the main host. */
+  sendDomainId?: string | null;
+  /** Whether masked addresses are connected to UwUMail (§13.2). */
+  masked?: { connected: boolean };
 };
 
 export type MinimumKdf = {
@@ -74,6 +79,8 @@ export type ServerInfo = {
   policies?: { masterPassword?: PasswordRules };
   /** Logging in through an OpenID Connect provider (§19): `label` goes on the button. */
   sso?: { enabled: boolean; only: boolean; identifier: string; label: string };
+  /** The admin's send domains (§14.1), without the main host. */
+  sendDomains?: SendDomain[];
 };
 
 export const serverInfo = () => request<ServerInfo>('/uwu/v1/info', { auth: false });
@@ -131,6 +138,10 @@ export const account = () => request<AccountInfo>('/uwu/v1/account');
 
 export const setLanguage = (language: 'de' | 'en') =>
   request('/uwu/v1/account/language', { method: 'PUT', body: { language } });
+
+/** The send domain new Sends and file requests get at first; null: the main host. */
+export const setDefaultSendDomain = (sendDomainId: string | null) =>
+  request('/uwu/v1/account/send-domain', { method: 'PUT', body: { sendDomainId } });
 
 // ── Registering ───────────────────────────────────────────
 
