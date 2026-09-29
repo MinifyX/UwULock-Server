@@ -71,7 +71,7 @@ impl Default for Upstream {
 
 impl Upstream {
     fn allows(&self, ip: IpAddr) -> bool {
-        self.allowed.contains(&ip) || public(ip)
+        self.allowed.contains(&ip) || (public(ip) && !through_local_nat64(ip, DNS64.get().map_or(&[], Vec::as_slice)))
     }
 
     fn port_ok(&self, url: &url::Url) -> bool {
@@ -142,8 +142,16 @@ fn public_v6(ip: Ipv6Addr) -> bool {
     if segments[..6] == [0, 0, 0, 0, 0, 0] {
         return public_v4(Ipv4Addr::from(((segments[6] as u32) << 16) | segments[7] as u32));
     }
-    if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] || segments[..3] == [0x64, 0xff9b, 1] {
+    if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
         return public_v4(Ipv4Addr::from(((segments[6] as u32) << 16) | segments[7] as u32));
+    }
+    // The local-use NAT64 prefix (RFC 8215) may carry the IPv4 address anywhere: refused whole.
+    if segments[..3] == [0x64, 0xff9b, 1] {
+        return false;
+    }
+    // The rest of ::/8 (reserved; mapped and compatible addresses were handled above).
+    if segments[0] <= 0x00ff {
+        return false;
     }
     // 6to4 (2002::/16) carries an IPv4 address in the next 32 bits.
     if segments[0] == 0x2002 {
@@ -163,6 +171,77 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         || (segments[0] == 0x0100 && segments[1..4] == [0, 0, 0]) // discard-only
         || segments[0] == 0x3fff && segments[1] < 0x1000; // documentation (2024)
     !refused
+}
+
+// ── The network's own NAT64 prefix ────────────────────────
+
+/// The network's own DNS64 prefixes (RFC 7050), learned once from `ipv4only.arpa`: an address
+/// in one of them reaches the IPv4 address it carries, which has to be public too.
+static DNS64: tokio::sync::OnceCell<Vec<(Ipv6Addr, u8)>> = tokio::sync::OnceCell::const_new();
+
+/// The well-known answers of `ipv4only.arpa` (RFC 7050).
+const IPV4ONLY: [Ipv4Addr; 2] = [Ipv4Addr::new(192, 0, 0, 170), Ipv4Addr::new(192, 0, 0, 171)];
+
+/// The IPv4 address inside `ip` for a NAT64 prefix of `length` bits (RFC 6052 §2.2: the octet
+/// at bits 64 to 71 is skipped).
+fn embedded_v4(ip: Ipv6Addr, length: u8) -> Option<Ipv4Addr> {
+    let bytes = ip.octets();
+    let at: [usize; 4] = match length {
+        32 => [4, 5, 6, 7],
+        40 => [5, 6, 7, 9],
+        48 => [6, 7, 9, 10],
+        56 => [7, 9, 10, 11],
+        64 => [9, 10, 11, 12],
+        96 => [12, 13, 14, 15],
+        _ => return None,
+    };
+    Some(Ipv4Addr::from(at.map(|index| bytes[index])))
+}
+
+/// The first `length` bits of `ip`.
+fn prefix_of(ip: Ipv6Addr, length: u8) -> Ipv6Addr {
+    let mask = if length == 0 { 0 } else { u128::MAX << (128 - u32::from(length)) };
+    Ipv6Addr::from(u128::from(ip) & mask)
+}
+
+/// The prefixes the answers of `ipv4only.arpa` show.
+fn prefixes_from(answers: &[IpAddr]) -> Vec<(Ipv6Addr, u8)> {
+    let mut found = Vec::new();
+    for answer in answers {
+        let IpAddr::V6(ip) = answer else { continue };
+        if let Some(length) = [96u8, 64, 56, 48, 40, 32]
+            .into_iter()
+            .find(|&length| embedded_v4(*ip, length).is_some_and(|v4| IPV4ONLY.contains(&v4)))
+        {
+            let prefix = (prefix_of(*ip, length), length);
+            if !found.contains(&prefix) {
+                found.push(prefix);
+            }
+        }
+    }
+    found
+}
+
+/// Whether `ip` goes through one of the network's NAT64 `prefixes` to an IPv4 address that is
+/// not public.
+fn through_local_nat64(ip: IpAddr, prefixes: &[(Ipv6Addr, u8)]) -> bool {
+    let IpAddr::V6(ip) = ip else { return false };
+    prefixes.iter().any(|(prefix, length)| {
+        prefix_of(ip, *length) == *prefix && embedded_v4(ip, *length).is_none_or(|v4| !public_v4(v4))
+    })
+}
+
+/// Learn the network's NAT64 prefixes, once; none where there is no DNS64.
+async fn learn_dns64() -> &'static [(Ipv6Addr, u8)] {
+    DNS64
+        .get_or_init(|| async {
+            let answers: Vec<IpAddr> = match tokio::net::lookup_host(("ipv4only.arpa", 0)).await {
+                Ok(found) => found.map(|address| address.ip()).collect(),
+                Err(_) => Vec::new(),
+            };
+            prefixes_from(&answers)
+        })
+        .await
 }
 
 /// Last labels of names that are never on the internet, or not on the public one.
@@ -272,6 +351,7 @@ impl reqwest::dns::Resolve for Resolver {
                     if normalize_host(&name).is_none() {
                         return Err(refused("not a public name"));
                     }
+                    learn_dns64().await;
                     tokio::net::lookup_host((name.as_str(), 0)).await?.map(|address| address.ip()).collect()
                 }
             };
@@ -750,6 +830,10 @@ mod tests {
             "::ffff:10.0.0.1",
             "::127.0.0.1",
             "64:ff9b::a00:1",
+            "64:ff9b:1::8.8.8.8",
+            "64:ff9b:1:808:8:800::",
+            "::1:2:3:4",
+            "0:ff::1",
             "2002:7f00:1::",
             "2002:c0a8:0101::1",
             "2001:0:4136:e378::1",
@@ -761,6 +845,28 @@ mod tests {
         for ip in ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "::ffff:1.1.1.1", "2002:0101:0101::1"] {
             assert!(public(ip.parse().unwrap()), "{ip}");
         }
+    }
+
+    /// SV-L13: a network's own DNS64 prefix, learned from `ipv4only.arpa`, reaches only public
+    /// IPv4 addresses.
+    #[test]
+    fn a_network_s_own_nat64_prefix_is_learned_and_checked() {
+        let answers: Vec<IpAddr> =
+            ["2001:db8:64::c000:aa", "2001:db8:64::c000:ab", "192.0.0.170"].map(|ip| ip.parse().unwrap()).to_vec();
+        let prefixes = prefixes_from(&answers);
+        assert_eq!(prefixes, vec![("2001:db8:64::".parse().unwrap(), 96)]);
+        let through = |ip: &str| through_local_nat64(ip.parse().unwrap(), &prefixes);
+        assert!(through("2001:db8:64::a00:1"), "10.0.0.1");
+        assert!(through("2001:db8:64::7f00:1"), "127.0.0.1");
+        assert!(!through("2001:db8:64::808:808"), "8.8.8.8 is fine");
+        assert!(!through("2001:db8:65::a00:1"), "another prefix");
+        // A /48 prefix carries the address around the u octet.
+        let answers: Vec<IpAddr> = vec!["2001:db8:1:c000:0:aa00::".parse().unwrap()];
+        let prefixes = prefixes_from(&answers);
+        assert_eq!(prefixes, vec![("2001:db8:1::".parse().unwrap(), 48)]);
+        assert!(through_local_nat64("2001:db8:1:a00:0:100::".parse().unwrap(), &prefixes), "10.0.0.1");
+        assert!(!through_local_nat64("2001:db8:1:808:0:808::".parse().unwrap(), &prefixes));
+        assert!(prefixes_from(&["2606:4700::1111".parse().unwrap()]).is_empty(), "no DNS64");
     }
 
     #[test]

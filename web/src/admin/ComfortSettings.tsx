@@ -88,7 +88,7 @@ export function ComfortSettings({ draft, setDraft }: Props) {
       <Row
         label={t('Website-Icons holen')}
         description={t(
-          'Der Server holt die Icons der Websites selbst und liefert sie an den Web-Tresor und die Apps; die Websites sehen nur die Adresse des Servers. Adressen im lokalen Netz fragt er nie.',
+          'Der Server holt die Icons der Websites selbst und liefert sie an den Web-Tresor und die Apps; die Websites sehen nur die Adresse des Servers. Adressen im lokalen Netz fragt er nie. Dafür erfährt der Server, welche Websites in den Tresoren stehen (wie bei Bitwarden), und wer viele Adressen durchprobiert, kann ungefähr sehen, welche schon einmal gefragt wurden.',
         )}
       >
         <Toggle
