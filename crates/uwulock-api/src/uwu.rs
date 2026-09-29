@@ -59,6 +59,9 @@ async fn info(
         "attachments",
         "sends",
         "emergency-access",
+        // Families are there even when nobody may make a new one: whether this account may is
+        // `families.mayCreate` of `/uwu/v1/account`.
+        "families",
         "two-factor-authenticator",
         "two-factor-email",
         "two-factor-webauthn",
