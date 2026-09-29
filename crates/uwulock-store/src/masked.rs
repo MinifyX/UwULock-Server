@@ -346,28 +346,29 @@ impl Store {
         .await
     }
 
-    /// The address belongs to no item any more.
-    pub async fn unlink_masked(&self, user_id: &str, masked_id: &str) -> Result<()> {
+    /// The address belongs to no item any more; whether it belonged to one.
+    pub async fn unlink_masked(&self, user_id: &str, masked_id: &str) -> Result<bool> {
         let (user_id, masked_id) = (user_id.to_string(), masked_id.to_string());
         self.sqlite_write(move |tx| {
-            tx.execute("DELETE FROM masked_links WHERE user_id = ?1 AND masked_id = ?2", [user_id, masked_id])?;
-            Ok(())
+            Ok(tx.execute("DELETE FROM masked_links WHERE user_id = ?1 AND masked_id = ?2", [user_id, masked_id])? > 0)
         })
         .await
     }
 
-    /// Remember the state UwUMail gave for the account's addresses, where they are linked.
-    pub async fn masked_link_states(&self, user_id: &str, states: BTreeMap<String, String>) -> Result<()> {
+    /// Remember the state UwUMail gave for the account's addresses, where they are linked; whether
+    /// one of them was not known that way.
+    pub async fn masked_link_states(&self, user_id: &str, states: BTreeMap<String, String>) -> Result<bool> {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {
+            let mut changed = false;
             for (masked_id, state) in states {
-                tx.execute(
+                changed |= tx.execute(
                     "UPDATE masked_links SET state = ?3, revision = ?4 \
                      WHERE user_id = ?1 AND masked_id = ?2 AND state IS NOT ?3",
                     params![user_id, masked_id, state, clock::now()],
-                )?;
+                )? > 0;
             }
-            Ok(())
+            Ok(changed)
         })
         .await
     }

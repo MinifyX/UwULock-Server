@@ -59,7 +59,7 @@ pub struct DeltaRequest {
     pub orgs: HashMap<String, i64>,
     /// Bitwarden's objects: items, folders, Sends, collections, the profile and policies.
     pub vault: bool,
-    /// UwULock's own: the extras key, own icons, reminders.
+    /// UwULock's own: the extras key, own icons, reminders, Send domains, masked links.
     pub uwu: bool,
     /// Suite records of these spaces; none for no suite at all.
     pub spaces: Option<Vec<String>>,
@@ -94,6 +94,10 @@ pub struct Delta {
     pub icons_deleted: Vec<String>,
     /// A reminder changed: the whole list goes out again.
     pub reminders: bool,
+    /// The send domain of each Send that changed: `(send id, domain id)`.
+    pub send_domains: Vec<(String, Option<String>)>,
+    /// A masked address's link to an item changed: the whole map goes out again.
+    pub masked_links: bool,
     pub records: Vec<SuiteRecord>,
     pub spaces: Vec<SuiteSpace>,
 }
@@ -276,7 +280,13 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
             "SELECT seq FROM own_icons WHERE owner = ?1 AND seq > ?2 ORDER BY seq",
             "SELECT seq FROM reminders WHERE user_id = ?1 AND seq > ?2 ORDER BY seq",
             "SELECT seq FROM extras_keys WHERE user_id = ?1 AND seq > ?2",
+            "SELECT masked_seq FROM users WHERE id = ?1 AND masked_seq > ?2",
         ] {
+            numbers.extend(next_numbers(conn, sql, &[&user, &since], fetch)?);
+        }
+        // A Send's domain is a change of the Send; counted here too when the vault is not asked.
+        if !request.vault {
+            let sql = "SELECT seq FROM sends WHERE user_id = ?1 AND seq > ?2 ORDER BY seq";
             numbers.extend(next_numbers(conn, sql, &[&user, &since], fetch)?);
         }
     }
@@ -375,6 +385,15 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
                  OR EXISTS (SELECT 1 FROM tombstones WHERE owner = ?1 AND kind = 'reminder' AND seq > ?2 AND seq <= ?3)",
             )?
             .query_row(params![user, since, until], |row| row.get(0))?;
+        delta.masked_links = conn
+            .prepare_cached("SELECT masked_seq > ?2 AND masked_seq <= ?3 FROM users WHERE id = ?1")?
+            .query_row(params![user, since, until], |row| row.get(0))?;
+        delta.send_domains = conn
+            .prepare_cached(
+                "SELECT id, domain_id FROM sends WHERE user_id = ?1 AND seq > ?2 AND seq <= ?3 ORDER BY seq",
+            )?
+            .query_map(params![user, since, until], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
         icons_between(conn, user, since, until, &mut delta)?;
     }
     if !kinds.is_empty() && until > since {

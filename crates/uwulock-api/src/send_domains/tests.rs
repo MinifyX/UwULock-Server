@@ -317,3 +317,37 @@ async fn a_file_send_opened_on_a_send_domain_is_downloaded_from_there() {
     let link = json(server.call("POST", &format!("/api/sends/{id}/access/file/{file}"), None, json!({})).await).await;
     assert!(link["url"].as_str().unwrap().starts_with("https://vault.example.com/"), "the main host keeps its own");
 }
+
+#[tokio::test]
+async fn choices_come_with_the_delta_sync_and_changes_on_the_realtime_channel() {
+    use uwulock_notify::realtime::Live;
+    let server = TestServer::new().await;
+    let admin = admin(&server).await;
+    let account = server.account("nyu@example.com").await;
+    let mut live = server.state.realtime.join(&account.id).unwrap();
+    let domain = add(&server, &admin, "send.example.com", "proxy").await;
+    let id = domain["id"].as_str().unwrap();
+    assert_eq!(live.events.try_recv().unwrap().live, Live::Info, "/uwu/v1/info lists the domains");
+
+    let send = json(server.call("POST", "/api/sends", Some(&account.token), text_send()).await).await;
+    let send_id = send["id"].as_str().unwrap();
+    let full = json(server.get_as(&account.token, "/uwu/v1/sync?include=uwu").await).await;
+    assert_eq!(full["uwu"]["sendDomains"], json!({ send_id: null }));
+    while live.events.try_recv().is_ok() {}
+
+    let path = format!("/uwu/v1/sends/{send_id}/domain");
+    server.call("PUT", &path, Some(&account.token), json!({ "sendDomainId": id })).await;
+    assert_eq!(live.events.try_recv().unwrap().live, Live::changed("uwu"));
+    let path = format!("/uwu/v1/sync?include=uwu&since={}", full["cursor"].as_str().unwrap());
+    let delta = json(server.get_as(&account.token, &path).await).await;
+    assert_eq!((delta["reset"].as_bool(), &delta["uwu"]["sendDomains"]), (Some(false), &json!({ send_id: id })));
+    assert!(delta["vault"].is_null());
+
+    // The domain goes: the Send falls back to the main host, which the next delta says.
+    let gone = server.call("DELETE", &format!("/uwu/v1/admin/send-domains/{id}"), Some(&admin.token), json!({})).await;
+    assert_eq!(gone.status(), StatusCode::OK);
+    assert_eq!(live.events.try_recv().unwrap().live, Live::Info);
+    let path = format!("/uwu/v1/sync?include=uwu&since={}", delta["cursor"].as_str().unwrap());
+    let next = json(server.get_as(&account.token, &path).await).await;
+    assert_eq!(next["uwu"]["sendDomains"], json!({ send_id: null }));
+}

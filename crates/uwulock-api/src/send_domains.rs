@@ -23,6 +23,7 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use uwulock_notify::realtime::Live;
 use uwulock_store::send_domains::SendDomain;
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -283,6 +284,8 @@ async fn add(State(state): State<AppState>, admin: Admin, Json(body): Json<NewDo
         Err(error) => return Err(error.into()),
     };
     reload(&state).await;
+    // `/uwu/v1/info` lists the send domains.
+    state.realtime.broadcast(Live::Info);
     crate::admin::record(&state, &admin, format!("added the send domain {host} ({tls})")).await;
     Ok(Json(render(&state, &domain).await))
 }
@@ -314,6 +317,7 @@ async fn remove(State(state): State<AppState>, admin: Admin, Path(id): Path<Stri
     }
     reload(&state).await;
     branding::reload(&state).await;
+    state.realtime.broadcast(Live::Info);
     crate::admin::record(&state, &admin, format!("removed the send domain {}", host.unwrap_or(id))).await;
     Ok(StatusCode::OK)
 }
@@ -413,7 +417,11 @@ async fn choose(
     match state.store.set_send_domain(&session.user.id, &send_id, id.clone()).await? {
         None => Err(ApiError::not_found("No such Send.")),
         Some(false) => Err(unknown_domain()),
-        Some(true) => Ok(Json(json!({ "object": "sendDomainChoice", "sendId": send_id, "sendDomainId": id }))),
+        Some(true) => {
+            // The UwULock clients show the link with the chosen domain (§14.2).
+            crate::notify::live(&state, &session.user.id, Some(&session), Live::changed("uwu"));
+            Ok(Json(json!({ "object": "sendDomainChoice", "sendId": send_id, "sendDomainId": id })))
+        }
     }
 }
 

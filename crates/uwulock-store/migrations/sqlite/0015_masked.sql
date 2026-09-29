@@ -61,3 +61,18 @@ CREATE TABLE masked_api_keys (
     last_used TEXT
 ) STRICT;
 CREATE INDEX masked_api_keys_user ON masked_api_keys (user_id);
+
+-- The delta sync (0012) sends the whole map of links again when any changed: the number of the
+-- last change to the account's links, counted like the profile's.
+ALTER TABLE users ADD COLUMN masked_seq INTEGER NOT NULL DEFAULT 0;
+
+CREATE TRIGGER masked_links_seq_insert AFTER INSERT ON masked_links BEGIN
+    UPDATE users SET seq = seq + 1, masked_seq = seq + 1 WHERE id = NEW.user_id;
+END;
+CREATE TRIGGER masked_links_seq_update AFTER UPDATE ON masked_links
+WHEN OLD.cipher_id IS NOT NEW.cipher_id OR OLD.email IS NOT NEW.email OR OLD.state IS NOT NEW.state BEGIN
+    UPDATE users SET seq = seq + 1, masked_seq = seq + 1 WHERE id = NEW.user_id;
+END;
+CREATE TRIGGER masked_links_seq_delete AFTER DELETE ON masked_links BEGIN
+    UPDATE users SET seq = seq + 1, masked_seq = seq + 1 WHERE id = OLD.user_id;
+END;

@@ -550,6 +550,7 @@ async fn finish(state: &AppState, pending: &Pending, code: &str) -> Result<(), S
     {
         // Another mailbox: the links named its addresses, which this one does not have.
         state.store.delete_masked_connection(user_id).await.map_err(|error| error.to_string())?;
+        links_changed(state, user_id, None);
         end_grant(state, previous).await;
     }
     state.store.set_masked_connection(connection).await.map_err(|error| error.to_string())?;
@@ -652,6 +653,7 @@ async fn disconnect(State(state): State<AppState>, session: Session, ClientIp(ip
     let connection = state.store.masked_connection(&session.user.id).await?.unwrap_or(connection);
     end_grant(&state, &connection).await;
     state.store.delete_masked_connection(&session.user.id).await?;
+    links_changed(&state, &session.user.id, Some(&session));
     let context = Context::of(&state, &session, ip).await;
     notices::record(&state, &session.user, "maskedDisconnected", &context, json!({ "server": connection.server }))
         .await;
@@ -709,7 +711,9 @@ async fn addresses(
         .filter_map(|address| Some((address["id"].as_str()?.to_string(), address["state"].as_str()?.to_string())))
         .filter(|(id, _)| links.contains_key(id))
         .collect();
-    state.store.masked_link_states(user_id, states).await?;
+    if state.store.masked_link_states(user_id, states).await? {
+        links_changed(&state, user_id, Some(&session));
+    }
     let data: Vec<Value> = list
         .iter()
         .map(|address| render(address, &links))
@@ -844,6 +848,8 @@ async fn create(
         if state.store.link_masked(user_id, link).await?.is_err() {
             // Another address got linked in between; this one stays without a link.
             links.clear();
+        } else {
+            links_changed(&state, user_id, Some(&session));
         }
     }
     Ok(Json(render(&address, &links)))
@@ -935,12 +941,19 @@ async fn change(
                     ApiError::new(StatusCode::CONFLICT, "This item has a masked address already.").code("exists")
                 );
             }
+            links_changed(&state, user_id, Some(&session));
         }
-        Some(None) => state.store.unlink_masked(user_id, &id).await?,
+        Some(None) => {
+            if state.store.unlink_masked(user_id, &id).await? {
+                links_changed(&state, user_id, Some(&session));
+            }
+        }
         None => {
             if let Some(new_state) = address["state"].as_str() {
                 let states = BTreeMap::from([(id.clone(), new_state.to_string())]);
-                state.store.masked_link_states(user_id, states).await?;
+                if state.store.masked_link_states(user_id, states).await? {
+                    links_changed(&state, user_id, Some(&session));
+                }
             }
         }
     }
@@ -952,19 +965,31 @@ async fn remove(State(state): State<AppState>, session: Session, Path(id): Path<
     let user_id = &session.user.id;
     update(&state, user_id, &id, json!({ "state": "deleted" })).await?;
     let address = fetch(&state, user_id, &id).await?;
-    state.store.masked_link_states(user_id, BTreeMap::from([(id.clone(), "deleted".to_string())])).await?;
+    if state.store.masked_link_states(user_id, BTreeMap::from([(id.clone(), "deleted".to_string())])).await? {
+        links_changed(&state, user_id, Some(&session));
+    }
     Ok(Json(render(&address, &link_map(&state, user_id).await?)))
 }
 
 /// The links of the account's addresses to its items, from this server alone: `{ cipherId: { id,
 /// email, state } }`. The web vault shows them at the items without asking UwUMail.
 async fn links(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
-    let links = state.store.masked_links(&session.user.id).await?;
+    Ok(Json(links_json(&state, &session.user.id).await?))
+}
+
+/// The account's links changed: its UwULock clients sync `uwu.maskedLinks` again (§5.2).
+fn links_changed(state: &AppState, user_id: &str, session: Option<&Session>) {
+    crate::notify::live(state, user_id, session, uwulock_notify::realtime::Live::changed("uwu"));
+}
+
+/// The map of `GET /uwu/v1/masked/links`, which the delta sync sends as `uwu.maskedLinks` too.
+pub(crate) async fn links_json(state: &AppState, user_id: &str) -> uwulock_store::Result<Value> {
+    let links = state.store.masked_links(user_id).await?;
     let map: serde_json::Map<String, Value> = links
         .into_iter()
         .map(|link| (link.cipher_id, json!({ "id": link.masked_id, "email": link.email, "state": link.state })))
         .collect();
-    Ok(Json(Value::Object(map)))
+    Ok(Value::Object(map))
 }
 
 // ── Admin ─────────────────────────────────────────────────

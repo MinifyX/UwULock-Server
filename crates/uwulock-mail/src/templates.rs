@@ -199,6 +199,12 @@ impl NoticeLine {
             ("maskedDisconnected", false) => format!("Disconnected from UwUMail ({about})"),
             ("maskedApiKeyCreated", true) => format!("API-Key für maskierte Adressen erzeugt: {about}"),
             ("maskedApiKeyCreated", false) => format!("API key for masked addresses created: {about}"),
+            ("travelModeEnabled", true) => "Reisemodus eingeschaltet".into(),
+            ("travelModeEnabled", false) => "Travel mode switched on".into(),
+            ("travelModeDisabled", true) => "Reisemodus ausgeschaltet".into(),
+            ("travelModeDisabled", false) => "Travel mode switched off".into(),
+            ("travelDisableFailed", true) => "Ein Versuch, den Reisemodus auszuschalten, ist gescheitert".into(),
+            ("travelDisableFailed", false) => "A try to switch travel mode off failed".into(),
             ("vaultExported", true) => "Tresor exportiert".into(),
             ("vaultExported", false) => "Vault exported".into(),
             ("kdfBelowMinimum", true) => {

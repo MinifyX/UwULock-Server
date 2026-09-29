@@ -461,3 +461,53 @@ async fn a_deleted_account_ends_its_grant_at_uwumail() {
     assert_eq!(fake.inner.lock().revoked.len(), 1, "the grant ended at UwUMail");
     assert!(server.state.store.masked_connection(&account.id).await.unwrap().is_none());
 }
+
+async fn uwu_sync(server: &TestServer, account: &Account, query: String) -> Value {
+    json(server.get_as(&account.token, &format!("/uwu/v1/sync?include=uwu{query}")).await).await
+}
+
+/// Whether `changed uwu` is among what the account's realtime connection heard since last asked.
+fn heard_uwu(connection: &mut uwulock_notify::realtime::Connection) -> bool {
+    let mut heard = false;
+    while let Ok(event) = connection.events.try_recv() {
+        heard |= event.live == uwulock_notify::realtime::Live::changed("uwu");
+    }
+    heard
+}
+
+#[tokio::test]
+async fn links_come_with_the_delta_sync_and_on_the_realtime_channel() {
+    let fake = Fake::start().await;
+    let (server, account) = server_with(&fake).await;
+    connect(&server, &account, &fake).await;
+    let cipher = item(&server, &account).await;
+    let full = uwu_sync(&server, &account, String::new()).await;
+    assert_eq!(full["uwu"]["maskedLinks"], json!({}), "complete in a full sync, even when empty");
+    let mut live = server.state.realtime.join(&account.id).unwrap();
+
+    let body = json!({ "forDomain": "https://shop.example.com", "cipherId": cipher });
+    let made = json(server.call("POST", "/uwu/v1/masked/addresses", Some(&account.token), body).await).await;
+    assert!(heard_uwu(&mut live));
+    let delta = uwu_sync(&server, &account, format!("&since={}", full["cursor"].as_str().unwrap())).await;
+    assert_eq!(delta["reset"], false);
+    assert_eq!(delta["uwu"]["maskedLinks"][&cipher]["email"], made["email"]);
+    assert_eq!(delta["uwu"]["maskedLinks"][&cipher]["id"], made["id"]);
+    let quiet = uwu_sync(&server, &account, format!("&since={}", delta["cursor"].as_str().unwrap())).await;
+    assert_eq!(quiet["uwu"]["maskedLinks"], Value::Null, "nothing changed");
+
+    // Listing the addresses again with nothing new says nothing; a new state does.
+    server.get_as(&account.token, "/uwu/v1/masked/addresses").await;
+    assert!(!heard_uwu(&mut live));
+    let id = made["id"].as_str().unwrap();
+    let path = format!("/uwu/v1/masked/addresses/{id}");
+    server.call("PATCH", &path, Some(&account.token), json!({ "state": "disabled" })).await;
+    assert!(heard_uwu(&mut live));
+    let delta = uwu_sync(&server, &account, format!("&since={}", quiet["cursor"].as_str().unwrap())).await;
+    assert_eq!(delta["uwu"]["maskedLinks"][&cipher]["state"], "disabled");
+
+    // An item deleted for good takes its link along.
+    let gone = server.call("DELETE", &format!("/api/ciphers/{cipher}"), Some(&account.token), json!({})).await;
+    assert_eq!(gone.status(), StatusCode::OK);
+    let delta = uwu_sync(&server, &account, format!("&since={}", delta["cursor"].as_str().unwrap())).await;
+    assert_eq!(delta["uwu"]["maskedLinks"], json!({}));
+}

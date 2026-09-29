@@ -334,8 +334,8 @@ async fn full_answer(
             "iconsDeleted": [],
             "reminders": crate::reminders::list_json(state, &user.id).await?,
             "travel": crate::travel::travel_json(state, &user.id).await?,
-            "sendDomains": {},
-            "maskedLinks": null,
+            "sendDomains": state.store.send_domain_choices(&user.id).await?,
+            "maskedLinks": crate::masked::links_json(state, &user.id).await?,
             "unseen": unseen(state, &user.id).await?,
         });
         body.push_str(&uwu.to_string());
@@ -490,14 +490,20 @@ async fn delta_answer(
         } else {
             Value::Null
         };
+        let masked_links =
+            if delta.masked_links { crate::masked::links_json(state, &user.id).await? } else { Value::Null };
         let uwu = json!({
             "extrasKey": delta.extras_key.map(|key| crate::keys::view(Some(key))),
             "icons": delta.icons.iter().map(icon_json).collect::<Vec<_>>(),
             "iconsDeleted": delta.icons_deleted,
             "reminders": reminders,
             "travel": travel,
-            "sendDomains": {},
-            "maskedLinks": null,
+            "sendDomains": delta
+                .send_domains
+                .iter()
+                .map(|(send, domain)| (send.clone(), json!(domain)))
+                .collect::<serde_json::Map<String, Value>>(),
+            "maskedLinks": masked_links,
             "unseen": unseen(state, &user.id).await?,
         });
         body.push_str(&uwu.to_string());
