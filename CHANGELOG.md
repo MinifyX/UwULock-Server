@@ -3,7 +3,18 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.6.0-beta.2
+
+**Tidying up after 0.6.** The admin portal is sorted into areas with tabs, and every setting says
+in plain words what it does and what is recommended; it now looks like the web vault, whose
+spacing is even again. The admin switches off the extras this server does not need: a new server
+starts with only the vault and icons, and an update switches off every extra that nobody uses
+(nothing is deleted). Website icons fall back to the domain's (`account.example.com` →
+`example.com`) and, where a site has none, come from 2FA Directory, Simple Icons or Dashboard
+Icons, which ship with the server. Every low finding and note of the 0.6 review is fixed. It
+belongs with UwULock 0.3.0-beta.2, UwUSSH 0.2.1 and UwURDP 0.1.0-beta.8. Update with
+`sudo bash update.sh`; every client syncs in full once afterwards, and a server with sealed
+settings no longer starts without its `secret.key`.
 
 **Website icons.**
 

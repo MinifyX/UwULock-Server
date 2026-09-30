@@ -14,7 +14,9 @@ Sicherheit), 4c (Tresor-Komfort), 4d (Familie) und Stufe 6 (UwU-Extras) — Stuf
 Sie sind zusammen als 0.6.0-beta.1 erschienen, nach einem Sicherheitsreview
 ([docs/security-review-0.6.md](security-review-0.6.md)), dessen hohe und mittlere Funde behoben
 sind; passend dazu UwULock 0.3.0-beta.1 mit Browsererweiterung. Die niedrigen Funde und Hinweise
-dieses Reviews (SV-L1 bis SV-L41, SV-I1 bis SV-I4) behebt 0.6.0-beta.2. Stufe 5 (Firma) ist
+dieses Reviews (SV-L1 bis SV-L41, SV-I1 bis SV-I4) behebt 0.6.0-beta.2, zusammen mit dem
+aufgeräumten Admin-Portal, Funktions-Schaltern und Icon-Datenbanken; passend dazu UwULock
+0.3.0-beta.2, UwUSSH 0.2.1 und UwURDP 0.1.0-beta.8. Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
 Die Schnittstellen, die Server, Web-Tresor, UwULock-Client, Browsererweiterung, UwUSSH, UwURDP,
