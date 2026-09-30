@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Segmented } from '../components/web/controls';
+import { Button, ButtonRow, Segmented, Table } from '../components/ui';
 import { events, type Event } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
@@ -72,7 +72,12 @@ export function Events() {
   useEffect(() => load(null), [load]);
 
   return (
-    <>
+    <div className="stack">
+      <p className="section-lead">
+        {t(
+          'Anmeldungen, abgelehnte Anmeldungen, Registrierungen und was Admins getan haben – die neuesten zuerst, 90 Tage lang.',
+        )}
+      </p>
       <Segmented
         label={t('Art')}
         value={kind}
@@ -84,40 +89,42 @@ export function Events() {
           { value: 'admin', label: t('Admin') },
         ]}
       />
-      <table className="admin-table events">
-        <thead>
-          <tr>
+      <Table
+        label={t('Ereignisse')}
+        head={
+          <>
             <th>{t('Wann')}</th>
             <th>{t('Was')}</th>
             <th>{t('Wer')}</th>
             <th>{t('Von wo')}</th>
+          </>
+        }
+      >
+        {list.map((event) => (
+          <tr key={event.id} data-alarm={event.kind.endsWith('failed') || undefined}>
+            <td>{when(event.time)}</td>
+            <td>
+              {t(KINDS[event.kind] ?? event.kind)}
+              {event.detail && (
+                <small className="event-detail">{detailText(event.kind, event.detail)}</small>
+              )}
+            </td>
+            <td>{event.email ?? '–'}</td>
+            <td>
+              {event.ip ?? '–'}
+              {event.deviceType && <small className="event-detail">{event.deviceType}</small>}
+            </td>
           </tr>
-        </thead>
-        <tbody>
-          {list.map((event) => (
-            <tr key={event.id} data-alarm={event.kind.endsWith('failed') || undefined}>
-              <td>{when(event.time)}</td>
-              <td>
-                {t(KINDS[event.kind] ?? event.kind)}
-                {event.detail && (
-                  <small className="event-detail">{detailText(event.kind, event.detail)}</small>
-                )}
-              </td>
-              <td>{event.email ?? '–'}</td>
-              <td>
-                {event.ip ?? '–'}
-                {event.deviceType && <small className="event-detail">{event.deviceType}</small>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+        ))}
+      </Table>
       {list.length === 0 && <p className="empty-note">{t('Noch nichts.')}</p>}
       {more && (
-        <button className="load-more" onClick={() => load(list[list.length - 1]?.id ?? null)}>
-          {t('Ältere laden')}
-        </button>
+        <ButtonRow>
+          <Button onClick={() => load(list[list.length - 1]?.id ?? null)}>
+            {t('Ältere laden')}
+          </Button>
+        </ButtonRow>
       )}
-    </>
+    </div>
   );
 }

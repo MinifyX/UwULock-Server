@@ -1,65 +1,128 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Icon, type IconName } from '../components/Icon';
+import { initialOf } from '../components/AccountCard';
+import { Icon } from '../components/Icon';
 import { LoginScreen } from '../components/LoginScreen';
-import { Modal } from '../components/Modal';
 import { NyuScene } from '../components/nyu/scenes';
 import { Appearance } from '../components/SettingsDialog';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { SkipLink, TitleBar } from '../components/TitleBar';
 import { Toasts } from '../components/Toasts';
+import { Button, Modal, TabPanel, Tabs, useTabsId } from '../components/ui';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
-import { N_, t, useLanguage } from '../lib/i18n';
+import { t, useLanguage } from '../lib/i18n';
 import { go, useRoute } from '../lib/route';
 import { useServerInfo } from '../lib/branding';
-import { switchedOff, type SwitchId } from '../lib/switches';
+import { switchedOff } from '../lib/switches';
 import { ADMIN_SHORTCUTS, singleKey } from '../lib/shortcuts';
-import { AdminSettings } from './AdminSettings';
+import { locate, MOVED, visibleAreas, type TabId } from './areas';
+import { InvitationRules, MailServerTab, PushTab, StorageTab } from './AdminSettings';
 import { Backups } from './Backups';
 import { Branding } from './Branding';
+import { ComfortSettings } from './ComfortSettings';
 import { Diagnosis } from './Diagnosis';
+import { SaveBar, SettingsProvider } from './draft';
 import { Events } from './Events';
 import { Families } from './Families';
+import { FamilySettings } from './FamilySettings';
 import { Features } from './Features';
 import { Invitations } from './Invitations';
 import { Logs } from './Logs';
+import { MaskedServerSettings } from './MaskedServerSettings';
 import { Notifications } from './Notifications';
+import { Offsite } from './Offsite';
+import {
+  AdminAccessTab,
+  MasterPasswordTab,
+  MonitoringTab,
+  SignInTab,
+  UserMailsTab,
+} from './OperationsSettings';
 import { Overview } from './Overview';
 import { SendDomains } from './SendDomains';
-import { SsoPage } from './SsoPage';
+import { ScimTab, SsoProvider, SsoProviderTab, SsoRulesTab } from './SsoPage';
 import { Users } from './Users';
 
-/** The portal's pages; one that `needs` a feature switch is there only while it is on. */
-const PAGES: { path: string; label: string; icon: IconName; needs?: SwitchId }[] = [
-  { path: '/', label: N_('Übersicht'), icon: 'house' },
-  { path: '/users', label: N_('Nutzer'), icon: 'user' },
-  { path: '/invitations', label: N_('Einladungen'), icon: 'sparkles' },
-  { path: '/families', label: N_('Familien'), icon: 'house', needs: 'families' },
-  { path: '/features', label: N_('Funktionen'), icon: 'grid' },
-  { path: '/settings', label: N_('Einstellungen'), icon: 'shield' },
-  { path: '/login', label: N_('Anmeldung'), icon: 'key', needs: 'sso' },
-  { path: '/branding', label: N_('Aussehen'), icon: 'eye' },
-  { path: '/send-domains', label: N_('Send-Domains'), icon: 'globe', needs: 'send-domains' },
-  { path: '/events', label: N_('Ereignisse'), icon: 'history' },
-  { path: '/logs', label: N_('Log'), icon: 'terminal' },
-  { path: '/backups', label: N_('Backups'), icon: 'drive' },
-  {
-    path: '/notifications',
-    label: N_('Benachrichtigungen'),
-    icon: 'bell',
-    needs: 'admin-notifications',
-  },
-  { path: '/diagnosis', label: N_('Diagnose'), icon: 'lifebuoy' },
-];
+/** What a tab shows. */
+function content(tab: TabId, me: string, info: AccountInfo) {
+  switch (tab) {
+    case 'overview':
+      return <Overview />;
+    case 'accounts':
+      return <Users me={me} />;
+    case 'invitations':
+      return (
+        <>
+          <Invitations />
+          <InvitationRules />
+        </>
+      );
+    case 'families':
+      return (
+        <>
+          <Families />
+          <FamilySettings />
+        </>
+      );
+    case 'sign-in':
+      return <SignInTab />;
+    case 'master-password':
+      return <MasterPasswordTab />;
+    case 'admin-access':
+      return <AdminAccessTab />;
+    case 'sso':
+      return <SsoProviderTab />;
+    case 'sso-rules':
+      return <SsoRulesTab sso={info.sso ?? false} />;
+    case 'scim':
+      return <ScimTab />;
+    case 'features':
+      return <Features />;
+    case 'storage':
+      return <StorageTab />;
+    case 'icons':
+      return <ComfortSettings />;
+    case 'masked':
+      return <MaskedServerSettings />;
+    case 'send-domains':
+      return <SendDomains />;
+    case 'mail-server':
+      return <MailServerTab me={me} />;
+    case 'user-mails':
+      return <UserMailsTab />;
+    case 'push':
+      return <PushTab />;
+    case 'alerts':
+      return <Notifications />;
+    case 'local-backups':
+      return <Backups />;
+    case 'offsite':
+      return <Offsite />;
+    case 'branding':
+      return <Branding />;
+    case 'diagnosis':
+      return <Diagnosis />;
+    case 'events':
+      return <Events />;
+    case 'log':
+      return <Logs />;
+    case 'monitoring':
+      return <MonitoringTab />;
+  }
+}
 
 /**
  * The admin portal at `/admin`. It needs a login like the vault — admins are ordinary accounts
  * with the admin right — but not the vault's keys: after a reload the session is enough.
+ *
+ * Its shell is the web vault's: the bar on top, the sidebar with the areas (areas.ts), and the
+ * page with the area's tabs.
  */
 export function AdminApp() {
   useLanguage();
   const route = useRoute();
+  const tabsId = useTabsId();
   const [status, setStatus] = useState<Status | null>(null);
   const [info, setInfo] = useState<AccountInfo | null | 'none'>(null);
   const [appearance, setAppearance] = useState(false);
@@ -77,12 +140,17 @@ export function AdminApp() {
     account().then(setInfo, () => setInfo('none'));
   }, [status]);
 
-  // Pages of switched-off features are not there (docs/features.md).
+  // Areas and tabs of switched-off features are not there (docs/features.md).
   const serverInfo = useServerInfo();
-  const pages = PAGES.filter((p) => !p.needs || !switchedOff(serverInfo, p.needs));
-  const page = pages.find((p) => p.path === route.path) ?? pages[0]!;
+  const areas = visibleAreas((id) => !switchedOff(serverInfo, id));
+  const { area, tab } = locate(route.path, areas);
   const portal = Boolean(status && status.state !== 'logged-out' && info && info !== 'none');
   const modalOpen = appearance || shortcuts;
+
+  // An address of 0.6.0-beta.1 shows where its page is now.
+  useEffect(() => {
+    if (portal && MOVED[route.path]) location.replace(`#${tab.path}`);
+  }, [portal, route.path, tab.path]);
 
   // As in the vault: the background is inert under a dialog, and stops being so before the
   // dialog hands focus back.
@@ -90,8 +158,8 @@ export function AdminApp() {
     if (backgroundRef.current) backgroundRef.current.inert = modalOpen;
   }, [modalOpen]);
 
-  // The keyboard (see lib/shortcuts.ts): the overview, the look, and the pages by number or in
-  // order.
+  // The keyboard (see lib/shortcuts.ts): the overview, the look, and the areas by number or in
+  // order; the arrow keys move between an area's tabs.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const mod = event.ctrlKey || event.metaKey;
@@ -102,18 +170,18 @@ export function AdminApp() {
       }
       if (!singleKey(event)) return;
       const key = event.key.toLowerCase();
-      const index = pages.indexOf(page);
+      const index = areas.indexOf(area);
       if (key === '?') setShortcuts(true);
-      else if (portal && /^[1-9]$/.test(key) && !event.shiftKey && pages[Number(key) - 1])
-        go(pages[Number(key) - 1]!.path);
+      else if (portal && /^[1-9]$/.test(key) && !event.shiftKey && areas[Number(key) - 1])
+        go(areas[Number(key) - 1]!.tabs[0]!.path);
       else if (portal && (key === 'j' || key === 'k'))
-        go(pages[(index + (key === 'j' ? 1 : -1) + pages.length) % pages.length]!.path);
+        go(areas[(index + (key === 'j' ? 1 : -1) + areas.length) % areas.length]!.tabs[0]!.path);
       else return;
       event.preventDefault();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [page, pages, portal]);
+  }, [area, areas, portal]);
 
   let body;
   if (status === null) body = null;
@@ -136,7 +204,7 @@ export function AdminApp() {
               {t('Zum Tresor')}
             </a>
             <span className="spacer" />
-            <button onClick={() => void logout()}>{t('Abmelden')}</button>
+            <Button onClick={() => void logout()}>{t('Abmelden')}</Button>
           </div>
         </div>
       </div>
@@ -154,48 +222,86 @@ export function AdminApp() {
           </p>
           <div className="form-actions">
             <span className="spacer" />
-            <button onClick={() => void logout()}>{t('Abmelden')}</button>
+            <Button onClick={() => void logout()}>{t('Abmelden')}</Button>
           </div>
         </div>
       </div>
     );
   } else {
+    const me = status.email ?? '';
+    const shown = content(tab.id, me, info);
     body = (
-      <div className="admin">
-        <nav className="admin-nav" aria-label={t('Admin-Portal')}>
-          {pages.map((p, index) => (
-            <button
-              key={p.path}
-              type="button"
-              aria-current={p.path === page.path ? 'page' : undefined}
-              aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
-              onClick={() => go(p.path)}
+      <SettingsProvider>
+        <SsoProvider>
+          <div className="admin">
+            <nav className="sidebar admin-sidebar" aria-label={t('Admin-Portal')}>
+              <ul className="nav-list">
+                {areas.map((each, index) => (
+                  <li key={each.id}>
+                    <button
+                      type="button"
+                      className="nav-row"
+                      aria-current={each === area ? 'page' : undefined}
+                      aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
+                      onClick={() => go(each.tabs[0]!.path)}
+                    >
+                      <Icon name={each.icon} size={16} />
+                      <span className="nav-label">{t(each.label)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <span className="spacer" />
+              <div className="account-card admin-account">
+                <span className="avatar" aria-hidden>
+                  {initialOf({ name: status.name, email: me })}
+                </span>
+                <span className="account-text">
+                  <span className="account-email" title={me}>
+                    {me}
+                  </span>
+                  <span className="account-sync">{t('Angemeldet als Admin')}</span>
+                </span>
+              </div>
+            </nav>
+            <section
+              className="admin-page"
+              tabIndex={-1}
+              data-main-content
+              aria-labelledby={`${tabsId}-title`}
             >
-              <Icon name={p.icon} size={16} />
-              {t(p.label)}
-            </button>
-          ))}
-          <span className="spacer" />
-          <p className="admin-who">{t('Angemeldet als {email}', { email: status.email ?? '' })}</p>
-        </nav>
-        <section className="admin-page" tabIndex={-1} data-main-content>
-          <h1 className="admin-title">{t(page.label)}</h1>
-          {page.path === '/' && <Overview />}
-          {page.path === '/users' && <Users me={status.email ?? ''} />}
-          {page.path === '/invitations' && <Invitations />}
-          {page.path === '/families' && <Families />}
-          {page.path === '/features' && <Features />}
-          {page.path === '/settings' && <AdminSettings me={status.email ?? ''} />}
-          {page.path === '/login' && <SsoPage sso={info.sso ?? false} />}
-          {page.path === '/branding' && <Branding />}
-          {page.path === '/send-domains' && <SendDomains />}
-          {page.path === '/events' && <Events />}
-          {page.path === '/logs' && <Logs />}
-          {page.path === '/backups' && <Backups />}
-          {page.path === '/notifications' && <Notifications />}
-          {page.path === '/diagnosis' && <Diagnosis />}
-        </section>
-      </div>
+              <div className="admin-main">
+                <header className="page-head">
+                  <h1 className="page-title" id={`${tabsId}-title`}>
+                    {t(area.label)}
+                  </h1>
+                  <p className="page-lead">{t(area.lead)}</p>
+                </header>
+                {area.tabs.length > 1 ? (
+                  <>
+                    <Tabs
+                      label={t(area.label)}
+                      idPrefix={tabsId}
+                      value={tab.id}
+                      onChange={(id) => go(area.tabs.find((each) => each.id === id)!.path)}
+                      tabs={area.tabs.map((each) => ({ id: each.id, label: t(each.label) }))}
+                    />
+                    <TabPanel idPrefix={tabsId} tab={tab.id} className="admin-panel" key={tab.id}>
+                      <h2 className="sr-only">{t(tab.label)}</h2>
+                      {shown}
+                    </TabPanel>
+                  </>
+                ) : (
+                  <div className="admin-panel" key={tab.id}>
+                    {shown}
+                  </div>
+                )}
+              </div>
+              <SaveBar />
+            </section>
+          </div>
+        </SsoProvider>
+      </SettingsProvider>
     );
   }
 
@@ -246,9 +352,9 @@ export function AdminApp() {
           footer={
             <>
               <span className="spacer" />
-              <button className="primary" data-autofocus onClick={() => setAppearance(false)}>
+              <Button variant="primary" data-autofocus onClick={() => setAppearance(false)}>
                 {t('Schließen')}
-              </button>
+              </Button>
             </>
           }
         >

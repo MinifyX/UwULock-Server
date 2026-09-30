@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Modal } from '../components/Modal';
+import { Badge, Button, DangerZone, Field, Modal, Table } from '../components/ui';
 import {
   deleteUser,
   deleteUserDevice,
@@ -47,40 +47,44 @@ export function Users({ me }: { me: string }) {
 
   return (
     <>
-      <input
-        className="search admin-search"
-        placeholder={t('Suchen …')}
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-      />
-      <table className="admin-table">
-        <thead>
-          <tr>
+      <Field label={t('Konten durchsuchen')} hideLabel className="list-search">
+        <input
+          type="search"
+          placeholder={t('Name oder Adresse suchen …')}
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+        />
+      </Field>
+      <Table
+        label={t('Konten')}
+        head={
+          <>
             <th>{t('Konto')}</th>
             <th>{t('Einträge')}</th>
             <th>{t('Geräte')}</th>
             <th>{t('Dateien')}</th>
             <th>{t('Zuletzt angemeldet')}</th>
-            <th aria-label={t('Aktionen')} />
-          </tr>
-        </thead>
-        <tbody>
-          {shown?.map((user) => (
-            <UserRow
-              key={user.id}
-              user={user}
-              self={user.email === me}
-              open={open === user.id}
-              onToggle={() => setOpen(open === user.id ? null : user.id)}
-              onAction={(action) =>
-                action === 'enable' || action === 'make-admin'
-                  ? void run(user, action)
-                  : setConfirm({ user, action })
-              }
-            />
-          ))}
-        </tbody>
-      </table>
+            <th>
+              <span className="sr-only">{t('Aktionen')}</span>
+            </th>
+          </>
+        }
+      >
+        {shown?.map((user) => (
+          <UserRow
+            key={user.id}
+            user={user}
+            self={user.email === me}
+            open={open === user.id}
+            onToggle={() => setOpen(open === user.id ? null : user.id)}
+            onAction={(action) =>
+              action === 'enable' || action === 'make-admin'
+                ? void run(user, action)
+                : setConfirm({ user, action })
+            }
+          />
+        ))}
+      </Table>
       {shown?.length === 0 && <p className="empty-note">{t('Niemand gefunden.')}</p>}
       {confirm && (
         <Modal
@@ -90,18 +94,22 @@ export function Users({ me }: { me: string }) {
           footer={
             <>
               <span className="spacer" />
-              <button onClick={() => setConfirm(null)} data-secondary>
+              <Button onClick={() => setConfirm(null)} data-secondary>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className={confirm.action === 'delete' ? 'danger' : 'primary'}
+              </Button>
+              <Button
+                variant={
+                  confirm.action === 'delete' || confirm.action === 'reset-two-factor'
+                    ? 'danger'
+                    : 'primary'
+                }
                 onClick={() => {
                   void run(confirm.user, confirm.action);
                   setConfirm(null);
                 }}
               >
                 {t('Ja')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -161,10 +169,10 @@ function UserRow({
             <small>{user.email}</small>
           </button>
           <span className="badges">
-            {user.admin && <span className="badge">{t('Admin')}</span>}
-            {user.disabled && <span className="badge alarm">{t('gesperrt')}</span>}
-            {user.twoFactor && <span className="badge">2FA</span>}
-            {self && <span className="badge">{t('du')}</span>}
+            {user.admin && <Badge>{t('Admin')}</Badge>}
+            {user.disabled && <Badge tone="alarm">{t('gesperrt')}</Badge>}
+            {user.twoFactor && <Badge tone="ok">2FA</Badge>}
+            {self && <Badge tone="neutral">{t('du')}</Badge>}
           </span>
         </td>
         <td>{user.ciphers}</td>
@@ -172,7 +180,10 @@ function UserRow({
         <td>{user.storageBytes ? bytes(user.storageBytes) : '–'}</td>
         <td title={when(user.lastLogin) ?? ''}>{ago(seconds(user.lastLogin))}</td>
         <td className="row-actions">
-          <button onClick={onToggle}>{open ? t('Weniger') : t('Mehr')}</button>
+          <Button size="small" onClick={onToggle} aria-expanded={open}>
+            {open ? t('Weniger') : t('Verwalten')}
+            <span className="sr-only">{user.email}</span>
+          </Button>
         </td>
       </tr>
       {open && (
@@ -187,33 +198,35 @@ function UserRow({
             </p>
             <div className="row-buttons">
               {user.disabled ? (
-                <button onClick={() => onAction('enable')}>{t('Freigeben')}</button>
+                <Button size="small" onClick={() => onAction('enable')}>
+                  {t('Freigeben')}
+                </Button>
               ) : (
-                <button onClick={() => onAction('disable')} disabled={self}>
+                <Button size="small" onClick={() => onAction('disable')} disabled={self}>
                   {t('Sperren')}
-                </button>
+                </Button>
               )}
               {user.admin ? (
-                <button onClick={() => onAction('remove-admin')}>{t('Admin-Recht nehmen')}</button>
+                <Button size="small" onClick={() => onAction('remove-admin')}>
+                  {t('Admin-Recht nehmen')}
+                </Button>
               ) : (
-                <button onClick={() => onAction('make-admin')}>{t('Zum Admin machen')}</button>
+                <Button size="small" onClick={() => onAction('make-admin')}>
+                  {t('Zum Admin machen')}
+                </Button>
               )}
-              <button onClick={() => onAction('log-out')}>{t('Überall abmelden')}</button>
-              <button onClick={() => onAction('reset-two-factor')} disabled={!user.twoFactor}>
-                {t('Zwei-Schritt-Anmeldung zurücksetzen')}
-              </button>
-              <span className="spacer" />
-              <button className="danger" onClick={() => onAction('delete')} disabled={self}>
-                {t('Löschen')}
-              </button>
+              <Button size="small" onClick={() => onAction('log-out')}>
+                {t('Überall abmelden')}
+              </Button>
             </div>
+            <p className="row-facts">{t('Angemeldete Geräte')}</p>
             <ul className="device-list compact">
               {devices?.map((device) => (
                 <li key={device.id} className="device">
                   <span className="device-text">
                     <b>
                       {device.name} <small>· {device.typeName}</small>
-                      {!device.loggedIn && <span className="badge">{t('abgemeldet')}</span>}
+                      {!device.loggedIn && <Badge tone="neutral">{t('abgemeldet')}</Badge>}
                     </b>
                     <small>
                       {t('Zuletzt {when}', {
@@ -222,7 +235,9 @@ function UserRow({
                       {device.lastIp ? ` · ${device.lastIp}` : ''}
                     </small>
                   </span>
-                  <button
+                  <Button
+                    size="small"
+                    variant="quiet"
                     onClick={async () => {
                       try {
                         await deleteUserDevice(user.id, device.id);
@@ -233,11 +248,35 @@ function UserRow({
                     }}
                   >
                     {t('Entfernen')}
-                  </button>
+                    <span className="sr-only">{device.name}</span>
+                  </Button>
                 </li>
               ))}
               {devices?.length === 0 && <li className="empty-note">{t('Keine Geräte.')}</li>}
             </ul>
+            <DangerZone
+              heading={t('Gefährlich')}
+              lead={t('Das lässt sich nicht oder nur mit Mühe rückgängig machen.')}
+            >
+              <div className="row-buttons">
+                <Button
+                  size="small"
+                  variant="danger"
+                  onClick={() => onAction('reset-two-factor')}
+                  disabled={!user.twoFactor}
+                >
+                  {t('Zwei-Schritt-Anmeldung zurücksetzen')}
+                </Button>
+                <Button
+                  size="small"
+                  variant="danger"
+                  onClick={() => onAction('delete')}
+                  disabled={self}
+                >
+                  {t('Konto löschen …')}
+                </Button>
+              </div>
+            </DangerZone>
           </td>
         </tr>
       )}

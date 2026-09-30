@@ -55,11 +55,6 @@ a {
   gap: var(--uwu-space-3);
 }
 
-.field-grid.wide {
-  grid-template-columns: 2fr 1fr 1.4fr;
-  margin-top: var(--uwu-space-2);
-}
-
 /* A field and its button on one line: the name, an invitation. */
 .inline-form {
   display: inline-flex;
@@ -208,88 +203,187 @@ a {
 
 /* ── The admin portal ──────────────────────────────────── */
 
+/*
+ * The web vault's shell: the same sidebar (.sidebar, .nav-row, the account card at its foot),
+ * then the page with the area's heading, its tabs, and the shared sections, cards and rows.
+ * Only the layout lives here.
+ */
 .admin {
   display: grid;
-  grid-template-columns: 220px 1fr;
+  grid-template-columns: 236px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
 }
 
-.admin-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 14px 10px;
-  border-right: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
-}
-
-.admin-nav button {
-  justify-content: flex-start;
-  border: 0;
-  background: transparent;
-  color: var(--uwu-muted);
-  padding: 9px 12px;
-}
-
-.admin-nav button[aria-current='page'] {
-  background: var(--uwu-pink-tint);
-  color: var(--uwu-pink-ink);
-}
-
-.admin-who {
-  margin: 0;
-  padding: 0 12px;
-  font-size: 12px;
-  color: var(--uwu-muted);
-  overflow-wrap: anywhere;
+.admin-account {
+  margin-top: var(--uwu-space-3);
 }
 
 .admin-page {
+  min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 32px 48px;
+  display: flex;
+  flex-direction: column;
 }
 
-.admin-page > * {
-  max-width: 1100px;
+.admin-main {
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  padding: var(--uwu-space-6) var(--uwu-space-8) var(--uwu-space-10);
 }
 
-.admin-title {
-  margin: 0 0 18px;
-  font-size: 24px;
+.page-head {
+  display: grid;
+  gap: var(--uwu-space-1);
+  margin-bottom: var(--uwu-space-4);
+}
+
+.page-title {
+  margin: 0;
+  font-size: var(--uwu-text-xl);
   font-weight: 700;
+  line-height: var(--uwu-leading-tight);
   letter-spacing: -0.02em;
 }
 
-.admin-search {
-  max-width: 360px;
-  margin-bottom: 12px;
+.page-lead {
+  margin: 0;
+  font-size: var(--uwu-text-md);
+  line-height: var(--uwu-leading);
+  color: var(--uwu-muted);
 }
 
+/* A tab's content: its sections one below the other, the page's gap between them. */
+.admin-panel {
+  display: grid;
+  gap: var(--uwu-section-gap);
+  padding-top: var(--uwu-section-gap);
+  min-width: 0;
+}
+
+.admin-panel:focus-visible {
+  outline-offset: 4px;
+}
+
+.admin-panel > .section + .section,
+.offsite > .section + .section {
+  margin-top: 0;
+}
+
+/* Changed settings: saved or thrown away at the foot of the page, whichever tab it is. */
+.save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--uwu-space-2) var(--uwu-space-3);
+  padding: var(--uwu-space-3) var(--uwu-space-8);
+  border-top: 1px solid var(--uwu-hairline);
+  background: var(--uwu-surface);
+  box-shadow: var(--uwu-shadow-menu);
+}
+
+.save-bar-text {
+  margin: 0;
+  font-size: var(--uwu-text-md);
+  font-weight: 600;
+}
+
+.save-bar .callout {
+  flex: 1 1 280px;
+}
+
+/* A number and its unit: "90 Tage". */
+.number-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--uwu-space-2);
+}
+
+/* "Empfohlen: …" after a setting's explanation: on its own pill, flush when it wraps. */
+.recommended .badge {
+  margin-left: 0;
+}
+
+.narrow-number {
+  width: 132px;
+}
+
+.number-unit {
+  font-size: var(--uwu-text-md);
+  color: var(--uwu-muted);
+}
+
+/* What can lock people out or lose data: apart, framed in the alarm colour. */
+.danger-zone {
+  display: grid;
+  gap: var(--uwu-space-2);
+  padding: var(--uwu-card-pad-y) var(--uwu-card-pad-x);
+  border-radius: var(--uwu-radius-card);
+  border: 1px solid color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
+  background: var(--uwu-surface);
+  min-width: 0;
+}
+
+.danger-zone-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--uwu-space-2);
+  margin: 0;
+  font-size: var(--uwu-text-xs);
+  font-weight: 700;
+  line-height: var(--uwu-leading);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--uwu-alarm);
+}
+
+/* Cards and notices one below the other. */
+.card-list,
+.stack-list,
+.stack {
+  display: grid;
+  gap: var(--uwu-space-3);
+  min-width: 0;
+}
+
+.stack-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.channel-off .card-heading {
+  color: var(--uwu-muted);
+}
+
+.list-search {
+  max-width: 360px;
+  margin-bottom: var(--uwu-space-3);
+}
+
+/* The overview's numbers. */
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
+  gap: var(--uwu-space-3);
 }
 
 .stat {
-  display: grid;
   gap: 2px;
-  padding: 16px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: 28px; /* A number to see from afar: above the type scale on purpose. */
   font-weight: 800;
   letter-spacing: -0.02em;
 }
 
-.stat[data-alarm] .stat-value {
+.stat-value[data-alarm] {
   color: var(--uwu-alarm);
 }
 
@@ -298,22 +392,20 @@ a {
 }
 
 .stat-note {
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
 
 .facts {
   display: grid;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
+  margin: calc(-1 * var(--uwu-card-pad-y)) calc(-1 * var(--uwu-card-pad-x));
 }
 
 .fact {
   display: grid;
   grid-template-columns: 180px 1fr;
-  gap: 12px;
-  padding: 11px 16px;
+  gap: var(--uwu-space-3);
+  padding: var(--uwu-space-3) var(--uwu-space-4);
   border-bottom: 1px solid var(--uwu-hairline);
 }
 
@@ -326,54 +418,30 @@ a {
   font-weight: 600;
 }
 
+.fact-value {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .fact[data-alarm] .fact-value {
   color: var(--uwu-pink-ink);
   font-weight: 700;
 }
 
-.admin-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  margin-top: 12px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
-  overflow: hidden;
-}
-
-.admin-table th {
-  text-align: left;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--uwu-muted);
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--uwu-hairline);
-}
-
-.admin-table td {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--uwu-hairline);
-  vertical-align: middle;
-}
-
-.admin-table tr:last-child td {
-  border-bottom: 0;
-}
-
-.admin-table tr[data-disabled] td {
+/* Tables of records: a row that is off, a row that went wrong, the details of a row. */
+.table tr[data-disabled] td {
   color: var(--uwu-muted);
 }
 
-.admin-table tr[data-alarm] td:nth-child(2) {
+.table tr[data-alarm] td:nth-child(2) {
   color: var(--uwu-alarm);
   font-weight: 600;
 }
 
-.admin-table td small,
+.table td small,
 .event-detail {
   display: block;
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
   font-weight: 500;
 }
@@ -383,6 +451,7 @@ a {
   justify-items: start;
   gap: 1px;
   padding: 0;
+  min-height: 0;
   border: 0;
   background: transparent;
   text-align: left;
@@ -390,9 +459,18 @@ a {
 
 .row-toggle:hover:not(:disabled) {
   background: transparent;
+  text-decoration: underline;
 }
 
-.badges .badge:first-child {
+.badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--uwu-space-1);
+  margin-left: var(--uwu-space-2);
+  vertical-align: middle;
+}
+
+.badges .badge {
   margin-left: 0;
 }
 
@@ -401,32 +479,45 @@ a {
   white-space: nowrap;
 }
 
-.row-actions button + button {
-  margin-left: 6px;
+.row-actions > * + * {
+  margin-left: var(--uwu-space-2);
 }
 
 .row-detail td {
   background: var(--uwu-elevated);
 }
 
+.row-detail td > * + * {
+  margin-top: var(--uwu-space-3);
+}
+
 .row-facts {
-  margin: 0 0 10px;
+  margin: 0;
   color: var(--uwu-muted);
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
 }
 
 .row-buttons {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--uwu-space-2);
 }
 
 .invite-form {
   display: flex;
-  gap: 12px;
-  align-items: center;
+  gap: var(--uwu-space-3);
+  align-items: flex-end;
   flex-wrap: wrap;
+}
+
+.invite-form > .field {
+  flex: 1;
+  min-width: min(240px, 100%);
+  max-width: 420px;
+}
+
+.invite-form > .check {
+  min-height: var(--uwu-control-height);
 }
 
 .invite-form input[type='email'] {
@@ -436,68 +527,56 @@ a {
 }
 
 .invite-made {
-  margin: 14px 0 0;
+  margin: var(--uwu-space-3) 0 0;
   align-items: flex-start;
 }
 
 .invite-made > span {
   flex: 1;
   min-width: 0;
-  line-height: 1.5;
+  line-height: var(--uwu-leading);
 }
 
 .invite-link {
   display: block;
-  margin-top: 6px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  margin-top: var(--uwu-space-2);
+  padding: var(--uwu-space-2);
+  border-radius: var(--uwu-radius-small);
   background: var(--uwu-canvas);
   word-break: break-all;
   user-select: all;
 }
 
-.admin-settings .setting-control .select {
-  min-width: 140px;
-}
-
-.sticky-actions {
-  position: sticky;
-  bottom: -48px;
-  margin-top: 20px;
-  padding: 12px 0 16px;
-  background: var(--uwu-canvas);
-  border-top: 1px solid var(--uwu-hairline);
-}
-
 .load-more {
-  margin-top: 12px;
+  margin-top: var(--uwu-space-3);
 }
 
 .log-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--uwu-space-3);
+  margin-bottom: var(--uwu-space-3);
 }
 
 .log-box {
-  height: calc(100vh - 230px);
+  height: calc(100vh - 330px);
   min-height: 240px;
   overflow: auto;
-  padding: 10px 12px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   border-radius: var(--uwu-radius-card);
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
   font-family: var(--uwu-mono);
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
 }
 
 .log-line {
   display: flex;
-  gap: 10px;
+  gap: var(--uwu-space-3);
   margin: 0;
   padding: 2px 0;
-  line-height: 1.5;
+  line-height: var(--uwu-leading);
 }
 
 .log-time {
@@ -528,37 +607,22 @@ a {
 
 /* ── The numbers over time ─────────────────────────────── */
 
-.history {
-  margin-top: 28px;
-}
-
 .history-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.history-head .settings-heading {
-  margin: 0;
+  gap: var(--uwu-space-3);
 }
 
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
+  gap: var(--uwu-space-3);
 }
 
 .chart-card {
-  display: grid;
-  gap: 8px;
   margin: 0;
-  padding: 16px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
+  gap: var(--uwu-space-2);
 }
 
 .chart-card figcaption {
@@ -567,7 +631,7 @@ a {
 }
 
 .chart-value {
-  font-size: 22px;
+  font-size: var(--uwu-text-xl);
   font-weight: 800;
   letter-spacing: -0.02em;
 }
@@ -600,55 +664,65 @@ a {
 .chart-axis {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--uwu-text-xs);
   color: var(--uwu-muted);
 }
 
 /* ── Narrow screens ────────────────────────────────────── */
 
 @media (max-width: 760px) {
+  /* The areas as one row that scrolls sideways, above the page. */
   .admin {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .admin-nav {
+  .admin-sidebar {
     flex-direction: row;
     overflow-x: auto;
+    overflow-y: hidden;
     border-right: 0;
     border-bottom: 1px solid var(--uwu-hairline);
-    padding: 8px;
+    padding: var(--uwu-space-2);
+    scrollbar-width: none;
   }
 
-  .admin-nav .spacer,
-  .admin-who {
+  .admin-sidebar .nav-list {
+    grid-auto-flow: column;
+  }
+
+  .admin-sidebar .nav-row {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .admin-sidebar .nav-label {
+    overflow: visible;
+  }
+
+  .admin-sidebar .spacer,
+  .admin-account {
     display: none;
   }
 
-  .admin-page {
-    padding: 16px;
+  .admin-main {
+    padding: var(--uwu-space-4) var(--uwu-space-4) var(--uwu-space-8);
+  }
+
+  .save-bar {
+    padding: var(--uwu-space-3) var(--uwu-space-4);
   }
 
   .stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .stat {
-    padding: 12px;
+    gap: var(--uwu-space-2);
   }
 
   .stat-value {
-    font-size: 22px;
+    font-size: var(--uwu-text-xl);
   }
 
-  /* A wide table scrolls sideways inside its card instead of being cut off. */
-  .admin-table {
-    display: block;
-    overflow-x: auto;
-  }
-
-  .admin-table th {
+  .table th {
     white-space: nowrap;
   }
 
@@ -657,8 +731,7 @@ a {
     gap: 2px;
   }
 
-  .field-grid,
-  .field-grid.wide {
+  .field-grid {
     grid-template-columns: 1fr;
   }
 
@@ -925,19 +998,6 @@ a {
   margin: 8px 0;
 }
 
-.field-grid.four {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 8px;
-}
-
-.field-grid .span-2 {
-  grid-column: span 2;
-}
-
-.narrow-number {
-  width: 90px;
-}
-
 /* The count on the settings button: new security notices. */
 .titlebar-action {
   position: relative;
@@ -1010,102 +1070,6 @@ a {
   display: grid;
 }
 
-/* The overview: alerts first. */
-.alert-list {
-  list-style: none;
-  margin: 0 0 14px;
-  padding: 0;
-  display: grid;
-  gap: 8px;
-}
-
-.alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
-}
-
-.alert[data-severity='warning'],
-.alert[data-severity='error'] {
-  border-color: color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
-}
-
-.alert > svg {
-  flex: none;
-  margin-top: 1px;
-  color: var(--uwu-alarm);
-}
-
-.alert[data-severity='info'] > svg {
-  color: var(--uwu-pink-ink);
-}
-
-.alert-text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.alert-text small {
-  color: var(--uwu-muted);
-  overflow-wrap: anywhere;
-}
-
-.overview-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
-  padding: 10px 12px 10px 16px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
-}
-
-.overview-line[data-alarm] {
-  border-color: color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
-}
-
-.overview-line > svg {
-  flex: none;
-  color: var(--uwu-muted);
-}
-
-.overview-line[data-alarm] > svg {
-  color: var(--uwu-alarm);
-}
-
-.overview-line-text {
-  flex: 1;
-  min-width: 200px;
-  overflow-wrap: anywhere;
-}
-
-/* Notification channels, one card each. */
-.channel-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.channel-card {
-  display: grid;
-  gap: 10px;
-  padding: 16px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
-}
-
-.channel-card[data-disabled] .channel-name {
-  color: var(--uwu-muted);
-}
-
 .channel-head {
   display: flex;
   align-items: center;
@@ -1120,14 +1084,6 @@ a {
 .channel-name {
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-.channel-card .field-grid.wide {
-  margin-top: 0;
-}
-
-.channel-card .form-actions {
-  flex-wrap: wrap;
 }
 
 .channel-status {
@@ -1199,28 +1155,13 @@ a {
   color: var(--uwu-alarm);
 }
 
-/* The diagnosis: a card per check, its state in words and an icon. */
-.diagnosis-date {
-  margin: 14px 0 0;
-  color: var(--uwu-muted);
-}
-
+/* The diagnosis: a card per check (.card), its state on a Badge; a problem frames it. */
 .check-list {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px;
-}
-
-.check-card {
-  display: grid;
-  gap: 6px;
-  padding: 14px 16px;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-hairline);
-  background: var(--uwu-surface);
-  min-width: 0;
+  gap: var(--uwu-space-3);
 }
 
 .check-card[data-status='warning'],
@@ -1228,60 +1169,28 @@ a {
   border-color: color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
 }
 
-.check-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 9px;
-  border-radius: var(--uwu-radius-pill);
-  font-size: 11.5px;
-  font-weight: 700;
-  background: var(--uwu-elevated);
-  color: var(--uwu-muted);
-}
-
-.status-badge[data-status='ok'] {
-  background: color-mix(in srgb, var(--uwu-online) 16%, transparent);
-  color: var(--uwu-online);
-}
-
-.status-badge[data-status='warning'],
-.status-badge[data-status='error'] {
-  background: color-mix(in srgb, var(--uwu-alarm) 18%, transparent);
-  color: var(--uwu-alarm);
-}
-
-.status-badge[data-status='error'] {
-  outline: 1px solid var(--uwu-alarm);
+.check-card .badge {
+  margin-left: 0;
 }
 
 .check-summary,
 .check-detail,
 .check-fix p {
   margin: 0;
-  line-height: 1.5;
+  line-height: var(--uwu-leading);
   overflow-wrap: anywhere;
 }
 
 .check-detail {
-  font-size: 13px;
+  font-size: var(--uwu-text-md);
   color: var(--uwu-muted);
   white-space: pre-wrap;
 }
 
 .check-fix {
   display: grid;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 10px;
+  gap: var(--uwu-space-2);
+  padding-top: var(--uwu-space-3);
   border-top: 1px solid var(--uwu-hairline);
 }
 
@@ -1296,40 +1205,24 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 4px 4px 4px 12px;
+  gap: var(--uwu-space-2);
+  padding: var(--uwu-space-1) var(--uwu-space-1) var(--uwu-space-1) var(--uwu-space-3);
   border-bottom: 1px solid var(--uwu-hairline);
-  font-size: 12px;
+  font-size: var(--uwu-text-sm);
   font-weight: 700;
   color: var(--uwu-muted);
 }
 
-.snippet-head button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  font-size: 12px;
-}
-
 .snippet pre {
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
   overflow-x: auto;
   font-family: var(--uwu-mono);
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: var(--uwu-text-sm);
+  line-height: var(--uwu-leading);
 }
 
 @media (max-width: 760px) {
-  .field-grid.four {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .field-grid .span-2 {
-    grid-column: auto;
-  }
-
   .check-grid {
     grid-template-columns: 1fr;
   }
@@ -1342,7 +1235,8 @@ a {
 /* ── Off-site backups ─────────────────────────────────── */
 
 .offsite {
-  margin-bottom: 20px;
+  display: grid;
+  gap: var(--uwu-section-gap);
 }
 
 code.wrap {

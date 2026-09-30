@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Icon } from '../components/Icon';
-import { Modal } from '../components/Modal';
 import { PasswordInput } from '../components/PasswordInput';
-import { Button, Callout } from '../components/ui';
 import {
-  PasswordPrompt,
-  ResultLine,
-  Row,
+  Button,
+  ButtonRow,
+  Callout,
+  Card,
+  Checkbox,
+  DangerZone,
+  Field,
+  FormRow,
+  Modal,
+  Section,
   Segmented,
+  SettingRow,
+  Table,
+  TextField,
   Toggle,
-  type Result,
-} from '../components/web/controls';
+} from '../components/ui';
+import { PasswordPrompt, ResultLine, type Result } from '../components/web/controls';
+import { Explain, NumberInput } from './fields';
 import { logout } from '../lib/api';
 import {
   forgetHostKey,
@@ -141,58 +149,67 @@ export function Offsite() {
 
   const status = view.status;
   return (
-    <section className="channel-card offsite" aria-label={t('Backups außer Haus')}>
-      <div className="channel-head">
-        <b className="channel-name">{t('Backups außer Haus')}</b>
-        <span className="spacer" />
-        <Toggle
-          label={t('Backups außer Haus an')}
-          checked={draft.enabled}
-          disabled={!target}
-          onChange={(enabled) => setDraft({ ...draft, enabled })}
-        />
-      </div>
-      <p className="settings-lead">
-        {t(
+    <div className="offsite">
+      <Section
+        heading={t('Backups außer Haus')}
+        lead={t(
           'Jede Nacht und auf Knopfdruck auf ein anderes System: dedupliziert (nur Neues geht hoch) und verschlüsselt. Enthält die Datenbank, Anhänge, Send-Dateien, Datei-Anfragen und die Schlüssel des Servers.',
         )}
-      </p>
+      >
+        {view.encryptionRequired && (
+          <Callout tone="error">
+            {t(
+              'Diese Backups gehen unverschlüsselt per SFTP oder S3 und laufen deshalb nicht mehr. Speichere die Einstellungen verschlüsselt, an einem neuen Ort.',
+            )}
+          </Callout>
+        )}
+        <SettingRow
+          label={t('Backups außer Haus an')}
+          description={
+            target
+              ? t('Jede Nacht zur eingestellten Zeit, dazu jederzeit mit „Jetzt sichern“.')
+              : t('Erst ein Ziel wählen.')
+          }
+        >
+          <Toggle
+            label={t('Backups außer Haus an')}
+            checked={draft.enabled}
+            disabled={!target}
+            onChange={(enabled) => setDraft({ ...draft, enabled })}
+          />
+        </SettingRow>
+      </Section>
 
-      {view.encryptionRequired && (
-        <p className="form-error" role="alert">
-          {t(
-            'Diese Backups gehen unverschlüsselt per SFTP oder S3 und laufen deshalb nicht mehr. Speichere die Einstellungen verschlüsselt, an einem neuen Ort.',
-          )}
-        </p>
-      )}
-      <Segmented
-        label={t('Ziel')}
-        value={target?.kind ?? ('' as OffsiteKind)}
-        onChange={(kind) =>
-          setDraft({
-            ...draft,
-            target: blankTarget(kind),
-            encrypted: kind === 'folder' ? draft.encrypted : true,
-          })
-        }
-        options={KINDS.map((k) => ({ value: k.value, label: t(k.label) }))}
-      />
+      <Section
+        heading={t('Wohin')}
+        lead={t('Ein NAS per SFTP, ein S3-Speicher oder ein eingehängter Ordner.')}
+      >
+        <SettingRow label={t('Ziel')}>
+          <Segmented
+            label={t('Ziel')}
+            value={target?.kind ?? ('' as OffsiteKind)}
+            onChange={(kind) =>
+              setDraft({
+                ...draft,
+                target: blankTarget(kind),
+                encrypted: kind === 'folder' ? draft.encrypted : true,
+              })
+            }
+            options={KINDS.map((k) => ({ value: k.value, label: t(k.label) }))}
+          />
+        </SettingRow>
 
-      {target && (
-        <div className="field-grid wide">
-          {target.kind === 'sftp' && (
-            <>
-              <label className="field">
-                <span>{t('Server')}</span>
-                <input
-                  value={target.host ?? ''}
-                  placeholder="nas.example.com"
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ host: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Port')}</span>
+        {target?.kind === 'sftp' && (
+          <>
+            <FormRow min="wide">
+              <TextField
+                label={t('Server')}
+                value={target.host ?? ''}
+                placeholder="nas.example.com"
+                spellCheck={false}
+                onChange={(host) => setTarget({ host })}
+              />
+              <Field label={t('Port')}>
                 <input
                   type="number"
                   min={1}
@@ -200,264 +217,286 @@ export function Offsite() {
                   value={target.port ?? 22}
                   onChange={(e) => setTarget({ port: Number(e.target.value) })}
                 />
-              </label>
-              <label className="field">
-                <span>{t('Benutzer')}</span>
-                <input
-                  value={target.user ?? ''}
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ user: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Ordner auf dem Server')}</span>
-                <input
-                  value={target.path ?? ''}
-                  placeholder="/volume1/backups/uwulock"
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ path: e.target.value })}
-                />
-              </label>
-              <div className="field">
-                <span>{t('Anmeldung')}</span>
-                <Segmented
-                  label={t('Anmeldung')}
-                  value={target.method ?? 'key'}
-                  onChange={(method) => setTarget({ method })}
-                  options={[
-                    { value: 'key', label: t('Schlüssel des Servers') },
-                    { value: 'password', label: t('Passwort') },
-                  ]}
-                />
-              </div>
-              {target.method === 'password' ? (
-                <label className="field">
-                  <span>{t('Passwort')}</span>
-                  <PasswordInput
-                    value={target.password ?? ''}
-                    onChange={(password) => setTarget({ password })}
-                    autoComplete="new-password"
-                  />
-                  {view.target?.passwordSet && (
-                    <small className="field-hint">
-                      {t(
+              </Field>
+            </FormRow>
+            <FormRow min="wide">
+              <TextField
+                label={t('Benutzer')}
+                value={target.user ?? ''}
+                spellCheck={false}
+                onChange={(user) => setTarget({ user })}
+              />
+              <TextField
+                label={t('Ordner auf dem Server')}
+                value={target.path ?? ''}
+                placeholder="/volume1/backups/uwulock"
+                spellCheck={false}
+                onChange={(path) => setTarget({ path })}
+              />
+            </FormRow>
+            <SettingRow
+              label={t('Anmeldung')}
+              description={t('Mit dem Schlüssel des Servers ist sicherer als mit einem Passwort.')}
+            >
+              <Segmented
+                label={t('Anmeldung')}
+                value={target.method ?? 'key'}
+                onChange={(method) => setTarget({ method })}
+                options={[
+                  { value: 'key', label: t('Schlüssel des Servers') },
+                  { value: 'password', label: t('Passwort') },
+                ]}
+              />
+            </SettingRow>
+            {target.method === 'password' ? (
+              <Field
+                label={t('Passwort')}
+                hint={
+                  view.target?.passwordSet
+                    ? t(
                         'Gespeichert. Leer lassen behält es, solange Server und Benutzer gleich bleiben.',
-                      )}
-                    </small>
-                  )}
-                </label>
-              ) : view.target?.publicKey ? (
-                <div className="field">
-                  <span>{t('Für ~/.ssh/authorized_keys des Backup-Benutzers')}</span>
-                  <code className="mono wrap">{view.target.publicKey}</code>
-                  <button
-                    type="button"
+                      )
+                    : undefined
+                }
+              >
+                <PasswordInput
+                  value={target.password ?? ''}
+                  onChange={(password) => setTarget({ password })}
+                  autoComplete="new-password"
+                />
+              </Field>
+            ) : view.target?.publicKey ? (
+              <Card
+                heading={t('Für ~/.ssh/authorized_keys des Backup-Benutzers')}
+                aside={
+                  <Button
+                    size="small"
+                    icon="copy"
                     onClick={() =>
                       void navigator.clipboard
                         .writeText(view.target?.publicKey ?? '')
                         .then(() => toast(t('Kopiert ✧'), 'info'))
                     }
                   >
-                    <Icon name="copy" size={14} />
                     {t('Kopieren')}
-                  </button>
-                </div>
-              ) : (
-                <p className="field-hint">
-                  {t('Nach dem Speichern steht hier der öffentliche Schlüssel des Servers.')}
-                </p>
-              )}
-              {view.target?.hostKey && (
-                <div className="field">
-                  <span>{t('Host-Schlüssel des Backup-Servers')}</span>
-                  <code className="mono wrap">{view.target.hostKey}</code>
-                  <button type="button" disabled={busy} onClick={() => setAskingForget(true)}>
-                    {t('Vergessen')}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-          {target.kind === 's3' && (
-            <>
-              <label className="field">
-                <span>{t('S3-Adresse (ohne Bucket)')}</span>
-                <input
-                  value={target.endpoint ?? ''}
-                  placeholder="https://s3.eu-central-1.amazonaws.com"
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ endpoint: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Region')}</span>
-                <input
-                  value={target.region ?? ''}
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ region: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Bucket')}</span>
-                <input
-                  value={target.bucket ?? ''}
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ bucket: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Ordner im Bucket')}</span>
-                <input
-                  value={target.prefix ?? ''}
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ prefix: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Access Key')}</span>
-                <input
-                  value={target.accessKey ?? ''}
-                  spellCheck={false}
-                  onChange={(e) => setTarget({ accessKey: e.target.value })}
-                />
-              </label>
-              <label className="field">
-                <span>{t('Secret Key')}</span>
+                  </Button>
+                }
+              >
+                <code className="mono wrap">{view.target.publicKey}</code>
+              </Card>
+            ) : (
+              <p className="field-hint">
+                {t('Nach dem Speichern steht hier der öffentliche Schlüssel des Servers.')}
+              </p>
+            )}
+            {view.target?.hostKey && (
+              <Card
+                heading={t('Host-Schlüssel des Backup-Servers')}
+                aside={
+                  <Button
+                    size="small"
+                    variant="quiet-danger"
+                    disabled={busy}
+                    onClick={() => setAskingForget(true)}
+                  >
+                    {t('Vergessen …')}
+                  </Button>
+                }
+              >
+                <code className="mono wrap">{view.target.hostKey}</code>
+              </Card>
+            )}
+          </>
+        )}
+        {target?.kind === 's3' && (
+          <>
+            <FormRow min="wide">
+              <TextField
+                label={t('S3-Adresse (ohne Bucket)')}
+                value={target.endpoint ?? ''}
+                placeholder="https://s3.eu-central-1.amazonaws.com"
+                spellCheck={false}
+                onChange={(endpoint) => setTarget({ endpoint })}
+              />
+              <TextField
+                label={t('Region')}
+                value={target.region ?? ''}
+                spellCheck={false}
+                onChange={(region) => setTarget({ region })}
+              />
+            </FormRow>
+            <FormRow min="wide">
+              <TextField
+                label={t('Bucket')}
+                value={target.bucket ?? ''}
+                spellCheck={false}
+                onChange={(bucket) => setTarget({ bucket })}
+              />
+              <TextField
+                label={t('Ordner im Bucket')}
+                value={target.prefix ?? ''}
+                spellCheck={false}
+                onChange={(prefix) => setTarget({ prefix })}
+              />
+            </FormRow>
+            <FormRow min="wide">
+              <TextField
+                label={t('Access Key')}
+                value={target.accessKey ?? ''}
+                spellCheck={false}
+                onChange={(accessKey) => setTarget({ accessKey })}
+              />
+              <Field
+                label={t('Secret Key')}
+                hint={
+                  view.target?.secretKeySet
+                    ? t('Gespeichert. Leer lassen behält ihn für denselben Bucket und Access Key.')
+                    : undefined
+                }
+              >
                 <PasswordInput
                   value={target.secretKey ?? ''}
                   onChange={(secretKey) => setTarget({ secretKey })}
                   autoComplete="new-password"
                 />
-                {view.target?.secretKeySet && (
-                  <small className="field-hint">
-                    {t('Gespeichert. Leer lassen behält ihn für denselben Bucket und Access Key.')}
-                  </small>
-                )}
-              </label>
-              <label className="check">
-                <input
-                  type="checkbox"
-                  checked={target.pathStyle ?? false}
-                  onChange={(e) => setTarget({ pathStyle: e.target.checked })}
-                />
-                <span>{t('Bucket im Pfad (MinIO und ähnliche)')}</span>
-              </label>
-            </>
-          )}
-          {target.kind === 'folder' && (
-            <label className="field">
-              <span>{t('Ordner (eingehängt, außerhalb der Daten)')}</span>
-              <input
-                value={target.path ?? ''}
-                placeholder="/backup"
-                spellCheck={false}
-                onChange={(e) => setTarget({ path: e.target.value })}
-              />
-            </label>
-          )}
-        </div>
-      )}
+              </Field>
+            </FormRow>
+            <Checkbox
+              label={t('Bucket im Pfad (MinIO und ähnliche)')}
+              checked={target.pathStyle ?? false}
+              onChange={(pathStyle) => setTarget({ pathStyle })}
+            />
+          </>
+        )}
+        {target?.kind === 'folder' && (
+          <TextField
+            label={t('Ordner (eingehängt, außerhalb der Daten)')}
+            value={target.path ?? ''}
+            placeholder="/backup"
+            spellCheck={false}
+            onChange={(path) => setTarget({ path })}
+          />
+        )}
+      </Section>
 
-      <div className="field-grid wide">
-        <label className="field">
-          <span>{t('Jede Nacht um (UTC)')}</span>
+      <Section
+        heading={t('Zeitplan und Aufbewahrung')}
+        lead={t('Wann gesichert wird, und wie viele ältere Stände am Ziel bleiben.')}
+      >
+        <SettingRow
+          label={t('Jede Nacht um')}
+          description={t('In UTC, der Weltzeit ohne Sommerzeit.')}
+        >
           <input
             type="time"
+            aria-label={t('Jede Nacht um (UTC)')}
             value={`${pad(draft.hour)}:${pad(draft.minute)}`}
             onChange={(e) => {
               const [hour, minute] = e.target.value.split(':').map(Number);
               setDraft({ ...draft, hour: hour ?? 0, minute: minute ?? 0 });
             }}
           />
-        </label>
-        <label className="field">
-          <span>{t('Tage aufheben')}</span>
-          <input
-            type="number"
+        </SettingRow>
+        <SettingRow
+          label={t('Tägliche Stände aufheben')}
+          description={t('Von jedem der letzten Tage einer.')}
+        >
+          <NumberInput
+            label={t('Tägliche Stände aufheben')}
+            unit={t('Tage')}
             min={0}
             max={1000}
             value={draft.retention.days}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                retention: { ...draft.retention, days: Number(e.target.value) },
-              })
+            onChange={(days) =>
+              setDraft({ ...draft, retention: { ...draft.retention, days: days ?? 0 } })
             }
           />
-        </label>
-        <label className="field">
-          <span>{t('Wochen aufheben')}</span>
-          <input
-            type="number"
+        </SettingRow>
+        <SettingRow
+          label={t('Wöchentliche Stände aufheben')}
+          description={t('Danach einer pro Woche.')}
+        >
+          <NumberInput
+            label={t('Wöchentliche Stände aufheben')}
+            unit={t('Wochen')}
             min={0}
             max={1000}
             value={draft.retention.weeks}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                retention: { ...draft.retention, weeks: Number(e.target.value) },
-              })
+            onChange={(weeks) =>
+              setDraft({ ...draft, retention: { ...draft.retention, weeks: weeks ?? 0 } })
             }
           />
-        </label>
-        <label className="field">
-          <span>{t('Monate aufheben')}</span>
-          <input
-            type="number"
+        </SettingRow>
+        <SettingRow
+          label={t('Monatliche Stände aufheben')}
+          description={t('Und danach einer pro Monat.')}
+        >
+          <NumberInput
+            label={t('Monatliche Stände aufheben')}
+            unit={t('Monate')}
             min={0}
             max={1000}
             value={draft.retention.months}
-            onChange={(e) =>
-              setDraft({
-                ...draft,
-                retention: { ...draft.retention, months: Number(e.target.value) },
-              })
+            onChange={(months) =>
+              setDraft({ ...draft, retention: { ...draft.retention, months: months ?? 0 } })
             }
           />
-        </label>
-        <label className="field">
-          <span>{t('Warnen, wenn das letzte älter ist als (Stunden)')}</span>
-          <input
-            type="number"
+        </SettingRow>
+        <SettingRow
+          label={t('Warnen nach')}
+          description={t('Ist das letzte gelungene Backup älter, meldet es die Übersicht.')}
+        >
+          <NumberInput
+            label={t('Warnen nach')}
+            unit={t('Stunden')}
             min={1}
             max={2160}
             value={draft.warnAfterHours}
-            onChange={(e) => setDraft({ ...draft, warnAfterHours: Number(e.target.value) })}
+            onChange={(warnAfterHours) =>
+              setDraft({ ...draft, warnAfterHours: warnAfterHours ?? 0 })
+            }
           />
-        </label>
-      </div>
-      <Row
-        label={t('Verschlüsselt')}
-        description={
-          plainAllowed
-            ? t(
-                'Empfohlen. Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf. Liegen erst Backups am Ziel, lässt sich das nicht mehr ändern.',
-              )
-            : t(
+        </SettingRow>
+      </Section>
+
+      <Section heading={t('Verschlüsselung')}>
+        <SettingRow
+          label={t('Verschlüsselt')}
+          description={
+            plainAllowed ? (
+              <Explain recommended={t('an')}>
+                {t(
+                  'Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf. Liegen erst Backups am Ziel, lässt sich das nicht mehr ändern.',
+                )}
+              </Explain>
+            ) : (
+              t(
                 'Backups per SFTP oder S3 sind immer verschlüsselt. Der Wiederherstellungsschlüssel erscheint einmal nach dem Speichern: Heb ihn getrennt vom Server auf.',
               )
-        }
-      >
-        <Toggle
-          label={t('Verschlüsselt')}
-          checked={draft.encrypted || !plainAllowed}
-          disabled={!plainAllowed}
-          onChange={(encrypted) => setDraft({ ...draft, encrypted })}
-        />
-      </Row>
-      {plainAllowed && !draft.encrypted && (
-        <p className="form-error" role="alert">
-          {t(
-            'Unverschlüsselt liegt die ganze Datenbank lesbar im Ordner: Konten, Passwort-Hashes, die verschlüsselten Tresore. Die Schlüssel des Servers bleiben weg; nach einem Zurückspielen melden sich alle neu an, und SSO sowie UwUMail müssen neu eingerichtet werden. Zurückspielen geht dann nur über die Kommandozeile.',
-          )}
-        </p>
-      )}
+            )
+          }
+        >
+          <Toggle
+            label={t('Verschlüsselt')}
+            checked={draft.encrypted || !plainAllowed}
+            disabled={!plainAllowed}
+            onChange={(encrypted) => setDraft({ ...draft, encrypted })}
+          />
+        </SettingRow>
+        {plainAllowed && !draft.encrypted && (
+          <Callout tone="error">
+            {t(
+              'Unverschlüsselt liegt die ganze Datenbank lesbar im Ordner: Konten, Passwort-Hashes, die verschlüsselten Tresore. Die Schlüssel des Servers bleiben weg; nach einem Zurückspielen melden sich alle neu an, und SSO sowie UwUMail müssen neu eingerichtet werden. Zurückspielen geht dann nur über die Kommandozeile.',
+            )}
+          </Callout>
+        )}
+      </Section>
 
-      <div className="form-actions">
-        <button className="primary" disabled={busy || !dirty} onClick={() => setAskingSave(true)}>
+      <ButtonRow>
+        <Button variant="primary" disabled={busy || !dirty} onClick={() => setAskingSave(true)}>
           {t('Speichern')}
-        </button>
-        <button
+        </Button>
+        <Button
           disabled={busy || dirty || !view.target}
           onClick={() =>
             void run(async () => {
@@ -479,8 +518,8 @@ export function Offsite() {
           }
         >
           {t('Verbindung testen')}
-        </button>
-        <button
+        </Button>
+        <Button
           disabled={busy || dirty || !view.target || view.running}
           onClick={() =>
             void run(async () => {
@@ -490,63 +529,74 @@ export function Offsite() {
           }
         >
           {view.running ? t('Läuft …') : t('Jetzt sichern')}
-        </button>
+        </Button>
         {view.encrypted && (
-          <button className="quiet" disabled={busy} onClick={() => setAskingKey(true)}>
+          <Button variant="quiet" disabled={busy} onClick={() => setAskingKey(true)}>
             {t('Wiederherstellungsschlüssel zeigen')}
-          </button>
+          </Button>
         )}
-      </div>
+      </ButtonRow>
       <ResultLine result={result} />
 
-      <div className="detail-card">
-        <p className="detail-line" data-tone={view.stale ? 'warning' : undefined}>
-          {status.lastSuccess
-            ? t('Zuletzt gelungen: {when}', { when: when(status.lastSuccess) ?? '' })
-            : t('Noch kein Backup außer Haus.')}
-          {view.stale && ` – ${t('zu alt')}`}
-        </p>
-        {status.bytes !== null && (
-          <p className="detail-line">
-            {t('{size} gesichert, davon {uploaded} neu hochgeladen, in {seconds} s', {
-              size: bytes(status.bytes),
-              uploaded: bytes(status.uploaded ?? 0),
-              seconds: status.lastDuration ?? 0,
-            })}
+      <Section heading={t('Letzter Lauf')}>
+        <Card as="div">
+          <p className="detail-line" data-tone={view.stale ? 'warning' : undefined}>
+            {status.lastSuccess
+              ? t('Zuletzt gelungen: {when}', { when: when(status.lastSuccess) ?? '' })
+              : t('Noch kein Backup außer Haus.')}
+            {view.stale && ` – ${t('zu alt')}`}
           </p>
-        )}
-        {status.lastError && (
-          <p className="form-error" role="alert">
-            {t('Der letzte Versuch ging nicht: {error}', { error: status.lastError })}
-          </p>
-        )}
-      </div>
+          {status.bytes !== null && (
+            <p className="detail-line">
+              {t('{size} gesichert, davon {uploaded} neu hochgeladen, in {seconds} s', {
+                size: bytes(status.bytes),
+                uploaded: bytes(status.uploaded ?? 0),
+                seconds: status.lastDuration ?? 0,
+              })}
+            </p>
+          )}
+          {status.lastError && (
+            <Callout tone="error">
+              {t('Der letzte Versuch ging nicht: {error}', { error: status.lastError })}
+            </Callout>
+          )}
+        </Card>
+      </Section>
 
-      <div className="form-actions">
-        <button
-          disabled={busy || !view.target}
-          onClick={() =>
-            void run(async () => {
-              const got = await snapshots();
-              setList(got.data);
-              setNewestHidden(got.lastWrittenMissing === true);
-            })
-          }
-        >
-          {t('Stände am Ziel zeigen')}
-        </button>
-      </div>
-      {list && (
-        <table className="admin-table">
-          <thead>
-            <tr>
-              <th>{t('Stand')}</th>
-              <th>{t('Größe')}</th>
-              <th>{t('Version')}</th>
-              <th aria-label={t('Aktionen')} />
-            </tr>
-          </thead>
-          <tbody>
+      <DangerZone
+        heading={t('Zurückspielen')}
+        lead={t(
+          'Holt einen Stand vom Ziel zurück und ersetzt alles auf diesem Server. Vorher wird der jetzige Stand ein lokales Backup.',
+        )}
+      >
+        <ButtonRow>
+          <Button
+            disabled={busy || !view.target}
+            onClick={() =>
+              void run(async () => {
+                const got = await snapshots();
+                setList(got.data);
+                setNewestHidden(got.lastWrittenMissing === true);
+              })
+            }
+          >
+            {t('Stände am Ziel zeigen')}
+          </Button>
+        </ButtonRow>
+        {list && list.length > 0 && (
+          <Table
+            label={t('Stände am Ziel')}
+            head={
+              <>
+                <th>{t('Stand')}</th>
+                <th>{t('Größe')}</th>
+                <th>{t('Version')}</th>
+                <th>
+                  <span className="sr-only">{t('Aktionen')}</span>
+                </th>
+              </>
+            }
+          >
             {list.map((snapshot) => (
               <tr key={snapshot.id}>
                 <td>
@@ -558,22 +608,27 @@ export function Offsite() {
                 <td>{bytes(snapshot.bytes)}</td>
                 <td>{snapshot.version}</td>
                 <td className="row-actions">
-                  <button onClick={() => setRestoring(snapshot)}>{t('Zurückspielen')}</button>
+                  <Button
+                    size="small"
+                    variant="quiet-danger"
+                    onClick={() => setRestoring(snapshot)}
+                  >
+                    {t('Zurückspielen')}
+                  </Button>
                 </td>
               </tr>
             ))}
-          </tbody>
-        </table>
-      )}
-      {list && newestHidden && (
-        <Callout tone="warning">
-          {t(
-            'Der letzte Stand, den dieser Server geschrieben hat, fehlt am Ziel. Wer das Ziel verwaltet, kann Stände verstecken: Spiel nichts zurück, bevor du weißt, warum.',
-          )}
-        </Callout>
-      )}
-      {list?.length === 0 && <p className="empty-note">{t('Noch keine Stände am Ziel.')}</p>}
-
+          </Table>
+        )}
+        {list && newestHidden && (
+          <Callout tone="warning">
+            {t(
+              'Der letzte Stand, den dieser Server geschrieben hat, fehlt am Ziel. Wer das Ziel verwaltet, kann Stände verstecken: Spiel nichts zurück, bevor du weißt, warum.',
+            )}
+          </Callout>
+        )}
+        {list?.length === 0 && <p className="empty-note">{t('Noch keine Stände am Ziel.')}</p>}
+      </DangerZone>
       {confirmingKey && (
         <Modal
           title={t('Host-Schlüssel bestätigen?')}
@@ -622,20 +677,20 @@ export function Offsite() {
           onCancel={() => setShownKey(null)}
           footer={
             <>
-              <button
+              <Button
+                icon="copy"
                 onClick={() =>
                   void navigator.clipboard
                     .writeText(shownKey)
                     .then(() => toast(t('Kopiert ✧'), 'info'))
                 }
               >
-                <Icon name="copy" size={14} />
                 {t('Kopieren')}
-              </button>
+              </Button>
               <span className="spacer" />
-              <button className="primary" onClick={() => setShownKey(null)}>
+              <Button variant="primary" onClick={() => setShownKey(null)}>
                 {t('Ich habe ihn sicher aufgehoben')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -721,6 +776,6 @@ export function Offsite() {
           }}
         />
       )}
-    </section>
+    </div>
   );
 }

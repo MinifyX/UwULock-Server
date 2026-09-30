@@ -8,7 +8,6 @@
   "aktiv": "active",
   "Angelegt: {email} ✧": "Created: {email} ✧",
   "API-Schlüssel": "API key",
-  "Auf diesem Server ist noch kein UwUMail-Server freigegeben. Ein Admin kann das im Admin-Portal unter Einstellungen einrichten.": "No UwUMail server is allowed on this server yet. An admin can set one up in the admin portal under Settings.",
   "Beschreibung (freiwillig)": "Description (optional)",
   "Bis zu zehn, einer pro App.": "Up to ten, one per app.",
   "Der Schlüssel legt nur maskierte Adressen an; anmelden kann er sich nicht. Du siehst ihn ein einziges Mal.": "The key only creates masked addresses; it cannot log in. You see it only once.",
@@ -44,7 +43,6 @@
   "Maskierte Adresse angelegt ✧ Speichern nicht vergessen.": "Masked address created ✧ Don't forget to save.",
   "Maskierte Adresse anlegen": "Create a masked address",
   "Maskierte Adresse {email} abschalten?": "Switch off the masked address {email}?",
-  "Maskierte Adressen (UwUMail)": "Masked addresses (UwUMail)",
   "Maskierte Adresse · {state}": "Masked address · {state}",
   "Maskierte Adresse (UwUMail)": "Masked address (UwUMail)",
   "Mehr geht nicht: Das Limit ist erreicht.": "No more: the limit is reached.",
@@ -102,5 +100,6 @@
   "Zustand": "State",
   "Zu viele Anfragen auf einmal. Versuch es in einer Minute noch einmal.": "Too many requests at once. Try again in a minute.",
   "Das ist auf diesem Server ausgeschaltet.": "That is switched off on this server.",
-  "Nicht verbunden: Gerade gab es zu viele Versuche. Warte eine Viertelstunde und versuch es dann noch einmal.": "Not connected: there were too many tries just now. Wait a quarter of an hour and try again."
+  "Nicht verbunden: Gerade gab es zu viele Versuche. Warte eine Viertelstunde und versuch es dann noch einmal.": "Not connected: there were too many tries just now. Wait a quarter of an hour and try again.",
+  "Auf diesem Server ist noch kein UwUMail-Server freigegeben. Ein Admin kann das im Admin-Portal unter Tresor & Funktionen → Maskierte Adressen einrichten.": "No UwUMail server is allowed on this server yet. An admin can set one up in the admin portal under Vault & features → Masked addresses."
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Icon, type IconName } from '../components/Icon';
-import { Modal } from '../components/Modal';
+import { Badge, Button, ButtonRow, Callout, Modal, Section, type Tone } from '../components/ui';
 import {
   checkUpload,
   checkWebSocket,
@@ -39,11 +39,11 @@ function titleOf(id: string): string {
   return family ? `${t(family)} (${rest.join('.')})` : id;
 }
 
-const STATUS: Record<CheckStatus, { label: string; icon: IconName }> = {
-  ok: { label: N_('in Ordnung'), icon: 'check' },
-  warning: { label: N_('Warnung'), icon: 'warning' },
-  error: { label: N_('Fehler'), icon: 'close' },
-  skipped: { label: N_('übersprungen'), icon: 'more' },
+const STATUS: Record<CheckStatus, { label: string; icon: IconName; tone: Tone }> = {
+  ok: { label: N_('in Ordnung'), icon: 'check', tone: 'ok' },
+  warning: { label: N_('Warnung'), icon: 'warning', tone: 'alarm' },
+  error: { label: N_('Fehler'), icon: 'close', tone: 'alarm' },
+  skipped: { label: N_('übersprungen'), icon: 'more', tone: 'neutral' },
 };
 
 /**
@@ -92,42 +92,39 @@ export function Diagnosis() {
   const count = (status: CheckStatus) => checks.filter((c) => c.status === status).length;
   return (
     <>
-      <p className="settings-lead">
-        {t(
-          'Prüft, ob alles richtig eingerichtet ist: Zertifikat, Uhrzeit, Mail, Push-Relay, Backups, Speicherplatz und den Proxy davor. WebSockets und große Uploads prüft dieser Browser gegen den eigenen Server. Nach jedem Update läuft die Diagnose von selbst; das Ergebnis steht dann hier.',
+      <Section
+        heading={t('Ist alles richtig eingerichtet?')}
+        lead={t(
+          'Prüft Zertifikat, Uhrzeit, Mail, Push-Relay, Backups, Speicherplatz und den Proxy davor. WebSockets und große Uploads prüft dieser Browser gegen den eigenen Server. Nach jedem Update läuft die Diagnose von selbst; das Ergebnis steht dann hier.',
         )}
-      </p>
-      <div className="form-actions">
-        <button className="primary" disabled={Boolean(busy)} onClick={() => void run(false)}>
-          {t('Diagnose starten')}
-        </button>
-        <button disabled={Boolean(busy) || !maxFileMb} onClick={() => setAsking(true)}>
-          {t('Volle Größe prüfen')}
-        </button>
-        <span className="spacer" />
-      </div>
-      {busy && (
-        <p className="setting-result" role="status" aria-live="polite">
-          {busy}
-        </p>
-      )}
-      {error && (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
-      )}
-      {data && (
-        <p className="diagnosis-date">
-          {data.date
-            ? t('Stand {when}, Version {version}: {errors} Fehler, {warnings} Warnungen.', {
-                when: when(data.date) ?? '',
-                version: data.version,
-                errors: count('error'),
-                warnings: count('warning'),
-              })
-            : t('Noch keine Diagnose. Starte sie oben.')}
-        </p>
-      )}
+      >
+        <ButtonRow>
+          <Button variant="primary" disabled={Boolean(busy)} onClick={() => void run(false)}>
+            {t('Diagnose starten')}
+          </Button>
+          <Button disabled={Boolean(busy) || !maxFileMb} onClick={() => setAsking(true)}>
+            {t('Volle Größe prüfen')}
+          </Button>
+        </ButtonRow>
+        {busy && (
+          <p className="setting-result" role="status" aria-live="polite">
+            {busy}
+          </p>
+        )}
+        {error && <Callout tone="error">{error}</Callout>}
+        {data && (
+          <p className="section-lead">
+            {data.date
+              ? t('Stand {when}, Version {version}: {errors} Fehler, {warnings} Warnungen.', {
+                  when: when(data.date) ?? '',
+                  version: data.version,
+                  errors: count('error'),
+                  warnings: count('warning'),
+                })
+              : t('Noch keine Diagnose. Starte sie oben.')}
+          </p>
+        )}
+      </Section>
       <ul className="check-list">
         {checks.map((check) => (
           <CheckCard key={check.id} check={check} />
@@ -141,18 +138,18 @@ export function Diagnosis() {
           footer={
             <>
               <span className="spacer" />
-              <button onClick={() => setAsking(false)} data-secondary>
+              <Button onClick={() => setAsking(false)} data-secondary>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="primary"
+              </Button>
+              <Button
+                variant="primary"
                 onClick={() => {
                   setAsking(false);
                   void run(true);
                 }}
               >
                 {t('{mb} MB hochladen', { mb: maxFileMb })}
-              </button>
+              </Button>
             </>
           }
         >
@@ -172,13 +169,14 @@ function CheckCard({ check }: { check: Check }) {
   useLanguage();
   const status = STATUS[check.status] ?? STATUS.skipped;
   return (
-    <li className="check-card" data-status={check.status}>
-      <div className="check-head">
-        <b>{titleOf(check.id)}</b>
-        <span className="status-badge" data-status={check.status}>
+    <li className="card check-card" data-status={check.status}>
+      <div className="card-head">
+        <h3 className="card-heading">{titleOf(check.id)}</h3>
+        <span className="spacer" />
+        <Badge tone={status.tone}>
           <Icon name={status.icon} size={13} />
           {t(status.label)}
-        </span>
+        </Badge>
       </div>
       <p className="check-summary">{check.summary}</p>
       {check.detail && <p className="check-detail">{check.detail}</p>}
@@ -200,17 +198,20 @@ function Snippet({ name, text }: { name: string; text: string }) {
     <div className="snippet">
       <div className="snippet-head">
         <span>{name}</span>
-        <button
+        <Button
+          size="small"
+          variant="quiet"
+          icon="copy"
           onClick={() =>
             void navigator.clipboard.writeText(text).then(() => toast(t('Kopiert ✧'), 'info'))
           }
           aria-label={t('{name} kopieren', { name })}
         >
-          <Icon name="copy" size={14} />
           {t('Kopieren')}
-        </button>
+        </Button>
       </div>
-      <pre>
+      {/* Focusable: a long line scrolls sideways, with the arrow keys too. */}
+      <pre tabIndex={0}>
         <code>{text}</code>
       </pre>
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon } from '../components/Icon';
-import { ResultLine, Row, type Result } from '../components/web/controls';
+import { Button, ButtonRow, Section, SettingRow as Row } from '../components/ui';
+import { ResultLine, type Result } from '../components/web/controls';
 import {
   branding,
   brandingPreview,
@@ -49,7 +49,6 @@ export function Branding({
 } = {}) {
   useLanguage();
   const path = domain ? domainBranding(domain.id) : SERVER_BRANDING;
-  const Heading = domain ? 'h3' : 'h2';
   const [current, setCurrent] = useState<BrandingAdmin | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState(DEFAULT_COLOR);
@@ -109,176 +108,178 @@ export function Branding({
 
   return (
     <>
-      <p className="settings-lead">
-        {domain
-          ? t(
-              'Name, Farbe, Logos und Favicon der Send- und Datei-Anfrage-Seiten unter {host}. Solange hier nichts Eigenes steht, sehen sie aus wie der Server.',
-              { host: domain.host },
-            )
-          : t(
-              'Name, Farbe, Logos und Favicon für den Web-Tresor, die Anmeldung, die Seiten von Sends und Datei-Anfragen und die Mails dieses Servers. Die offiziellen Bitwarden-Apps bleiben, wie sie sind.',
-            )}
-      </p>
-      {domain?.custom && (
-        <div className="form-actions">
-          <button
-            type="button"
-            disabled={busy}
+      <Section
+        heading={t('Name und Farbe')}
+        lead={
+          domain
+            ? t(
+                'Name, Farbe, Logos und Favicon der Send- und Datei-Anfrage-Seiten unter {host}. Solange hier nichts Eigenes steht, sehen sie aus wie der Server.',
+                { host: domain.host },
+              )
+            : t(
+                'Name, Farbe, Logos und Favicon für den Web-Tresor, die Anmeldung, die Seiten von Sends und Datei-Anfragen und die Mails dieses Servers. Die offiziellen Bitwarden-Apps bleiben, wie sie sind.',
+              )
+        }
+      >
+        {domain?.custom && (
+          <ButtonRow>
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  await resetDomainBranding(domain.id);
+                  return branding(path);
+                }, t('Wieder wie der Server ✧'))
+              }
+            >
+              {t('Aussehen des Servers übernehmen')}
+            </Button>
+          </ButtonRow>
+        )}
+        <Row label={t('Name')} description={t('Leer lässt es bei UwULock. Höchstens 40 Zeichen.')}>
+          <input
+            aria-label={t('Name')}
+            value={name}
+            maxLength={40}
+            placeholder="UwULock"
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Row>
+        <Row
+          label={t('Akzentfarbe')}
+          description={t(
+            'Braucht mindestens 3:1 Kontrast zu Weiß und zum dunklen Hintergrund. Die Farbtöne für Knöpfe und Links rechnet der Server daraus so, dass Text darauf gut lesbar bleibt (4,5:1).',
+          )}
+        >
+          <div className="brand-colors" role="group" aria-label={t('Vorschläge')}>
+            {PRESETS.map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                className="brand-swatch"
+                style={{ background: preset }}
+                aria-label={preset}
+                aria-pressed={preset === color.toLowerCase()}
+                onClick={() => setColor(preset)}
+              />
+            ))}
+          </div>
+          <input
+            type="color"
+            aria-label={t('Farbe wählen')}
+            value={/^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_COLOR}
+            onChange={(e) => setColor(e.target.value)}
+          />
+          <input
+            className="brand-hex"
+            aria-label={t('Farbe als Hex-Wert')}
+            value={color}
+            maxLength={7}
+            onChange={(e) => setColor(e.target.value.trim())}
+          />
+        </Row>
+        <div className="brand-preview" aria-live="polite">
+          {contrast ? (
+            <>
+              <p className={readable ? 'brand-contrast' : 'brand-contrast form-error'}>
+                {readable
+                  ? t('Kontrast: {light}:1 zu Weiß, {dark}:1 zum dunklen Hintergrund ✧', {
+                      light: contrast.light.toFixed(1),
+                      dark: contrast.dark.toFixed(1),
+                    })
+                  : t(
+                      'Zu wenig Kontrast: {light}:1 zu Weiß, {dark}:1 zum dunklen Hintergrund. Beide brauchen mindestens 3:1.',
+                      { light: contrast.light.toFixed(1), dark: contrast.dark.toFixed(1) },
+                    )}
+              </p>
+              <div className="brand-samples" aria-hidden>
+                {(['light', 'dark'] as const).map((theme) => (
+                  <div key={theme} className="brand-sample" data-sample={theme}>
+                    <span
+                      className="brand-sample-button"
+                      style={{
+                        background: preview?.[theme]['--uwu-pink-solid'],
+                        color: preview?.[theme]['--uwu-on-pink'],
+                      }}
+                    >
+                      {t('Knopf')}
+                    </span>
+                    <span style={{ color: preview?.[theme]['--uwu-pink-ink'] }}>{t('Link')}</span>
+                    <span
+                      className="brand-sample-tint"
+                      style={{ background: preview?.[theme]['--uwu-pink-tint'] }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="field-hint">{t('Eine Farbe wie #ff4d8d.')}</p>
+          )}
+        </div>
+        <ButtonRow>
+          <Button
+            variant="quiet"
+            disabled={busy || !current || (!current.nameSet && !current.colorSet)}
+            onClick={() => void act(() => saveBranding(null, null, path), t('Wieder UwULock ✧'))}
+          >
+            {t('Name und Farbe zurücksetzen')}
+          </Button>
+          <span className="spacer" />
+          <Button
+            variant="primary"
+            disabled={busy || !readable || Boolean(unchanged)}
             onClick={() =>
-              void act(async () => {
-                await resetDomainBranding(domain.id);
-                return branding(path);
-              }, t('Wieder wie der Server ✧'))
+              void act(
+                () =>
+                  saveBranding(
+                    name.trim() || null,
+                    color.toLowerCase() === DEFAULT_COLOR && !current?.colorSet ? null : color,
+                    path,
+                  ),
+                t('Gespeichert ✧'),
+              )
             }
           >
-            {t('Aussehen des Servers übernehmen')}
-          </button>
-        </div>
-      )}
-      <Heading className="settings-heading">{t('Name und Farbe')}</Heading>
-      <Row label={t('Name')} description={t('Leer lässt es bei UwULock. Höchstens 40 Zeichen.')}>
-        <input
-          aria-label={t('Name')}
-          value={name}
-          maxLength={40}
-          placeholder="UwULock"
-          onChange={(e) => setName(e.target.value)}
-        />
-      </Row>
-      <Row
-        label={t('Akzentfarbe')}
-        description={t(
-          'Braucht mindestens 3:1 Kontrast zu Weiß und zum dunklen Hintergrund. Die Farbtöne für Knöpfe und Links rechnet der Server daraus so, dass Text darauf gut lesbar bleibt (4,5:1).',
-        )}
-      >
-        <div className="brand-colors" role="group" aria-label={t('Vorschläge')}>
-          {PRESETS.map((preset) => (
-            <button
-              key={preset}
-              type="button"
-              className="brand-swatch"
-              style={{ background: preset }}
-              aria-label={preset}
-              aria-pressed={preset === color.toLowerCase()}
-              onClick={() => setColor(preset)}
-            />
-          ))}
-        </div>
-        <input
-          type="color"
-          aria-label={t('Farbe wählen')}
-          value={/^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_COLOR}
-          onChange={(e) => setColor(e.target.value)}
-        />
-        <input
-          className="brand-hex"
-          aria-label={t('Farbe als Hex-Wert')}
-          value={color}
-          maxLength={7}
-          onChange={(e) => setColor(e.target.value.trim())}
-        />
-      </Row>
-      <div className="brand-preview" aria-live="polite">
-        {contrast ? (
-          <>
-            <p className={readable ? 'brand-contrast' : 'brand-contrast form-error'}>
-              {readable
-                ? t('Kontrast: {light}:1 zu Weiß, {dark}:1 zum dunklen Hintergrund ✧', {
-                    light: contrast.light.toFixed(1),
-                    dark: contrast.dark.toFixed(1),
-                  })
-                : t(
-                    'Zu wenig Kontrast: {light}:1 zu Weiß, {dark}:1 zum dunklen Hintergrund. Beide brauchen mindestens 3:1.',
-                    { light: contrast.light.toFixed(1), dark: contrast.dark.toFixed(1) },
-                  )}
-            </p>
-            <div className="brand-samples" aria-hidden>
-              {(['light', 'dark'] as const).map((theme) => (
-                <div key={theme} className="brand-sample" data-sample={theme}>
-                  <span
-                    className="brand-sample-button"
-                    style={{
-                      background: preview?.[theme]['--uwu-pink-solid'],
-                      color: preview?.[theme]['--uwu-on-pink'],
-                    }}
-                  >
-                    {t('Knopf')}
-                  </span>
-                  <span style={{ color: preview?.[theme]['--uwu-pink-ink'] }}>{t('Link')}</span>
-                  <span
-                    className="brand-sample-tint"
-                    style={{ background: preview?.[theme]['--uwu-pink-tint'] }}
-                  />
-                </div>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="field-hint">{t('Eine Farbe wie #ff4d8d.')}</p>
-        )}
-      </div>
-      <div className="form-actions">
-        <button
-          type="button"
-          disabled={busy || !current || (!current.nameSet && !current.colorSet)}
-          onClick={() => void act(() => saveBranding(null, null, path), t('Wieder UwULock ✧'))}
-        >
-          {t('Name und Farbe zurücksetzen')}
-        </button>
-        <span className="spacer" />
-        <button
-          className="primary"
-          type="button"
-          disabled={busy || !readable || Boolean(unchanged)}
-          onClick={() =>
-            void act(
-              () =>
-                saveBranding(
-                  name.trim() || null,
-                  color.toLowerCase() === DEFAULT_COLOR && !current?.colorSet ? null : color,
-                  path,
-                ),
-              t('Gespeichert ✧'),
-            )
-          }
-        >
-          {t('Speichern')}
-        </button>
-      </div>
+            {t('Speichern')}
+          </Button>
+        </ButtonRow>
+      </Section>
 
-      <Heading className="settings-heading">{t('Bilder')}</Heading>
-      <p className="settings-lead">
-        {t(
+      <Section
+        heading={t('Logos und Favicon')}
+        lead={t(
           'PNG, JPEG, WebP, GIF, ICO oder SVG. Der Server zeichnet jedes Bild neu als PNG; was sonst in der Datei steckt, bleibt draußen. Logos bis 512 KB, das Favicon bis 128 KB.',
         )}
-      </p>
-      <ImageRow
-        label={t('Logo, helles Design')}
-        image="logo/light"
-        url={current?.logoLight ?? null}
-        busy={busy}
-        act={act}
-        path={path}
-        dark={false}
-      />
-      <ImageRow
-        label={t('Logo, dunkles Design')}
-        image="logo/dark"
-        url={current?.logoDark ?? null}
-        busy={busy}
-        act={act}
-        path={path}
-        dark
-      />
-      <ImageRow
-        label={t('Favicon')}
-        image="favicon"
-        url={current?.favicon ?? null}
-        busy={busy}
-        act={act}
-        path={path}
-        dark={false}
-      />
+      >
+        <ImageRow
+          label={t('Logo, helles Design')}
+          image="logo/light"
+          url={current?.logoLight ?? null}
+          busy={busy}
+          act={act}
+          path={path}
+          dark={false}
+        />
+        <ImageRow
+          label={t('Logo, dunkles Design')}
+          image="logo/dark"
+          url={current?.logoDark ?? null}
+          busy={busy}
+          act={act}
+          path={path}
+          dark
+        />
+        <ImageRow
+          label={t('Favicon')}
+          image="favicon"
+          url={current?.favicon ?? null}
+          busy={busy}
+          act={act}
+          path={path}
+          dark={false}
+        />
+      </Section>
       <ResultLine result={result} />
     </>
   );
@@ -326,21 +327,19 @@ function ImageRow({
           if (file) void act(() => uploadBrandingImage(image, file, path), t('Bild gespeichert ✧'));
         }}
       />
-      <button type="button" disabled={busy} onClick={() => input.current?.click()}>
-        <Icon name="upload" size={15} />
+      <Button icon="upload" disabled={busy} onClick={() => input.current?.click()}>
         {t('Hochladen …')}
         <span className="sr-only">{label}</span>
-      </button>
+      </Button>
       {url && (
-        <button
-          type="button"
-          className="quiet"
+        <Button
+          variant="quiet-danger"
           disabled={busy}
           onClick={() => void act(() => removeBrandingImage(image, path), t('Bild entfernt.'))}
         >
           {t('Entfernen')}
           <span className="sr-only">{label}</span>
-        </button>
+        </Button>
       )}
     </Row>
   );

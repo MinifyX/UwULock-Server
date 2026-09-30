@@ -1,6 +1,21 @@
-import { useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
-import { ResultLine, Row, Toggle, type Result } from '../components/web/controls';
+import {
+  Button,
+  ButtonRow,
+  Callout,
+  DangerZone,
+  Field,
+  FormRow,
+  Modal,
+  Section,
+  Select,
+  SettingRow,
+  TextField,
+  Toggle,
+} from '../components/ui';
+import { ResultLine, type Result } from '../components/web/controls';
+import { copyGenerated } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
@@ -15,27 +30,40 @@ import {
   type Signups,
   type SsoSettings,
 } from '../lib/sso';
-import { copyGenerated } from '../lib/api';
-import { useSwitch } from '../lib/switches';
 import { ApiError } from '../lib/web/http';
+import { Explain } from './fields';
 
 /**
- * *Anmeldung*: logging in through UwUAuth or another OpenID Connect provider (docs/sso.md) —
- * paired with UwUAuth by a code, or set up by hand — and SCIM, over which the provider disables
- * and removes accounts.
+ * Logging in through UwUAuth or another OpenID Connect provider (docs/sso.md) — paired with
+ * UwUAuth by a code, or set up by hand — and SCIM, over which the provider disables and removes
+ * accounts. Three tabs (the provider, its rules, SCIM) share one state: what is typed in one is
+ * still there in the other, and one Save keeps both.
  */
-export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
-  // SCIM is a feature switch of its own (the Features tab); switched off, its settings wait.
-  const scimOn = useSwitch('scim');
-  useLanguage();
+type Sso = {
+  current: SsoSettings | null;
+  draft: SsoSettings | null;
+  secret: string;
+  setSecret: (secret: string) => void;
+  set: (change: Partial<SsoSettings>) => void;
+  loaded: (settings: SsoSettings) => void;
+  setCurrent: (settings: SsoSettings) => void;
+  result: Result;
+  busy: boolean;
+  /** Runs `work`; what it returns is shown as the result, and a thrown error in words. */
+  run: (work: () => Promise<string | null>) => Promise<void>;
+  load: () => void;
+};
+
+const Context = createContext<Sso | null>(null);
+
+export function SsoProvider({ children }: { children: ReactNode }) {
   const [current, setCurrent] = useState<SsoSettings | null>(null);
   const [draft, setDraft] = useState<SsoSettings | null>(null);
   const [secret, setSecret] = useState('');
   const [result, setResult] = useState<Result>(null);
   const [busy, setBusy] = useState(false);
-  const [pairUrl, setPairUrl] = useState('');
-  const [pairCode, setPairCode] = useState('');
-  const [scimToken, setScimToken] = useState<string | null>(null);
+  const [asked, setAsked] = useState(false);
+  const load = useCallback(() => setAsked(true), []);
 
   const loaded = (settings: SsoSettings) => {
     setCurrent(settings);
@@ -43,13 +71,11 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
     setSecret('');
   };
 
+  // Only once a tab of it is opened: with SSO switched off there is nothing to load.
   useEffect(() => {
+    if (!asked) return;
     ssoSettings().then(loaded, (e) => setResult({ tone: 'error', text: errorText(e) }));
-  }, []);
-
-  if (!draft || !current) return <ResultLine result={result} />;
-  const set = (change: Partial<SsoSettings>) => setDraft({ ...draft, ...change });
-  const dirty = secret !== '' || JSON.stringify(draft) !== JSON.stringify(current);
+  }, [asked]);
 
   const run = async (work: () => Promise<string | null>) => {
     setBusy(true);
@@ -71,6 +97,102 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
     }
   };
 
+  return (
+    <Context.Provider
+      value={{
+        current,
+        draft,
+        secret,
+        setSecret,
+        set: (change) => setDraft((d) => (d ? { ...d, ...change } : d)),
+        loaded,
+        setCurrent: (settings) => {
+          setCurrent(settings);
+          setDraft((d) => (d ? { ...d, ...pickServerSide(settings) } : settings));
+        },
+        result,
+        busy,
+        run,
+        load,
+      }}
+    >
+      {children}
+    </Context.Provider>
+  );
+}
+
+/** What changes on the server without the Save button: the SCIM token and what SCIM deletes. */
+function pickServerSide(settings: SsoSettings): Partial<SsoSettings> {
+  return { scimTokenSet: settings.scimTokenSet, scimOnDelete: settings.scimOnDelete };
+}
+
+function useSso(): Sso {
+  const sso = useContext(Context);
+  if (!sso) throw new Error('SsoProvider missing');
+  const { load } = sso;
+  useEffect(load, [load]);
+  return sso;
+}
+
+/** Save and discard for the provider and its rules, and the test of the provider. */
+function SsoActions({ test }: { test?: boolean }) {
+  useLanguage();
+  const { current, draft, secret, loaded, run, busy, result } = useSso();
+  if (!current || !draft) return null;
+  const dirty = secret !== '' || JSON.stringify(draft) !== JSON.stringify(current);
+  return (
+    <>
+      <ButtonRow>
+        {test && (
+          <Button
+            onClick={() =>
+              void run(async () => {
+                const answer = await testSso(draft.issuer);
+                if (!answer.ok) throw new Error(answer.error ?? '?');
+                return t('Der Anbieter antwortet, seine Schlüssel sind lesbar ✧');
+              })
+            }
+            disabled={busy || !draft.issuer.trim()}
+          >
+            {t('Anbieter testen')}
+          </Button>
+        )}
+        <span className="spacer" />
+        <Button variant="quiet" onClick={() => loaded(current)} disabled={busy || !dirty}>
+          {t('Verwerfen')}
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() =>
+            void run(async () => {
+              loaded(await saveSso({ ...draft, clientSecret: secret || null }));
+              return t('Gespeichert ✧');
+            })
+          }
+          disabled={busy || !dirty}
+        >
+          {t('Speichern')}
+        </Button>
+      </ButtonRow>
+      {dirty && (
+        <p className="field-hint">
+          {t('Speichern nimmt die Änderungen unter „SSO-Anbieter“ und „SSO-Regeln“ zusammen.')}
+        </p>
+      )}
+      <ResultLine result={result} />
+    </>
+  );
+}
+
+/** *Sicherheit → SSO-Anbieter*: pairing with UwUAuth, or any OpenID Connect provider by hand. */
+export function SsoProviderTab() {
+  useLanguage();
+  const { current, draft, secret, setSecret, set, loaded, run, busy, result } = useSso();
+  const [pairUrl, setPairUrl] = useState('');
+  const [pairCode, setPairCode] = useState('');
+  const [unpairing, setUnpairing] = useState(false);
+  if (!draft || !current) return <ResultLine result={result} />;
+
   const pair = () =>
     run(async () => {
       loaded(await pairSso(pairUrl.trim(), pairCode.trim()));
@@ -87,53 +209,25 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
         : t('Entkoppelt.');
     });
 
-  const save = () =>
-    run(async () => {
-      loaded(await saveSso({ ...draft, clientSecret: secret || null }));
-      return t('Gespeichert ✧');
-    });
-
-  const test = () =>
-    run(async () => {
-      const answer = await testSso(draft.issuer);
-      if (!answer.ok) throw new Error(answer.error ?? '?');
-      return t('Der Anbieter antwortet, seine Schlüssel sind lesbar ✧');
-    });
-
-  const makeScimToken = () =>
-    run(async () => {
-      const made = await newScimToken();
-      setScimToken(made.token);
-      setCurrent({ ...current, scimTokenSet: true });
-      setDraft({ ...draft, scimTokenSet: true });
-      return null;
-    });
-
-  const onDelete = (value: 'disable' | 'delete') =>
-    run(async () => {
-      await saveScimOnDelete(value);
-      setCurrent({ ...current, scimOnDelete: value });
-      setDraft({ ...draft, scimOnDelete: value });
-      return t('Gespeichert ✧');
-    });
-
-  const group = (value: string) => (value.trim() ? value : null);
-
   return (
-    <div className="admin-settings">
-      <h2 className="settings-heading">{t('Mit UwUAuth koppeln')}</h2>
-      {current.paired ? (
-        <>
-          <p className="settings-lead">
-            {t('Gekoppelt mit {url} seit {date}.', {
-              url: current.paired.url,
-              date: when(current.paired.date) ?? current.paired.date,
-            })}{' '}
-            {t(
-              'Wer die Rolle „user“ hat, darf sich einen Tresor anlegen; die Rolle „admin“ macht zum Admin. Beides stellst du in UwUAuth ein.',
-            )}
-          </p>
-          <div className="form-actions">
+    <>
+      <Section
+        heading={t('Mit UwUAuth koppeln')}
+        lead={
+          current.paired
+            ? `${t('Gekoppelt mit {url} seit {date}.', {
+                url: current.paired.url,
+                date: when(current.paired.date) ?? current.paired.date,
+              })} ${t(
+                'Wer die Rolle „user“ hat, darf sich einen Tresor anlegen; die Rolle „admin“ macht zum Admin. Beides stellst du in UwUAuth ein.',
+              )}`
+            : t(
+                'In UwUAuth unter Apps → UwUSuite-App koppeln einen Code machen und hier eingeben (oder den Text des QR-Codes einfügen). Client-ID, Geheimnis, Adressen und SCIM stellen sich dann von selbst ein.',
+              )
+        }
+      >
+        {current.paired ? (
+          <ButtonRow>
             {current.paired.manageUrl && (
               <a
                 className="button-link"
@@ -145,295 +239,341 @@ export function SsoPage({ sso: loggedInWithSso }: { sso: boolean }) {
               </a>
             )}
             <span className="spacer" />
-            <button type="button" onClick={() => void unpair()} disabled={busy}>
-              {t('Entkoppeln')}
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="settings-lead">
-            {t(
-              'In UwUAuth unter Apps → UwUSuite-App koppeln einen Code machen und hier eingeben (oder den Text des QR-Codes einfügen). Client-ID, Geheimnis, Adressen und SCIM stellen sich dann von selbst ein.',
-            )}
-          </p>
-          <div className="field-grid wide">
-            <label className="field">
-              <span>{t('Adresse von UwUAuth')}</span>
-              <input
+            <Button variant="quiet-danger" onClick={() => setUnpairing(true)} disabled={busy}>
+              {t('Entkoppeln …')}
+            </Button>
+          </ButtonRow>
+        ) : (
+          <>
+            <FormRow min="wide">
+              <TextField
+                label={t('Adresse von UwUAuth')}
                 value={pairUrl}
-                onChange={(e) => setPairUrl(e.target.value)}
+                onChange={setPairUrl}
                 placeholder="https://auth.example.com"
                 spellCheck={false}
               />
-            </label>
-            <label className="field">
-              <span>{t('Code')}</span>
-              <input
+              <TextField
+                label={t('Code')}
                 value={pairCode}
-                onChange={(e) => setPairCode(e.target.value)}
+                onChange={setPairCode}
                 placeholder="7KQ4-M2XD-9HFT"
                 spellCheck={false}
               />
-            </label>
-          </div>
-          <div className="form-actions">
-            <span className="spacer" />
-            <button
-              className="primary"
-              type="button"
-              onClick={() => void pair()}
-              disabled={busy || !pairCode.trim()}
-            >
-              {t('Koppeln')}
-            </button>
-          </div>
-        </>
-      )}
+            </FormRow>
+            <ButtonRow end>
+              <Button onClick={() => void pair()} disabled={busy || !pairCode.trim()}>
+                {t('Koppeln')}
+              </Button>
+            </ButtonRow>
+          </>
+        )}
+      </Section>
 
-      <h2 className="settings-heading">{t('OpenID Connect')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Für jeden anderen Anbieter (Keycloak, Authentik, Entra ID, …) von Hand. Beim Anbieter trägst du diese Rückleitungsadresse ein: {uri}',
+      <Section
+        heading={t('Anbieter von Hand (OpenID Connect)')}
+        lead={t(
+          'Für jeden anderen Anbieter (Keycloak, Authentik, Entra ID, …). Beim Anbieter trägst du diese Rückleitungsadresse ein: {uri}',
           { uri: current.redirectUri ?? '' },
         )}
-      </p>
-      <Row
-        label={t('Anmeldung über SSO')}
-        description={t(
-          'Ein Knopf auf der Anmeldeseite des Web-Tresors und des Admin-Portals, und „Mit SSO anmelden“ in den Bitwarden-Apps (die SSO-Kennung ist egal). Der Tresor öffnet sich weiter nur mit dem Master-Passwort.',
-        )}
       >
-        <Toggle
+        <SettingRow
           label={t('Anmeldung über SSO')}
-          checked={draft.enabled}
-          onChange={(enabled) => set({ enabled })}
-        />
-      </Row>
-      <div className="field-grid wide">
-        <label className="field">
-          <span>{t('Issuer')}</span>
-          <input
+          description={t(
+            'Ein Knopf auf der Anmeldeseite des Web-Tresors und des Admin-Portals, und „Mit SSO anmelden“ in den Bitwarden-Apps (die SSO-Kennung ist egal). Der Tresor öffnet sich weiter nur mit dem Master-Passwort.',
+          )}
+        >
+          <Toggle
+            label={t('Anmeldung über SSO')}
+            checked={draft.enabled}
+            onChange={(enabled) => set({ enabled })}
+          />
+        </SettingRow>
+        <FormRow min="wide">
+          <TextField
+            label={t('Issuer')}
+            hint={t('Die Adresse des Anbieters.')}
             value={draft.issuer}
-            onChange={(e) => set({ issuer: e.target.value })}
+            onChange={(issuer) => set({ issuer })}
             placeholder="https://auth.example.com"
             spellCheck={false}
           />
-        </label>
-        <label className="field">
-          <span>{t('Client-ID')}</span>
-          <input
+          <TextField
+            label={t('Client-ID')}
             value={draft.clientId}
-            onChange={(e) => set({ clientId: e.target.value })}
+            onChange={(clientId) => set({ clientId })}
             spellCheck={false}
           />
-        </label>
-        <label className="field">
-          <span>
-            {current.clientSecretSet
-              ? t('Client-Geheimnis (leer lassen: bleibt)')
-              : t('Client-Geheimnis')}
-          </span>
-          <PasswordInput value={secret} onChange={setSecret} autoComplete="off" />
-        </label>
-        <label className="field">
-          <span>{t('Scopes')}</span>
-          <input
+          <Field
+            label={
+              current.clientSecretSet
+                ? t('Client-Geheimnis (leer lassen: bleibt)')
+                : t('Client-Geheimnis')
+            }
+          >
+            <PasswordInput value={secret} onChange={setSecret} autoComplete="off" />
+          </Field>
+        </FormRow>
+        <FormRow min="wide">
+          <TextField
+            label={t('Scopes')}
+            hint={t('Durch Leerzeichen getrennt.')}
             value={draft.scopes.join(' ')}
-            onChange={(e) => set({ scopes: e.target.value.split(/\s+/).filter(Boolean) })}
+            onChange={(scopes) => set({ scopes: scopes.split(/\s+/).filter(Boolean) })}
             spellCheck={false}
           />
-        </label>
-        <label className="field">
-          <span>{t('Beschriftung des Knopfs')}</span>
-          <input value={draft.label} onChange={(e) => set({ label: e.target.value })} />
-        </label>
-        <label className="field">
-          <span>{t('SSO-Kennung für die Bitwarden-Apps')}</span>
-          <input
+          <TextField
+            label={t('Beschriftung des Knopfs')}
+            value={draft.label}
+            onChange={(label) => set({ label })}
+          />
+          <TextField
+            label={t('SSO-Kennung für die Bitwarden-Apps')}
             value={draft.identifier}
-            onChange={(e) => set({ identifier: e.target.value })}
+            onChange={(identifier) => set({ identifier })}
             spellCheck={false}
           />
-        </label>
-      </div>
-
-      <Row
-        label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
-        description={t(
-          'Beim ersten Mal legt man sein Master-Passwort selbst fest. Einladungen gehen immer, und Adressen, die SCIM angelegt hat, auch.',
-        )}
-      >
-        <select
-          aria-label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
-          value={draft.signups}
-          onChange={(e) => set({ signups: e.target.value as Signups })}
+        </FormRow>
+        <Field
+          label={t('Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)')}
         >
-          <option value="off">{t('Niemand – nur bestehende Konten')}</option>
-          <option value="invitation">{t('Nur mit Einladung oder über SCIM')}</option>
-          <option value="group">{t('Wer in der Nutzergruppe ist')}</option>
-        </select>
-      </Row>
-      <div className="field-grid wide">
-        <label className="field">
-          <span>{t('Nutzergruppe (leer: alle, die der Anbieter durchlässt)')}</span>
-          <input
-            value={draft.userGroup ?? ''}
-            onChange={(e) => set({ userGroup: group(e.target.value) })}
-            placeholder="vault-users"
-          />
-        </label>
-        <label className="field">
-          <span>{t('Admin-Gruppe (leer: Admins bleiben, wie sie sind)')}</span>
-          <input
-            value={draft.adminGroup ?? ''}
-            onChange={(e) => set({ adminGroup: group(e.target.value) })}
-            placeholder="vault-admins"
-          />
-        </label>
-        <label className="field">
-          <span>{t('Claim mit den Gruppen')}</span>
-          <input
-            value={draft.groupsClaim}
-            onChange={(e) => set({ groupsClaim: e.target.value })}
-            spellCheck={false}
-          />
-        </label>
-        <label className="field">
-          <span>{t('Claim mit den Rollen (statt der Gruppen)')}</span>
-          <input
-            value={draft.rolesClaim ?? ''}
-            onChange={(e) => set({ rolesClaim: group(e.target.value) })}
-            placeholder="roles"
-            spellCheck={false}
-          />
-        </label>
-        <label className="field">
-          <span>
-            {t('Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)')}
-          </span>
           <textarea
             rows={2}
             value={(draft.extensionIds ?? []).join('\n')}
             onChange={(e) => set({ extensionIds: e.target.value.split('\n') })}
             spellCheck={false}
           />
-        </label>
-      </div>
-      <Row
-        label={t('Nur noch über SSO anmelden')}
-        description={t(
-          'Die Anmeldung mit Passwort (und Passkey) geht dann nur noch für Admins und mit dem API-Key der CLI.',
-        )}
-      >
-        <Toggle
-          label={t('Nur noch über SSO anmelden')}
-          checked={draft.only}
-          onChange={(only) => set({ only })}
-        />
-      </Row>
-      <Row
-        label={t('Admin-Portal nur nach Anmeldung über SSO')}
-        description={
-          loggedInWithSso
-            ? t('Auch Admins kommen dann nur noch über SSO ins Admin-Portal.')
-            : t(
-                'Auch Admins kommen dann nur noch über SSO ins Admin-Portal. Einschalten kannst du es, sobald du selbst über SSO angemeldet bist.',
-              )
-        }
-      >
-        <Toggle
-          label={t('Admin-Portal nur nach Anmeldung über SSO')}
-          checked={draft.adminsOnlyWithSso}
-          onChange={(adminsOnlyWithSso) => set({ adminsOnlyWithSso })}
-        />
-      </Row>
-      <Row
-        label={t('Unbestätigten Adressen trauen')}
-        description={t(
-          'Sonst findet und verknüpft eine Anmeldung ein Konto nur über eine Adresse, die der Anbieter als bestätigt meldet (email_verified).',
-        )}
-      >
-        <Toggle
-          label={t('Unbestätigten Adressen trauen')}
-          checked={draft.trustUnverifiedEmail}
-          onChange={(trustUnverifiedEmail) => set({ trustUnverifiedEmail })}
-        />
-      </Row>
-      <div className="form-actions">
-        <button type="button" onClick={() => void test()} disabled={busy || !draft.issuer.trim()}>
-          {t('Anbieter testen')}
-        </button>
-        <span className="spacer" />
-        <button
-          type="button"
-          className="quiet"
-          onClick={() => loaded(current)}
-          disabled={busy || !dirty}
-        >
-          {t('Verwerfen')}
-        </button>
-        <button
-          className="primary"
-          type="button"
-          onClick={() => void save()}
-          disabled={busy || !dirty}
-        >
-          {t('Speichern')}
-        </button>
-      </div>
+        </Field>
+      </Section>
+      <SsoActions test />
 
-      {scimOn && (
-        <>
-          <h2 className="settings-heading">{t('SCIM')}</h2>
-          <p className="settings-lead">
+      {unpairing && (
+        <Modal
+          title={t('Von UwUAuth entkoppeln?')}
+          tone="warning"
+          onCancel={() => setUnpairing(false)}
+          footer={
+            <>
+              <span className="spacer" />
+              <Button data-autofocus data-secondary onClick={() => setUnpairing(false)}>
+                {t('Abbrechen')}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setUnpairing(false);
+                  void unpair();
+                }}
+              >
+                {t('Entkoppeln')}
+              </Button>
+            </>
+          }
+        >
+          <p className="dialog-lead">
             {t(
-              'Darüber sperrt oder entfernt der Anbieter Konten und legt Adressen an, die sich anmelden dürfen. Adresse: {url}',
-              { url: current.scimUrl ?? '' },
+              'Danach meldet sich niemand mehr über UwUAuth an, bis du wieder koppelst oder einen Anbieter von Hand einträgst. Konten und Tresore bleiben.',
             )}
           </p>
-          <Row
-            label={t('Wenn der Anbieter jemanden löscht')}
-            description={t(
+        </Modal>
+      )}
+    </>
+  );
+}
+
+/** *Sicherheit → SSO-Regeln*: who gets in through SSO, and who only through it. */
+export function SsoRulesTab({ sso: loggedInWithSso }: { sso: boolean }) {
+  useLanguage();
+  const { current, draft, set, result } = useSso();
+  if (!draft || !current) return <ResultLine result={result} />;
+  const group = (value: string) => (value.trim() ? value : null);
+  return (
+    <>
+      <Section
+        heading={t('Wer über SSO einen Tresor bekommt')}
+        lead={t(
+          'Beim ersten Mal legt man sein Master-Passwort selbst fest. Einladungen gehen immer, und Adressen, die SCIM angelegt hat, auch.',
+        )}
+      >
+        <SettingRow
+          label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
+          description={t('Wer schon ein Konto hat, meldet sich in jedem Fall an.')}
+        >
+          <Select
+            label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
+            value={draft.signups}
+            onChange={(signups: Signups) => set({ signups })}
+            options={[
+              { value: 'off', label: t('Niemand – nur bestehende Konten') },
+              { value: 'invitation', label: t('Nur mit Einladung oder über SCIM') },
+              { value: 'group', label: t('Wer in der Nutzergruppe ist') },
+            ]}
+          />
+        </SettingRow>
+        <FormRow min="wide">
+          <TextField
+            label={t('Nutzergruppe (leer: alle, die der Anbieter durchlässt)')}
+            value={draft.userGroup ?? ''}
+            onChange={(value) => set({ userGroup: group(value) })}
+            placeholder="vault-users"
+          />
+          <TextField
+            label={t('Admin-Gruppe (leer: Admins bleiben, wie sie sind)')}
+            value={draft.adminGroup ?? ''}
+            onChange={(value) => set({ adminGroup: group(value) })}
+            placeholder="vault-admins"
+          />
+        </FormRow>
+        <FormRow min="wide">
+          <TextField
+            label={t('Claim mit den Gruppen')}
+            hint={t('Das Feld im Token des Anbieters, in dem die Gruppen stehen.')}
+            value={draft.groupsClaim}
+            onChange={(groupsClaim) => set({ groupsClaim })}
+            spellCheck={false}
+          />
+          <TextField
+            label={t('Claim mit den Rollen (statt der Gruppen)')}
+            value={draft.rolesClaim ?? ''}
+            onChange={(value) => set({ rolesClaim: group(value) })}
+            placeholder="roles"
+            spellCheck={false}
+          />
+        </FormRow>
+      </Section>
+      <DangerZone
+        heading={t('Strenge Regeln')}
+        lead={t(
+          'Sie können Leute aussperren: erst einschalten, wenn die Anmeldung über SSO sicher klappt.',
+        )}
+      >
+        <SettingRow
+          label={t('Nur noch über SSO anmelden')}
+          description={t(
+            'Die Anmeldung mit Passwort (und Passkey) geht dann nur noch für Admins und mit dem API-Key der CLI.',
+          )}
+        >
+          <Toggle
+            label={t('Nur noch über SSO anmelden')}
+            checked={draft.only}
+            onChange={(only) => set({ only })}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t('Admin-Portal nur nach Anmeldung über SSO')}
+          description={
+            loggedInWithSso
+              ? t('Auch Admins kommen dann nur noch über SSO ins Admin-Portal.')
+              : t(
+                  'Auch Admins kommen dann nur noch über SSO ins Admin-Portal. Einschalten kannst du es, sobald du selbst über SSO angemeldet bist.',
+                )
+          }
+        >
+          <Toggle
+            label={t('Admin-Portal nur nach Anmeldung über SSO')}
+            checked={draft.adminsOnlyWithSso}
+            onChange={(adminsOnlyWithSso) => set({ adminsOnlyWithSso })}
+          />
+        </SettingRow>
+        <SettingRow
+          label={t('Unbestätigten Adressen trauen')}
+          description={
+            <Explain recommended={t('aus')}>
+              {t(
+                'Sonst findet und verknüpft eine Anmeldung ein Konto nur über eine Adresse, die der Anbieter als bestätigt meldet (email_verified).',
+              )}
+            </Explain>
+          }
+        >
+          <Toggle
+            label={t('Unbestätigten Adressen trauen')}
+            checked={draft.trustUnverifiedEmail}
+            onChange={(trustUnverifiedEmail) => set({ trustUnverifiedEmail })}
+          />
+        </SettingRow>
+      </DangerZone>
+      <SsoActions />
+    </>
+  );
+}
+
+/** *Sicherheit → SCIM*: the provider disables and removes accounts; its token. */
+export function ScimTab() {
+  useLanguage();
+  const { current, setCurrent, run, busy, result } = useSso();
+  const [scimToken, setScimToken] = useState<string | null>(null);
+  if (!current) return <ResultLine result={result} />;
+  return (
+    <Section
+      heading={t('Konten vom Anbieter verwalten lassen (SCIM)')}
+      lead={t(
+        'Darüber sperrt oder entfernt der Anbieter Konten und legt Adressen an, die sich anmelden dürfen. Adresse: {url}',
+        { url: current.scimUrl ?? '' },
+      )}
+    >
+      <SettingRow
+        label={t('Wenn der Anbieter jemanden löscht')}
+        description={
+          <Explain recommended={t('Konto sperren')}>
+            {t(
               'Sperren lässt den Tresor da (ein Admin kann ihn wieder freigeben); Löschen löscht Konto und Tresor. Das letzte Admin-Konto bleibt immer.',
             )}
-          >
-            <select
-              aria-label={t('Wenn der Anbieter jemanden löscht')}
-              value={current.scimOnDelete ?? 'disable'}
-              onChange={(e) => void onDelete(e.target.value as 'disable' | 'delete')}
-              disabled={busy}
-            >
-              <option value="disable">{t('Konto sperren')}</option>
-              <option value="delete">{t('Konto und Tresor löschen')}</option>
-            </select>
-          </Row>
-          <Row
-            label={t('SCIM-Token')}
-            description={
-              current.scimTokenSet
-                ? t('Es gibt eines. Ein neues ersetzt es.')
-                : t('Noch keines. Beim Koppeln mit UwUAuth kommt es von selbst.')
-            }
-          >
-            <button type="button" onClick={() => void makeScimToken()} disabled={busy}>
-              {current.scimTokenSet ? t('Neues Token') : t('Token erzeugen')}
-            </button>
-          </Row>
-          {scimToken && (
-            <div className="field">
-              <span>{t('Das Token – nur jetzt zu sehen:')}</span>
-              <div className="form-actions">
-                <code className="send-link">{scimToken}</code>
-                <button type="button" onClick={() => void copyGenerated(scimToken)}>
-                  {t('Kopieren')}
-                </button>
-              </div>
-            </div>
-          )}
-        </>
+          </Explain>
+        }
+      >
+        <Select
+          label={t('Wenn der Anbieter jemanden löscht')}
+          value={current.scimOnDelete ?? 'disable'}
+          onChange={(value: 'disable' | 'delete') =>
+            void run(async () => {
+              await saveScimOnDelete(value);
+              setCurrent({ ...current, scimOnDelete: value });
+              return t('Gespeichert ✧');
+            })
+          }
+          disabled={busy}
+          options={[
+            { value: 'disable', label: t('Konto sperren') },
+            { value: 'delete', label: t('Konto und Tresor löschen') },
+          ]}
+        />
+      </SettingRow>
+      <SettingRow
+        label={t('SCIM-Token')}
+        description={
+          current.scimTokenSet
+            ? t('Es gibt eines. Ein neues ersetzt es.')
+            : t('Noch keines. Beim Koppeln mit UwUAuth kommt es von selbst.')
+        }
+      >
+        <Button
+          onClick={() =>
+            void run(async () => {
+              const made = await newScimToken();
+              setScimToken(made.token);
+              setCurrent({ ...current, scimTokenSet: true });
+              return null;
+            })
+          }
+          disabled={busy}
+        >
+          {current.scimTokenSet ? t('Neues Token') : t('Token erzeugen')}
+        </Button>
+      </SettingRow>
+      {scimToken && (
+        <Callout
+          tone="accent"
+          title={t('Das Token – nur jetzt zu sehen:')}
+          actions={
+            <Button size="small" icon="copy" onClick={() => void copyGenerated(scimToken)}>
+              {t('Kopieren')}
+            </Button>
+          }
+        >
+          <code className="send-link">{scimToken}</code>
+        </Callout>
       )}
       <ResultLine result={result} />
-    </div>
+    </Section>
   );
 }
