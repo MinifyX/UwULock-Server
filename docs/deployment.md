@@ -55,7 +55,7 @@ sudo docker compose exec uwulock uwulock-server invite --admin you@example.com
 (`install.sh --admin you@example.com` does exactly that at the end.) The link is printed; when
 the server can send mail, it goes out by mail as well. Everybody else an admin invites in the
 admin portal at `/admin`, where the link is shown too, for passing on by hand. With *Users may
-invite* in the portal's settings, every account can invite people too — in the web vault under
+invite* (*Users & invitations → Invitations*), every account can invite people too — in the web vault under
 Settings → Invite, up to the number of people the settings allow (open invitations count), and
 never as an admin. They do not see the link while the server can send mail: whoever holds it can
 register the address. Without mail they get it to pass on, and could register the address
@@ -76,7 +76,7 @@ sudo docker compose exec uwulock uwulock-server reset-two-factor you@example.com
 
 For invitations, codes for two-step login by mail, password hints, and a note when an account
 logs in on a new device. Without it everything else works; invitations are passed on as links.
-Set it up in the admin portal (Settings → Mail, with a test mail), or in `.env` before the
+Set it up in the admin portal (*Mail & notifications → Mail server*, with a test mail), or in `.env` before the
 first start — that is only where a new server starts; once saved in the portal, the database
 holds it:
 
@@ -353,7 +353,7 @@ on, see above).
 
 1. Get an installation id and key at <https://bitwarden.com/host/> — free, and for the region
    you pick there (US or EU).
-2. Admin portal → Settings → *Push for the phone apps*: switch it on, choose the region, enter
+2. Admin portal → *Mail & notifications → Push for the apps*: switch it on, choose the region, enter
    id and key, save, and *Test the connection*.
 3. The apps register when they next log in or start.
 
@@ -362,7 +362,7 @@ never anything of a vault's content.
 
 ## Diagnosis
 
-*Admin portal → Diagnosis* looks at everything that tends to go wrong once, and the server runs it
+*Admin portal → System & diagnosis → Diagnosis* looks at everything that tends to go wrong once, and the server runs it
 by itself after every update (the overview says when it found something):
 
 - the **certificate** clients see — the server's own, or the proxy's in front of it — and when it
@@ -381,7 +381,7 @@ the proxy is the answer.
 
 ## The admin portal from some networks only
 
-*Admin portal → Policies → Admin networks*: addresses or networks, one a line (`192.0.2.0/24`,
+*Admin portal → Security & login → Admin portal*: addresses or networks, one a line (`192.0.2.0/24`,
 `2001:db8::/32`, a VPN's range). From anywhere else, `/admin` and the admin API answer 404, as if
 there were no admin portal. The address counted is the client's — behind a proxy the one it
 passes on, with `UWULOCK_TRUST_FORWARDED=on`. The vault, Sends and the command line are not
@@ -420,7 +420,7 @@ running server takes `adminNetworks` over at once and the rest when it starts ag
   thousand lines to the admin portal. `UWULOCK_LOG_FORMAT=json` writes one JSON object a line, as
   Grafana Alloy, Promtail or Vector like them.
 - **Grafana Loki** can get them straight from the server, without anything running next to it:
-  *Admin portal → Monitoring → Logs to Loki* with Loki's address (`http://192.0.2.20:3100`;
+  *Admin portal → System & diagnosis → Monitoring → Logs to Loki* with Loki's address (`http://192.0.2.20:3100`;
   `/loki/api/v1/push` is added when the address has no path), optionally a tenant
   (`X-Scope-OrgID`), a user and password for basic authentication, and labels (`job=uwulock` to
   start with; the server adds `level`). The lines are the same JSON as with
@@ -451,7 +451,7 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For`. Only behind a proxy that sets it. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
 | `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. Requests without an account (prelogin, SSO, Sends) get five times as many, at least 50. |
-| `UWULOCK_FEATURES` | — (only the vault and icons) | The extras a new server starts with: `all`, `none` or ids like `families,file-requests` ([features.md](features.md)). Start value; *Admin portal → Features* changes them. |
+| `UWULOCK_FEATURES` | — (only the vault and icons) | The extras a new server starts with: `all`, `none` or ids like `families,file-requests` ([features.md](features.md)). Start value; *Admin portal → Vault & features → Features* changes them. |
 | `UWULOCK_LANGUAGE` | `de` | Invitations, and new accounts until their owner picks: `de` or `en`. Start value; the admin portal changes it. |
 | `UWULOCK_SMTP_*` | — | The mail server, see [Mail](#mail). Start values; the admin portal changes them. |
 | `UWULOCK_LOG_FORMAT` | `text` | `json` for one JSON object a line, the same the server sends to Loki. |

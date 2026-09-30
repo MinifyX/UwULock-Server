@@ -466,6 +466,11 @@ Bitwardens „Families".
   und alles, was die Bitwarden-Apps nutzen, bleibt immer an; Website-Icons und HIBP behalten
   ihre eigenen Einstellungen. Neue Server starten nur mit Tresor und Icons
   (`UWULOCK_FEATURES`), aktualisierte behalten an, was benutzt wird (Migration 0017).
+- [x] Admin-Portal neu geordnet (0.6.0-beta.2, `docs/ui.md`): acht Bereiche in der Seitenleiste
+  mit Reitern (Übersicht, Benutzer & Einladungen, Sicherheit & Anmeldung, Tresor & Funktionen,
+  E-Mail & Benachrichtigungen, Datensicherung, Aussehen, System & Diagnose), jede Einstellung
+  mit einer Zeile in einfachen Worten und dem empfohlenen Wert, Gefährliches abgesetzt. Gleiche
+  Bausteine und gleiche Hülle wie der Web-Tresor; alte Adressen leiten weiter.
   Admin-API `GET|PUT /uwu/v1/admin/features`, auf der Kommandozeile `uwulock-server features`.
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)

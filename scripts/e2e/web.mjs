@@ -199,24 +199,46 @@ try {
   await page.getByRole('heading', { name: 'Übersicht' }).waitFor({ timeout: 30000 });
   await snap('admin-overview');
   await checkA11y(page, 'admin overview');
-  await page.getByRole('button', { name: 'Einladungen' }).click();
+  // The areas are in the sidebar, their parts are tabs on the page (web/src/admin/areas.ts).
+  const open = async (area, tab) => {
+    await page.getByRole('navigation', { name: 'Admin-Portal' }).getByRole('button', { name: area }).click();
+    await page.getByRole('heading', { name: area, level: 1 }).waitFor();
+    if (!tab) return;
+    await page.getByRole('tab', { name: tab, exact: true }).click();
+    await page.getByRole('tab', { name: tab, exact: true, selected: true }).waitFor();
+  };
+  await open('Benutzer & Einladungen', 'Einladungen');
   await page.getByLabel('E-Mail-Adresse').fill('mika@example.com');
   await page.getByRole('button', { name: 'Einladen' }).click();
   await page.locator('.invite-link').waitFor();
   await snap('admin-invited');
-  for (const name of ['Nutzer', 'Einstellungen', 'Benachrichtigungen', 'Ereignisse', 'Log', 'Backups']) {
-    await page.getByRole('navigation').getByRole('button', { name }).click();
-    await page.getByRole('heading', { name, exact: true }).waitFor();
+  for (const [area, tab, axe] of [
+    ['Benutzer & Einladungen', 'Konten', true],
+    ['Sicherheit & Anmeldung', 'Master-Passwort', true],
+    ['Tresor & Funktionen', 'Speicher & Grenzen', true],
+    ['E-Mail & Benachrichtigungen', 'Meldungen an Admins', false],
+    ['System & Diagnose', 'Ereignisse', false],
+    ['System & Diagnose', 'Log', false],
+  ]) {
+    await open(area, tab);
     await page.waitForTimeout(400);
-    await snap(`admin-${name.toLowerCase()}`);
-    if (name === 'Nutzer' || name === 'Einstellungen') await checkA11y(page, `admin ${name}`);
+    await snap(`admin-${tab.toLowerCase().replace(/\W+/g, '-')}`);
+    if (axe) await checkA11y(page, `admin ${area} → ${tab}`);
   }
 
+  // A short page still fills the window: the sidebar (and the account at its foot) reaches the
+  // bottom, like the vault's.
+  const fillsWindow = async (where, on = page) => {
+    const gap = await on.evaluate(() => innerHeight - document.querySelector('.admin').getBoundingClientRect().bottom);
+    if (Math.abs(gap) > 1) throw new Error(`${where}: the portal ends ${gap}px above the window's bottom`);
+  };
+  await fillsWindow('the log');
+
   step('the admin portal by keyboard, and in high contrast');
-  // "8" is the eighth page of the bar: Aussehen, the branding.
-  await page.keyboard.press('8');
-  await page.getByRole('heading', { name: 'Aussehen', exact: true }).waitFor();
-  if (!page.url().endsWith('#/branding')) throw new Error(`8 led to ${page.url()}`);
+  // "7" is the seventh area of the bar: Aussehen, the branding.
+  await page.keyboard.press('7');
+  await page.getByRole('heading', { name: 'Aussehen', level: 1 }).waitFor();
+  if (!page.url().endsWith('#/branding')) throw new Error(`7 led to ${page.url()}`);
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radio', { name: 'Hoch' }).click();
   await page.locator('html[data-contrast="high"]').waitFor({ state: 'attached' });
@@ -226,15 +248,22 @@ try {
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radiogroup', { name: 'Kontrast' }).getByRole('radio', { name: 'System' }).click();
   await page.keyboard.press('Escape');
-  // Back to the backups: the twelfth page, three after the ninth.
-  await page.keyboard.press('9');
-  await page.getByRole('heading', { name: 'Send-Domains', exact: true }).waitFor();
+  // J and K go round the areas: from the last one on to the first, and back.
+  await page.keyboard.press('8');
+  await page.getByRole('heading', { name: 'System & Diagnose', level: 1 }).waitFor();
   await page.keyboard.press('j');
-  await page.getByRole('heading', { name: 'Ereignisse', exact: true }).waitFor();
-  await page.keyboard.press('j');
-  await page.getByRole('heading', { name: 'Log', exact: true }).waitFor();
-  await page.keyboard.press('j');
-  await page.getByRole('heading', { name: 'Backups', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Übersicht', level: 1 }).waitFor();
+  await page.keyboard.press('k');
+  await page.getByRole('heading', { name: 'System & Diagnose', level: 1 }).waitFor();
+  await page.keyboard.press('k');
+  await page.getByRole('heading', { name: 'Aussehen', level: 1 }).waitFor();
+  await page.keyboard.press('k');
+  await page.getByRole('heading', { name: 'Datensicherung', level: 1 }).waitFor();
+  // An address from before the areas still finds its page.
+  await page.goto(`${origin}/admin#/logs`);
+  await page.getByRole('tab', { name: 'Log', exact: true, selected: true }).waitFor();
+  if (!page.url().endsWith('#/system/log')) throw new Error(`#/logs led to ${page.url()}`);
+  await open('Datensicherung');
   await page.getByRole('button', { name: 'Jetzt ein Backup schreiben' }).click();
   await page.getByRole('button', { name: 'Herunterladen' }).first().click();
   // A backup is the whole database: it takes the master password, and a wrong one gets nothing.
@@ -250,7 +279,7 @@ try {
     throw new Error(`the backup came as ${backup.suggestedFilename()}`);
 
   step('the diagnosis, with the browser checks against this server');
-  await page.getByRole('navigation').getByRole('button', { name: 'Diagnose' }).click();
+  await open('System & Diagnose', 'Diagnose');
   await page.getByRole('button', { name: 'Diagnose starten' }).click();
   // The WebSocket goes through, and 16 MB are taken: no proxy is in front here.
   for (const id of ['proxy.websocket', 'proxy.uploadLimit']) {
@@ -263,11 +292,11 @@ try {
   await snap('admin-diagnosis');
 
   step('a backup goes back while the server runs');
-  await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
+  await open('Benutzer & Einladungen', 'Einladungen');
   await page.getByLabel('E-Mail-Adresse').fill('later@example.com');
   await page.getByRole('button', { name: 'Einladen' }).click();
-  await page.locator('.admin-table').getByText('later@example.com').waitFor();
-  await page.getByRole('navigation').getByRole('button', { name: 'Backups' }).click();
+  await page.getByRole('row').filter({ hasText: 'later@example.com' }).waitFor();
+  await open('Datensicherung');
   await page.getByRole('button', { name: 'Zurückspielen' }).first().click();
   await page.locator('.modal input[type=password]').fill(password);
   await page.locator('.modal').getByRole('button', { name: 'Zurückspielen' }).click();
@@ -279,9 +308,9 @@ try {
   await unlockOrLogin();
   // Back where it was, on the backups.
   await page.getByText(/vor dem Zurückspielen/).first().waitFor({ timeout: 30000 });
-  await page.getByRole('navigation').getByRole('button', { name: 'Einladungen' }).click();
-  await page.locator('.admin-table').getByText('mika@example.com').waitFor();
-  if (await page.locator('.admin-table').getByText('later@example.com').count())
+  await open('Benutzer & Einladungen', 'Einladungen');
+  await page.getByRole('row').filter({ hasText: 'mika@example.com' }).waitFor();
+  if (await page.getByRole('row').filter({ hasText: 'later@example.com' }).count())
     throw new Error('the invitation made after the backup is still there');
 
   step('on a phone');
@@ -333,9 +362,10 @@ try {
   await mobile.locator('.stat-grid').waitFor({ timeout: 30000 });
   await noSideways('the admin portal');
   await phoneSnap('admin');
-  await mobile.getByRole('navigation').getByRole('button', { name: 'Nutzer' }).click();
-  await mobile.locator('.admin-table').getByText(email).waitFor();
+  await mobile.getByRole('navigation', { name: 'Admin-Portal' }).getByRole('button', { name: 'Benutzer & Einladungen' }).click();
+  await mobile.getByRole('row').filter({ hasText: email }).first().waitFor();
   await noSideways('the users');
+  await fillsWindow('the users on a phone', mobile);
   await phoneSnap('admin-users');
   await phone.close();
 

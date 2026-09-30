@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import { Icon } from '../components/Icon';
-import { checkMaskedServer, type MaskedServerCheck, type Settings } from '../lib/admin';
+import { Button, ButtonRow, Card, FormRow, Section, TextField } from '../components/ui';
+import { checkMaskedServer, type MaskedServerCheck } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
-
-type Props = { draft: Settings; setDraft: (next: Settings) => void };
+import { SettingsTab } from './draft';
 
 type Server = { url: string; name: string };
 
@@ -25,16 +24,11 @@ function checkText(check: MaskedServerCheck): string {
  * The UwUMail servers accounts may connect for masked addresses (§13, §21.8). This server talks
  * only to these, and they may be on private addresses: the admin trusts them.
  */
-export function MaskedServerSettings({ draft, setDraft }: Props) {
+export function MaskedServerSettings() {
   useLanguage();
-  const servers: Server[] = draft.masked?.servers ?? [];
   const [checks, setChecks] = useState<
     Record<number, { busy: boolean; text: string; ok: boolean }>
   >({});
-  const set = (next: Server[]) => {
-    setDraft({ ...draft, masked: { ...draft.masked, servers: next } });
-    setChecks({});
-  };
 
   const check = async (index: number, url: string) => {
     setChecks((all) => ({ ...all, [index]: { busy: true, text: t('Einen Moment …'), ok: true } }));
@@ -48,81 +42,92 @@ export function MaskedServerSettings({ draft, setDraft }: Props) {
   };
 
   return (
-    <>
-      <h2 className="settings-heading">{t('Maskierte Adressen (UwUMail)')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Mit diesen UwUMail-Servern dürfen Konten sich verbinden, um für jede Website eine eigene Mail-Adresse anzulegen – auch aus den Bitwarden-Apps heraus. Mit anderen spricht dieser Server nicht. Leer: keine maskierten Adressen.',
-        )}
-      </p>
-      {servers.map((server, index) => {
-        const result = checks[index];
+    <SettingsTab>
+      {({ draft, setDraft }) => {
+        const servers: Server[] = draft.masked?.servers ?? [];
+        const set = (next: Server[]) => {
+          setDraft({ ...draft, masked: { ...draft.masked, servers: next } });
+          setChecks({});
+        };
         return (
-          <div className="channel-card" key={index}>
-            <div className="field-grid wide">
-              <label className="field">
-                <span>{t('Adresse')}</span>
-                <input
-                  value={server.url}
-                  spellCheck={false}
-                  placeholder="https://mail.example.com"
-                  onChange={(e) =>
-                    set(servers.map((s, i) => (i === index ? { ...s, url: e.target.value } : s)))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>{t('Name, wie ihn Nutzer sehen')}</span>
-                <input
-                  value={server.name}
-                  maxLength={60}
-                  placeholder="UwUMail"
-                  onChange={(e) =>
-                    set(servers.map((s, i) => (i === index ? { ...s, name: e.target.value } : s)))
-                  }
-                />
-              </label>
+          <Section
+            heading={t('UwUMail-Server für maskierte Adressen')}
+            lead={t(
+              'Mit diesen UwUMail-Servern dürfen Konten sich verbinden, um für jede Website eine eigene Mail-Adresse anzulegen – auch aus den Bitwarden-Apps heraus. Mit anderen spricht dieser Server nicht. Leer: keine maskierten Adressen.',
+            )}
+          >
+            <div className="card-list">
+              {servers.map((server, index) => {
+                const result = checks[index];
+                return (
+                  <Card key={index} className="channel-card">
+                    <FormRow min="wide">
+                      <TextField
+                        label={t('Adresse')}
+                        value={server.url}
+                        spellCheck={false}
+                        placeholder="https://mail.example.com"
+                        onChange={(url) =>
+                          set(servers.map((s, i) => (i === index ? { ...s, url } : s)))
+                        }
+                      />
+                      <TextField
+                        label={t('Name, wie ihn Nutzer sehen')}
+                        value={server.name}
+                        maxLength={60}
+                        placeholder="UwUMail"
+                        onChange={(name) =>
+                          set(servers.map((s, i) => (i === index ? { ...s, name } : s)))
+                        }
+                      />
+                    </FormRow>
+                    {result && (
+                      <p
+                        className="channel-status"
+                        data-alarm={!result.ok || undefined}
+                        role="status"
+                      >
+                        {result.text}
+                      </p>
+                    )}
+                    <ButtonRow>
+                      <Button
+                        size="small"
+                        disabled={!server.url.trim() || result?.busy}
+                        onClick={() => void check(index, server.url)}
+                      >
+                        {t('Prüfen')}
+                        <span className="sr-only">{server.url}</span>
+                      </Button>
+                      <span className="spacer" />
+                      <Button
+                        size="small"
+                        variant="quiet-danger"
+                        onClick={() => set(servers.filter((_, i) => i !== index))}
+                      >
+                        {t('Entfernen')}
+                        <span className="sr-only">{server.url}</span>
+                      </Button>
+                    </ButtonRow>
+                  </Card>
+                );
+              })}
             </div>
-            {result && (
-              <p className="channel-status" data-alarm={!result.ok || undefined} role="status">
-                {result.text}
+            <ButtonRow>
+              <Button icon="plus" onClick={() => set([...servers, { url: '', name: '' }])}>
+                {t('UwUMail-Server hinzufügen')}
+              </Button>
+            </ButtonRow>
+            {servers.length > 0 && (
+              <p className="field-hint">
+                {t(
+                  'Prüfen geht auch vor dem Speichern. Erst nach dem Speichern können Konten sich verbinden.',
+                )}
               </p>
             )}
-            <div className="form-actions">
-              <button
-                type="button"
-                disabled={!server.url.trim() || result?.busy}
-                onClick={() => void check(index, server.url)}
-              >
-                {t('Prüfen')}
-                <span className="sr-only">{server.url}</span>
-              </button>
-              <span className="spacer" />
-              <button
-                type="button"
-                className="quiet danger-text"
-                onClick={() => set(servers.filter((_, i) => i !== index))}
-              >
-                {t('Entfernen')}
-                <span className="sr-only">{server.url}</span>
-              </button>
-            </div>
-          </div>
+          </Section>
         );
-      })}
-      <div className="form-actions">
-        <button type="button" onClick={() => set([...servers, { url: '', name: '' }])}>
-          <Icon name="plus" size={15} />
-          {t('UwUMail-Server hinzufügen')}
-        </button>
-      </div>
-      {servers.length > 0 && (
-        <p className="field-hint">
-          {t(
-            'Prüfen geht auch vor dem Speichern. Erst nach dem Speichern können Konten sich verbinden.',
-          )}
-        </p>
-      )}
-    </>
+      }}
+    </SettingsTab>
   );
 }

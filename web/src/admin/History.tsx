@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Segmented } from '../components/web/controls';
+import { Callout, Section, Segmented } from '../components/ui';
 import { stats, type Day } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
@@ -101,7 +101,7 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <figure className="chart-card">
+    <figure className="card chart-card">
       <figcaption>
         <span className="stat-label">{title}</span>
         <span className="chart-value">{value}</span>
@@ -126,15 +126,14 @@ export function History() {
     stats(Number(span)).then(setDays, (e) => setError(errorText(e)));
   }, [span]);
 
-  if (error) return <p className="form-error">{error}</p>;
+  if (error) return <Callout tone="error">{error}</Callout>;
   if (!days) return null;
   const last = days[days.length - 1];
   const sum = (pick: (day: Day) => number) => days.reduce((total, day) => total + pick(day), 0);
 
   return (
-    <section className="history">
+    <Section heading={t('Verlauf')} className="history">
       <div className="history-head">
-        <h2 className="settings-heading">{t('Verlauf')}</h2>
         <Segmented
           label={t('Zeitraum')}
           value={span}
@@ -182,6 +181,6 @@ export function History() {
           </Card>
         </div>
       )}
-    </section>
+    </Section>
   );
 }

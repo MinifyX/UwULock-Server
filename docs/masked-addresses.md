@@ -7,7 +7,7 @@ UwUMail's JMAP `MaskedEmail`, with an OAuth grant you give once.
 
 ## For the admin
 
-*Admin portal → Settings → Masked addresses (UwUMail).* List the UwUMail servers accounts may
+*Admin portal → Vault & features → Masked addresses.* List the UwUMail servers accounts may
 connect to, with the name people see (`https://mail.example.com`, "UwUMail"). *Check* tells
 whether the server answers OAuth discovery, offers the `maskedemail` scope and lets apps register.
 The Lock server talks to these servers and no others; they may be in the local network, since only

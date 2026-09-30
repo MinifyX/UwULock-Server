@@ -14,7 +14,7 @@ The design is UwUMail Server's: the same repository format, the same targets, th
 
 ## Setting them up
 
-*Admin portal → Backups → Off-site backups.* Choose where they go, save, **write down the
+*Admin portal → Backups → Off-site.* Choose where they go, save, **write down the
 recovery key** the portal shows once, test the connection, and back up once by hand to see it
 work. From then on the server backs up every night at the time you set (UTC).
 

@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Button, ButtonRow, Section, Table } from '../components/ui';
 import { PasswordPrompt, save } from '../components/web/controls';
 import { logout } from '../lib/api';
 import { backups, createBackup, downloadBackup, restoreBackup, type Backup } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
-import { useSwitch } from '../lib/switches';
 import { toast } from '../lib/toast';
-import { Offsite } from './Offsite';
 
 /**
  * What the time stamp in a backup's name says: `2026-09-25-031000`, and whether it is the one
@@ -30,8 +29,6 @@ function stampText(stamp: string | null): string {
  */
 export function Backups() {
   useLanguage();
-  // Backups elsewhere are a feature switch; the ones on this server are always there.
-  const offsiteOn = useSwitch('offsite-backups');
   const [list, setList] = useState<Backup[] | null>(null);
   const [busy, setBusy] = useState(false);
   /** The backup the master password is being asked for. */
@@ -44,57 +41,78 @@ export function Backups() {
 
   return (
     <>
-      {offsiteOn && <Offsite />}
-      <h2 className="settings-heading">{t('Backups auf diesem Server')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Backups liegen im selben Volume wie die Datenbank. Gegen eine kaputte Platte hilft nur eine Kopie woanders: Lade ab und zu eines herunter. Beim Zurückspielen wird der jetzige Stand vorher selbst ein Backup – so lässt es sich auf demselben Weg rückgängig machen.',
+      <Section
+        heading={t('Backups auf diesem Server')}
+        lead={t(
+          'Jede Nacht und vor jedem Update schreibt der Server ein Backup und hebt sieben auf. Sie liegen im selben Volume wie die Datenbank: Gegen eine kaputte Platte hilft nur eine Kopie woanders – lade ab und zu eines herunter, oder richte Backups außer Haus ein.',
         )}
-      </p>
-      <div className="form-actions">
-        <button
-          className="primary"
-          disabled={busy}
-          onClick={async () => {
-            setBusy(true);
-            try {
-              await createBackup();
-              toast(t('Backup geschrieben ✧'), 'info');
-              load();
-            } catch (e) {
-              toast(errorText(e), 'error');
-            } finally {
-              setBusy(false);
+      >
+        <ButtonRow>
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                await createBackup();
+                toast(t('Backup geschrieben ✧'), 'info');
+                load();
+              } catch (e) {
+                toast(errorText(e), 'error');
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {busy ? t('Schreibt …') : t('Jetzt ein Backup schreiben')}
+          </Button>
+        </ButtonRow>
+        {list?.length === 0 ? (
+          <p className="empty-note">
+            {t('Noch keine Backups. Das erste schreibt der Server zehn Minuten nach dem Start.')}
+          </p>
+        ) : (
+          <Table
+            label={t('Backups auf diesem Server')}
+            head={
+              <>
+                <th>{t('Backup')}</th>
+                <th>{t('Größe')}</th>
+                <th>
+                  <span className="sr-only">{t('Aktionen')}</span>
+                </th>
+              </>
             }
-          }}
-        >
-          {busy ? t('Schreibt …') : t('Jetzt ein Backup schreiben')}
-        </button>
-      </div>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>{t('Backup')}</th>
-            <th>{t('Größe')}</th>
-            <th aria-label={t('Aktionen')} />
-          </tr>
-        </thead>
-        <tbody>
-          {list?.map((backup) => (
-            <tr key={backup.name}>
-              <td>
-                <b>{stampText(backup.time)}</b>
-                <small className="event-detail">{backup.name}</small>
-              </td>
-              <td>{bytes(backup.bytes)}</td>
-              <td className="row-actions">
-                <button onClick={() => setTaking(backup.name)}>{t('Herunterladen')}</button>
-                <button onClick={() => setRestoring(backup.name)}>{t('Zurückspielen')}</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+          >
+            {list?.map((backup) => (
+              <tr key={backup.name}>
+                <td>
+                  <b>{stampText(backup.time)}</b>
+                  <small className="event-detail">{backup.name}</small>
+                </td>
+                <td>{bytes(backup.bytes)}</td>
+                <td className="row-actions">
+                  <Button size="small" icon="download" onClick={() => setTaking(backup.name)}>
+                    {t('Herunterladen')}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="quiet-danger"
+                    onClick={() => setRestoring(backup.name)}
+                  >
+                    {t('Zurückspielen')}
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+        <p className="field-hint">
+          {t(
+            'Beim Zurückspielen wird der jetzige Stand vorher selbst ein Backup – so lässt es sich auf demselben Weg rückgängig machen. Danach melden sich alle neu an.',
+          )}
+        </p>
+      </Section>
       {taking && (
         <PasswordPrompt
           title={t('Backup herunterladen?')}
@@ -133,11 +151,6 @@ export function Backups() {
             await logout();
           }}
         />
-      )}
-      {list?.length === 0 && (
-        <p className="empty-note">
-          {t('Noch keine Backups. Das erste schreibt der Server zehn Minuten nach dem Start.')}
-        </p>
       )}
     </>
   );

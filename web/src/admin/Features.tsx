@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Modal, Section, SettingRow, Toggle } from '../components/ui';
+import { Button, Callout, Modal, Section, SettingRow, Toggle } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import { loadServerInfo } from '../lib/branding';
 import { errorText } from '../lib/errors';
@@ -16,7 +16,7 @@ import {
 /**
  * The admin portal's "Features" tab: every extra of UwULock on or off, grouped, each with one
  * line anybody understands. The vault itself and everything Bitwarden's apps know are always
- * there; so are the website icons, which have their own switch under Settings.
+ * there; so are the website icons, which have their own switch under *Icons & Passwortprüfung*.
  */
 export function Features() {
   useLanguage();
@@ -54,12 +54,12 @@ export function Features() {
   const byId = new Map(list.map((state) => [state.id, state]));
 
   return (
-    <div className="admin-settings admin-features">
-      <p className="settings-lead">
+    <>
+      <Callout>
         {t(
           'Der Tresor und alles, was die Bitwarden-Apps kennen, ist immer da. Was UwULock dazu kann, schaltest du hier an oder aus. Aus heißt: nicht zu sehen und nicht erreichbar – gelöscht wird nichts, und angeschaltet ist alles wieder da.',
         )}
-      </p>
+      </Callout>
       <ResultLine result={result} />
       {SWITCH_GROUPS.map((group) => {
         const states = list.filter((state) => state.group === group.id);
@@ -135,6 +135,6 @@ export function Features() {
           </p>
         </Modal>
       )}
-    </div>
+    </>
   );
 }

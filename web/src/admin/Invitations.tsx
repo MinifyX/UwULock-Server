@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Icon } from '../components/Icon';
+import { Badge, Button, Callout, Checkbox, Section, Table, TextField } from '../components/ui';
 import { invitations, invite, uninvite, type Invitation } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
@@ -48,91 +48,112 @@ export function Invitations() {
 
   return (
     <>
-      <form className="invite-form" onSubmit={submit}>
-        <input
-          type="email"
-          required
-          placeholder="name@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={busy}
-          aria-label={t('E-Mail-Adresse')}
-        />
-        <label className="check">
-          <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
-          <span>{t('als Admin')}</span>
-        </label>
-        <button className="primary" type="submit" disabled={busy || !email.includes('@')}>
-          {t('Einladen')}
-        </button>
-      </form>
-      {made && (
-        <div className="notice invite-made" role="status">
-          <Icon name={made.mailed ? 'check' : 'sparkles'} size={16} />
-          <span>
-            {made.mailed
-              ? t(
-                  'Die Einladung an {email} ist per Mail unterwegs. Der Link, falls sie nicht ankommt:',
-                  { email: made.email },
-                )
-              : t('Gib {email} diesen Link – er ist der einzige Weg zur Registrierung:', {
-                  email: made.email,
-                })}
-            <code className="invite-link">{made.link}</code>
-          </span>
-          <button
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(made.link)
-                .then(() => toast(t('Kopiert ✧'), 'info'));
-            }}
+      <Section
+        heading={t('Jemanden einladen')}
+        lead={t(
+          'Die Einladung geht per Mail, wenn ein Mailserver eingerichtet ist. Den Link bekommst du in jedem Fall, zum Weitergeben von Hand.',
+        )}
+      >
+        <form className="invite-form" onSubmit={submit}>
+          <TextField
+            label={t('E-Mail-Adresse')}
+            type="email"
+            required
+            placeholder="name@example.com"
+            value={email}
+            onChange={setEmail}
+            disabled={busy}
+          />
+          <Checkbox label={t('als Admin')} checked={admin} onChange={setAdmin} />
+          <Button variant="primary" type="submit" disabled={busy || !email.includes('@')}>
+            {t('Einladen')}
+          </Button>
+        </form>
+        {made && (
+          <Callout
+            tone={made.mailed ? 'ok' : 'accent'}
+            actions={
+              <Button
+                size="small"
+                icon="copy"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(made.link)
+                    .then(() => toast(t('Kopiert ✧'), 'info'));
+                }}
+              >
+                {t('Kopieren')}
+              </Button>
+            }
           >
-            {t('Kopieren')}
-          </button>
-        </div>
-      )}
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>{t('Adresse')}</th>
-            <th>{t('Eingeladen von')}</th>
-            <th>{t('Gilt bis')}</th>
-            <th aria-label={t('Aktionen')} />
-          </tr>
-        </thead>
-        <tbody>
-          {list?.map((invitation) => (
-            <tr key={invitation.email} data-disabled={invitation.expired || undefined}>
-              <td>
-                <b>{invitation.email}</b>
-                <span className="badges">
-                  {invitation.admin && <span className="badge">{t('Admin')}</span>}
-                  {invitation.expired && <span className="badge alarm">{t('abgelaufen')}</span>}
-                </span>
-              </td>
-              <td>{invitation.invitedBy ?? t('Kommandozeile')}</td>
-              <td>{when(invitation.expires)}</td>
-              <td className="row-actions">
-                <button onClick={() => void again(invitation)}>{t('Neu senden')}</button>
-                <button
-                  className="danger"
-                  onClick={async () => {
-                    try {
-                      await uninvite(invitation.email);
-                      load();
-                    } catch (e) {
-                      toast(errorText(e), 'error');
-                    }
-                  }}
-                >
-                  {t('Zurückziehen')}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {list?.length === 0 && <p className="empty-note">{t('Keine offenen Einladungen.')}</p>}
+            <p role="status">
+              {made.mailed
+                ? t(
+                    'Die Einladung an {email} ist per Mail unterwegs. Der Link, falls sie nicht ankommt:',
+                    { email: made.email },
+                  )
+                : t('Gib {email} diesen Link – er ist der einzige Weg zur Registrierung:', {
+                    email: made.email,
+                  })}
+            </p>
+            <code className="invite-link">{made.link}</code>
+          </Callout>
+        )}
+      </Section>
+      <Section heading={t('Offene Einladungen')}>
+        {list?.length === 0 ? (
+          <p className="empty-note">{t('Keine offenen Einladungen.')}</p>
+        ) : (
+          <Table
+            label={t('Offene Einladungen')}
+            head={
+              <>
+                <th>{t('Adresse')}</th>
+                <th>{t('Eingeladen von')}</th>
+                <th>{t('Gilt bis')}</th>
+                <th>
+                  <span className="sr-only">{t('Aktionen')}</span>
+                </th>
+              </>
+            }
+          >
+            {list?.map((invitation) => (
+              <tr key={invitation.email} data-disabled={invitation.expired || undefined}>
+                <td>
+                  <b>{invitation.email}</b>
+                  <span className="badges">
+                    {invitation.admin && <Badge>{t('Admin')}</Badge>}
+                    {invitation.expired && <Badge tone="alarm">{t('abgelaufen')}</Badge>}
+                  </span>
+                </td>
+                <td>{invitation.invitedBy ?? t('Kommandozeile')}</td>
+                <td>{when(invitation.expires)}</td>
+                <td className="row-actions">
+                  <Button size="small" onClick={() => void again(invitation)}>
+                    {t('Neu senden')}
+                    <span className="sr-only">{invitation.email}</span>
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="quiet-danger"
+                    onClick={async () => {
+                      try {
+                        await uninvite(invitation.email);
+                        load();
+                      } catch (e) {
+                        toast(errorText(e), 'error');
+                      }
+                    }}
+                  >
+                    {t('Zurückziehen')}
+                    <span className="sr-only">{invitation.email}</span>
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Section>
     </>
   );
 }

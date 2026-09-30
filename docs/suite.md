@@ -45,10 +45,10 @@ device has to log in again; the apps offer that once they have it.
 - A record is at most 256 KiB sealed; a push brings at most 500 records and 8 MiB; a pull pages
   through 500 at a time.
 - Per account and across its spaces: at most **50,000 records** and **256 MiB** by default
-  (*Admin portal → Settings → Suite vault*, `suite.maxRecords` / `suite.maxMb`). The suite counts
+  (*Admin portal → Vault & features → Storage & limits*, `suite.maxRecords` / `suite.maxMb`). The suite counts
   towards the account's storage limit as well. Over it, the push is refused as a whole.
 - Deleted records stay as tombstones for 90 days, so that every device hears of the deletion.
-- The suite vault is a feature switch (*Admin portal → Features*, [features.md](features.md)).
+- The suite vault is a feature switch (*Admin portal → Vault & features → Features*, [features.md](features.md)).
   Off, suite logins are refused and the spaces answer 404 `feature_off` (their data stays).
 - Deleting a space is for the account itself — in the web vault, with the master password —
   never for an app. Starting the extras key over (*Settings → Security*) deletes every space with

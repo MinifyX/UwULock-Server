@@ -1,7 +1,7 @@
 # Feature switches
 
 UwULock is a Bitwarden-compatible vault with extras on top. An admin decides which extras this
-server offers: *Admin portal → Features* has one switch per extra, grouped, each with one line
+server offers: *Admin portal → Vault & features → Features* has one switch per extra, grouped, each with one line
 that says what it does. What is off is not shown and not reachable; **nothing is deleted**, and
 switched on again, everything is back as it was.
 
@@ -73,7 +73,7 @@ settings under *Settings*; metrics and log shipping are configured in `.env`.
 
 ## Changing them
 
-- **Admin portal → Features.** Switching off something in use asks first.
+- **Admin portal → Vault & features → Features.** Switching off something in use asks first.
 - **Command line**, also with the server stopped: `uwulock-server features` lists them,
   `uwulock-server features on families sso` and `… off reminders` change them. A running server
   takes that over when it starts again.

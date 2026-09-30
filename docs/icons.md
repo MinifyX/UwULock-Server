@@ -39,7 +39,7 @@ brand), and then it gets the icon of where it ends up. The website sees the serv
 (100,000 sites); past that the oldest go, older entries are deleted once a day, and nothing is
 kept while the disk is nearly full.
 
-The admin switches it off under *Settings → Icons* in the admin portal (then every icon is
+The admin switches it off under *Vault & features → Icons & password check* in the admin portal (then every icon is
 "none", and the apps show their symbol), sees how much is kept, and empties the cache. The files
 are under `icons/` in the data directory; they can be deleted at any time and are not in the
 backups. An update that changes how icons are chosen starts a new cache (`icons/auto-2` since
@@ -108,7 +108,7 @@ encrypted, so the server does not learn which icon belongs to which item.
 [Dashboard Icons](#icon-databases) is part of the library too, from the server's own copy:
 nothing is fetched for it, and it is there when selfh.st is not.
 
-The admin switches the library off under *Settings → Icons*.
+The admin switches the library off under *Vault & features → Icons & password check*.
 
 ## Icon databases
 
@@ -126,7 +126,7 @@ The order for a website is: its own icon, its domain's (see above), then 2FA Dir
 host and the domains above it down to the registrable one (`console.aws.example.com`, then
 `aws.example.com`, then `example.com`), then Simple Icons the same way, then nothing. The icon is
 drawn as a PNG of 64 × 64 pixels and kept in the cache of website icons like a fetched one — it
-counts toward the same ceiling. Each database has its own switch under *Settings → Icons* in the
+counts toward the same ceiling. Each database has its own switch under *Vault & features → Icons & password check* in the
 admin portal (all on by default), with its licence and the commit it was taken from; automatic
 icons switched off switch them off too.
 

@@ -36,7 +36,7 @@ UwUAuth 0.4 and newer pair with a one-time code instead of copying ids and addre
 1. In UwUAuth: *Apps → Pair a UwUSuite app*. Pick who may use the vault (default: everybody) and,
    if you like, which groups get the roles `admin` (admin portal) and `user` (may make a vault
    without an invitation). UwUAuth shows a code and a QR code, valid for 15 minutes.
-2. In UwULock's admin portal: *Anmeldung → Mit UwUAuth koppeln*, UwUAuth's address and the code
+2. In UwULock's admin portal: *Security & login → SSO provider → Pair with UwUAuth*, UwUAuth's address and the code
    (or paste the QR code's text, which has both).
 
 UwULock then gets its client id and secret, tells UwUAuth its redirect address, its icon, its two

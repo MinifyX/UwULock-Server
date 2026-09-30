@@ -53,10 +53,10 @@ anything there.
   can make ten submissions an hour. Every request that expired, is full, disabled or unknown looks
   the same to whoever tries the link.
 
-File requests are a feature switch (*Admin portal → Features*, [features.md](features.md)); off,
+File requests are a feature switch (*Admin portal → Vault & features → Features*, [features.md](features.md)); off,
 the links and the API answer 404 and nothing is deleted. The admin sets how many one account may
-have, how long they may run and how many files a submission may bring (*Admin portal → Settings →
-File requests*).
+have, how long they may run and how many files a submission may bring (*Admin portal → Vault & features →
+Storage & limits*).
 
 ## How it is encrypted
 

@@ -1,7 +1,24 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Modal } from '../components/Modal';
 import { PasswordInput } from '../components/PasswordInput';
-import { ResultLine, Segmented, Toggle, type Result } from '../components/web/controls';
+import {
+  Badge,
+  Button,
+  ButtonRow,
+  Callout,
+  Card,
+  Checkbox,
+  Field,
+  FieldGroup,
+  FormRow,
+  Modal,
+  Section,
+  Segmented,
+  Select,
+  SettingRow,
+  TextField,
+  Toggle,
+} from '../components/ui';
+import { ResultLine, type Result } from '../components/web/controls';
 import {
   addChannel,
   alertTitle,
@@ -89,16 +106,16 @@ export function Notifications() {
   }, []);
   useEffect(load, [load]);
 
-  if (error) return <p className="form-error">{error}</p>;
+  if (error) return <Callout tone="error">{error}</Callout>;
   if (!channels) return null;
   return (
-    <>
-      <p className="settings-lead">
-        {t(
-          'Der Server meldet sich, wenn etwas nicht stimmt, und noch einmal, wenn es vorbei ist – jede Meldung höchstens einmal pro Stunde und Kanal. Die Nachrichten nennen keine Konten, nur Zahlen. Geht ein Kanal nicht, versucht der Server es später wieder und zeigt es in der Übersicht.',
-        )}
-      </p>
-      <div className="channel-list">
+    <Section
+      heading={t('Wohin der Server meldet')}
+      lead={t(
+        'Der Server meldet sich, wenn etwas nicht stimmt, und noch einmal, wenn es vorbei ist – jede Meldung höchstens einmal pro Stunde und Kanal. Die Nachrichten nennen keine Konten, nur Zahlen. Geht ein Kanal nicht, versucht der Server es später wieder und zeigt es in der Übersicht.',
+      )}
+    >
+      <div className="card-list">
         {channels.map((channel) => (
           <ChannelCard
             key={channel.id}
@@ -125,14 +142,14 @@ export function Notifications() {
             onCancel={() => setAdding(null)}
           />
         ) : (
-          <div className="form-actions">
-            <button className="primary" onClick={() => setAdding(blank('ntfy', events))}>
+          <ButtonRow>
+            <Button variant="primary" icon="plus" onClick={() => setAdding(blank('ntfy', events))}>
               {t('Kanal hinzufügen')}
-            </button>
-          </div>
+            </Button>
+          </ButtonRow>
         )}
       </div>
-    </>
+    </Section>
   );
 }
 
@@ -187,187 +204,180 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
     });
 
   const secretHint = (set: boolean | undefined) =>
-    channel && set ? (
-      <small className="field-hint">
-        {t('Gespeichert. Leer lassen behält ihn, solange die Adresse gleich bleibt.')}
-      </small>
-    ) : null;
+    channel && set
+      ? t('Gespeichert. Leer lassen behält ihn, solange die Adresse gleich bleibt.')
+      : undefined;
 
   const status = channel?.status;
   return (
-    <section
-      className="channel-card"
-      aria-label={draft.name || kindLabel(draft.kind)}
-      data-disabled={channel && !channel.enabled ? true : undefined}
-    >
-      <div className="channel-head">
-        <span className="badge">{kindLabel(draft.kind)}</span>
-        <b className="channel-name">{channel ? channel.name : t('Neuer Kanal')}</b>
-        <span className="spacer" />
+    <Card
+      className={channel && !channel.enabled ? 'channel-card channel-off' : 'channel-card'}
+      heading={
+        <>
+          <Badge tone="neutral">{kindLabel(draft.kind)}</Badge>{' '}
+          {channel ? channel.name : t('Neuer Kanal')}
+        </>
+      }
+      aside={
         <Toggle
           label={t('Kanal an')}
           checked={draft.enabled}
           onChange={(enabled) => setDraft({ ...draft, enabled })}
         />
-      </div>
-
+      }
+    >
       {!channel && (
-        <Segmented
-          label={t('Art')}
-          value={draft.kind}
-          onChange={(kind) =>
-            setDraft({
-              ...draft,
-              kind,
-              name: draft.name === defaultName(draft.kind) ? defaultName(kind) : draft.name,
-              config: configOf(kind, {}),
-            })
-          }
-          options={KINDS.map((k) => ({ value: k.value, label: t(k.label) }))}
-        />
+        <SettingRow label={t('Art')} description={t('Wohin die Meldungen gehen.')}>
+          <Segmented
+            label={t('Art')}
+            value={draft.kind}
+            onChange={(kind) =>
+              setDraft({
+                ...draft,
+                kind,
+                name: draft.name === defaultName(draft.kind) ? defaultName(kind) : draft.name,
+                config: configOf(kind, {}),
+              })
+            }
+            options={KINDS.map((k) => ({ value: k.value, label: t(k.label) }))}
+          />
+        </SettingRow>
       )}
 
-      <div className="field-grid wide">
-        <label className="field">
-          <span>{t('Name')}</span>
-          <input
-            value={draft.name}
-            maxLength={64}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-          />
-        </label>
+      <FormRow min="wide">
+        <TextField
+          label={t('Name')}
+          value={draft.name}
+          maxLength={64}
+          onChange={(name) => setDraft({ ...draft, name })}
+        />
         {draft.kind === 'ntfy' && (
           <>
-            <label className="field">
-              <span>{t('Server')}</span>
-              <input
-                value={config.url ?? ''}
-                onChange={(e) => setConfig({ url: e.target.value })}
-                placeholder="https://ntfy.example.com"
-                spellCheck={false}
-              />
-            </label>
-            <label className="field">
-              <span>{t('Thema')}</span>
-              <input
-                value={config.topic ?? ''}
-                onChange={(e) => setConfig({ topic: e.target.value })}
-                placeholder="uwulock-alerts"
-                spellCheck={false}
-              />
-            </label>
-            <label className="field">
-              <span>{t('Priorität')}</span>
-              <select
-                value={config.priority ?? 3}
-                onChange={(e) => setConfig({ priority: Number(e.target.value) })}
-              >
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <option key={n} value={n}>
-                    {n === 1
-                      ? t('1 – leise')
-                      : n === 3
-                        ? t('3 – normal')
-                        : n === 5
-                          ? t('5 – dringend')
-                          : n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>{t('Zugangs-Token (freiwillig)')}</span>
-              <PasswordInput
-                value={config.token ?? ''}
-                onChange={(token) => setConfig({ token })}
-                autoComplete="new-password"
-              />
-              {secretHint(channel?.config.tokenSet)}
-            </label>
+            <TextField
+              label={t('Server')}
+              value={config.url ?? ''}
+              onChange={(url) => setConfig({ url })}
+              placeholder="https://ntfy.example.com"
+              spellCheck={false}
+            />
+            <TextField
+              label={t('Thema')}
+              value={config.topic ?? ''}
+              onChange={(topic) => setConfig({ topic })}
+              placeholder="uwulock-alerts"
+              spellCheck={false}
+            />
           </>
         )}
         {draft.kind === 'gotify' && (
-          <>
-            <label className="field">
-              <span>{t('Server')}</span>
-              <input
-                value={config.url ?? ''}
-                onChange={(e) => setConfig({ url: e.target.value })}
-                placeholder="https://gotify.example.com"
-                spellCheck={false}
-              />
-            </label>
-            <label className="field">
-              <span>{t('Priorität')}</span>
-              <input
-                type="number"
-                min={0}
-                max={10}
-                value={config.priority ?? 5}
-                onChange={(e) => setConfig({ priority: Number(e.target.value) })}
-              />
-            </label>
-            <label className="field">
-              <span>{t('App-Token')}</span>
-              <PasswordInput
-                value={config.token ?? ''}
-                onChange={(token) => setConfig({ token })}
-                autoComplete="new-password"
-              />
-              {secretHint(channel?.config.tokenSet)}
-            </label>
-          </>
+          <TextField
+            label={t('Server')}
+            value={config.url ?? ''}
+            onChange={(url) => setConfig({ url })}
+            placeholder="https://gotify.example.com"
+            spellCheck={false}
+          />
         )}
         {draft.kind === 'matrix' && (
           <>
-            <label className="field">
-              <span>{t('Homeserver')}</span>
-              <input
-                value={config.homeserver ?? ''}
-                onChange={(e) => setConfig({ homeserver: e.target.value })}
-                placeholder="https://matrix.example.org"
-                spellCheck={false}
-              />
-            </label>
-            <label className="field">
-              <span>{t('Raum-ID')}</span>
-              <input
-                value={config.roomId ?? ''}
-                onChange={(e) => setConfig({ roomId: e.target.value })}
-                placeholder="!abc:example.org"
-                spellCheck={false}
-              />
-            </label>
-            <label className="field">
-              <span>{t('Access-Token des Kontos, das schreibt')}</span>
-              <PasswordInput
-                value={config.accessToken ?? ''}
-                onChange={(accessToken) => setConfig({ accessToken })}
-                autoComplete="new-password"
-              />
-              {secretHint(channel?.config.accessTokenSet)}
-            </label>
+            <TextField
+              label={t('Homeserver')}
+              value={config.homeserver ?? ''}
+              onChange={(homeserver) => setConfig({ homeserver })}
+              placeholder="https://matrix.example.org"
+              spellCheck={false}
+            />
+            <TextField
+              label={t('Raum-ID')}
+              value={config.roomId ?? ''}
+              onChange={(roomId) => setConfig({ roomId })}
+              placeholder="!abc:example.org"
+              spellCheck={false}
+            />
           </>
         )}
-      </div>
+      </FormRow>
+      {draft.kind === 'ntfy' && (
+        <FormRow min="wide">
+          <Field label={t('Priorität')}>
+            <Select
+              value={String(config.priority ?? 3)}
+              onChange={(n) => setConfig({ priority: Number(n) })}
+              options={[1, 2, 3, 4, 5].map((n) => ({
+                value: String(n),
+                label:
+                  n === 1
+                    ? t('1 – leise')
+                    : n === 3
+                      ? t('3 – normal')
+                      : n === 5
+                        ? t('5 – dringend')
+                        : String(n),
+              }))}
+            />
+          </Field>
+          <Field
+            label={t('Zugangs-Token (freiwillig)')}
+            hint={secretHint(channel?.config.tokenSet)}
+          >
+            <PasswordInput
+              value={config.token ?? ''}
+              onChange={(token) => setConfig({ token })}
+              autoComplete="new-password"
+            />
+          </Field>
+        </FormRow>
+      )}
+      {draft.kind === 'gotify' && (
+        <FormRow min="wide">
+          <Field label={t('Priorität')} hint={t('Von 0 (leise) bis 10 (dringend).')}>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={config.priority ?? 5}
+              onChange={(e) => setConfig({ priority: Number(e.target.value) })}
+            />
+          </Field>
+          <Field label={t('App-Token')} hint={secretHint(channel?.config.tokenSet)}>
+            <PasswordInput
+              value={config.token ?? ''}
+              onChange={(token) => setConfig({ token })}
+              autoComplete="new-password"
+            />
+          </Field>
+        </FormRow>
+      )}
+      {draft.kind === 'matrix' && (
+        <Field
+          label={t('Access-Token des Kontos, das schreibt')}
+          hint={secretHint(channel?.config.accessTokenSet)}
+        >
+          <PasswordInput
+            value={config.accessToken ?? ''}
+            onChange={(accessToken) => setConfig({ accessToken })}
+            autoComplete="new-password"
+          />
+        </Field>
+      )}
       {draft.kind === 'mail' && (
         <p className="field-hint">
-          {t('Geht an jedes Admin-Konto, über den Mailserver aus den Einstellungen.')}
+          {t('Geht an jedes Admin-Konto, über den Mailserver im Reiter „Mailserver“.')}
         </p>
       )}
 
-      <div className="check-grid" role="group" aria-label={t('Meldet')}>
-        {events.map((event) => (
-          <label key={event} className="check">
-            <input
-              type="checkbox"
+      <FieldGroup title={t('Meldet')}>
+        <div className="check-grid">
+          {events.map((event) => (
+            <Checkbox
+              key={event}
+              label={alertTitle(event)}
               checked={draft.events.includes(event)}
-              onChange={(e) => toggleEvent(event, e.target.checked)}
+              onChange={(on) => toggleEvent(event, on)}
             />
-            <span>{alertTitle(event)}</span>
-          </label>
-        ))}
-      </div>
+          ))}
+        </div>
+      </FieldGroup>
 
       {status && (
         <p className="channel-status" data-alarm={status.lastError ? true : undefined}>
@@ -384,10 +394,11 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
         </p>
       )}
 
-      <div className="form-actions">
+      <ButtonRow>
         {channel && (
           <>
-            <button
+            <Button
+              size="small"
               disabled={busy || dirty}
               title={dirty ? t('Erst speichern') : undefined}
               onClick={() =>
@@ -398,30 +409,41 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
               }
             >
               {t('Testen')}
-            </button>
-            <button className="danger" disabled={busy} onClick={() => setDeleting(true)}>
+            </Button>
+            <Button
+              size="small"
+              variant="quiet-danger"
+              disabled={busy}
+              onClick={() => setDeleting(true)}
+            >
               {t('Löschen …')}
-            </button>
+            </Button>
           </>
         )}
         <span className="spacer" />
         {channel ? (
-          <button disabled={busy || !dirty} onClick={() => setDraft(saved)} data-secondary>
+          <Button
+            size="small"
+            disabled={busy || !dirty}
+            onClick={() => setDraft(saved)}
+            data-secondary
+          >
             {t('Verwerfen')}
-          </button>
+          </Button>
         ) : (
-          <button disabled={busy} onClick={onCancel} data-secondary>
+          <Button size="small" disabled={busy} onClick={onCancel} data-secondary>
             {t('Abbrechen')}
-          </button>
+          </Button>
         )}
-        <button
-          className="primary"
+        <Button
+          size="small"
+          variant="primary"
           disabled={busy || !dirty || !draft.name.trim()}
           onClick={() => void save()}
         >
           {channel ? t('Speichern') : t('Hinzufügen')}
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
       <ResultLine result={result} />
 
       {deleting && channel && (
@@ -432,12 +454,11 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
           footer={
             <>
               <span className="spacer" />
-              <button onClick={() => setDeleting(false)} data-autofocus>
+              <Button onClick={() => setDeleting(false)} data-autofocus data-secondary>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
-                data-secondary
+              </Button>
+              <Button
+                variant="danger"
                 disabled={busy}
                 onClick={() => {
                   setDeleting(false);
@@ -448,13 +469,13 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
                 }}
               >
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >
           <p className="dialog-lead">{t('Über diesen Kanal kommen dann keine Meldungen mehr.')}</p>
         </Modal>
       )}
-    </section>
+    </Card>
   );
 }

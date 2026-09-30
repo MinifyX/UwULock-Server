@@ -276,12 +276,14 @@
   background: var(--uwu-elevated);
 }
 
-.nav-row[aria-current='true'] {
+.nav-row[aria-current='true'],
+.nav-row[aria-current='page'] {
   background: var(--uwu-pink-tint);
   color: var(--uwu-pink-ink);
 }
 
-.nav-row[aria-current='true'] .icon {
+.nav-row[aria-current='true'] .icon,
+.nav-row[aria-current='page'] .icon {
   color: var(--uwu-pink);
 }
 

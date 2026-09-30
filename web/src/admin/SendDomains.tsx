@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from '../components/Icon';
-import { Modal } from '../components/Modal';
-import { ResultLine, Segmented, type Result } from '../components/web/controls';
+import {
+  Badge,
+  Button,
+  ButtonRow,
+  Callout,
+  Card,
+  Modal,
+  Section,
+  Segmented,
+  SettingRow,
+  TextField,
+} from '../components/ui';
+import { ResultLine, type Result } from '../components/web/controls';
 import {
   addSendDomain,
   checkSendDomain,
@@ -93,75 +104,74 @@ export function SendDomains() {
 
   return (
     <>
-      <p className="settings-lead">
-        {t(
+      <Section
+        heading={t('Send-Domains auf diesem Server')}
+        lead={t(
           'Weitere Adressen, unter denen nur Sends und Datei-Anfragen erreichbar sind – etwa send.example.com neben der Adresse des Tresors. Tresor, Anmeldung und Admin-Portal gibt es dort nicht. Jeder Send ist unter allen Adressen erreichbar; die Wahl bestimmt nur, welcher Link angezeigt wird.',
         )}
-      </p>
-
-      {list === null ? (
-        <ResultLine result={result} />
-      ) : list.length === 0 ? (
-        <p className="empty-note">{t('Noch keine Send-Domains.')}</p>
-      ) : (
-        <div className="channel-list">
-          {list.map((domain) => (
-            <DomainCard
-              key={domain.id}
-              domain={domain}
-              onChanged={changed}
-              onStyle={() => setStyling(domain.id)}
-              onDelete={() => setDeleting(domain)}
-            />
-          ))}
-        </div>
-      )}
-
-      <h2 className="settings-heading">{t('Send-Domain hinzufügen')}</h2>
-      <form
-        className="form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void add();
-        }}
       >
-        <label className="field">
-          <span>{t('Name')}</span>
-          <input
+        {list === null ? (
+          <ResultLine result={result} />
+        ) : list.length === 0 ? (
+          <p className="empty-note">{t('Noch keine Send-Domains.')}</p>
+        ) : (
+          <div className="card-list">
+            {list.map((domain) => (
+              <DomainCard
+                key={domain.id}
+                domain={domain}
+                onChanged={changed}
+                onStyle={() => setStyling(domain.id)}
+                onDelete={() => setDeleting(domain)}
+              />
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section heading={t('Send-Domain hinzufügen')}>
+        <form
+          className="form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void add();
+          }}
+        >
+          <TextField
+            label={t('Name')}
             value={host}
             spellCheck={false}
             autoCapitalize="off"
             placeholder="send.example.com"
-            onChange={(e) => setHost(e.target.value)}
+            onChange={setHost}
+            hint={
+              host.trim() && hostOf(host) !== host.trim()
+                ? t('Wird als {host} gespeichert.', { host: hostOf(host) })
+                : undefined
+            }
           />
-          {host.trim() && hostOf(host) !== host.trim() && (
-            <small className="field-hint">
-              {t('Wird als {host} gespeichert.', { host: hostOf(host) })}
-            </small>
-          )}
-        </label>
-        <div className="field">
-          <span>{t('TLS')}</span>
-          <Segmented label={t('TLS')} value={tls} onChange={setTls} options={tlsOptions()} />
-          <small className="field-hint">
-            {tls === 'acme'
-              ? t(
-                  "Der Server holt sich selbst ein Zertifikat von Let's Encrypt, wie für seine Hauptadresse. Dafür muss der Name per DNS auf diesen Server zeigen und Port 443 von außen erreichbar sein.",
-                )
-              : t(
-                  'Ein Proxy davor (Caddy, nginx, Traefik …) macht TLS für den Namen und reicht die Anfragen mit dem Host-Header an diesen Server weiter.',
-                )}
-          </small>
-        </div>
-        <div className="form-actions">
-          <span className="spacer" />
-          <button className="primary" type="submit" disabled={busy || !hostOf(host)}>
-            <Icon name="plus" size={15} />
-            {t('Hinzufügen')}
-          </button>
-        </div>
-      </form>
-      {list !== null && <ResultLine result={result} />}
+          <SettingRow
+            label={t('Zertifikat (TLS)')}
+            description={
+              tls === 'acme'
+                ? t(
+                    "Der Server holt sich selbst ein Zertifikat von Let's Encrypt, wie für seine Hauptadresse. Dafür muss der Name per DNS auf diesen Server zeigen und Port 443 von außen erreichbar sein.",
+                  )
+                : t(
+                    'Ein Proxy davor (Caddy, nginx, Traefik …) macht TLS für den Namen und reicht die Anfragen mit dem Host-Header an diesen Server weiter.',
+                  )
+            }
+          >
+            <Segmented label={t('TLS')} value={tls} onChange={setTls} options={tlsOptions()} />
+          </SettingRow>
+          <ButtonRow end>
+            <Button variant="primary" type="submit" icon="plus" disabled={busy || !hostOf(host)}>
+              {t('Hinzufügen')}
+            </Button>
+          </ButtonRow>
+        </form>
+        {list !== null && <ResultLine result={result} />}
+      </Section>
 
       {styled && (
         <Modal
@@ -171,9 +181,9 @@ export function SendDomains() {
           footer={
             <>
               <span className="spacer" />
-              <button className="primary" data-autofocus onClick={() => setStyling(null)}>
+              <Button variant="primary" data-autofocus onClick={() => setStyling(null)}>
                 {t('Fertig')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -194,11 +204,11 @@ export function SendDomains() {
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary disabled={busy} onClick={() => setDeleting(null)}>
+              <Button data-secondary disabled={busy} onClick={() => setDeleting(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true);
@@ -215,7 +225,7 @@ export function SendDomains() {
                 }}
               >
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -259,13 +269,19 @@ function DomainCard({
   };
 
   return (
-    <section className="channel-card" aria-label={domain.host}>
-      <div className="channel-head">
-        <b className="channel-name mono">{domain.host}</b>
-        <span className="badge">
+    <Card
+      className="channel-card"
+      heading={<span className="mono">{domain.host}</span>}
+      aside={
+        <Badge tone="neutral">
           {domain.branding ? t('eigenes Aussehen') : t('wie der Server')}
-        </span>
-        <span className="spacer" />
+        </Badge>
+      }
+    >
+      <SettingRow
+        label={t('Zertifikat (TLS)')}
+        description={failed ? undefined : certificateText(domain)}
+      >
         <Segmented
           label={t('TLS für {host}', { host: domain.host })}
           value={domain.tls}
@@ -278,10 +294,8 @@ function DomainCard({
           }
           options={tlsOptions()}
         />
-      </div>
-      <p className="channel-status" data-alarm={failed || undefined}>
-        {certificateText(domain)}
-      </p>
+      </SettingRow>
+      {failed && <Callout tone="warning">{certificateText(domain)}</Callout>}
       {check && (
         <ul className="domain-checks" aria-label={t('Ergebnis der Prüfung')}>
           <CheckLine
@@ -314,26 +328,26 @@ function DomainCard({
           />
         </ul>
       )}
-      <div className="form-actions">
-        <button
+      <ButtonRow>
+        <Button
+          size="small"
           disabled={busy}
           onClick={() => void run(async () => setCheck(await checkSendDomain(domain.id)))}
         >
           {busy ? t('Einen Moment …') : t('Prüfen')}
           <span className="sr-only">{domain.host}</span>
-        </button>
-        <button className="quiet" onClick={onStyle}>
-          <Icon name="eye" size={15} />
+        </Button>
+        <Button size="small" variant="quiet" icon="eye" onClick={onStyle}>
           {t('Aussehen …')}
           <span className="sr-only">{domain.host}</span>
-        </button>
+        </Button>
         <span className="spacer" />
-        <button className="quiet danger-text" onClick={onDelete}>
+        <Button size="small" variant="quiet-danger" onClick={onDelete}>
           {t('Löschen …')}
           <span className="sr-only">{domain.host}</span>
-        </button>
-      </div>
-    </section>
+        </Button>
+      </ButtonRow>
+    </Card>
   );
 }
 

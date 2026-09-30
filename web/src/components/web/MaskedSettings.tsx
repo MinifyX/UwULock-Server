@@ -249,7 +249,7 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
       <p className="settings-lead" role="alert">
         {errorCode(state.error) === 'feature_off'
           ? t(
-              'Auf diesem Server ist noch kein UwUMail-Server freigegeben. Ein Admin kann das im Admin-Portal unter Einstellungen einrichten.',
+              'Auf diesem Server ist noch kein UwUMail-Server freigegeben. Ein Admin kann das im Admin-Portal unter Tresor & Funktionen → Maskierte Adressen einrichten.',
             )
           : maskedErrorText(state.error)}
       </p>
@@ -271,7 +271,7 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
         !enabled || allowed.length === 0 ? (
           <p className="settings-lead">
             {t(
-              'Auf diesem Server ist noch kein UwUMail-Server freigegeben. Ein Admin kann das im Admin-Portal unter Einstellungen einrichten.',
+              'Auf diesem Server ist noch kein UwUMail-Server freigegeben. Ein Admin kann das im Admin-Portal unter Tresor & Funktionen → Maskierte Adressen einrichten.',
             )}
           </p>
         ) : (

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Button, Section, Table } from '../components/ui';
 import { PasswordPrompt } from '../components/web/controls';
 import { deleteOrganization, organizations, type AdminOrganization } from '../lib/admin';
 import { errorText } from '../lib/errors';
@@ -22,40 +23,48 @@ export function Families() {
 
   return (
     <>
-      <p className="settings-lead">
-        {t(
-          'Familien teilen Einträge in Sammlungen, verschlüsselt mit einem eigenen Schlüssel. Wer eine anlegen darf und wie groß sie wird, steht unter Einstellungen. Was darin liegt, sieht hier niemand.',
+      <Section
+        heading={t('Familien auf diesem Server')}
+        lead={t(
+          'Familien teilen Einträge in Sammlungen, verschlüsselt mit einem eigenen Schlüssel. Was darin liegt, sieht hier niemand.',
         )}
-      </p>
-      <table className="admin-table">
-        <thead>
-          <tr>
-            <th>{t('Name')}</th>
-            <th>{t('Art')}</th>
-            <th>{t('Eigentümer')}</th>
-            <th>{t('Mitglieder')}</th>
-            <th>{t('Angelegt')}</th>
-            <th aria-label={t('Aktionen')} />
-          </tr>
-        </thead>
-        <tbody>
-          {list?.map((org) => (
-            <tr key={org.id}>
-              <td>{org.name}</td>
-              <td>{org.kind === 'family' ? t('Familie') : t('Organisation')}</td>
-              <td>{org.owners.join(', ') || '–'}</td>
-              <td>{org.members}</td>
-              <td>{when(org.creationDate) ?? ''}</td>
-              <td>
-                <button className="quiet danger-text" onClick={() => setDeleting(org)}>
-                  {t('Löschen')}
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {list?.length === 0 && <p className="empty-note">{t('Noch keine Familien.')}</p>}
+      >
+        {list?.length === 0 ? (
+          <p className="empty-note">{t('Noch keine Familien.')}</p>
+        ) : (
+          <Table
+            label={t('Familien')}
+            head={
+              <>
+                <th>{t('Name')}</th>
+                <th>{t('Art')}</th>
+                <th>{t('Eigentümer')}</th>
+                <th>{t('Mitglieder')}</th>
+                <th>{t('Angelegt')}</th>
+                <th>
+                  <span className="sr-only">{t('Aktionen')}</span>
+                </th>
+              </>
+            }
+          >
+            {list?.map((org) => (
+              <tr key={org.id}>
+                <td>{org.name}</td>
+                <td>{org.kind === 'family' ? t('Familie') : t('Organisation')}</td>
+                <td>{org.owners.join(', ') || '–'}</td>
+                <td>{org.members}</td>
+                <td>{when(org.creationDate) ?? ''}</td>
+                <td className="row-actions">
+                  <Button size="small" variant="quiet-danger" onClick={() => setDeleting(org)}>
+                    {t('Löschen …')}
+                    <span className="sr-only">{org.name}</span>
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Section>
       {deleting && (
         <PasswordPrompt
           title={t('Familie löschen?')}

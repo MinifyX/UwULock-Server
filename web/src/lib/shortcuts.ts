@@ -71,10 +71,11 @@ export const ADMIN_SHORTCUTS: ShortcutGroup[] = [
     shortcuts: [
       {
         keys: [['1'], ['…'], ['9']],
-        label: N_('Die ersten neun Seiten der Leiste, von oben'),
+        label: N_('Die Bereiche der Leiste, von oben'),
         single: true,
       },
-      { keys: [['J'], ['K']], label: N_('Nächste, vorige Seite'), single: true },
+      { keys: [['J'], ['K']], label: N_('Nächster, voriger Bereich'), single: true },
+      { keys: [['←'], ['→']], label: N_('In den Reitern eines Bereichs: voriger, nächster') },
     ],
   },
 ];

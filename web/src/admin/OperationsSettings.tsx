@@ -1,6 +1,20 @@
 import { useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
-import { ResultLine, Row, Toggle, type Result } from '../components/web/controls';
+import {
+  Button,
+  ButtonRow,
+  Callout,
+  Checkbox,
+  Field,
+  FormRow,
+  IconButton,
+  Section,
+  Select,
+  SettingRow,
+  TextField,
+  Toggle,
+} from '../components/ui';
+import { ResultLine, type Result } from '../components/web/controls';
 import {
   fromLocalInput,
   labelsText,
@@ -17,6 +31,8 @@ import { errorText } from '../lib/errors';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { MAILABLE_KINDS } from '../lib/notices';
 import { toast } from '../lib/toast';
+import { SettingsTab, useDraft } from './draft';
+import { Explain, NumberInput } from './fields';
 
 type Props = { draft: Settings; setDraft: (next: Settings) => void };
 
@@ -24,206 +40,329 @@ const COMPLEXITY = [
   N_('keine Regel'),
   N_('1 – sehr schwach'),
   N_('2 – schwach'),
-  N_('3 – gut'),
+  N_('3 – gut (empfohlen)'),
   N_('4 – sehr gut'),
 ];
 
-/** Rules for every account: two-step login, the weakest key derivation, the master password. */
-export function PolicySettings({ draft, setDraft }: Props) {
-  useLanguage();
+function setPolicy<K extends keyof Policies>(
+  { draft, setDraft }: Props,
+  key: K,
+  change: Partial<Policies[K]>,
+) {
   const policies = draft.policies;
-  const set = <K extends keyof Policies>(key: K, change: Partial<Policies[K]>) =>
-    setDraft({ ...draft, policies: { ...policies, [key]: { ...policies[key], ...change } } });
-  const twoFactor = policies.requireTwoFactor;
-  const kdf = policies.minimumKdf;
-  const password = policies.masterPassword;
-  return (
-    <>
-      <h2 className="settings-heading">{t('Richtlinien')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Gelten für jedes Konto auf diesem Server. Organisationen haben später ihre eigenen Richtlinien.',
-        )}
-      </p>
-      <Row
-        label={t('Zwei-Schritt-Anmeldung verlangen')}
-        description={t(
-          'Bis zum Stichtag sehen Konten ohne zweiten Schritt einen Hinweis im Web-Tresor. Danach kommen sie nur noch in den Web-Tresor, um ihn einzurichten – Apps, Erweiterungen und die CLI melden sie nicht mehr an.',
-        )}
-      >
-        <Toggle
-          label={t('Zwei-Schritt-Anmeldung verlangen')}
-          checked={twoFactor.enabled}
-          onChange={(enabled) => set('requireTwoFactor', { enabled })}
-        />
-      </Row>
-      {twoFactor.enabled && (
-        <Row
-          label={t('Stichtag')}
-          description={t('Leer: ab sofort. Die Zeit ist die dieses Browsers.')}
-        >
-          <input
-            className="select"
-            type="datetime-local"
-            aria-label={t('Stichtag')}
-            value={localInput(twoFactor.deadline)}
-            onChange={(e) => set('requireTwoFactor', { deadline: fromLocalInput(e.target.value) })}
-          />
-        </Row>
-      )}
-
-      <Row
-        label={t('Schwächste Schlüsselableitung')}
-        description={t(
-          'Schwächere nimmt der Server bei Registrierung und Änderung nicht an. Konten, die schon darunter liegen, funktionieren weiter und bekommen im Web-Tresor einen Knopf zum Umstellen.',
-        )}
-      />
-      <div className="field-grid four">
-        <label className="field">
-          <span>{t('PBKDF2-Runden')}</span>
-          <input
-            type="number"
-            min={100000}
-            max={2000000}
-            step={50000}
-            value={kdf.pbkdf2Iterations}
-            onChange={(e) => set('minimumKdf', { pbkdf2Iterations: Number(e.target.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>{t('Argon2id-Speicher (MiB)')}</span>
-          <input
-            type="number"
-            min={15}
-            max={1024}
-            value={kdf.argon2Memory}
-            onChange={(e) => set('minimumKdf', { argon2Memory: Number(e.target.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>{t('Argon2id-Durchläufe')}</span>
-          <input
-            type="number"
-            min={2}
-            max={10}
-            value={kdf.argon2Iterations}
-            onChange={(e) => set('minimumKdf', { argon2Iterations: Number(e.target.value) })}
-          />
-        </label>
-        <label className="field">
-          <span>{t('Argon2id-Threads')}</span>
-          <input
-            type="number"
-            min={1}
-            max={16}
-            value={kdf.argon2Parallelism}
-            onChange={(e) => set('minimumKdf', { argon2Parallelism: Number(e.target.value) })}
-          />
-        </label>
-      </div>
-
-      <Row
-        label={t('Kürzestes Master-Passwort')}
-        description={t(
-          'Prüfen der Web-Tresor und die Apps beim Registrieren und Ändern; der Server sieht das Passwort nie.',
-        )}
-      >
-        <input
-          className="select narrow-number"
-          type="number"
-          min={0}
-          max={128}
-          aria-label={t('Kürzestes Master-Passwort')}
-          value={password.minLength}
-          onChange={(e) => set('masterPassword', { minLength: Number(e.target.value) })}
-        />
-      </Row>
-      <Row
-        label={t('Stärke des Master-Passworts')}
-        description={t('Eine Stufe von 0 bis 4, wie zxcvbn sie misst.')}
-      >
-        <select
-          className="select"
-          aria-label={t('Stärke des Master-Passworts')}
-          value={password.minComplexity}
-          onChange={(e) => set('masterPassword', { minComplexity: Number(e.target.value) })}
-        >
-          {COMPLEXITY.map((label, score) => (
-            <option key={score} value={score}>
-              {t(label)}
-            </option>
-          ))}
-        </select>
-      </Row>
-      <Row
-        label={t('Auch beim Anmelden prüfen')}
-        description={t(
-          'Die offiziellen Bitwarden-Apps lassen dann jemanden mit schwächerem Passwort nach der Anmeldung ein neues wählen.',
-        )}
-      >
-        <Toggle
-          label={t('Auch beim Anmelden prüfen')}
-          checked={password.enforceOnLogin}
-          onChange={(enforceOnLogin) => set('masterPassword', { enforceOnLogin })}
-        />
-      </Row>
-    </>
-  );
+  setDraft({ ...draft, policies: { ...policies, [key]: { ...policies[key], ...change } } });
 }
 
-/** Which security notices go out by mail; all of them stay in each account's list. */
-export function NoticeMailSettings({ draft, setDraft }: Props) {
+/**
+ * *Sicherheit → Anmeldung*: the second step for every account, remembered devices, and the
+ * password hint. Rules for every account on this server; organisations have their own later.
+ */
+export function SignInTab() {
   useLanguage();
-  const off = new Set(draft.securityNotices.mailOff);
-  const toggle = (kind: string, mailed: boolean) => {
-    const next = new Set(off);
-    if (mailed) next.delete(kind);
-    else next.add(kind);
-    setDraft({ ...draft, securityNotices: { mailOff: [...next] } });
-  };
   return (
-    <>
-      <h2 className="settings-heading">{t('Sicherheitshinweise')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Was auf einem Konto passiert, steht im Web-Tresor unter Einstellungen → Sicherheit. Angehakte Arten kommen außerdem per Mail – gesammelt, höchstens eine Mail in 15 Minuten.',
-        )}
-      </p>
-      <div className="check-grid" role="group" aria-label={t('Per Mail')}>
-        {MAILABLE_KINDS.map(({ kind, label }) => (
-          <label key={kind} className="check">
-            <input
-              type="checkbox"
-              checked={!off.has(kind)}
-              onChange={(e) => toggle(kind, e.target.checked)}
-            />
-            <span>{t(label)}</span>
-          </label>
-        ))}
-      </div>
-      {!draft.newDeviceMail && !off.has('newDevice') && (
-        <p className="field-hint">
-          {t('„Mail bei neuem Gerät“ ist oben aus: neue Geräte kommen trotzdem nicht per Mail.')}
-        </p>
-      )}
-    </>
+    <SettingsTab>
+      {(props) => {
+        const { draft, setDraft } = props;
+        const twoFactor = draft.policies.requireTwoFactor;
+        return (
+          <>
+            <Section
+              heading={t('Zwei-Schritt-Anmeldung')}
+              lead={t(
+                'Außer dem Master-Passwort ein zweiter Nachweis: ein Code aus einer App, ein Sicherheitsschlüssel oder ein Passkey (2FA).',
+              )}
+            >
+              <SettingRow
+                label={t('Zwei-Schritt-Anmeldung verlangen')}
+                description={
+                  <Explain recommended={t('an')}>
+                    {t(
+                      'Bis zum Stichtag sehen Konten ohne zweiten Schritt einen Hinweis. Danach kommen sie nur noch in den Web-Tresor, um ihn einzurichten; Apps, Erweiterungen und die CLI melden sie nicht mehr an.',
+                    )}
+                  </Explain>
+                }
+              >
+                <Toggle
+                  label={t('Zwei-Schritt-Anmeldung verlangen')}
+                  checked={twoFactor.enabled}
+                  onChange={(enabled) => setPolicy(props, 'requireTwoFactor', { enabled })}
+                />
+              </SettingRow>
+              {twoFactor.enabled && (
+                <SettingRow
+                  label={t('Stichtag')}
+                  description={t('Leer: ab sofort. Die Zeit ist die dieses Browsers.')}
+                >
+                  <input
+                    className="select"
+                    type="datetime-local"
+                    aria-label={t('Stichtag')}
+                    value={localInput(twoFactor.deadline)}
+                    onChange={(e) =>
+                      setPolicy(props, 'requireTwoFactor', {
+                        deadline: fromLocalInput(e.target.value),
+                      })
+                    }
+                  />
+                </SettingRow>
+              )}
+              <SettingRow
+                label={t('Geräte merken')}
+                description={t(
+                  '„Auf diesem Gerät merken“ lässt den zweiten Schritt dort 30 Tage lang weg.',
+                )}
+              >
+                <Toggle
+                  label={t('Geräte merken')}
+                  checked={draft.rememberTwoFactor}
+                  onChange={(rememberTwoFactor) => setDraft({ ...draft, rememberTwoFactor })}
+                />
+              </SettingRow>
+            </Section>
+            <Section
+              heading={t('Vergessenes Master-Passwort')}
+              lead={t(
+                'Das Master-Passwort kennt nur sein Besitzer; niemand kann es zurücksetzen, auch kein Admin.',
+              )}
+            >
+              <SettingRow
+                label={t('Passwort-Hinweise')}
+                description={t(
+                  'Jeder darf sich einen Hinweis zum Master-Passwort hinterlegen, der auf Wunsch per Mail kommt.',
+                )}
+              >
+                <Toggle
+                  label={t('Passwort-Hinweise')}
+                  checked={draft.passwordHints}
+                  onChange={(passwordHints) => setDraft({ ...draft, passwordHints })}
+                />
+              </SettingRow>
+            </Section>
+          </>
+        );
+      }}
+    </SettingsTab>
   );
 }
 
-/** Where the admin portal answers from. */
-export function NetworkSettings({ draft, setDraft }: Props) {
+/**
+ * *Sicherheit → Master-Passwort*: how long and how strong it has to be, and the weakest key
+ * derivation the server takes.
+ */
+export function MasterPasswordTab() {
+  useLanguage();
+  return (
+    <SettingsTab>
+      {(props) => {
+        const password = props.draft.policies.masterPassword;
+        const kdf = props.draft.policies.minimumKdf;
+        const setPassword = (change: Partial<Policies['masterPassword']>) =>
+          setPolicy(props, 'masterPassword', change);
+        const setKdf = (change: Partial<Policies['minimumKdf']>) =>
+          setPolicy(props, 'minimumKdf', change);
+        return (
+          <>
+            <Section
+              heading={t('Länge und Stärke')}
+              lead={t(
+                'Prüfen der Web-Tresor und die Apps beim Registrieren und Ändern; der Server sieht das Passwort nie.',
+              )}
+            >
+              <SettingRow
+                label={t('Kürzestes Master-Passwort')}
+                description={
+                  <Explain recommended={t('12 Zeichen oder mehr')}>
+                    {t('0 heißt: keine Regel.')}
+                  </Explain>
+                }
+              >
+                <NumberInput
+                  label={t('Kürzestes Master-Passwort')}
+                  unit={t('Zeichen')}
+                  min={0}
+                  max={128}
+                  value={password.minLength}
+                  onChange={(minLength) => setPassword({ minLength: minLength ?? 0 })}
+                />
+              </SettingRow>
+              <SettingRow
+                label={t('Stärke des Master-Passworts')}
+                description={t(
+                  'Wie schwer es zu erraten ist, als Stufe von 0 bis 4 (gemessen mit zxcvbn).',
+                )}
+              >
+                <Select
+                  label={t('Stärke des Master-Passworts')}
+                  value={String(password.minComplexity)}
+                  onChange={(score) => setPassword({ minComplexity: Number(score) })}
+                  options={COMPLEXITY.map((label, score) => ({
+                    value: String(score),
+                    label: t(label),
+                  }))}
+                />
+              </SettingRow>
+              <SettingRow
+                label={t('Auch beim Anmelden prüfen')}
+                description={t(
+                  'Wer ein schwächeres Passwort hat, wird in den Bitwarden-Apps nach der Anmeldung gebeten, ein neues zu wählen.',
+                )}
+              >
+                <Toggle
+                  label={t('Auch beim Anmelden prüfen')}
+                  checked={password.enforceOnLogin}
+                  onChange={(enforceOnLogin) => setPassword({ enforceOnLogin })}
+                />
+              </SettingRow>
+            </Section>
+            <Section
+              heading={t('Schutz vor Durchprobieren')}
+              lead={t(
+                'Aus dem Master-Passwort wird der Schlüssel des Tresors gerechnet, absichtlich langsam: So dauert es ewig, Passwörter durchzuprobieren. Das Verfahren heißt Schlüsselableitung (KDF) – Argon2id (empfohlen) oder PBKDF2. Hier steht das Mindeste, was der Server annimmt; Konten darunter funktionieren weiter und bekommen im Web-Tresor einen Knopf zum Umstellen.',
+              )}
+            >
+              <FormRow min="narrow">
+                <Field label={t('PBKDF2: Runden')} hint={<Explain recommended="600.000" />}>
+                  <input
+                    type="number"
+                    min={100000}
+                    max={2000000}
+                    step={50000}
+                    value={kdf.pbkdf2Iterations}
+                    onChange={(e) => setKdf({ pbkdf2Iterations: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label={t('Argon2id: Speicher in MiB')} hint={<Explain recommended="64" />}>
+                  <input
+                    type="number"
+                    min={15}
+                    max={1024}
+                    value={kdf.argon2Memory}
+                    onChange={(e) => setKdf({ argon2Memory: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label={t('Argon2id: Durchläufe')} hint={<Explain recommended="3" />}>
+                  <input
+                    type="number"
+                    min={2}
+                    max={10}
+                    value={kdf.argon2Iterations}
+                    onChange={(e) => setKdf({ argon2Iterations: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label={t('Argon2id: Threads')} hint={<Explain recommended="4" />}>
+                  <input
+                    type="number"
+                    min={1}
+                    max={16}
+                    value={kdf.argon2Parallelism}
+                    onChange={(e) => setKdf({ argon2Parallelism: Number(e.target.value) })}
+                  />
+                </Field>
+              </FormRow>
+            </Section>
+          </>
+        );
+      }}
+    </SettingsTab>
+  );
+}
+
+/**
+ * *E-Mail → Mails an Nutzer*: the mail about a new device, and which security notices go out
+ * by mail; all of them stay in each account's list.
+ */
+export function UserMailsTab() {
+  useLanguage();
+  return (
+    <SettingsTab>
+      {({ draft, setDraft }) => {
+        const off = new Set(draft.securityNotices.mailOff);
+        const toggle = (kind: string, mailed: boolean) => {
+          const next = new Set(off);
+          if (mailed) next.delete(kind);
+          else next.add(kind);
+          setDraft({ ...draft, securityNotices: { mailOff: [...next] } });
+        };
+        return (
+          <>
+            <Section
+              heading={t('Neues Gerät')}
+              lead={t('Eine Mail an das Konto, damit niemand sich unbemerkt anmeldet.')}
+            >
+              <SettingRow
+                label={t('Mail bei neuem Gerät')}
+                description={
+                  <Explain recommended={t('an')}>
+                    {t('Wenn sich ein Konto auf einem Gerät zum ersten Mal anmeldet.')}
+                  </Explain>
+                }
+              >
+                <Toggle
+                  label={t('Mail bei neuem Gerät')}
+                  checked={draft.newDeviceMail}
+                  onChange={(newDeviceMail) => setDraft({ ...draft, newDeviceMail })}
+                />
+              </SettingRow>
+            </Section>
+            <Section
+              heading={t('Sicherheitshinweise per Mail')}
+              lead={t(
+                'Was auf einem Konto passiert, steht im Web-Tresor unter Einstellungen → Sicherheit. Angehakte Arten kommen außerdem per Mail – gesammelt, höchstens eine Mail in 15 Minuten.',
+              )}
+            >
+              <div className="check-grid" role="group" aria-label={t('Per Mail')}>
+                {MAILABLE_KINDS.map(({ kind, label }) => (
+                  <Checkbox
+                    key={kind}
+                    label={t(label)}
+                    checked={!off.has(kind)}
+                    onChange={(mailed) => toggle(kind, mailed)}
+                  />
+                ))}
+              </div>
+              {!draft.newDeviceMail && !off.has('newDevice') && (
+                <p className="field-hint">
+                  {t(
+                    '„Mail bei neuem Gerät“ ist oben aus: neue Geräte kommen trotzdem nicht per Mail.',
+                  )}
+                </p>
+              )}
+            </Section>
+          </>
+        );
+      }}
+    </SettingsTab>
+  );
+}
+
+/** *Sicherheit → Admin-Portal*: the networks the portal answers from. */
+export function AdminAccessTab() {
+  useLanguage();
+  return (
+    <SettingsTab>
+      {({ draft, setDraft, generation }) => (
+        <NetworkSettings key={`networks-${generation}`} draft={draft} setDraft={setDraft} />
+      )}
+    </SettingsTab>
+  );
+}
+
+function NetworkSettings({ draft, setDraft }: Props) {
   useLanguage();
   const [text, setText] = useState(draft.adminNetworks.join('\n'));
   return (
-    <>
-      <h2 className="settings-heading">{t('Zugang zum Admin-Portal')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Nur aus diesen Netzen ist das Admin-Portal erreichbar, von überall sonst antwortet es mit „nicht gefunden“. Leer: von überall. Tresor, Sends und Apps betrifft das nicht.',
+    <Section
+      heading={t('Wer das Admin-Portal erreicht')}
+      lead={t(
+        'Nur aus diesen Netzen ist das Admin-Portal erreichbar, von überall sonst antwortet es mit „nicht gefunden“. Leer: von überall. Tresor, Sends und Apps betrifft das nicht.',
+      )}
+    >
+      <Field
+        label={t('Netze, eines pro Zeile (IP-Adressen oder CIDR)')}
+        hint={t(
+          "Wer sich aussperrt, kommt auf dem Server wieder herein mit: uwulock-server settings set adminNetworks '[]'",
         )}
-      </p>
-      <label className="field">
-        <span>{t('Netze, eines pro Zeile')}</span>
+      >
         <textarea
           className="mono"
           rows={3}
@@ -239,39 +378,62 @@ export function NetworkSettings({ draft, setDraft }: Props) {
             setDraft({ ...draft, adminNetworks: networks });
           }}
         />
-        <small className="field-hint">
-          {t(
-            "Wer sich aussperrt, kommt auf dem Server wieder herein mit: uwulock-server settings set adminNetworks '[]'",
-          )}
-        </small>
-      </label>
-    </>
+      </Field>
+      <Callout tone="warning">
+        {t(
+          'Das Netz, aus dem du gerade kommst, muss darin stehen: Sonst würdest du dich aussperren, und der Server speichert es nicht.',
+        )}
+      </Callout>
+    </Section>
+  );
+}
+
+/** *System → Überwachung*: metrics for Prometheus and the log lines to Loki. */
+export function MonitoringTab() {
+  useLanguage();
+  const value = useDraft();
+  return (
+    <SettingsTab>
+      {({ draft, setDraft, generation }) => (
+        <>
+          <MetricsSettings draft={draft} setDraft={setDraft} />
+          <LokiSettings
+            key={`loki-${generation}`}
+            draft={draft}
+            setDraft={setDraft}
+            dirty={value?.dirty ?? false}
+          />
+        </>
+      )}
+    </SettingsTab>
   );
 }
 
 /** Prometheus metrics at /metrics: with a token, or on an address of their own. */
-export function MetricsSettings({ draft, setDraft }: Props) {
+function MetricsSettings({ draft, setDraft }: Props) {
   useLanguage();
   const metrics = draft.metrics;
   const set = (change: Partial<Metrics>) =>
     setDraft({ ...draft, metrics: { ...metrics, ...change } });
   const fresh = metrics.token ? metrics.token : null;
   return (
-    <>
-      <h2 className="settings-heading">{t('Metriken')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Zahlen für Prometheus unter /metrics: Anfragen, Anmeldungen, Backups, Zertifikat. Nie Adressen, Namen oder IPs. Dafür braucht es einen Token oder eine eigene Adresse, sonst könnte sie jeder lesen.',
-        )}
-      </p>
-      <Row label={t('Metriken anbieten')}>
+    <Section
+      heading={t('Metriken für Prometheus')}
+      lead={t(
+        'Zahlen unter /metrics: Anfragen, Anmeldungen, Backups, Zertifikat. Nie Adressen, Namen oder IPs. Dafür braucht es einen Token oder eine eigene Adresse, sonst könnte sie jeder lesen.',
+      )}
+    >
+      <SettingRow
+        label={t('Metriken anbieten')}
+        description={t('Für ein Monitoring wie Prometheus und Grafana.')}
+      >
         <Toggle
           label={t('Metriken anbieten')}
           checked={metrics.enabled}
           onChange={(enabled) => set({ enabled })}
         />
-      </Row>
-      <Row
+      </SettingRow>
+      <SettingRow
         label={t('Token')}
         description={
           fresh
@@ -283,30 +445,26 @@ export function MetricsSettings({ draft, setDraft }: Props) {
                 : t('Noch keiner.')
         }
       >
-        <span className="inline-form">
-          {metrics.tokenSet && metrics.token !== '' && !fresh && (
-            <button onClick={() => set({ token: '' })} data-secondary>
-              {t('Entfernen')}
-            </button>
-          )}
-          <button onClick={() => set({ token: randomToken() })}>{t('Token erzeugen')}</button>
-        </span>
-      </Row>
+        {metrics.tokenSet && metrics.token !== '' && !fresh && (
+          <Button variant="quiet-danger" onClick={() => set({ token: '' })} data-secondary>
+            {t('Entfernen')}
+          </Button>
+        )}
+        <Button onClick={() => set({ token: randomToken() })}>{t('Token erzeugen')}</Button>
+      </SettingRow>
       {fresh && (
         <div className="copy-field">
           <code className="mono">{fresh}</code>
-          <button
-            className="icon-button"
-            aria-label={t('Kopieren')}
+          <IconButton
+            icon="copy"
+            label={t('Kopieren')}
             onClick={() =>
               void navigator.clipboard.writeText(fresh).then(() => toast(t('Kopiert ✧')))
             }
-          >
-            ⧉
-          </button>
+          />
         </div>
       )}
-      <Row
+      <SettingRow
         label={t('Eigene Adresse')}
         description={t(
           'Zum Beispiel 127.0.0.1:9100: Dort gibt es /metrics ohne Token, auf der öffentlichen Adresse dann gar nicht. Leer: auf der öffentlichen Adresse, mit Token.',
@@ -320,13 +478,13 @@ export function MetricsSettings({ draft, setDraft }: Props) {
           spellCheck={false}
           onChange={(e) => set({ listen: e.target.value.trim() ? e.target.value : null })}
         />
-      </Row>
-    </>
+      </SettingRow>
+    </Section>
   );
 }
 
 /** The server's log lines pushed to a Loki. */
-export function LokiSettings({ draft, setDraft, dirty }: Props & { dirty: boolean }) {
+function LokiSettings({ draft, setDraft, dirty }: Props & { dirty: boolean }) {
   useLanguage();
   const loki = draft.loki;
   const set = (change: Partial<Loki>) => setDraft({ ...draft, loki: { ...loki, ...change } });
@@ -335,80 +493,81 @@ export function LokiSettings({ draft, setDraft, dirty }: Props & { dirty: boolea
   const [result, setResult] = useState<Result>(null);
   const bad = parseLabels(text).bad;
   return (
-    <>
-      <h2 className="settings-heading">{t('Logs an Loki')}</h2>
-      <p className="settings-lead">
-        {t(
-          'Dieselben Zeilen wie im Log, als JSON an Loki geschickt, gesammelt jede Sekunde. Ist Loki länger weg, werden Zeilen verworfen und gezählt.',
-        )}
-      </p>
-      <Row label={t('Logs an Loki schicken')}>
+    <Section
+      heading={t('Logs an Loki')}
+      lead={t(
+        'Dieselben Zeilen wie im Log, als JSON an Grafana Loki geschickt, gesammelt jede Sekunde. Ist Loki länger weg, werden Zeilen verworfen und gezählt.',
+      )}
+    >
+      <SettingRow
+        label={t('Logs an Loki schicken')}
+        description={t('Zum Suchen und Aufheben der Logs außerhalb des Servers.')}
+      >
         <Toggle
           label={t('Logs an Loki schicken')}
           checked={loki.enabled}
           onChange={(enabled) => set({ enabled })}
         />
-      </Row>
-      <div className="field-grid wide">
-        <label className="field">
-          <span>{t('Adresse')}</span>
-          <input
-            value={loki.url}
-            onChange={(e) => set({ url: e.target.value })}
-            placeholder="https://loki.example.com"
-            spellCheck={false}
-          />
-        </label>
-        <label className="field">
-          <span>{t('Mandant (freiwillig)')}</span>
-          <input
-            value={loki.tenant ?? ''}
-            onChange={(e) => set({ tenant: e.target.value || null })}
-            spellCheck={false}
-          />
-        </label>
-        <label className="field">
-          <span>{t('Benutzername (freiwillig)')}</span>
-          <input
-            value={loki.username ?? ''}
-            onChange={(e) => set({ username: e.target.value || null })}
-            autoComplete="off"
-          />
-        </label>
-        <label className="field">
-          <span>{t('Passwort')}</span>
+      </SettingRow>
+      <FormRow min="wide">
+        <TextField
+          label={t('Adresse')}
+          value={loki.url}
+          onChange={(url) => set({ url })}
+          placeholder="https://loki.example.com"
+          spellCheck={false}
+        />
+        <TextField
+          label={t('Mandant (freiwillig)')}
+          value={loki.tenant ?? ''}
+          onChange={(tenant) => set({ tenant: tenant || null })}
+          spellCheck={false}
+        />
+      </FormRow>
+      <FormRow min="wide">
+        <TextField
+          label={t('Benutzername (freiwillig)')}
+          value={loki.username ?? ''}
+          onChange={(username) => set({ username: username || null })}
+          autoComplete="off"
+        />
+        <Field
+          label={t('Passwort')}
+          hint={
+            loki.passwordSet && !loki.password
+              ? t('Ein Passwort ist gespeichert. Leer lassen behält es.')
+              : undefined
+          }
+        >
           <PasswordInput
             value={loki.password ?? ''}
             onChange={(password) => set({ password: password || null })}
             autoComplete="new-password"
           />
-          {loki.passwordSet && !loki.password && (
-            <small className="field-hint">
-              {t('Ein Passwort ist gespeichert. Leer lassen behält es.')}
-            </small>
-          )}
-        </label>
-        <label className="field span-2">
-          <span>{t('Labels, eines pro Zeile als name=wert')}</span>
-          <textarea
-            className="mono"
-            rows={2}
-            value={text}
-            spellCheck={false}
-            onChange={(e) => {
-              setText(e.target.value);
-              set({ labels: parseLabels(e.target.value).labels });
-            }}
-          />
-          <small className="field-hint" data-tone={bad.length ? 'warn' : undefined}>
-            {bad.length
-              ? t('Kein Label: {lines}', { lines: bad.join(', ') })
-              : t('Nie etwas über Nutzer: Labels sieht jeder, der die Logs sieht.')}
-          </small>
-        </label>
-      </div>
-      <div className="form-actions">
-        <button
+        </Field>
+      </FormRow>
+      <Field
+        label={t('Labels, eines pro Zeile als name=wert')}
+        hint={
+          bad.length
+            ? t('Kein Label: {lines}', { lines: bad.join(', ') })
+            : t('Nie etwas über Nutzer: Labels sieht jeder, der die Logs sieht.')
+        }
+        hintTone={bad.length ? 'warn' : 'default'}
+      >
+        <textarea
+          className="mono"
+          rows={2}
+          value={text}
+          spellCheck={false}
+          onChange={(e) => {
+            setText(e.target.value);
+            set({ labels: parseLabels(e.target.value).labels });
+          }}
+        />
+      </Field>
+      <ButtonRow>
+        <Button
           disabled={busy || !loki.url.trim()}
           title={dirty ? t('Prüft die Angaben hier, auch ungespeichert.') : undefined}
           onClick={async () => {
@@ -425,9 +584,9 @@ export function LokiSettings({ draft, setDraft, dirty }: Props & { dirty: boolea
           }}
         >
           {busy ? t('Prüft …') : t('Verbindung testen')}
-        </button>
-      </div>
+        </Button>
+      </ButtonRow>
       <ResultLine result={result} />
-    </>
+    </Section>
   );
 }

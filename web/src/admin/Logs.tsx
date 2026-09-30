@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Segmented, Toggle } from '../components/web/controls';
+import { Callout, Checkbox, Segmented } from '../components/ui';
 import { logs, type LogLine } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
@@ -47,7 +47,7 @@ export function Logs() {
     <>
       <div className="log-controls">
         <Segmented
-          label={t('Stufe')}
+          label={t('Welche Zeilen')}
           value={level}
           onChange={setLevel}
           options={[
@@ -58,13 +58,10 @@ export function Logs() {
           ]}
         />
         <span className="spacer" />
-        <label className="check">
-          <Toggle label={t('Mitlaufen')} checked={follow} onChange={setFollow} />
-          <span>{t('Mitlaufen')}</span>
-        </label>
+        <Checkbox label={t('Mitlaufen')} checked={follow} onChange={setFollow} />
       </div>
-      {error && <p className="form-error">{error}</p>}
-      <div className="log-box" ref={box}>
+      {error && <Callout tone="error">{error}</Callout>}
+      <div className="log-box" ref={box} role="log" aria-label={t('Log des Servers')} tabIndex={0}>
         {lines.map((line) => (
           <p key={line.seq} className="log-line" data-level={line.level}>
             <span className="log-time">{line.time.slice(11, 19)}</span>

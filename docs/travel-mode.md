@@ -21,9 +21,9 @@ While travel mode is on, two-step login stays exactly as it is: it cannot be swi
 replaced or set up anew, the authenticator key and the recovery code are not shown, and the
 recovery code does not work at login. Otherwise whoever holds your unlocked device and your master
 password could take the second step away and switch travel mode off. Lost the phone with the
-authenticator on the way? An admin can reset your two-step login (*Admin portal → Users*); after
-that, and after an emergency contact took the account over, the master password alone switches
-travel mode off. Keep the recovery code at home — it is for the day travel mode is off.
+authenticator on the way? An admin can reset your two-step login (*Admin portal → Users &
+invitations → Accounts*); after that, and after an emergency contact took the account over, the
+master password alone switches travel mode off. Keep the recovery code at home — it is for the day travel mode is off.
 
 While it is on:
 

@@ -1,6 +1,4 @@
 {
-  "0 schaltet Versionen aus.": "0 switches versions off.",
-  "0: ohne Grenze.": "0: no limit.",
   "1 ausgeblendeter Ordner": "1 hidden folder",
   "Adressen": "Addresses",
   "Alle {n} Monate, das nächste Mal am {day}.": "Every {n} months, next on {day}.",
@@ -9,7 +7,6 @@
   "An seit {when}. {n} Einträge sind gerade ausgeblendet.": "On since {when}. {n} items are hidden right now.",
   "Anhänge, Send-Dateien, Datei-Anfragen, Versionen und eigene Icons zusammen. Leer: keine Grenze.": "Attachments, Send files, file requests, versions and own icons together. Empty: no limit.",
   "Auf Reisen ausblenden": "Hide while travelling",
-  "Aufheben für Tage": "Keep for days",
   "Aus der Bibliothek …": "From the library …",
   "Bei jeder Änderung hebt der Server den Stand davor auf, verschlüsselt wie der Eintrag. Zählt zum Speicher des Kontos.": "With every change the server keeps the state before, encrypted like the item. Counts toward the account's storage.",
   "Bibliothek neu laden": "Reload the library",
@@ -50,7 +47,6 @@
   "Icon vom Gerät gespeichert ✧": "Icon from the device saved ✧",
   "Icon-Bibliothek": "Icon library",
   "Icon-Cache leeren": "Empty the icon cache",
-  "Icons": "Icons",
   "Kein Icon gefunden.": "No icon found.",
   "Leg zuerst einen Ordner an und schieb die Einträge hinein.": "Make a folder first and move the items into it.",
   "Lädt die Bibliothek …": "Loading the library …",

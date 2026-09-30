@@ -177,7 +177,7 @@ kbd {
 /* Where one is: a bar, not only a tint. */
 :root[data-contrast='high'] .nav-row[aria-current='true'],
 :root[data-contrast='high'] .settings-nav button[aria-current='page'],
-:root[data-contrast='high'] .admin-nav button[aria-current='page'] {
+:root[data-contrast='high'] .nav-row[aria-current='page'] {
   box-shadow: inset 3px 0 0 var(--uwu-pink);
   font-weight: 700;
 }
@@ -207,7 +207,7 @@ kbd {
   .item-row[aria-selected='true'],
   .nav-row[aria-current='true'],
   .settings-nav button[aria-current='page'],
-  .admin-nav button[aria-current='page'],
+  .nav-row[aria-current='page'],
   .bottom-nav button[aria-current='page'],
   .segmented button[aria-checked='true'] {
     outline: 2px solid Highlight;
