@@ -6,6 +6,7 @@ export { Button, IconButton, type ButtonVariant } from './Button';
 export { Segmented, Toggle, radioArrows, radioTab } from './Choice';
 export { Checkbox, Field, FieldGroup, FormRow, RepeatRow, Select, TextField } from './Field';
 export { ButtonRow, Card, Section, SettingRow } from './Layout';
+export { DangerZone } from './DangerZone';
 export { Badge, Callout, type CalloutTone, type Tone } from './Status';
 export { Table } from './Table';
 export { TabPanel, Tabs, useTabsId, type Tab } from './Tabs';

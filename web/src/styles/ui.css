@@ -684,7 +684,8 @@ button.toggle {
 
 .badge[data-tone='ok'] {
   background: color-mix(in srgb, var(--uwu-online) 16%, transparent);
-  color: var(--uwu-online);
+  /* A little of the text colour: 4.5:1 on the tint, on the page as on a card. */
+  color: color-mix(in srgb, var(--uwu-online) 75%, var(--uwu-ink));
 }
 
 .badge[data-tone='neutral'] {
@@ -793,7 +794,9 @@ button.toggle {
   border-bottom: 0;
 }
 
+/* Positioned, so hidden labels (.sr-only) in a wide table stay inside its scrolling. */
 .table-scroll {
+  position: relative;
   max-width: 100%;
   overflow-x: auto;
 }
