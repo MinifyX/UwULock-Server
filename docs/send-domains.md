@@ -12,7 +12,7 @@ The part after `#` stays in the browser; the server never sees it.
 
 ## Adding one
 
-*Admin portal → Send domains → Add.* Type the name alone (`send.example.com`, no `https://`, no
+*Admin portal → Vault & features → Send domains → Add.* Type the name alone (`send.example.com`, no `https://`, no
 port) and choose how it gets its certificate:
 
 - **Let's Encrypt** — the server gets a certificate for the name itself, the same way it does for

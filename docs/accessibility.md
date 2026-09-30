@@ -62,8 +62,9 @@ keep that key for a new tab.
 | `?`        | The shortcut overview (single key)                                 |
 | `Ctrl`+`,` | Appearance (language, theme, contrast, animations)                 |
 | `Esc`      | Close a dialog                                                     |
-| `1` … `9`  | The first nine pages of the sidebar, from the top (single)         |
-| `J`, `K`   | Next, previous page (single keys)                                  |
+| `1` … `9`  | The areas of the sidebar, from the top (single)                    |
+| `J`, `K`   | Next, previous area (single keys)                                  |
+| `←`, `→`   | In an area's tabs: previous, next tab                              |
 
 ## High contrast
 
@@ -88,7 +89,8 @@ selects, switches and check boxes 3:1 (their own token, `--uwu-control`).
 ## Screen readers
 
 - Landmarks: the bar is a banner, the sidebars are navigation, the page is `main`; the vault has
-  a (hidden) heading of its own, the admin portal a visible one per page, and headings go in
+  a (hidden) heading of its own, the admin portal a visible one per area and a hidden one per
+  tab, and headings go in
   order below that.
 - Every button that shows only an icon has a name; decorative pictures (Nyu, icons next to text)
   are hidden; logos have their text next to them. Buttons that switch something say whether it is
@@ -115,13 +117,13 @@ are printed as notes. Each check takes 60–350 ms; together they add about thre
 
 | Script           | Checked                                                                 |
 | ---------------- | ----------------------------------------------------------------------- |
-| `web.mjs`        | Register page, vault with an item selected, settings (dark and light), login page, admin overview, users, settings, and *Branding* in high contrast |
+| `web.mjs`        | Register page, vault with an item selected, settings (dark and light), login page, admin overview, accounts, master password, storage, and *Branding* in high contrast |
 | `features.mjs`   | Sends view, the public Send page, the password check                    |
 | `operations.mjs` | File requests view, the public file request page (with a wrong password, and open) |
 
 `web.mjs` also drives the keyboard: `?` opens the overview and Escape gives the focus back to the
 list, `N` opens the new-item menu and Escape gives it back again, Space ticks an entry of the
-list, `6` and `9` switch pages of the admin portal.
+list, `7`, `8`, `J` and `K` switch areas of the admin portal.
 
 ## Known gaps
 
@@ -132,9 +134,8 @@ list, `6` and `9` switch pages of the admin portal.
   many admin forms) are announced (`role="alert"`) but not yet tied to a field.
 - Results that appear under a setting ("Saved", test mails) are `role="status"` elements that
   appear with their text; some screen readers do not read those out.
-- The admin portal's tenth and eleventh pages (*Notifications*, *Diagnosis*) have no number
-  key; `J`/`K` reach them.
 - The charts of the admin overview are pictures with a summary as their name, not tables.
 - The branding page's previews show the chosen colours as they are, in high contrast too.
-- At 320 px (or 400 % zoom) the admin portal's sidebar becomes a row that scrolls sideways;
+- At 320 px (or 400 % zoom) the admin portal's sidebar and an area's tabs
+  become rows that scroll sideways;
   everything else reflows.

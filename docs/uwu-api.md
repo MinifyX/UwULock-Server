@@ -2538,7 +2538,7 @@ protocol both sides implement; UwUAuth builds its half from this section.
   The code is used up with the first answer; the app, its secret and the SCIM token stay
   manageable (and deletable) on the app's page in UwUAuth.
 
-**UwULock side:** admin portal *Settings → Login → Pair with UwUAuth*, address and code:
+**UwULock side:** admin portal *Security & login → SSO provider → Pair with UwUAuth*, address and code:
 
 1. `POST /uwu/v1/admin/sso/pair` — auth `admin` — `{ "url": "https://auth.example.com", "code": "7KQ4-M2XD-9HFT" }`
    (or the QR string). `https` only (a loopback address for tests).

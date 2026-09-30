@@ -28,7 +28,7 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   the browser and the apps still only talk to your server.
 - Dashboard Icons is part of the icon library, also without selfh.st. An item for a device in the
   home network suggests library icons that fit its name.
-- Admin portal, *Settings → Icons*: each database has its own switch (all on) and a list of
+- Admin portal, *Vault & features → Icons & password check*: each database has its own switch (all on) and a list of
   where the icons come from, with their licences. The licence texts are in
   `THIRD-PARTY-NOTICES.txt`, also in the image under `/usr/share/doc/uwulock-server/`. The
   databases are taken from fixed upstream commits and updated with
@@ -54,9 +54,35 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   fields, selects, check boxes, toggles, form rows, field groups, cards, sections, tabs, badges,
   callouts, tables and the dialog ([docs/ui.md](docs/ui.md)). No behaviour changed.
 
+**Admin portal: areas with tabs, plain words, and the web vault's look.**
+
+- The portal is sorted into eight areas in the sidebar, each with its tabs: *Overview*, *Users &
+  invitations* (accounts, invitations, families), *Security & login* (login, master password,
+  admin portal, SSO provider, SSO rules, SCIM), *Vault & features* (features, storage & limits,
+  icons & password check, masked addresses, send domains), *Mail & notifications* (mail server,
+  mails to users, push for the apps, admin alerts), *Backups* (on this server, off-site),
+  *Branding* and *System & diagnosis* (diagnosis, events, log, monitoring). The long settings
+  page is gone; each setting is found in one or two clicks. Tabs of switched-off features are not
+  there.
+- Every setting says in one plain line what it does, with the technical term where it helps
+  (Argon2id, PBKDF2, OIDC, SCIM), its unit spelled out (days, megabytes, hours) and the
+  recommended value on a green badge. German and English.
+- Settings are saved together as before: changed on any tab, a bar at the foot of the page offers
+  *Save* and *Discard*. What cannot be undone (deleting an account, resetting two-step login,
+  restoring an off-site backup, the strict SSO rules) sits framed apart, and still asks first;
+  unpairing from UwUAuth now asks too.
+- The portal uses the web vault's shell (bar, sidebar with the account at its foot) and its
+  building blocks throughout; the portal's own copies of buttons, cards, tables and badges are
+  gone. On a phone the areas and the tabs are rows that scroll sideways.
+- Old addresses (`#/settings`, `#/features`, `#/logs`, `#/notifications`, …) lead to their new
+  place. `1` … `8` open the areas, `J`/`K` go to the next and previous one, the arrow keys move
+  between tabs.
+- A table that scrolls sideways and the diagnosis' snippets take the keyboard focus, and the
+  green badges have 4.5:1 contrast in the light theme.
+
 **Feature switches: the admin decides which extras this server offers.**
 
-- *Admin portal → Features* has a switch for each UwULock extra, grouped and with one line each:
+- *Admin portal → Vault & features → Features* has a switch for each UwULock extra, grouped and with one line each:
   families, file requests, send domains, masked addresses, versions, reminders, travel mode, the
   emergency sheet, own icons, the icon library, 2FA hints, SSO, SCIM, off-site backups,
   notifications through ntfy/Gotify/Matrix and the suite vault ([docs/features.md](docs/features.md)).

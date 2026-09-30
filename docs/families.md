@@ -68,7 +68,7 @@ somebody else an owner, or delete the family, first.
 
 ## For admins
 
-*Settings → Families* in the admin portal:
+*Users & invitations → Families* in the admin portal:
 
 | Setting | Default | |
 | --- | --- | --- |

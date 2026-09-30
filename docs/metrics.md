@@ -10,7 +10,7 @@ It is off until an admin switches it on, and then it never answers everyone.
 
 ## Switching it on
 
-Admin portal → *Monitoring* → *Prometheus metrics*. There are two ways to keep the metrics to
+Admin portal → *System & diagnosis* → *Monitoring* → *Metrics for Prometheus*. There are two ways to keep the metrics to
 yourself:
 
 - **With a token**, on the server's public address. *Make a token* creates 32 random characters

@@ -28,7 +28,7 @@ waits for the next. The mail about a new device goes out at once, as before; so 
 emergency access and of the recovery code, which the list only repeats. When the address changes,
 the old address hears of it as well.
 
-The admin decides which kinds are mailed: *Settings → Security notices*. Kinds that are not mailed
+The admin decides which kinds are mailed: *Admin portal → Mail & notifications → Mails to users*. Kinds that are not mailed
 are listed all the same. Without a mail server, notices are only listed. They are kept 180 days.
 
 ## Admin notifications
@@ -55,7 +55,7 @@ off-site backup did not work (the backup server answered 503)".
 
 ### Channels
 
-*Admin portal → Notifications.* Every channel has its own events, a switch, and *Send a test*.
+*Admin portal → Mail & notifications → Admin alerts.* Every channel has its own events, a switch, and *Send a test*.
 A server starts with **Mail** to every admin (for everything but `updateAvailable` and
 `mailFailing`), which needs a mail server. Others:
 
@@ -81,7 +81,7 @@ overview shows it as failing. A message nobody took for a day is dropped.
 
 ## Policies
 
-*Admin portal → Policies* sets rules for every account (organisations get their own with
+*Admin portal → Security & login* (tabs *Login* and *Master password*) sets rules for every account (organisations get their own with
 Stufe 5):
 
 - **Two-step login required**, from a date on. Until then the web vault shows a banner. After it,

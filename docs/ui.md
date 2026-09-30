@@ -41,9 +41,20 @@ A value that is not on these scales needs a reason in a comment.
 | `TabPanel` | `idPrefix`, `tab`, `className?` | The picked tab's content. |
 | `Badge` | `tone?: 'accent' \| 'ok' \| 'alarm' \| 'neutral'`, `label?` | A count or a state on a pill; `label` explains a bare number. |
 | `Callout` | `tone?: 'info' \| 'accent' \| 'ok' \| 'warning' \| 'error'`, `title?`, `icon?: IconName \| null`, `actions?` | A notice in a page or dialog; `error` is announced. |
-| `Table` | `label?`, `head` (the `<th>`s), rows as children | Scrolls sideways inside its frame on a phone. |
+| `Table` | `label?`, `head` (the `<th>`s), rows as children | Scrolls sideways inside its frame on a phone; the frame then takes the keyboard focus. |
+| `DangerZone` | `heading`, `lead?` | What cannot be undone (deleting, restoring, strict rules), framed apart at the end of a page. Its buttons still ask first. |
 | `Modal` | `title`, `onCancel`, `footer?`, `size?: 'default' \| 'wide'`, `tone?: 'default' \| 'warning'`, `closable?` | Focus trap, Escape, scroll hairlines on the body. Footer: `<span className="spacer" />`, then the safe choice (`data-secondary`), then the primary one. |
 
 Plain classes for what needs no component: `.form` (a form's rows with even gaps),
 `.form-note`, `.form-error`, `.field-hint`, `.checks`, `.button-link`, `.settings-heading` and
 `.settings-lead`.
+
+## The admin portal
+
+The portal uses the vault's shell: the bar on top, the sidebar (`.nav-row`s, the account card at
+its foot) and a page with a title, a lead line and the area's `Tabs`. Its areas and tabs are one
+list in `web/src/admin/areas.ts` (with the redirects from the addresses before 0.6.0-beta.2, and
+the feature switches that hide a tab). Every setting is a `SettingRow` whose description says in
+plain words what it does; `Explain` (`web/src/admin/fields.tsx`) adds the recommended value as a
+green badge and `NumberInput` spells the unit out. The settings of all tabs are one draft
+(`web/src/admin/draft.tsx`): changed on any tab, the bar at the foot offers *Save* and *Discard*.
