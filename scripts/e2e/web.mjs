@@ -226,6 +226,14 @@ try {
     if (axe) await checkA11y(page, `admin ${area} → ${tab}`);
   }
 
+  // A short page still fills the window: the sidebar (and the account at its foot) reaches the
+  // bottom, like the vault's.
+  const fillsWindow = async (where, on = page) => {
+    const gap = await on.evaluate(() => innerHeight - document.querySelector('.admin').getBoundingClientRect().bottom);
+    if (Math.abs(gap) > 1) throw new Error(`${where}: the portal ends ${gap}px above the window's bottom`);
+  };
+  await fillsWindow('the log');
+
   step('the admin portal by keyboard, and in high contrast');
   // "7" is the seventh area of the bar: Aussehen, the branding.
   await page.keyboard.press('7');
@@ -357,6 +365,7 @@ try {
   await mobile.getByRole('navigation', { name: 'Admin-Portal' }).getByRole('button', { name: 'Benutzer & Einladungen' }).click();
   await mobile.getByRole('row').filter({ hasText: email }).first().waitFor();
   await noSideways('the users');
+  await fillsWindow('the users on a phone', mobile);
   await phoneSnap('admin-users');
   await phone.close();
 
