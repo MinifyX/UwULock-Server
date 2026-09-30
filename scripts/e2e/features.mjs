@@ -267,9 +267,8 @@ try {
   await tablet.context().close();
 
   step('a second account, for emergency access');
-  await nyu.goto(`${origin}/admin`);
-  await nyu.getByRole('heading', { name: 'Übersicht' }).waitFor({ timeout: 30000 });
-  await nyu.getByRole('button', { name: 'Einladungen' }).click();
+  await nyu.goto(`${origin}/admin#/users/invitations`);
+  await nyu.getByRole('heading', { name: 'Jemanden einladen' }).waitFor({ timeout: 30000 });
   await nyu.getByLabel('E-Mail-Adresse').fill('friend@example.com');
   await nyu.getByRole('button', { name: 'Einladen' }).click();
   const invitation = await nyu.locator('.invite-link').innerText();

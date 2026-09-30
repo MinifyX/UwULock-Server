@@ -144,18 +144,19 @@ async function unlock() {
 
 /** The admin portal's mail settings: this script's mail server, or none. */
 async function mail(on) {
-  await nyu.goto(`${origin}/admin#/settings`);
-  const server = nyu.getByLabel('Server', { exact: true });
+  await nyu.goto(`${origin}/admin#/mail`);
+  const server = nyu.getByLabel('Adresse des Mailservers', { exact: true });
   await server.waitFor({ timeout: 30000 });
   if (on) {
     await server.fill('127.0.0.1');
     await nyu.getByRole('radio', { name: 'keine' }).click();
     await nyu.getByLabel('Port', { exact: true }).fill(String(smtp.port));
-    await nyu.getByLabel('Absender', { exact: true }).fill('lock@example.com');
+    await nyu.getByLabel('Absender-Adresse', { exact: true }).fill('lock@example.com');
   } else {
     await server.fill('');
   }
-  await nyu.getByRole('button', { name: 'Speichern' }).click();
+  // Changed settings wait in the bar at the foot of the page.
+  await nyu.getByRole('region', { name: 'Ungespeicherte Änderungen' }).getByRole('button', { name: 'Speichern' }).click();
   await nyu.getByText(/Gespeichert/).first().waitFor();
 }
 

@@ -233,8 +233,8 @@ async function downloaded(page, click) {
 
 /** The admin portal's list of UwUMail servers: the fake one, or none. */
 async function maskedServer(on) {
-  await nyu.goto(`${origin}/admin#/settings`);
-  await nyu.getByRole('heading', { name: 'Maskierte Adressen (UwUMail)' }).waitFor({ timeout: 30000 });
+  await nyu.goto(`${origin}/admin#/vault/masked`);
+  await nyu.getByRole('heading', { name: 'UwUMail-Server für maskierte Adressen' }).waitFor({ timeout: 30000 });
   if (on) {
     await nyu.getByRole('button', { name: 'UwUMail-Server hinzufügen' }).click();
     const card = nyu.locator('.channel-card').filter({ has: nyu.getByLabel('Name, wie ihn Nutzer sehen') }).last();
@@ -251,14 +251,15 @@ async function maskedServer(on) {
     if (!(await remove.count())) return;
     while (await remove.count()) await remove.first().click();
   }
-  await nyu.getByRole('button', { name: 'Speichern' }).click();
+  // Changed settings wait in the bar at the foot of the page.
+  await nyu.getByRole('region', { name: 'Ungespeicherte Änderungen' }).getByRole('button', { name: 'Speichern' }).click();
   await nyu.getByText(/Gespeichert/).first().waitFor();
 }
 
 try {
   step('a send domain in the admin portal');
   await unlock();
-  await nyu.goto(`${origin}/admin#/send-domains`);
+  await nyu.goto(`${origin}/admin#/vault/send-domains`);
   await nyu.getByRole('heading', { name: 'Send-Domain hinzufügen' }).waitFor({ timeout: 30000 });
   await nyu.getByPlaceholder('send.example.com').fill('https://Send.localhost/');
   await nyu.getByText('Wird als send.localhost gespeichert.').waitFor();
@@ -366,7 +367,7 @@ try {
   // As it was: no UwUMail server, no send domain.
   try {
     await maskedServer(false);
-    await nyu.goto(`${origin}/admin#/send-domains`);
+    await nyu.goto(`${origin}/admin#/vault/send-domains`);
     await nyu.getByRole('heading', { name: 'Send-Domain hinzufügen' }).waitFor({ timeout: 30000 });
     const remove = nyu.getByRole('button', { name: 'Löschen …' });
     await remove.first().waitFor({ timeout: 5000 }).catch(() => undefined);

@@ -142,7 +142,7 @@ try {
   await snap('after-rotation');
 
   step('the icon databases in the admin portal, with their licences');
-  await page.goto(`${origin}/admin#/settings`);
+  await page.goto(`${origin}/admin#/vault/icons`);
   const databases = page.getByRole('region', { name: 'Icon-Datenbanken' });
   await databases.getByRole('switch', { name: 'Dashboard Icons' }).waitFor();
   await databases.getByRole('link', { name: 'Apache-2.0' }).waitFor();

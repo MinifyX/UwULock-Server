@@ -140,7 +140,7 @@ try {
   await owner.keyboard.press('Escape');
 
   step('off-site backups to a folder, from the admin portal');
-  await owner.goto(`${origin}/admin#/backups`);
+  await owner.goto(`${origin}/admin#/backups/offsite`);
   const card = owner.locator('.offsite');
   await card.waitFor({ timeout: 30000 });
   await card.getByRole('radio', { name: 'Ordner' }).click();
@@ -163,7 +163,7 @@ try {
   await snap(owner, 'offsite');
 
   step('file requests switched off in the Features tab, and on again');
-  await owner.goto(`${origin}/admin#/features`);
+  await owner.goto(`${origin}/admin#/vault`);
   const requests = owner.getByRole('switch', { name: 'Datei-Anfragen' });
   await requests.waitFor({ timeout: 30000 });
   await checkA11y(owner, 'features tab');
@@ -188,7 +188,7 @@ try {
   if (await owner.locator('.sidebar').getByRole('button', { name: 'Datei-Anfragen' }).count()) {
     throw new Error('the vault still shows file requests');
   }
-  await owner.goto(`${origin}/admin#/features`);
+  await owner.goto(`${origin}/admin#/vault`);
   await owner.getByRole('switch', { name: 'Datei-Anfragen' }).click();
   await owner.getByText('„Datei-Anfragen“ ist an ✧').waitFor({ timeout: 30000 });
   const on = await fetch(`${origin}/uwu/v1/public/file-requests/${accessId}`);

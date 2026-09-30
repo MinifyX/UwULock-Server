@@ -142,15 +142,18 @@ try {
   await admin.getByLabel('E-Mail-Adresse').fill(email);
   await admin.locator('input[type=password]').first().fill(password);
   await admin.getByRole('button', { name: 'Anmelden', exact: true }).click();
-  await admin.locator('.admin-nav').getByRole('button', { name: 'Anmeldung' }).click();
+  // Sicherheit & Anmeldung → SSO-Anbieter, then → SSO-Regeln; one Speichern takes both.
+  await admin.locator('.admin-sidebar').getByRole('button', { name: 'Sicherheit & Anmeldung' }).click();
+  await admin.getByRole('tab', { name: 'SSO-Anbieter', exact: true }).click();
   await admin.getByLabel('Issuer').fill(issuer);
   await admin.getByLabel('Client-ID').fill('uwulock');
   await admin.getByLabel('Client-Geheimnis').fill('e2e-secret');
   await admin.getByLabel('Beschriftung des Knopfs').fill('Firmen-Login');
-  await admin.locator('select').first().selectOption('group');
   await admin.getByRole('switch', { name: 'Anmeldung über SSO', exact: true }).click();
   await admin.getByRole('button', { name: 'Anbieter testen' }).click();
   await admin.getByText(/Der Anbieter antwortet/).waitFor({ timeout: 30000 });
+  await admin.getByRole('tab', { name: 'SSO-Regeln', exact: true }).click();
+  await admin.getByLabel('Wer sich ohne Einladung einen Tresor anlegen darf').selectOption('group');
   await admin.getByRole('button', { name: 'Speichern', exact: true }).click();
   await admin.getByText('Gespeichert ✧').waitFor({ timeout: 30000 });
   await snap(admin, 'settings');
@@ -176,7 +179,7 @@ try {
   await again.getByRole('button', { name: 'Mit Firmen-Login anmelden' }).click();
   // In CI, features.mjs left an authenticator app on the account: the server's own two-step
   // login applies after SSO too, and that is as good an answer here.
-  const portal = again.locator('.admin-nav');
+  const portal = again.locator('.admin-sidebar');
   const second = again.getByRole('heading', { name: 'Zweistufige Anmeldung' });
   await portal.or(second).first().waitFor({ timeout: 30000 });
   await snap(again, (await portal.isVisible()) ? 'portal' : 'portal-second-step');
