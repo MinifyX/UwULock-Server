@@ -32,6 +32,17 @@ UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, the next UwURDP be
 - The server takes UwUSSH 0.3's assistant records (`assist_config`, `assist_cache`) in the SSH
   space; before, their sync was refused.
 
+**Security.** The new sections were reviewed ([docs/security-review-0.7.md](docs/security-review-0.7.md),
+"0.7.0-beta.2: SSH/RDP entries"); one medium and six low findings are fixed:
+
+- The copied SSH command can't turn a user or an address that starts with `-` (like
+  `-oProxyCommand=…`, written by another device) into an option; control characters are dropped
+  from it and from the `.rdp` file.
+- Deleting a key or an identity takes along only `secret` records; the link into the app is only
+  offered for an id that is a UUID; ids in other spellings from the server are not taken; a pull
+  that doesn't move on stops; creating the space runs in line with loading it; odd values of a
+  record (`constructor`) no longer break its details.
+
 **Maintenance.**
 
 - The web vault's crypto and the end-to-end tests use UwULock-Client's core with the suite module.

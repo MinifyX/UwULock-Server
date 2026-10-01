@@ -7,7 +7,8 @@ export const SPACE_LABEL: Record<SpaceName, string> = {
   rdp: N_('Remote Desktop (UwURDP)'),
 };
 
-export const KIND_ICON: Record<string, IconName> = {
+/** Look up with `kindIcon`: a kind is a string from elsewhere. */
+const KIND_ICON: Record<string, IconName> = {
   host: 'monitor',
   group: 'folder',
   identity: 'user',
@@ -16,6 +17,9 @@ export const KIND_ICON: Record<string, IconName> = {
   port_forward: 'network',
   known_host: 'shield',
 };
+
+export const kindIcon = (kind: string): IconName =>
+  Object.hasOwn(KIND_ICON, kind) ? KIND_ICON[kind]! : 'note';
 
 const KIND_PLURAL: Record<ShownKind, string> = {
   host: N_('Hosts'),
@@ -39,7 +43,7 @@ const KIND_ONE: Record<ShownKind, string> = {
 
 export const kindsLabel = (kind: ShownKind) => t(KIND_PLURAL[kind]);
 export const kindLabel = (kind: string) =>
-  kind in KIND_ONE ? t(KIND_ONE[kind as ShownKind]) : kind;
+  Object.hasOwn(KIND_ONE, kind) ? t(KIND_ONE[kind as ShownKind]) : kind;
 
 export const workspaceLabel = (workspace: string) =>
   workspace === 'business' ? t('Geschäftlich') : t('Privat');
@@ -52,4 +56,4 @@ const AUTH: Record<string, string> = {
   cert: N_('Zertifikat'),
 };
 
-export const authLabel = (auth: string) => (auth in AUTH ? t(AUTH[auth]!) : auth);
+export const authLabel = (auth: string) => (Object.hasOwn(AUTH, auth) ? t(AUTH[auth]!) : auth);

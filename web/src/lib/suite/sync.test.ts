@@ -119,6 +119,41 @@ describe('a space', () => {
     expect(stateOf('rdp').status).toBe('open');
   });
 
+  it('is not pulled forever from a server that goes nowhere', async () => {
+    const listed = { data: [{ space: 'ssh', id: 'space-1', key: '2.k' }] };
+    for (const page of [
+      { reset: false, records: [], cursor: 0, hasMore: true },
+      { reset: true, records: [], cursor: 0, hasMore: false },
+    ]) {
+      forgetSuite();
+      request.mockReset();
+      request.mockImplementation(async (path: string) =>
+        path === '/uwu/v1/suite/spaces' ? listed : page,
+      );
+      await loadSpace('ssh', true);
+      expect(stateOf('ssh').status).toBe('error');
+      expect(request.mock.calls.length).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it('is made in line with its loads', async () => {
+    let made = false;
+    request.mockImplementation(async (path: string, options?: { method?: string }) => {
+      if (options?.method === 'PUT') {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        made = true;
+        return {};
+      }
+      if (path === '/uwu/v1/suite/spaces')
+        return { data: made ? [{ space: 'ssh', id: 'new-space', key: '2.key' }] : [] };
+      return { reset: false, records: [], cursor: 0, hasMore: false };
+    });
+    // A load (the realtime channel) while the space is being made waits for it.
+    await Promise.all([createSpace('ssh'), loadSpace('ssh')]);
+    expect(core.suiteOpenSpace).toHaveBeenCalled();
+    expect(stateOf('ssh').status).toBe('open');
+  });
+
   it('is off when the server switched the suite vault off', async () => {
     request.mockRejectedValue(new ApiError(404, 'off', { code: 'feature_off' }));
     await loadSpace('ssh');

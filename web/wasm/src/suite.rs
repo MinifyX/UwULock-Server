@@ -92,6 +92,12 @@ pub fn merge(space: &str, envelopes: &str) -> Result<()> {
 }
 
 fn take(records: &mut BTreeMap<String, Envelope>, envelope: Envelope) {
+    // Ids as the server writes them (lower case, hyphens). Another spelling of a UUID opens
+    // with the same AAD, so a server could otherwise show one record twice, under an id that
+    // goes into a link to the app, and make pointers at the record miss it.
+    if !envelope.head().is_ok_and(|head| head.id.hyphenated().to_string() == envelope.id) {
+        return;
+    }
     let newer = match records.get(&envelope.id) {
         Some(known) => envelope.seq.unwrap_or(0) > known.seq.unwrap_or(0),
         None => true,
@@ -392,6 +398,21 @@ mod tests {
         let list = shown["records"].as_array().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["payload"]["rdp"]["newer"], true);
+
+        // Another spelling of a known id is not taken: one record, one id.
+        for spelled in [
+            host.id.to_uppercase(),
+            host.id.replace('-', ""),
+            format!("{{{}}}", host.id),
+            format!("urn:uuid:{}", host.id),
+        ] {
+            let mut twin = host.clone();
+            twin.id = spelled;
+            twin.seq = Some(50);
+            merge("rdp", &serde_json::to_string(&[twin]).unwrap()).unwrap();
+        }
+        assert_eq!(records("rdp").unwrap()["records"].as_array().unwrap().len(), 1);
+        assert_eq!(records("rdp").unwrap()["records"][0]["id"], host.id.as_str());
 
         // An older copy doesn't replace a newer one.
         let mut older = host.clone();
