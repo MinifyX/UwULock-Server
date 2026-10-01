@@ -15,6 +15,7 @@ mod auth_requests;
 mod backup;
 pub mod backups;
 pub mod branding;
+mod breaches;
 pub mod clock;
 pub mod emergency;
 pub mod file_requests;

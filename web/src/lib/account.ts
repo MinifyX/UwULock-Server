@@ -5,6 +5,7 @@
  */
 
 import { currentProfile, lock, logout, prelogin } from './api';
+import type { BreachSwitches } from './breaches';
 import { t } from './i18n';
 import { call, callJson } from './web/core';
 import { openExtras } from './requests';
@@ -18,6 +19,10 @@ export type AccountInfo = {
   passwordHints: boolean;
   rememberTwoFactor: boolean;
   hibp: boolean;
+  /** The breach sources the server offers (§15); missing on servers before 0.7. */
+  breaches?: BreachSwitches;
+  /** Whether this account agreed to the check of its addresses; null when that is off. */
+  emailBreachCheck?: { optedIn: boolean; since: string | null } | null;
   maxFileMb: number;
   /** Whether this account may invite people (in the settings, under Invite). */
   mayInvite: boolean;

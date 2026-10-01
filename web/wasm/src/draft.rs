@@ -228,3 +228,22 @@ pub fn seal(unlocked: &Unlocked, id: &str, draft: Draft, now: &str) -> Result<Ci
     let outer = unlocked.vault.outer_key(item.organization_id.as_deref(), &unlocked.user_key)?;
     Ok(item.seal(outer)?)
 }
+
+/// The login `id` with only a new password, encrypted for the server. The old password goes into
+/// the history (Bitwarden keeps five), and the revision date of the password is now.
+pub fn seal_password(unlocked: &Unlocked, id: &str, password: String, now: &str) -> Result<CipherRequest> {
+    let mut item = find(unlocked, id)?.clone();
+    if item.reprompt && !unlocked.reprompt_ok.contains(id) {
+        return Err(Failure::new("refused", "Enter your master password to open this item first."));
+    }
+    if item.kind != ItemKind::Login || item.login.is_none() {
+        return Err(Failure::new("invalid", "This item isn't a login."));
+    }
+    if password.is_empty() {
+        return Err(Failure::new("invalid", "The new password is empty."));
+    }
+    item.set_password(Zeroizing::new(password), now);
+    item.can_save()?;
+    let outer = unlocked.vault.outer_key(item.organization_id.as_deref(), &unlocked.user_key)?;
+    Ok(item.seal(outer)?)
+}

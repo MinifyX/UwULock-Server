@@ -10,6 +10,11 @@ The icon library of the web vault also offers selfh.st Icons (https://selfh.st/i
 "Icons by selfh.st"). Those are not part of the binary: the server fetches them when they are
 asked for.
 
+The password check also hands out the public lists of breached websites of Have I Been Pwned
+(https://haveibeenpwned.com/, CC BY 4.0, "Data from Have I Been Pwned") and XposedOrNot
+(https://xposedornot.com/). Those are not part of the binary either: the server fetches them once
+a day, and every answer and the vault name the source.
+
 All logos are trademarks of their owners. Showing one does not mean its owner endorses UwULock.
 
 The admin portal's failed logins show where an address is from DB-IP's free databases "IP to

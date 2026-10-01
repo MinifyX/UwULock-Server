@@ -190,6 +190,13 @@ export type Settings = {
   hibp: boolean;
   /** Where the addresses of failed logins are, from DB-IP's databases on the server. */
   geoip: boolean;
+  /** The other breach sources of the password check (§15); missing before 0.7. */
+  breaches?: {
+    xonPasswords: boolean;
+    siteBreaches: boolean;
+    emailCheck: boolean;
+    changePassword: boolean;
+  };
   push: Push | null;
   usersMayInvite: boolean;
   invitationsPerUser: number;

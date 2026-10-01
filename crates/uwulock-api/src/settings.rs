@@ -31,6 +31,10 @@ pub struct Settings {
     /// Where the addresses of failed logins are (country, city, network), from DB-IP's free
     /// databases downloaded once a month and looked up on this server (docs/failed-logins.md).
     pub geoip: bool,
+    /// The other breach sources of the password check (docs/uwu-api.md §15.1): XposedOrNot's
+    /// passwords, the public lists of breached sites, the check of addresses, and whether a site
+    /// has a page to change the password.
+    pub breaches: BreachSettings,
     /// Bitwarden's push relay, for waking the phone apps: installation id and key from
     /// bitwarden.com/host. None: the apps sync when they are opened.
     pub push: Option<uwulock_notify::relay::RelaySettings>,
@@ -269,6 +273,28 @@ impl FileRequestSettings {
     }
 }
 
+/// What the password check may ask beyond Have I Been Pwned's passwords (`hibp`), each on its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BreachSettings {
+    /// XposedOrNot's passwords, asked through this server by ten characters of a Keccak-512.
+    pub xon_passwords: bool,
+    /// The public lists of breached sites (Have I Been Pwned's and XposedOrNot's), fetched by the
+    /// server once a day and compared with the vault in the browser.
+    pub site_breaches: bool,
+    /// Addresses checked at XposedOrNot by the server: the address itself leaves the server, so
+    /// each account has to agree to it as well.
+    pub email_check: bool,
+    /// The server looks whether a website has `/.well-known/change-password`.
+    pub change_password: bool,
+}
+
+impl Default for BreachSettings {
+    fn default() -> Self {
+        BreachSettings { xon_passwords: true, site_breaches: true, email_check: false, change_password: true }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SecurityNoticeSettings {
@@ -288,6 +314,7 @@ impl Default for Settings {
             max_file_mb: 500,
             hibp: true,
             geoip: true,
+            breaches: BreachSettings::default(),
             push: None,
             users_may_invite: false,
             invitations_per_user: 5,

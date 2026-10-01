@@ -54,6 +54,15 @@ pub struct Upstream {
     pub selfhst: String,
     /// 2FA Directory's list of sites and the second factors they offer.
     pub twofa: String,
+    /// The public lists of breached sites (docs/uwu-api.md §15.2): Have I Been Pwned's and
+    /// XposedOrNot's.
+    pub hibp_breaches: String,
+    pub xon_breaches: String,
+    /// XposedOrNot's passwords (`…/{prefix}` is added) and its check of addresses (`…/{address}`).
+    pub xon_passwords: String,
+    pub xon_email: String,
+    /// The scheme `/.well-known/change-password` is asked on: `https`, only tests use `http`.
+    pub change_password_scheme: &'static str,
 }
 
 impl Default for Upstream {
@@ -65,6 +74,11 @@ impl Default for Upstream {
             http_port: 80,
             selfhst: "https://cdn.jsdelivr.net/gh/selfhst/icons@main".into(),
             twofa: crate::reports::UPSTREAM.into(),
+            hibp_breaches: crate::breaches::HIBP_BREACHES.into(),
+            xon_breaches: crate::breaches::XON_BREACHES.into(),
+            xon_passwords: crate::breaches::XON_PASSWORDS.into(),
+            xon_email: crate::breaches::XON_EMAIL.into(),
+            change_password_scheme: "https",
         }
     }
 }

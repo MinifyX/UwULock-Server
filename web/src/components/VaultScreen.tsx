@@ -34,6 +34,7 @@ import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
 import { DeviceRequests } from './web/DeviceRequests';
 import { HealthReport } from './web/HealthReport';
+import { HealthReview } from './web/HealthReview';
 import { BackToList, Panes } from './panes';
 import { FamilyView, NewFamilyDialog } from './web/FamilyView';
 import { FileRequestsView } from './web/FileRequestsView';
@@ -61,7 +62,8 @@ export type Filter =
   | { kind: 'trash' }
   | { kind: 'sends' }
   | { kind: 'requests' }
-  | { kind: 'health' };
+  | { kind: 'health' }
+  | { kind: 'review' };
 
 const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
   { type: 'login', label: N_('Logins'), icon: 'globe' },
@@ -77,6 +79,7 @@ function matches(filter: Filter, item: ItemSummary): boolean {
     filter.kind === 'sends' ||
     filter.kind === 'requests' ||
     filter.kind === 'health' ||
+    filter.kind === 'review' ||
     filter.kind === 'family'
   )
     return false;
@@ -321,7 +324,9 @@ export function VaultScreen({
                         ? t('Sends')
                         : filter.kind === 'requests'
                           ? t('Datei-Anfragen')
-                          : t('Passwortprüfung');
+                          : filter.kind === 'review'
+                            ? t('Passwörter durchgehen')
+                            : t('Passwortprüfung');
 
   const pick = (next: Filter) => {
     setFilter(next);
@@ -388,7 +393,7 @@ export function VaultScreen({
     ];
     const onKey = (event: KeyboardEvent) => {
       if (!singleKey(event)) return;
-      const items = !['sends', 'requests', 'health'].includes(filter.kind);
+      const items = !['sends', 'requests', 'health', 'review'].includes(filter.kind);
       const key = event.key.toLowerCase();
       if (key === '/' && items) {
         searchRef.current?.focus();
@@ -509,6 +514,16 @@ export function VaultScreen({
               >
                 <Icon name="pulse" size={16} />
                 <span className="nav-label">{t('Passwortprüfung')}</span>
+              </button>
+            </li>
+            <li>
+              <button
+                className="nav-row"
+                aria-current={filter.kind === 'review' ? 'true' : undefined}
+                onClick={() => pick({ kind: 'review' })}
+              >
+                <Icon name="layers" size={16} />
+                <span className="nav-label">{t('Durchgehen')}</span>
               </button>
             </li>
           </ul>
@@ -700,6 +715,16 @@ export function VaultScreen({
           <FileRequestsView open={requestShown} />
         ) : filter.kind === 'health' ? (
           <HealthReport
+            onOpen={(id) => {
+              pick({ kind: 'all' });
+              setSelected(id);
+              setView('detail');
+            }}
+            onReview={() => pick({ kind: 'review' })}
+          />
+        ) : filter.kind === 'review' ? (
+          <HealthReview
+            onBack={() => pick({ kind: 'health' })}
             onOpen={(id) => {
               pick({ kind: 'all' });
               setSelected(id);

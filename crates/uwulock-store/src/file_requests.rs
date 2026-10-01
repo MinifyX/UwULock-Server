@@ -286,6 +286,7 @@ impl Store {
                 [&user_id],
             )?;
             tx.execute("DELETE FROM health_reports WHERE user_id = ?1", [&user_id])?;
+            tx.execute("DELETE FROM health_ignores WHERE user_id = ?1", [&user_id])?;
             tx.execute("DELETE FROM suite_records WHERE user_id = ?1", [&user_id])?;
             tx.execute("DELETE FROM suite_spaces WHERE user_id = ?1", [&user_id])?;
             tx.execute(

@@ -290,6 +290,13 @@ pub fn seal_draft(id: &str, draft: &str, now: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&draft::seal(unlocked, id, draft, now)?))?)
 }
 
+/// Only a new password for the login `id` (the old one goes into its history, as Bitwarden keeps
+/// it): what the password check saves.
+#[wasm_bindgen(js_name = sealPassword)]
+pub fn seal_password(id: &str, password: String, now: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&draft::seal_password(unlocked, id, password, now)?))?)
+}
+
 /// Text encrypted under the user key: a folder name.
 #[wasm_bindgen(js_name = encryptText)]
 pub fn encrypt_text(text: &str) -> Result<String, JsValue> {
@@ -584,6 +591,12 @@ pub fn unlock_with_passkey(
 #[wasm_bindgen(js_name = passwordReport)]
 pub fn password_report() -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&health::report(unlocked)))?)
+}
+
+/// The items whose password XposedOrNot saw, from its answer `count` for `prefix`.
+#[wasm_bindgen(js_name = xonBreaches)]
+pub fn xon_breaches(prefix: &str, count: f64) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&health::xon_breaches(unlocked, prefix, count.max(0.0) as u64)))?)
 }
 
 /// The report of the password check, sealed under the extras key for

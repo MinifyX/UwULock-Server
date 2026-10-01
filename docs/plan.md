@@ -505,6 +505,26 @@ Bitwardens „Families".
 - [ ] „Verbinden" auf Android/iOS, WLAN im Desktop-Client und in der Erweiterung: UwULock-Client
   0.4.0-beta.1, gleicher Vertrag.
 
+
+### 0.7 — Passwortprüfung zum Durchwischen und mehr Datenleck-Quellen (in Arbeit)
+
+- [x] Passwortprüfung „Durchgehen": eigene Ansicht neben dem Bericht (der bleibt), ein
+  Kartenstapel mit einer Karte pro Login mit Problem (Datenleck, Datenleck der Website nach der
+  letzten Passwortänderung, mehrfach, schwach, ohne https, 2FA möglich), „3 von 12", Wischen oder
+  Pfeiltasten. Pro Karte: Seite öffnen & Passwort ändern (`/.well-known/change-password`, sonst
+  die Login-Adresse), neues Passwort erzeugen & speichern (altes in den Verlauf), Später (nur in
+  dieser Sitzung), Ignorieren pro Problem (rückgängig im Bericht). Ignorierliste verschlüsselt
+  unter dem Extras-Schlüssel (`/uwu/v1/reports/health/ignored`, 409 bei gleichzeitigen
+  Änderungen), damit Web-Tresor und Apps sie teilen. Playwright-Test `scripts/e2e/review.mjs`.
+- [x] Datenleck-Quellen, jede einzeln schaltbar (`breaches` in den Einstellungen):
+  XposedOrNot-Passwörter (Keccak-512, 10 Zeichen, über den Server wie HIBP), Listen gehackter
+  Websites (HIBP + XposedOrNot, täglich, zusammengeführt nach Domain, Abgleich nur im Client),
+  Adressen bei XposedOrNot (Admin-Schalter + Zustimmung pro Konto, ein Kontingent für den ganzen
+  Server, Cache 7 Tage unter gesalzenem Hash, nichts geloggt), Prüfung auf
+  `/.well-known/change-password` (über den geprüften Icon-Client, nie ins lokale Netz).
+  `/uwu/v1/info` meldet sie unter `breaches`. Vertrag: `docs/uwu-api.md` §15.1–§15.7.
+- [ ] Dasselbe im UwULock-Client (Desktop, Android, iOS) nach §15.6/§15.7.
+
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
 Was CI nicht kann, von Hand gegen die Beta, mit dem Server als „selbst gehostet":

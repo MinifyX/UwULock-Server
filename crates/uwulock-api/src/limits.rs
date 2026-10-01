@@ -142,6 +142,9 @@ pub struct Limits {
     /// Questions to Have I Been Pwned, per account: a whole vault checked at once, but not a
     /// flood.
     pub hibp: Limiter<String>,
+    /// Websites the server looks at for a change-password page, per account: sixty, one back
+    /// every two seconds.
+    pub change_password: Limiter<String>,
     /// What clients report themselves, like an export: ten an hour per account.
     pub reports: Limiter<String>,
     /// Submissions to file requests, per address: ten an hour.
@@ -177,6 +180,7 @@ impl Default for Limits {
             password: Limiter::new(10, Duration::from_secs(60)),
             mail: Limiter::new(5, Duration::from_secs(5 * 60)),
             hibp: Limiter::new(2000, Duration::from_millis(200)),
+            change_password: Limiter::new(60, Duration::from_secs(2)),
             reports: Limiter::new(10, Duration::from_secs(6 * 60)),
             file_request_uploads: Limiter::new(10, Duration::from_secs(6 * 60)),
             scim_refused: Limiter::new(30, Duration::from_secs(30)),
@@ -216,6 +220,7 @@ impl Limits {
             password: generous(),
             mail: generous(),
             hibp: generous(),
+            change_password: generous(),
             reports: generous(),
             file_request_uploads: generous(),
             scim_refused: generous(),

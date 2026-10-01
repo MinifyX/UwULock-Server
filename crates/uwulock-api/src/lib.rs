@@ -21,6 +21,7 @@ mod auth;
 mod auth_requests;
 mod blocklist;
 pub mod branding;
+pub mod breaches;
 pub mod certificate;
 mod ciphers;
 mod cors;
@@ -176,6 +177,7 @@ pub struct AppState {
     pub challenges: Arc<webauthn::Challenges>,
     /// What Have I Been Pwned answered lately.
     pub hibp: Arc<hibp::Cache>,
+    pub breaches: Arc<breaches::Breaches>,
     /// The most PBKDF2 rounds of the password hashes from Vaultwarden still waiting for a login,
     /// or 0: see [`auth::verify_login`].
     pub legacy_rounds: Arc<std::sync::atomic::AtomicU32>,
@@ -274,6 +276,7 @@ impl AppState {
             party,
             challenges: Arc::default(),
             hibp: Arc::default(),
+            breaches: Arc::default(),
             unanswerable: Arc::default(),
             uploads: Arc::default(),
             legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
@@ -388,6 +391,7 @@ pub fn router(state: AppState) -> Router {
         .merge(auth_requests::routes())
         .merge(passkeys::routes())
         .merge(hibp::routes())
+        .merge(breaches::routes())
         .merge(notifications::routes())
         .merge(organizations::routes())
         .merge(families::routes())
