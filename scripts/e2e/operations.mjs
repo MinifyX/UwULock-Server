@@ -225,6 +225,12 @@ try {
   await owner.getByText('cli 2026.9.0').waitFor();
   await checkA11y(owner, 'failed logins');
   await snap(owner, 'failed-logins');
+  // On a phone, in the light look.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.emulateMedia({ colorScheme: 'light' });
+  await snap(owner, 'failed-logins-phone');
+  await owner.setViewportSize({ width: 1280, height: 800 });
+  await owner.emulateMedia({ colorScheme: null });
   await owner.getByRole('button', { name: 'IP sperren …' }).first().click();
   const dialog = owner.locator('.modal');
   await dialog.getByRole('button', { name: 'Adresse sperren' }).click();

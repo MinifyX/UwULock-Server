@@ -89,13 +89,14 @@ export function FailedLogins() {
           'Jede abgelehnte Anmeldung der letzten 90 Tage: woher sie kam, mit welchem Gerät und welcher App, und für welches Konto. Eine Adresse, die viel probiert, lässt sich sperren.',
         )}
       </p>
-      <Segmented
-        label={t('Zeitraum')}
-        value={filter.hours ?? 0}
-        onChange={(hours) => set({ hours })}
-        options={RANGES.map((range) => ({ value: range.hours, label: t(range.label) }))}
-      />
       <FormRow>
+        <Field label={t('Zeitraum')}>
+          <Select
+            value={String(filter.hours ?? '')}
+            onChange={(hours) => set({ hours: hours ? Number(hours) : null })}
+            options={RANGES.map((range) => ({ value: String(range.hours), label: t(range.label) }))}
+          />
+        </Field>
         <TextField
           label={t('Konto')}
           type="search"
