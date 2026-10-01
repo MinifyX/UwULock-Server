@@ -6,6 +6,7 @@
  */
 
 import type { Finding, Report } from './features';
+import { webUrl } from './links';
 import { openExtras } from './requests';
 import { call } from './web/core';
 import { ApiError, request } from './web/http';
@@ -173,7 +174,8 @@ export function changePasswordPage(host: string): Promise<string | null> {
   let known = pages.get(key);
   if (!known) {
     known = request<{ url: string | null }>(`/uwu/v1/change-password/${encodeURIComponent(key)}`)
-      .then((answer) => answer.url)
+      // Only an http(s) page: a hostile or broken answer never becomes another kind of link.
+      .then((answer) => webUrl(answer.url))
       .catch(() => null);
     pages.set(key, known);
   }

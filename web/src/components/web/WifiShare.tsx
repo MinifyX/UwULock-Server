@@ -3,7 +3,7 @@ import { renderSVG } from 'uqr';
 import { revealField } from '../../lib/api';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
-import { SECURITY_LABEL } from '../../lib/items';
+import { securityLabel } from '../../lib/items';
 import { wifiQr, type WifiView } from '../../lib/wifi';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
@@ -100,7 +100,7 @@ export function WifiShare({
         <dt>{t('Netzwerkname (SSID)')}</dt>
         <dd className="mono">{wifi.ssid || '—'}</dd>
         <dt>{t('Sicherheit')}</dt>
-        <dd>{t(SECURITY_LABEL[wifi.security] ?? wifi.security) || '—'}</dd>
+        <dd>{t(securityLabel(wifi.security)) || '—'}</dd>
         {!open && (
           <>
             <dt>{t('Passwort')}</dt>

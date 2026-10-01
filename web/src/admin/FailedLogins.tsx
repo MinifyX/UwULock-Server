@@ -17,6 +17,7 @@ import {
 import { ResultLine, type Result } from '../components/web/controls';
 import {
   blockIp,
+  blockPrefill,
   failedByIp,
   failedLogins,
   geoipStatus,
@@ -553,7 +554,8 @@ export function BlockDialog({
   onClose: (blocked: boolean) => void;
 }) {
   useLanguage();
-  const [network, setNetwork] = useState(initial);
+  // An IPv6 address starts as its /64; the field stays free to change.
+  const [network, setNetwork] = useState(() => blockPrefill(initial));
   const [hours, setHours] = useState('24');
   const [reason, setReason] = useState('');
   const [result, setResult] = useState<Result>(null);
