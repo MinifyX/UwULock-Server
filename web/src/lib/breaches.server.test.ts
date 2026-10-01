@@ -23,25 +23,34 @@ const { ApiError } = await import('./web/http');
 beforeEach(() => request.mockReset());
 
 describe('change-password pages from the server', () => {
-  it('are only ever http(s) links', async () => {
-    const answers: Record<string, string> = {
+  it("only say whether there is one; the address is the login host's own", async () => {
+    const answers: Record<string, string | null> = {
       'evil.example.com': 'javascript:alert(document.domain)',
-      'data.example.com': 'data:text/html,<script>alert(1)</script>',
-      'spaced.example.com': ' JaVaScRiPt:alert(1)',
-      'good.example.com': 'https://good.example.com/account/password',
+      'phish.example.com': 'https://login.example.net/steal',
+      'none.example.com': null,
+      'good.example.com': 'https://good.example.com/.well-known/change-password',
     };
     request.mockImplementation(async (path?: string) => ({
-      url: answers[decodeURIComponent(String(path).split('/').pop()!)],
+      url: answers[decodeURIComponent(String(path).split('/').pop() ?? '')] ?? null,
     }));
-    expect(await changePasswordPage('evil.example.com')).toBeNull();
-    expect(await changePasswordPage('data.example.com')).toBeNull();
-    expect(await changePasswordPage('spaced.example.com')).toBeNull();
-    expect(await changePasswordPage('good.example.com')).toBe(
-      'https://good.example.com/account/password',
+    expect(await changePasswordPage('evil.example.com')).toBe(
+      'https://evil.example.com/.well-known/change-password',
     );
-    // A refused page falls back to the login's own https address.
-    expect(await pageToOpen({ host: 'evil.example.com', uri: null }, true)).toBe(
-      'https://evil.example.com/',
+    expect(await changePasswordPage('phish.example.com')).toBe(
+      'https://phish.example.com/.well-known/change-password',
+    );
+    expect(await changePasswordPage('none.example.com')).toBeNull();
+    expect(await changePasswordPage('good.example.com')).toBe(
+      'https://good.example.com/.well-known/change-password',
+    );
+    // What is not a plain host is never asked for, nor linked.
+    const asked = request.mock.calls.length;
+    expect(await changePasswordPage('user@bad.example.com')).toBeNull();
+    expect(await changePasswordPage('bad.example.com:8443')).toBeNull();
+    expect(request.mock.calls.length).toBe(asked);
+    // Without a page, the login's own https address.
+    expect(await pageToOpen({ host: 'none.example.com', uri: null }, true)).toBe(
+      'https://none.example.com/',
     );
   });
 });

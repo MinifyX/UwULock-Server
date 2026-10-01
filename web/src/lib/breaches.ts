@@ -6,7 +6,6 @@
  */
 
 import type { Finding, Report } from './features';
-import { webUrl } from './links';
 import { openExtras } from './requests';
 import { call } from './web/core';
 import { ApiError, request } from './web/http';
@@ -168,15 +167,31 @@ export async function checkEmails(
 
 const pages = new Map<string, Promise<string | null>>();
 
-/** The site's `/.well-known/change-password` if the server found one; else null. */
+/** `https://<host>/.well-known/change-password` for a plain host name; else null. */
+function wellKnown(host: string): string | null {
+  try {
+    const url = new URL(`https://${host}/.well-known/change-password`);
+    return url.hostname === host && !url.port && !url.username ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The site's `/.well-known/change-password` if the server found one; else null. The server's
+ * answer only says whether there is one: the address is built here from the login's own host,
+ * so a hostile server cannot send the person anywhere else (the same as the apps, CL-M3).
+ */
 export function changePasswordPage(host: string): Promise<string | null> {
   const key = host.toLowerCase();
   let known = pages.get(key);
   if (!known) {
-    known = request<{ url: string | null }>(`/uwu/v1/change-password/${encodeURIComponent(key)}`)
-      // Only an http(s) page: a hostile or broken answer never becomes another kind of link.
-      .then((answer) => webUrl(answer.url))
-      .catch(() => null);
+    const own = wellKnown(key);
+    known = own
+      ? request<{ url: string | null }>(`/uwu/v1/change-password/${encodeURIComponent(key)}`)
+          .then((answer) => (answer.url ? own : null))
+          .catch(() => null)
+      : Promise.resolve(null);
     pages.set(key, known);
   }
   return known;

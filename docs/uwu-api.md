@@ -2113,8 +2113,10 @@ only when the first ends in 2xx and the second does not.
 `url` null = no such page: clients open the login's first `http(s)` URI instead (else
 `https://{host}/`). IP addresses, local names and anything that is not a public host name are
 never asked (`url` null, 200). Kept 7 days per account and host in memory; per-account limit
-(429). Clients open the URL in a new tab / the system browser; the browser never asks the site
-beforehand.
+(429). Clients take `url` only as "there is a page" and open
+`https://{login host}/.well-known/change-password`, built from the login's own host, never the
+address the server sent (a hostile server could name any page; security review 0.7, WV-1 and
+CL-M3) — in a new tab / the system browser; the browser never asks the site beforehand.
 
 ### 15.6 What the check does not show again — `/uwu/v1/reports/health/ignored` — auth `user`
 
