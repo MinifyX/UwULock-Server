@@ -1,10 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { logout, switchAccount, unlock, type Status } from '../lib/api';
+import { logout, unlock, type Status } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { ago } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
-import { toast } from '../lib/toast';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { NyuScene } from './nyu/scenes';
 import { PasswordInput } from './PasswordInput';
@@ -13,23 +11,21 @@ type Props = {
   status: Status;
   onUnlocked: (status: Status) => void;
   onLoggedOut: () => void;
-  onAddAccount: () => void;
 };
 
 /**
  * The locked vault. The master password opens it right here, from the copy
  * on this device — no server needed; the sync follows in the background.
  *
- * With more than one account, the others are a click away: an account that is
- * still open shows its vault straight away, a locked one asks here.
+ * The web vault is this server's, for one account at a time: no other account and no other
+ * server to switch to (the desktop app has those).
  */
-export function LockScreen({ status, onUnlocked, onLoggedOut, onAddAccount }: Props) {
+export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
   useLanguage();
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
-  const others = status.accounts.filter((account) => !account.active);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -85,27 +81,6 @@ export function LockScreen({ status, onUnlocked, onLoggedOut, onAddAccount }: Pr
             {t('Abmelden')}
           </button>
         </p>
-
-        <div className="lock-accounts">
-          {others.map((account) => (
-            <button
-              key={account.id}
-              type="button"
-              className="quiet lock-account-row"
-              onClick={() =>
-                void switchAccount(account.id).catch((e) => toast(errorText(e), 'error'))
-              }
-            >
-              <Icon name={account.unlocked ? 'unlock' : 'lock'} size={14} />
-              <span>{account.label}</span>
-              <small>{account.unlocked ? t('offen') : t('gesperrt')}</small>
-            </button>
-          ))}
-          <button type="button" className="quiet lock-account-row" onClick={onAddAccount}>
-            <Icon name="plus" size={14} />
-            <span>{t('Konto hinzufügen')}</span>
-          </button>
-        </div>
       </form>
 
       {confirmLogout && (
