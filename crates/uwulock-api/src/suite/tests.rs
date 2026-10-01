@@ -366,3 +366,39 @@ async fn a_server_without_the_suite_says_so() {
     let sync = json(server.get_as(&nyu.token, "/uwu/v1/sync?include=vault,suite").await).await;
     assert!(sync["suite"].is_null() && sync["vault"].is_object());
 }
+
+#[tokio::test]
+async fn the_assistant_kinds_are_uwusshs_only() {
+    let server = TestServer::new().await;
+    server.account("nyu@example.com").await;
+    let (token, _) = suite_login(&server, "nyu@example.com", "ssh-1").await;
+    make_space(&server, &token, "ssh", SPACE_ID).await;
+    let mut config = record(R1, 0, b"c");
+    config["kind"] = json!("assist_config");
+    let mut cache = record(R2, 0, b"d");
+    cache["kind"] = json!("assist_cache");
+    let (status, answer) = code_of(push(&server, &token, vec![config, cache]).await).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(answer["accepted"].as_array().unwrap().len(), 2);
+    let page = pull(&server, &token, "since=0").await;
+    let kinds: Vec<&str> = page["records"].as_array().unwrap().iter().filter_map(|r| r["kind"].as_str()).collect();
+    assert_eq!(kinds, ["assist_config", "assist_cache"]);
+
+    // UwURDP has no assistant.
+    let response = server.form("/identity/connect/token", &suite_form("nyu@example.com", "rdp-1", "uwurdp")).await;
+    let rdp = json(response).await["access_token"].as_str().unwrap().to_string();
+    let response = server
+        .call(
+            "PUT",
+            "/uwu/v1/suite/spaces/rdp",
+            Some(&rdp),
+            json!({ "id": "3f0e0c1e-0000-4000-8000-00000000000d", "key": type2() }),
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let mut config = record(R3, 0, b"c");
+    config["kind"] = json!("assist_config");
+    let body = json!({ "schema": 2, "records": [config] });
+    let (status, body) = code_of(server.call("POST", "/uwu/v1/suite/spaces/rdp/records", Some(&rdp), body).await).await;
+    assert_eq!((status, body["code"].as_str()), (StatusCode::BAD_REQUEST, Some("invalid")));
+}

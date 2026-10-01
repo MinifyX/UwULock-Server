@@ -576,3 +576,123 @@ fn form_body<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> String 
     }
     pairs.into_iter().map(|(k, v)| format!("{}={}", encode(k), encode(v))).collect::<Vec<_>>().join("&")
 }
+
+/// The web vault's way (docs/uwu-api.md §6, "the web vault edits suite records"): logged in as
+/// the account, it makes the space and writes records with `uwulock_core::suite`, the calls its
+/// WebAssembly module makes; UwUSSH signs in afterwards, takes that space and opens them. Then
+/// the app writes, and the web vault edits on top of it, keeping every field it doesn't know and
+/// the assistant's records it never shows.
+#[tokio::test]
+async fn the_web_vault_makes_the_space_and_writes_records_the_app_opens() {
+    use uwulock_core::suite::{Envelope, Payload, Space, SpaceVault, SuiteSpace};
+
+    let (server, token) = start().await;
+    account(&server, &token).await;
+    let browser = client(&server.url, "5a0e9c1e-0000-4000-8000-00000000f001");
+    let (master, password_hash) = hash(&browser).await;
+    let LoginOutcome::LoggedIn(session) = browser.login(login(&password_hash)).await.unwrap() else {
+        panic!("a login")
+    };
+    let user_key =
+        crypto::decrypt_user_key(&master, &session.protected_user_key.clone().unwrap().parse().unwrap()).unwrap();
+    let private = session.protected_private_key.as_ref().map(|wrapped| {
+        PrivateKey::from_der(&wrapped.parse::<EncString>().unwrap().decrypt(&user_key).unwrap()).unwrap()
+    });
+    let web = App {
+        url: server.url.clone(),
+        http: reqwest::Client::new(),
+        client_id: "web",
+        space: "ssh",
+        device: "browser".into(),
+        access: session.access_token.to_string(),
+        refresh: String::new(),
+    };
+    let extras = web.extras_key(&user_key, private.as_ref()).await;
+
+    // No space yet: the web vault makes it.
+    assert!(web.spaces().await.is_empty());
+    let (vault, request) = SpaceVault::create(Space::Ssh, &extras);
+    web.ok(reqwest::Method::PUT, "/uwu/v1/suite/spaces/ssh", Some(serde_json::to_value(&request).unwrap())).await;
+    let device = 0x5eb_u32;
+    let now = 1_790_000_000_000;
+    let secret = vault.seal_new("secret", &Payload::Text("hunter2".into()), now, device).unwrap();
+    let identity = json!({ "label": "Nyu", "username": "nyu", "auth_type": "password", "key_id": null,
+        "password_secret_id": secret.id });
+    let identity = vault.seal_new("identity", &Payload::Json(identity), now, device).unwrap();
+    let host = json!({ "name": "Router", "address": "192.0.2.1", "port": 2222, "workspace": "private",
+        "position": 0, "group_id": null, "identity_id": identity.id });
+    let host = vault.seal_new("host", &Payload::Json(host), now, device).unwrap();
+    let body = vault.push_request(vec![secret.clone(), identity.clone(), host.clone()]);
+    let pushed = web
+        .ok(reqwest::Method::POST, "/uwu/v1/suite/spaces/ssh/records", Some(serde_json::to_value(&body).unwrap()))
+        .await;
+    assert_eq!(pushed["accepted"].as_array().unwrap().len(), 3, "{pushed}");
+
+    // UwUSSH takes the web vault's space and opens what it wrote.
+    let ssh = sign_in(&server.url, "5a0e9c1e-0000-4000-8000-00000000f002", SSH, None, PASSWORD).await.unwrap();
+    assert!(!ssh.made_space);
+    assert_eq!(ssh.space_id, vault.id.to_string());
+    let listed = web.spaces().await.remove(0);
+    let listed: SuiteSpace = serde_json::from_value(listed).unwrap();
+    let app = SpaceVault::open_space(&listed, &extras).unwrap();
+    assert_eq!(app.key().as_bytes(), ssh.space_key.as_bytes());
+    let (records, _) = ssh.app.pull_all(0).await;
+    let records: Vec<Envelope> = records.into_iter().map(|r| serde_json::from_value(r).unwrap()).collect();
+    let opened = |id: &str| app.open_record(records.iter().find(|r| r.id == id).unwrap()).unwrap();
+    assert_eq!(opened(&secret.id).payload, Some(Payload::Text("hunter2".into())));
+    let Some(Payload::Json(read)) = opened(&host.id).payload else { panic!("a host") };
+    assert_eq!((read["address"].as_str(), read["port"].as_u64()), (Some("192.0.2.1"), Some(2222)));
+
+    // The app writes a field the web vault doesn't know, and its assistant's settings.
+    let host_seq = records.iter().find(|r| r.id == host.id).unwrap().seq.unwrap();
+    let mut newer = read.clone();
+    newer["tags"] = json!(["lab"]);
+    let head = records.iter().find(|r| r.id == host.id).unwrap().head().unwrap();
+    let app_edit = app.seal_edit(&head, &Payload::Json(newer), now + 5, 305_419_896).unwrap();
+    let assist =
+        app.seal_new("assist_config", &Payload::Json(json!({ "provider": "" })), now + 5, 305_419_896).unwrap();
+    let answer =
+        ssh.app.push(vec![serde_json::to_value(&app_edit).unwrap(), serde_json::to_value(&assist).unwrap()]).await;
+    assert_eq!(answer["accepted"].as_array().unwrap().len(), 2, "{answer}");
+
+    // The web vault pulls, edits the host as JSON and writes it back on what the server holds.
+    let (records, _) = web.pull_all(0).await;
+    let records: Vec<Envelope> = records.into_iter().map(|r| serde_json::from_value(r).unwrap()).collect();
+    let current = records.iter().find(|r| r.id == host.id).unwrap();
+    assert!(current.seq.unwrap() > host_seq);
+    let Some(Payload::Json(mut edited)) = vault.open_record(current).unwrap().payload else { panic!("a host") };
+    edited["name"] = json!("Router (Keller)");
+    // The browser's clock is behind: the edit still sorts after the app's.
+    let web_edit = vault.seal_edit(&current.head().unwrap(), &Payload::Json(edited), now, device).unwrap();
+    assert!(web_edit.updated_at > app_edit.updated_at);
+    let body = vault.push_request(vec![web_edit.clone()]);
+    let pushed = web
+        .ok(reqwest::Method::POST, "/uwu/v1/suite/spaces/ssh/records", Some(serde_json::to_value(&body).unwrap()))
+        .await;
+    assert_eq!(pushed["accepted"][0]["id"], host.id.as_str());
+
+    let (records, _) = ssh.app.pull_all(0).await;
+    let records: Vec<Envelope> = records.into_iter().map(|r| serde_json::from_value(r).unwrap()).collect();
+    let Some(Payload::Json(now_read)) = opened_in(&app, &records, &host.id) else { panic!("a host") };
+    assert_eq!(now_read["name"], "Router (Keller)");
+    assert_eq!(now_read["tags"], json!(["lab"]), "the app's field survived the web vault's edit");
+    assert!(records.iter().any(|r| r.kind == "assist_config" && r.id == assist.id), "passed on untouched");
+
+    // Deleting the host in the web vault is a tombstone the app opens as one.
+    let current = records.iter().find(|r| r.id == host.id).unwrap();
+    let gone = vault.seal_tombstone(&current.head().unwrap(), now, device).unwrap();
+    let body = vault.push_request(vec![gone]);
+    web.ok(reqwest::Method::POST, "/uwu/v1/suite/spaces/ssh/records", Some(serde_json::to_value(&body).unwrap())).await;
+    let (records, _) = ssh.app.pull_all(0).await;
+    let records: Vec<Envelope> = records.into_iter().map(|r| serde_json::from_value(r).unwrap()).collect();
+    let tombstone = app.open_record(records.iter().find(|r| r.id == host.id).unwrap()).unwrap();
+    assert!(tombstone.deleted && tombstone.payload.is_none());
+}
+
+fn opened_in(
+    vault: &uwulock_core::suite::SpaceVault,
+    records: &[uwulock_core::suite::Envelope],
+    id: &str,
+) -> Option<uwulock_core::suite::Payload> {
+    vault.open_record(records.iter().find(|r| r.id == id).unwrap()).unwrap().payload
+}
