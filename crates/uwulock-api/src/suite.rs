@@ -51,7 +51,8 @@ pub(crate) const SPACES: [&str; 4] = ["ssh", "rdp", "mail", "generic"];
 
 /// The record kinds of a space (§6.1); none for a space there is not.
 fn kinds(space: &str) -> Option<&'static [&'static str]> {
-    const APPS: &[&str] = &[
+    // UwURDP's `EntityKind`; UwUSSH's is the same list with more at its end. Append only.
+    const RDP: &[&str] = &[
         "host",
         "group",
         "identity",
@@ -63,8 +64,24 @@ fn kinds(space: &str) -> Option<&'static [&'static str]> {
         "secret",
         "manifest",
     ];
+    const SSH: &[&str] = &[
+        "host",
+        "group",
+        "identity",
+        "key",
+        "snippet",
+        "port_forward",
+        "known_host",
+        "terminal_profile",
+        "secret",
+        "manifest",
+        // UwUSSH 0.3: the assistant's settings and its cache.
+        "assist_config",
+        "assist_cache",
+    ];
     match space {
-        "ssh" | "rdp" => Some(APPS),
+        "ssh" => Some(SSH),
+        "rdp" => Some(RDP),
         "mail" => Some(&["account", "secret", "manifest"]),
         "generic" => Some(&["item", "secret", "manifest"]),
         _ => None,

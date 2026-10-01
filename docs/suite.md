@@ -58,5 +58,16 @@ device has to log in again; the apps offer that once they have it.
 
 *Settings → Devices* shows the apps' devices with the app's name, and below them, under *Suite
 vault*, the spaces with the number of records, their size and the last change; a space can be
-deleted there (with the master password). What is in them the web vault cannot show — only the
-apps can open the records.
+deleted there (with the master password).
+
+From server 0.7.0-beta.2 on, the sidebar has the sections **SSH (UwUSSH)** and **Remote Desktop
+(UwURDP)** (while the suite vault is switched on): hosts by workspace and group, groups,
+identities, keys, snippets, port forwards and known hosts, each with a search, details and an
+editor — RDP hosts with all their settings (display, colour depth, audio, clipboard, console
+session, NLA, wallpaper, graphics pipeline, gateway and its login, drives). Passwords are shown,
+copied and changed with the generator; SSH keys are imported or made new (Ed25519, in the
+browser, optionally with a passphrase), their public half shown and the private one shown or
+downloaded. A host's command is copied, an RDP host downloaded as an `.rdp` file (no password, no
+drives), and on a computer *In UwUSSH öffnen* / *In UwURDP öffnen* opens it in the app. Deleting
+works as in the apps; an identity or a key that is still in use says where. When no app has
+synced yet, the web vault can create the space. The rules are in [uwu-api.md](uwu-api.md) §6.7.

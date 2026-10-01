@@ -12,7 +12,7 @@
   "Schlüssel für die UwU-Extras verloren": "Key for the UwU extras lost",
   "Stand: {when}": "As of {when}",
   "Suite-Tresor": "Suite vault",
-  "Was UwUSSH und UwURDP hier speichern. Öffnen können es nur die Apps; hier siehst du, wie viel es ist.": "What UwUSSH and UwURDP keep here. Only the apps can open it; here you see how much there is.",
+  "Was UwUSSH und UwURDP hier speichern; ansehen und bearbeiten kannst du es in der Seitenleiste unter UwU-Apps. Hier siehst du, wie viel es ist.": "What UwUSSH and UwURDP keep here; you see and edit it in the sidebar under UwU apps. Here you see how much there is.",
   "{app} hat sich angemeldet und kann seine Daten im Suite-Tresor lesen.": "{app} logged in and can read its data in the suite vault.",
   "{count} Einträge · {size}": "{count} entries · {size}",
   "{name} im Suite-Tresor löschen?": "Delete {name} in the suite vault?",

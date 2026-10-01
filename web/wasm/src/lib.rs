@@ -21,6 +21,7 @@ mod kdbx;
 mod keys;
 mod orgs;
 mod requests;
+mod suite;
 mod transfer;
 mod view;
 
@@ -162,6 +163,7 @@ pub fn unlock(email: &str, kdf: &str, protected_key: &str) -> Result<(), JsValue
 
 /// The vault is open with `user_key`, however it was got.
 fn unlock_with(email: &str, kdf: Kdf, protected_key: String, user_key: SymmetricKey) {
+    suite::forget_all();
     UNLOCKED.with(|cell| {
         *cell.borrow_mut() = Some(Unlocked {
             email: crypto::normalize_email(email),
@@ -186,6 +188,7 @@ pub fn lock() {
     PENDING.with(|cell| *cell.borrow_mut() = None);
     UNLOCKED.with(|cell| *cell.borrow_mut() = None);
     REQUEST.with(|cell| *cell.borrow_mut() = None);
+    suite::forget_all();
 }
 
 #[wasm_bindgen(js_name = isUnlocked)]
@@ -694,4 +697,92 @@ pub fn share_to_family(id: &str, org_id: &str, collections: &str) -> Result<Stri
 #[wasm_bindgen]
 pub fn breaches(prefix: &str, range: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&health::breaches(unlocked, prefix, range)))?)
+}
+
+// ── Suite vault (UwUSSH, UwURDP) ──────────────────────────
+
+/// Open a space as `GET /uwu/v1/suite/spaces` lists it, with the extras key (open it first).
+#[wasm_bindgen(js_name = suiteOpenSpace)]
+pub fn suite_open_space(space: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&suite::open_space(unlocked, space)?))?)
+}
+
+/// A new space, kept open: the body of `PUT /uwu/v1/suite/spaces/{space}`.
+#[wasm_bindgen(js_name = suiteCreateSpace)]
+pub fn suite_create_space(space: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&suite::create_space(unlocked, space)?))?)
+}
+
+#[wasm_bindgen(js_name = suiteForgetRecords)]
+pub fn suite_forget_records(space: &str) -> Result<(), JsValue> {
+    Ok(suite::forget_records(space)?)
+}
+
+/// Records of a pull (a JSON list of envelopes).
+#[wasm_bindgen(js_name = suiteMerge)]
+pub fn suite_merge(space: &str, envelopes: &str) -> Result<(), JsValue> {
+    Ok(suite::merge(space, envelopes)?)
+}
+
+/// What a push did; answers the ids that conflicted (JSON list).
+#[wasm_bindgen(js_name = suiteApplyPush)]
+pub fn suite_apply_push(space: &str, pushed: &str, answer: &str) -> Result<String, JsValue> {
+    Ok(json(&suite::apply_push(space, pushed, answer)?)?)
+}
+
+/// `{"records": [{id, kind, seq, updatedAt, payload?}], "unreadable": n}`.
+#[wasm_bindgen(js_name = suiteRecords)]
+pub fn suite_records(space: &str) -> Result<String, JsValue> {
+    Ok(json(&suite::records(space)?)?)
+}
+
+#[wasm_bindgen(js_name = suiteSecret)]
+pub fn suite_secret(space: &str, id: &str) -> Result<String, JsValue> {
+    Ok(json(&suite::secret(space, id)?)?)
+}
+
+/// A new record; `payload` is `{"json": {...}}` or, for a secret, `{"text": "…"}`.
+#[wasm_bindgen(js_name = suiteSealNew)]
+pub fn suite_seal_new(space: &str, kind: &str, payload: &str, now_ms: f64, device: u32) -> Result<String, JsValue> {
+    Ok(json(&suite::seal_new(space, kind, payload, now_ms as u64, device)?)?)
+}
+
+#[wasm_bindgen(js_name = suiteSealEdit)]
+pub fn suite_seal_edit(space: &str, id: &str, payload: &str, now_ms: f64, device: u32) -> Result<String, JsValue> {
+    Ok(json(&suite::seal_edit(space, id, payload, now_ms as u64, device)?)?)
+}
+
+#[wasm_bindgen(js_name = suiteSealTombstone)]
+pub fn suite_seal_tombstone(space: &str, id: &str, now_ms: f64, device: u32) -> Result<String, JsValue> {
+    Ok(json(&suite::seal_tombstone(space, id, now_ms as u64, device)?)?)
+}
+
+/// The body of a push of these envelopes (a JSON list).
+#[wasm_bindgen(js_name = suitePushRequest)]
+pub fn suite_push_request(space: &str, envelopes: &str) -> Result<String, JsValue> {
+    Ok(json(&suite::push_request(space, envelopes)?)?)
+}
+
+/// A new Ed25519 key: `{privateKey, publicKey, keyType, fingerprint}`; encrypted with a
+/// non-empty passphrase.
+#[wasm_bindgen(js_name = sshGenerateKey)]
+pub fn ssh_generate_key(comment: &str, passphrase: String) -> Result<String, JsValue> {
+    let passphrase = Zeroizing::new(passphrase);
+    Ok(json(&suite::generate_key(comment, &passphrase)?)?)
+}
+
+#[wasm_bindgen(js_name = sshInspectPrivateKey)]
+pub fn ssh_inspect_private_key(text: &str) -> Result<String, JsValue> {
+    Ok(json(&suite::inspect_private_key(text)?)?)
+}
+
+#[wasm_bindgen(js_name = sshInspectPublicKey)]
+pub fn ssh_inspect_public_key(line: &str) -> Result<String, JsValue> {
+    Ok(json(&suite::inspect_public_key(line)?)?)
+}
+
+#[wasm_bindgen(js_name = sshPassphraseOpens)]
+pub fn ssh_passphrase_opens(text: &str, passphrase: String) -> Result<bool, JsValue> {
+    let passphrase = Zeroizing::new(passphrase);
+    Ok(suite::passphrase_opens(text, &passphrase)?)
 }

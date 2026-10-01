@@ -612,13 +612,15 @@ A **space** is one app's data in one account. Spaces and the record kinds in the
 
 | Space | App | Kinds (`kind` on the wire, discriminant for the AAD) | Types named in the plan |
 | --- | --- | --- | --- |
-| `ssh` | UwUSSH | `host` 0, `group` 1, `identity` 2, `key` 3, `snippet` 4, `port_forward` 5, `known_host` 6, `terminal_profile` 7, `secret` 8, `manifest` 9 | ssh-host = `host`, ssh-key = `key` |
-| `rdp` | UwURDP | the same list as UwURDP's `uwurdp-proto` `EntityKind` (same numbers) | rdp-connection = `host` |
+| `ssh` | UwUSSH | `host` 0, `group` 1, `identity` 2, `key` 3, `snippet` 4, `port_forward` 5, `known_host` 6, `terminal_profile` 7, `secret` 8, `manifest` 9, `assist_config` 10, `assist_cache` 11 | ssh-host = `host`, ssh-key = `key` |
+| `rdp` | UwURDP | `host` 0 … `manifest` 9, the same list as UwURDP's `uwurdp-proto` `EntityKind` (no assistant kinds) | rdp-connection = `host` |
 | `mail` | UwUMail apps (reserved) | `account` 0, `secret` 8, `manifest` 9 | uwumail-account = `account` |
 | `generic` | any other UwU app | `item` 0, `secret` 8, `manifest` 9 | generic = `item` |
 
 Kinds are append-only per space; a server accepts any kind name of the table and refuses others
-with 400 `invalid`. The plaintext payloads are the apps' business (UwUSSH's `HostPayload`,
+with 400 `invalid`. `assist_config` and `assist_cache` (UwUSSH 0.3's command assistant: its
+settings, and the slots of its answer cache) are accepted from server 0.7.0-beta.2 on; an older
+server refuses them, and UwUSSH pushes them in requests of their own so that only they wait. The plaintext payloads are the apps' business (UwUSSH's `HostPayload`,
 `KeyPayload`, … unchanged). For the reserved spaces: `mail.account` is JSON with at least
 `label`, `server` (URL), `email`; `generic.item` is JSON `{ "app": "<reverse-DNS app id>",
 "label": "…", "data": {} }`.
@@ -806,7 +808,49 @@ UwUSync's database itself: the records there are sealed with keys only the apps 
 server-side import would still need the app to re-key everything.
 
 **Clients:** UwUSSH, UwURDP (backend and move), UwULock desktop and web vault (list and delete
-spaces, show suite devices).
+spaces, show suite devices; view and edit the records, §6.7).
+
+### 6.7 Editing the records outside the apps (web vault, UwULock apps)
+
+From server 0.7.0-beta.2 on, the web vault (and the UwULock apps) show and change UwUSSH's and
+UwURDP's records, in sections of their own (*SSH (UwUSSH)*, *Remote Desktop (UwURDP)*), never
+mixed into the Bitwarden items and hidden while the switch `suite` is off. They seal and open the
+records with `uwulock_core::suite` (the web vault through its WebAssembly module; the keys and
+the sealed records stay in there, a secret's content leaves it only when asked to show, copy or
+download it). Every such writer follows the apps' rules:
+
+- **Opening the space**: `GET /uwu/v1/suite/spaces`, the key opened with the extras key (§3). No
+  space yet: the writer may make it like an app (a fresh id and key, `PUT …/spaces/{space}`); 409
+  `exists` means another device was quicker, and its space is taken.
+- **Reading**: pull from `since=0` page by page, then from the cursor; `reset` drops what was read
+  and pulls from 0. Records of kinds the writer doesn't know, and `manifest` records, are kept as
+  they came and never shown or written; `assist_config` and `assist_cache` are not shown either.
+  A record that doesn't open is counted, not dropped.
+- **Writing**: an edit is a new envelope with the same id and kind, `updatedAt` =
+  `Hlc::after(record.updatedAt, now, device)` (strictly after the record's clock, not before the
+  wall clock), `baseSeq` = the record's `seq`, a fresh 24-byte nonce, the AAD of §6.2. A new
+  record has a random UUID, `baseSeq` 0 and the clock `{now, 0, device}`. `device` is a random
+  non-zero u32 kept per install — in the web vault per browser and account (local storage; one
+  per page load when the browser keeps nothing). Pushes carry `schema: 2` and `spaceId`.
+- **Payloads** are the apps' JSON (snake_case, `uwussh-proto`/`uwurdp-proto` `entities.rs`),
+  edited as JSON objects: only the fields the form changed are set, onto the record as it is at
+  that moment, so fields a newer app wrote survive. A `secret`'s payload is the raw text (a
+  password, a private key as OpenSSH/PEM/PuTTY text, a passphrase); a record points at it by id
+  (`password_secret_id`, `private_secret_id`, `passphrase_secret_id`).
+- **Deleting** is a tombstone (`deleted: true`, a sealed empty payload, the next clock), as in the
+  apps: a host takes its port forwards along; an identity or a key only goes when nothing points
+  at it any more (hosts, a group's or a gateway's login, identities using the key) — else the
+  writer lists what does — and then its secrets go with it; a group leaves its hosts without a
+  group.
+- **Conflicts**: a record in a push's `conflicts` was not written; the writer takes the server's
+  copy, says it changed elsewhere and lets the person apply their change again (never silently
+  over it). 409 `space_changed`: fetch the space, pull from 0, seal again.
+- **Live**: while a section is open the web vault keeps the realtime channel (§5) and pulls a
+  space when `changed` names it.
+- **Extras of a host**: the command (`ssh -p 2222 user@host`, for RDP `host:port`), an `.rdp` file
+  for an RDP host (without password, drive redirection off), and on desktop systems a link into
+  the app: `uwussh://connect/<host id>`, `uwurdp://connect/<host id>`. Only the record's id
+  travels; the app looks the host up (syncing first when it doesn't know it) and connects.
 
 ---
 

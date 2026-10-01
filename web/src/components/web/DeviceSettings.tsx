@@ -117,7 +117,7 @@ function SuiteSpaces() {
       <h3 className="settings-heading">{t('Suite-Tresor')}</h3>
       <p className="settings-lead">
         {t(
-          'Was UwUSSH und UwURDP hier speichern. Öffnen können es nur die Apps; hier siehst du, wie viel es ist.',
+          'Was UwUSSH und UwURDP hier speichern; ansehen und bearbeiten kannst du es in der Seitenleiste unter UwU-Apps. Hier siehst du, wie viel es ist.',
         )}
       </p>
       <ResultLine result={result} />
