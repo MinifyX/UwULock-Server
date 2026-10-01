@@ -49,6 +49,18 @@ Plain classes for what needs no component: `.form` (a form's rows with even gaps
 `.form-note`, `.form-error`, `.field-hint`, `.checks`, `.button-link`, `.settings-heading` and
 `.settings-lead`.
 
+## Theme
+
+The web vault and the admin portal are one page with one set of settings (`web/src/lib/settings.ts`,
+kept under `uwulock.settings` in the browser): the theme is *Dark* by default, like every UwU
+app, and *System* follows `prefers-color-scheme`. Both pick it in their *Appearance* dialog, and a
+change in one tab reaches the other open tabs at once (the `storage` event). Every colour comes
+from the tokens, so a view looks right in both themes without its own rules; check light and dark
+with `scripts/e2e/local.sh theme`, which also runs axe over every admin page in the light theme.
+
+Menus that belong to a button (the account card's) open with `ContextMenu`'s `anchor`: above the
+button when there is room, else below, and never over it.
+
 ## The admin portal
 
 The portal uses the vault's shell: the bar on top, the sidebar (`.nav-row`s, the account card at

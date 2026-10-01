@@ -78,6 +78,15 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   `/uwu/v1/info` and `/uwu/v1/account` say which are on. API: [docs/uwu-api.md](docs/uwu-api.md)
   §15.1–§15.7. Migration 0022 adds `health_ignores`, `breach_email_opt_ins`, `breach_email_cache`.
 
+**Small fixes in the web vault and the admin portal.**
+
+- The account menu at the foot of the sidebar opens above the account card instead of over it,
+  inside the window on a phone too, with its entries in line on the left.
+- The admin portal and the web vault share one theme setting (dark by default, as in every UwU
+  app; *System* follows the browser). A change in one tab now reaches the other open tabs at
+  once: switching the vault to *System* or *Light* no longer leaves an open admin portal dark.
+  Every admin page passes the contrast checks in the light theme; a browser test checks it.
+
 ## 0.6.0-beta.2
 
 **Tidying up after 0.6.** The admin portal is sorted into areas with tabs, and every setting says

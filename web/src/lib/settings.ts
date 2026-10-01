@@ -124,6 +124,18 @@ export function updateSettings(patch: Partial<Settings>) {
   for (const listener of listeners) listener();
 }
 
+/**
+ * Another tab of this server changed the settings (the vault and the admin portal share them):
+ * this tab takes them over at once, so both always look the same.
+ */
+function watchOtherTabs() {
+  window.addEventListener('storage', (event) => {
+    if (event.key !== KEY && event.key !== null) return;
+    current = load();
+    for (const listener of listeners) listener();
+  });
+}
+
 export function subscribeSettings(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -164,6 +176,7 @@ export function applyAppearance() {
     else delete document.documentElement.dataset.contrast;
   };
   apply();
+  watchOtherTabs();
   subscribeSettings(apply);
   darkQuery().addEventListener('change', apply);
   reducedQuery().addEventListener('change', apply);

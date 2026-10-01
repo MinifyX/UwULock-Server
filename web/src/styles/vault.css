@@ -1211,6 +1211,7 @@
 .context-menu button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--uwu-space-2);
   padding: var(--uwu-space-2) var(--uwu-space-3);
   border: 0;
