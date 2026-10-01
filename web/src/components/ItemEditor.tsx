@@ -20,7 +20,7 @@ import {
   IDENTITY_LABEL,
   KIND_LABEL,
   MATCH_LABEL,
-  SECURITY_LABEL,
+  securityLabel,
 } from '../lib/items';
 import {
   forDomainOf,
@@ -837,7 +837,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                     >
                       {SECURITIES.map((security) => (
                         <option key={security} value={security}>
-                          {t(SECURITY_LABEL[security] ?? security)}
+                          {t(securityLabel(security))}
                         </option>
                       ))}
                       {!(SECURITIES as readonly string[]).includes(form.wifi.security) && (

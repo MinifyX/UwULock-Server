@@ -256,7 +256,15 @@ fn client() -> Result<&'static reqwest::Client, String> {
             reqwest::Client::builder()
                 .tls_backend_preconfigured(tls)
                 .user_agent(concat!("UwULock-Server/", env!("CARGO_PKG_VERSION")))
-                .redirect(reqwest::redirect::Policy::limited(3))
+                .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                    if attempt.previous().len() >= 3 {
+                        attempt.error("too many redirects")
+                    } else if !redirect_ok(attempt.url()) {
+                        attempt.error("a redirect to where the server does not go")
+                    } else {
+                        attempt.follow()
+                    }
+                }))
                 .connect_timeout(Duration::from_secs(10))
                 .timeout(Duration::from_secs(15 * 60))
                 .build()
@@ -264,6 +272,20 @@ fn client() -> Result<&'static reqwest::Client, String> {
         })
         .as_ref()
         .map_err(Clone::clone)
+}
+
+/// Where DB-IP may send a download on: https only, to a public name or address — never into the
+/// local network, nor to plain http where anybody on the way could change the file.
+fn redirect_ok(url: &url::Url) -> bool {
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && match url.host() {
+            Some(url::Host::Domain(name)) => crate::icon_fetch::normalize_host(name).is_some(),
+            Some(url::Host::Ipv4(ip)) => crate::icon_fetch::public(IpAddr::V4(ip)),
+            Some(url::Host::Ipv6(ip)) => crate::icon_fetch::public(IpAddr::V6(ip)),
+            None => false,
+        }
 }
 
 /// `<base>/<name>-<month>.mmdb.gz`, unpacked and checked, in a temporary file in `dir`. Nothing
@@ -353,6 +375,25 @@ pub async fn daily(state: &AppState) {
 pub(crate) mod tests {
     use super::*;
     use serde_json::{Value, json};
+
+    #[test]
+    fn downloads_are_redirected_only_to_https_on_the_internet() {
+        for good in ["https://download.db-ip.com/free/x.gz", "https://cdn.example.com/x.gz"] {
+            assert!(redirect_ok(&url::Url::parse(good).unwrap()), "{good}");
+        }
+        for bad in [
+            "http://download.db-ip.com/free/x.gz",
+            "https://127.0.0.1/x.gz",
+            "https://[::1]/x.gz",
+            "https://192.168.1.1/x.gz",
+            "https://intranet/x.gz",
+            "https://router.local/x.gz",
+            "https://user:pw@cdn.example.com/x.gz",
+            "file:///etc/passwd",
+        ] {
+            assert!(!redirect_ok(&url::Url::parse(bad).unwrap()), "{bad}");
+        }
+    }
 
     /// A MaxMind DB with these networks and records, written the way the format is specified
     /// (<https://maxmind.github.io/MaxMind-DB/>): an IPv6 search tree with 24-bit records,

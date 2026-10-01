@@ -933,3 +933,52 @@ export async function recoveryKey(password: string): Promise<string> {
   });
   return answer.recoveryKey;
 }
+
+/**
+ * What the "block" dialog starts with for `ip`: an IPv4 address as it is; an IPv6 address as
+ * its /64 (`2001:db8:1:2::/64`), since anybody with one IPv6 address has the whole /64 to move
+ * around in. An IPv4-mapped address is its IPv4 one; a network or anything unreadable stays.
+ */
+export function blockPrefill(ip: string): string {
+  const text = ip.trim();
+  if (!text.includes(':') || text.includes('/')) return text;
+  const groups = ipv6Groups(text.replace(/%.*$/, ''));
+  if (!groups) return text;
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
+    return [groups[6]! >> 8, groups[6]! & 255, groups[7]! >> 8, groups[7]! & 255].join('.');
+  }
+  const head = groups.slice(0, 4);
+  while (head.length && head[head.length - 1] === 0) head.pop();
+  return `${head.map((g) => g.toString(16)).join(':')}::/64`;
+}
+
+/** The eight 16-bit groups of an IPv6 address, or null when it is none. */
+function ipv6Groups(text: string): number[] | null {
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const parse = (half: string): number[] | null => {
+    if (!half) return [];
+    const parts = half.split(':');
+    const out: number[] = [];
+    for (const [i, part] of parts.entries()) {
+      if (i === parts.length - 1 && part.includes('.')) {
+        const bytes = part.split('.');
+        if (bytes.length !== 4 || !bytes.every((b) => /^\d{1,3}$/.test(b) && Number(b) < 256))
+          return null;
+        const [a, b, c, d] = bytes.map(Number) as [number, number, number, number];
+        out.push((a << 8) | b, (c << 8) | d);
+      } else if (/^[0-9a-f]{1,4}$/i.test(part)) {
+        out.push(parseInt(part, 16));
+      } else {
+        return null;
+      }
+    }
+    return out;
+  };
+  const left = parse(halves[0]!);
+  const right = halves.length === 2 ? parse(halves[1]!) : [];
+  if (!left || !right) return null;
+  if (halves.length === 1) return left.length === 8 ? left : null;
+  const missing = 8 - left.length - right.length;
+  return missing >= 1 ? [...left, ...Array<number>(missing).fill(0), ...right] : null;
+}

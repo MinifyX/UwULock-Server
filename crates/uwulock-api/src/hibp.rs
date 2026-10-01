@@ -86,12 +86,12 @@ async fn fetch(base: &str, prefix: &str) -> Result<String, String> {
         .header("add-padding", "true")
         .send()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(crate::breaches::quiet)?;
     if !response.status().is_success() {
         return Err(format!("HIBP answered {}", response.status()));
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|error| error.to_string())? {
+    while let Some(chunk) = response.chunk().await.map_err(crate::breaches::quiet)? {
         if body.len() + chunk.len() > MAX_ANSWER {
             return Err("HIBP answered with far more than a range".into());
         }

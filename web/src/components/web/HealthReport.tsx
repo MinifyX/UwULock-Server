@@ -21,6 +21,7 @@ import {
   type StoredIgnores,
 } from '../../lib/breaches';
 import { errorText } from '../../lib/errors';
+import { webUrl } from '../../lib/links';
 import { currentProfile, vaultItems } from '../../lib/api';
 import {
   passwordReport,
@@ -397,10 +398,10 @@ export function HealthReport({ onOpen, onReview }: Props) {
                   </span>
                 </div>
                 <div className="detail-actions">
-                  {entry.documentation && (
+                  {webUrl(entry.documentation) && (
                     <a
                       className="button-link"
-                      href={entry.documentation}
+                      href={webUrl(entry.documentation)!}
                       target="_blank"
                       rel="noopener noreferrer"
                     >

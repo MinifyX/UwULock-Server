@@ -87,6 +87,26 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   once: switching the vault to *System* or *Light* no longer leaves an open admin portal dark.
   Every admin page passes the contrast checks in the light theme; a browser test checks it.
 
+**Security review of the new parts.** Everything new since 0.6.0-beta.2 was reviewed
+([docs/security-review-0.7.md](docs/security-review-0.7.md)): nothing critical or high, two
+medium and seven low findings, all fixed.
+
+- Merging the lists of breached sites keeps at most 100 breaches per domain, so a hostile list
+  can no longer keep the server busy for minutes (SV7-M1).
+- Failed requests to HIBP and XposedOrNot are logged without their address, which carried a
+  password's hash prefix (SV7-L1). While the breach lists cannot be fetched, requests try again
+  only every five minutes instead of each one fetching anew (SV7-L2).
+- GeoIP downloads follow redirects only to https on the internet (SV7-L3).
+- An IPv4 network written as IPv6 (`::ffff:198.51.100.0/120`) is blocked as the IPv4 network it
+  is; before, such a block was listed but not enforced, and `::ffff:0.0.0.0/96` got past the
+  size check (SV7-L4). The same holds for `adminNetworks`.
+- The web vault no longer opens the change-password address the server names: the server only
+  says whether there is a page, and the web vault opens `/.well-known/change-password` on the
+  login's own host, so a hostile server cannot send anybody to another site (WV-1, like CL-M3 in
+  the apps). 2FA guides are linked only when they are http(s), a Wi-Fi item with an odd
+  *Security* value no longer breaks its view, and *Block address* suggests the /64 of an IPv6
+  address (WV-2 to WV-4).
+
 ## 0.6.0-beta.2
 
 **Tidying up after 0.6.** The admin portal is sorted into areas with tabs, and every setting says

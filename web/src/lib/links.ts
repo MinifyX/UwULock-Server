@@ -80,3 +80,18 @@ export function hostOfUrl(url: string): string {
     return url;
   }
 }
+
+/**
+ * `url` if it is an http(s) address a link may open, else null: what a list or the server
+ * hands over (a change-password page, a 2FA guide) never becomes a `javascript:`, `data:` or
+ * other link.
+ */
+export function webUrl(url: unknown): string | null {
+  if (typeof url !== 'string') return null;
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}

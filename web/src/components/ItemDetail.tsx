@@ -20,7 +20,7 @@ import { useFeature } from '../lib/branding';
 import { errorText, maskedErrorText } from '../lib/errors';
 import { charClasses, copiedText, spacedCode, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
-import { IDENTITY_LABEL, KIND_LABEL, SECURITY_LABEL } from '../lib/items';
+import { IDENTITY_LABEL, KIND_LABEL, securityLabel } from '../lib/items';
 import {
   reloadMaskedLinks,
   STATE_LABEL,
@@ -817,11 +817,7 @@ export function ItemDetail({
                 <SecretRow id={id} field={`field:${wifi.password.index}`} label={t('Passwort')} />
               )}
               <Row label={t('Sicherheit')}>
-                {wifi.security ? (
-                  t(SECURITY_LABEL[wifi.security] ?? wifi.security)
-                ) : (
-                  <span className="muted">—</span>
-                )}
+                {wifi.security ? t(securityLabel(wifi.security)) : <span className="muted">—</span>}
               </Row>
               <Row label={t('Verstecktes Netzwerk')}>
                 <span className="bool" data-on={wifi.hidden || undefined}>

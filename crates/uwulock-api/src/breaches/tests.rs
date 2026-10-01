@@ -48,6 +48,10 @@ async fn fake_internet() -> (Upstream, Arc<Asked>) {
                     ]))
                     .into_response()
                 }
+                ("lists.example.net", "/down") => {
+                    asked.lists.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::SERVICE_UNAVAILABLE.into_response()
+                }
                 ("lists.example.net", "/xon") => {
                     asked.lists.fetch_add(1, Ordering::SeqCst);
                     Json(json!({"status": "success", "exposedBreaches": [
@@ -207,6 +211,60 @@ fn breaches_far_apart_stay_two() {
     assert_eq!(merged.len(), 2);
     let merged = merge(vec![vec![breach("hibp", "2012-06-05")], vec![breach("xon", "2012-07-01")]]);
     assert_eq!(merged.len(), 1);
+}
+
+#[test]
+fn a_hostile_list_cannot_make_merging_slow() {
+    // Every breach of both lists for one domain, none close enough to another to be the same:
+    // without a ceiling each would be compared with every other.
+    let many = |source: &str, date: &str| -> Vec<Breach> {
+        (0..MOST_BREACHES)
+            .map(|n| Breach {
+                domain: "example.com".into(),
+                title: format!("{source}{n}"),
+                date: Some(date.into()),
+                added: None,
+                records: 1,
+                passwords: false,
+                data_classes: Vec::new(),
+                sources: BTreeMap::from([(source.to_string(), format!("{source}{n}"))]),
+            })
+            .collect()
+    };
+    let started = Instant::now();
+    let merged = merge(vec![many("hibp", "2001-01-01"), many("xon", "2021-01-01")]);
+    assert_eq!(merged.len(), MOST_PER_DOMAIN);
+    assert!(started.elapsed() < Duration::from_secs(30), "{:?}", started.elapsed());
+}
+
+#[tokio::test]
+async fn sources_that_are_down_are_not_asked_again_for_every_request() {
+    let (mut upstream, asked) = fake_internet().await;
+    upstream.hibp_breaches = upstream.hibp_breaches.replace("/hibp", "/down");
+    upstream.xon_breaches = upstream.xon_breaches.replace("/xon", "/down");
+    let server = TestServer::with_settings(all_on()).await.with_upstream(upstream).with_breaches(quick());
+    let nyu = server.account("nyu@example.com").await;
+    for _ in 0..3 {
+        let response = server.get_as(&nyu.token, "/uwu/v1/breaches/sites").await;
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+    assert_eq!(asked.lists.load(Ordering::SeqCst), 2, "one try per source, then a pause");
+    // After the pause it asks again.
+    *server.state.breaches.sites.failed.lock() = None;
+    assert_eq!(server.get_as(&nyu.token, "/uwu/v1/breaches/sites").await.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(asked.lists.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn errors_never_carry_the_prefix_or_the_address() {
+    // The checked client refuses a name of the home network: the request fails, and its error
+    // names the address it went to.
+    let client = crate::icon_fetch::client(Arc::new(Upstream::default())).unwrap();
+    let error =
+        client.get("https://router.home.arpa/api/v1/pass/anon/0123456789?nyu@example.com").send().await.unwrap_err();
+    assert!(error.to_string().contains("0123456789"), "{error}");
+    let quiet = quiet(error);
+    assert!(!quiet.contains("0123456789") && !quiet.contains("nyu@"), "{quiet}");
 }
 
 #[tokio::test]

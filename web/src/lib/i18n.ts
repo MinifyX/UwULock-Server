@@ -41,7 +41,9 @@ function fill(template: string, vars?: Vars): string {
 }
 
 export function translate(lang: Language, text: string, vars?: Vars): string {
-  return fill(lang === 'en' ? (EN[text] ?? text) : text, vars);
+  // Own keys only: a text from an item (`constructor`, `__proto__`) is not a translation.
+  const english = lang === 'en' && Object.hasOwn(EN, text) ? EN[text] : undefined;
+  return fill(english ?? text, vars);
 }
 
 /** `text` (German) in the current language, placeholders filled. */

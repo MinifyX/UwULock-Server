@@ -74,3 +74,17 @@ describe('a send domain as typed', () => {
     expect(hostOfUrl('not a url')).toBe('not a url');
   });
 });
+
+describe('a link from a list or the server', () => {
+  it('is kept only when it is http(s)', async () => {
+    const { webUrl } = await import('./links');
+    expect(webUrl('https://example.com/2fa')).toBe('https://example.com/2fa');
+    expect(webUrl('http://example.com')).toBe('http://example.com/');
+    expect(webUrl('javascript:alert(1)')).toBeNull();
+    expect(webUrl('  javascript:alert(1)')).toBeNull();
+    expect(webUrl('data:text/html,x')).toBeNull();
+    expect(webUrl('/relative')).toBeNull();
+    expect(webUrl(null)).toBeNull();
+    expect(webUrl(42)).toBeNull();
+  });
+});

@@ -150,8 +150,8 @@ async fn create(
     Json(body): Json<NewBlock>,
 ) -> ApiResult<Json<Value>> {
     let network = IpNetwork::parse(&body.network).map_err(ApiError::bad)?;
-    let v4 = body.network.contains('.') && !body.network.contains(':');
-    if network.prefix() < if v4 { 8 } else { 16 } {
+    // By what the network is, not how it was written: `::ffff:0.0.0.0/96` is all of IPv4.
+    if network.prefix() < if network.is_ipv4() { 8 } else { 16 } {
         return Err(ApiError::bad("That network is too large to block; at most a /8 (IPv4) or a /16 (IPv6)."));
     }
     if network.contains(ip) {
@@ -233,10 +233,28 @@ mod tests {
             .await;
         assert_eq!(own.status(), StatusCode::BAD_REQUEST);
         assert_eq!(json(own).await["code"], "would_lock_out");
-        let huge = server
-            .call_from(lan, "POST", "/uwu/v1/admin/ip-blocks", &admin.token, json!({"network": "0.0.0.0/0"}))
+        for huge in ["0.0.0.0/0", "::ffff:0.0.0.0/96", "::ffff:10.0.0.0/100", "::/8"] {
+            let refused =
+                server.call_from(lan, "POST", "/uwu/v1/admin/ip-blocks", &admin.token, json!({"network": huge})).await;
+            assert_eq!(refused.status(), StatusCode::BAD_REQUEST, "{huge}");
+        }
+        // IPv4 written as IPv6 blocks the IPv4 network it is, and is kept as such.
+        let mapped = server
+            .call_from(
+                lan,
+                "POST",
+                "/uwu/v1/admin/ip-blocks",
+                &admin.token,
+                json!({"network": "::ffff:198.51.100.0/120"}),
+            )
             .await;
-        assert_eq!(huge.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(json(mapped).await["network"], "198.51.100.0/24");
+        let refused = server
+            .send(from("198.51.100.20", "POST", "/identity/connect/token", login_body("nyu@example.com"), true))
+            .await;
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+        server.state.store.unblock_network("198.51.100.0/24").await.unwrap();
+        server.state.blocks.reload(&server.state.store).await;
 
         let blocked = server
             .call_from(

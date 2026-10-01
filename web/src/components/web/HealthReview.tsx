@@ -76,7 +76,9 @@ export function problemTitle(kind: ProblemKind): string {
 
 function sourceNames(sources: string[]): string {
   const names: Record<string, string> = { hibp: 'Have I Been Pwned', xon: 'XposedOrNot' };
-  return sources.map((source) => names[source] ?? source).join(', ');
+  return sources
+    .map((source) => (Object.hasOwn(names, source) ? names[source] : source))
+    .join(', ');
 }
 
 export function problemDetail(problem: Problem): string {

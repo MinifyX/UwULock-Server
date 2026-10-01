@@ -100,3 +100,10 @@ export const SECURITY_LABEL: Record<string, string> = {
   'WPA2-Enterprise': 'WPA2-Enterprise',
   'WPA3-Enterprise': 'WPA3-Enterprise',
 };
+
+/**
+ * The label of a network's security, to pass to `t`: the item's own text when it is none of
+ * the known ones (another app wrote it; `constructor` or `__proto__` stay text, too).
+ */
+export const securityLabel = (security: string): string =>
+  Object.hasOwn(SECURITY_LABEL, security) ? SECURITY_LABEL[security]! : security;
