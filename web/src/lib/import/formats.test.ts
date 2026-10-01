@@ -327,7 +327,7 @@ describe('Bitwarden', () => {
     const { parsed } = await read('export.json', 'auto', bytes(text));
     expect(parsed.submit).toEqual({ format: 'json', text });
     expect(summarize(parsed).items).toEqual([
-      { name: 'Mail', type: 1, detail: 'nyu', folder: 'Privat', totp: false },
+      { name: 'Mail', type: 1, detail: 'nyu', folder: 'Privat', totp: false, wifi: false },
     ]);
     await expect(read('x.json', 'bitwarden', bytes('{"encrypted":true}'))).rejects.toThrow(
       t(

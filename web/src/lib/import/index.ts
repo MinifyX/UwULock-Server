@@ -9,7 +9,7 @@ import { N_, t } from '../i18n';
 import { readBitwardenCsv, readBitwardenJson } from './bitwarden';
 import { readAppleCsv, readChromeCsv, readFirefoxCsv } from './browsers';
 import { ImportError, parseJson, text } from './bytes';
-import { Collector } from './collect';
+import { Collector, hasWifiMarker } from './collect';
 import { CsvTable } from './csv';
 import { detect, kindOf, sourceOfZip } from './detect';
 import { openKdbx, parseXml } from './kdbx';
@@ -187,6 +187,8 @@ export type PreviewItem = {
   detail: string;
   folder: string | null;
   totp: boolean;
+  /** A Wi-Fi network: a note with UwULock's marker (docs/wifi.md). */
+  wifi: boolean;
 };
 
 export type Summary = {
@@ -195,13 +197,14 @@ export type Summary = {
   cards: number;
   identities: number;
   sshKeys: number;
+  wifi: number;
   folders: string[];
   items: PreviewItem[];
 };
 
 export function summarize(parsed: Parsed): Summary {
   const folders = new Map(parsed.data.folders.map((folder) => [folder.id, folder.name]));
-  const count = (type: ItemType) => items.filter((item) => item.type === type).length;
+  const count = (type: ItemType) => items.filter((item) => item.type === type && !item.wifi).length;
   const detail = (item: ExportItem) =>
     item.login?.username ??
     item.card?.cardholderName ??
@@ -215,6 +218,7 @@ export function summarize(parsed: Parsed): Summary {
       detail: detail(item) || '',
       folder: (item.folderId && folders.get(item.folderId)) || null,
       totp: Boolean(item.login?.totp),
+      wifi: item.type === ItemType.Note && hasWifiMarker(item),
     }));
   return {
     logins: count(ItemType.Login),
@@ -222,6 +226,7 @@ export function summarize(parsed: Parsed): Summary {
     cards: count(ItemType.Card),
     identities: count(ItemType.Identity),
     sshKeys: count(ItemType.SshKey),
+    wifi: items.filter((item) => item.wifi).length,
     folders: parsed.data.folders.map((folder) => folder.name),
     items,
   };

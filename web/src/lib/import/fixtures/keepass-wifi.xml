@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<KeePassFile>
+  <Meta></Meta>
+  <Root>
+    <Group>
+      <Name>Root</Name>
+      <Entry>
+        <String><Key>Title</Key><Value>Zuhause</Value></String>
+        <String><Key>UserName</Key><Value></Value></String>
+        <String><Key>Password</Key><Value ProtectInMemory="True">kp-wifi</Value></String>
+        <String><Key>uwulock:type</Key><Value>wifi</Value></String>
+        <String><Key>SSID</Key><Value>uwu-net</Value></String>
+        <String><Key>Security</Key><Value>WPA3</Value></String>
+        <String><Key>Hidden network</Key><Value>true</Value></String>
+        <String><Key>Router</Key><Value>http://192.0.2.1</Value></String>
+      </Entry>
+      <Entry>
+        <String><Key>Title</Key><Value>Mail</Value></String>
+        <String><Key>Password</Key><Value ProtectInMemory="True">x</Value></String>
+      </Entry>
+    </Group>
+  </Root>
+</KeePassFile>

@@ -1,0 +1,3 @@
+type,name,url,email,username,password,note,totp,createTime,modifyTime,vault
+wifi,uwu-net,,,,pp-wifi,Router im Flur,,1700000000,1700000000,Persönlich
+login,Beispiel,https://example.com,nyu@example.com,nyu,pp-pass,,,1700000000,1700000000,Persönlich

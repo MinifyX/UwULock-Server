@@ -34,3 +34,10 @@ write(
     ],
 )
 write('protonpass.zip', [('Proton Pass/data.json', read('protonpass.json'))])
+write(
+    '1password-wifi.1pux',
+    [
+        ('export.attributes', b'{"version":3,"description":"1Password Unencrypted Export"}'),
+        ('export.data', read('1password-wifi.json')),
+    ],
+)

@@ -51,6 +51,16 @@ export type ProtonExport = {
 
 const TRASHED = 2;
 
+/**
+ * Proton Pass's Wi-Fi security, a number in its export (its `WifiSecurity`: 0 unspecified,
+ * 1 WPA, 2 WPA2, 3 WPA3, 4 WEP) or, in some versions, the name.
+ */
+function wifiSecurity(value: unknown): string | null {
+  if (typeof value === 'string') return /^\d+$/.test(value) ? wifiSecurity(Number(value)) : value;
+  if (typeof value !== 'number') return null;
+  return ({ 1: 'WPA', 2: 'WPA2', 3: 'WPA3', 4: 'WEP' } as Record<number, string>)[value] ?? null;
+}
+
 /** Identity fields with a place of their own; every other one becomes a custom field. */
 const IDENTITY_KEYS = [
   'fullName',
@@ -197,6 +207,14 @@ function readItem(collector: Collector, entry: ProtonItem): ExportItem | null {
       collector.retype(item, ItemType.Note);
       sections(collector, item, content.sections);
       break;
+    case 'wifi':
+      collector.wifi(item, {
+        ssid: str('ssid'),
+        password: str('password'),
+        security: wifiSecurity(content.security),
+      });
+      sections(collector, item, content.sections);
+      break;
     default:
       return null;
   }
@@ -256,6 +274,19 @@ export function readProtonCsv(table: CsvTable, collector: Collector) {
     const type = table.get(row, 'type');
     collector.appendNote(item, table.get(row, 'note'));
     if (type === 'note') collector.retype(item, ItemType.Note);
+    if (type === 'wifi') {
+      // The CSV has the network's name only as the item's name.
+      collector.wifi(item, {
+        ssid: table.get(row, 'name'),
+        password: table.get(row, 'password'),
+        security: null,
+      });
+      for (const [name, value] of table.rest(row, [...known, ...bookkeeping])) {
+        collector.extra(item, name, value);
+      }
+      collector.add(item, vaults.size > 1 ? table.get(row, 'vault') || null : null);
+      continue;
+    }
     const email = table.get(row, 'email');
     item.login.username = some(table.get(row, 'username')) ?? some(email);
     if (item.login.username !== email && !blank(email)) collector.field(item, 'email', email);

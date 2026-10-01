@@ -1,0 +1,34 @@
+{
+  "version": "1.21.0",
+  "userId": "test-user",
+  "encrypted": false,
+  "vaults": {
+    "share-1": {
+      "name": "Persönlich",
+      "items": [
+        {
+          "itemId": "w1",
+          "shareId": "share-1",
+          "state": 1,
+          "pinned": false,
+          "data": {
+            "metadata": { "name": "Büro", "note": "Nur im 2. Stock", "itemUuid": "u1" },
+            "extraFields": [{ "fieldName": "Raum", "type": "text", "data": { "content": "2.14" } }],
+            "type": "wifi",
+            "content": { "ssid": "office-5g", "password": "pp-wifi", "security": 3 }
+          }
+        },
+        {
+          "itemId": "w2",
+          "shareId": "share-1",
+          "state": 1,
+          "data": {
+            "metadata": { "name": "Altes Netz", "note": "", "itemUuid": "u2" },
+            "type": "wifi",
+            "content": { "ssid": "legacy", "password": "wep-key", "security": 4 }
+          }
+        }
+      ]
+    }
+  }
+}

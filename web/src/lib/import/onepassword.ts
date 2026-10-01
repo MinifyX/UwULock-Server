@@ -219,8 +219,46 @@ function place(item: ExportItem, category: string | undefined, field: Field, val
   return false;
 }
 
+/**
+ * A "Wireless Router": the network (name, security, password) becomes UwULock's Wi-Fi type;
+ * the base station's name, password, address and the rest stay as fields.
+ */
+function readWirelessRouter(collector: Collector, entry: Item1pux): ExportItem {
+  const details = entry.details ?? {};
+  const overview = entry.overview ?? {};
+  const item = collector.item(ItemType.Note, overview.title);
+  item.favorite = entry.favIndex === 1;
+  const network: { ssid?: string; password?: string; security?: string } = {};
+  for (const section of details.sections ?? []) {
+    for (const field of section.fields ?? []) {
+      const v = field.value;
+      if (!v) continue;
+      const value = valueText(v);
+      if (blank(value)) continue;
+      if (field.id === 'network_name' && network.ssid === undefined) network.ssid = value;
+      else if (field.id === 'wireless_password' && network.password === undefined)
+        network.password = value;
+      else if (field.id === 'wireless_security' && network.security === undefined)
+        network.security = value;
+      else {
+        const hidden = v.concealed != null ? FieldType.Hidden : undefined;
+        collector.field(item, field.title || section.title || '', value, hidden);
+      }
+    }
+  }
+  for (const url of [overview.url, ...(overview.urls ?? []).map((u) => u.url)]) {
+    if (!blank(url)) collector.field(item, 'URL', url, FieldType.Text);
+  }
+  collector.wifi(item, network);
+  const tags = overview.tags ?? [];
+  if (tags.length) collector.extra(item, 'Tags', tags.join(', '));
+  collector.appendNote(item, details.notesPlain);
+  return item;
+}
+
 function read1puxItem(collector: Collector, entry: Item1pux): ExportItem {
   const category = entry.categoryUuid;
+  if (category === Category.WirelessRouter) return readWirelessRouter(collector, entry);
   const details = entry.details ?? {};
   const overview = entry.overview ?? {};
   const item = collector.item(itemType(category), overview.title);
@@ -410,9 +448,32 @@ export function read1PasswordCsv(table: CsvTable, collector: Collector) {
     if (item.type === ItemType.Identity && login.username && !item.identity!.username) {
       item.identity!.username = login.username;
     }
+    if (kind === 'wireless router') wirelessRouterCsv(collector, item);
     collector.add(item);
   }
   if (archived) {
     collector.warn(t('{n} archivierte Einträge kommen als normale Einträge mit.', { n: archived }));
   }
+}
+
+/**
+ * A "Wireless Router" row of an older CSV export: its "network name", "wireless security" and
+ * "wireless network password" columns (kept as fields above) become the Wi-Fi network; the
+ * row's own password is the base station's and stays a field.
+ */
+function wirelessRouterCsv(collector: Collector, item: ExportItem) {
+  const take = (...names: string[]) => {
+    const index = item.fields.findIndex((field) => names.includes(field.name.toLowerCase()));
+    if (index < 0) return null;
+    return item.fields.splice(index, 1)[0]!.value;
+  };
+  const ssid = take('network name');
+  const password = take('wireless network password', 'wireless password');
+  const security = take('wireless security');
+  const login = item.login;
+  if (login?.password) {
+    collector.field(item, t('Passwort der Basisstation'), login.password, FieldType.Hidden);
+    login.password = null;
+  }
+  collector.wifi(item, { ssid, password, security });
 }

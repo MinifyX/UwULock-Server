@@ -1,0 +1,25 @@
+{
+  "encrypted": false,
+  "folders": [],
+  "items": [
+    {
+      "type": 2,
+      "name": "Campus",
+      "notes": null,
+      "favorite": false,
+      "reprompt": 0,
+      "folderId": null,
+      "secureNote": { "type": 0 },
+      "fields": [
+        { "name": "uwulock:type", "value": "wifi", "type": 0 },
+        { "name": "SSID", "value": "campus", "type": 0 },
+        { "name": "Password", "value": "bw-wifi", "type": 1 },
+        { "name": "Security", "value": "WPA2-Enterprise", "type": 0 },
+        { "name": "Hidden network", "value": "false", "type": 2 },
+        { "name": "EAP method", "value": "PEAP", "type": 0 },
+        { "name": "Identity", "value": "nyu@example.com", "type": 0 }
+      ]
+    },
+    { "type": 2, "name": "Notiz", "notes": "Nur Text", "secureNote": { "type": 0 } }
+  ]
+}
