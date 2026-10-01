@@ -28,6 +28,9 @@ pub struct Settings {
     /// Whether the web vault's password check may ask Have I Been Pwned, through this server,
     /// whether a password was in a breach.
     pub hibp: bool,
+    /// Where the addresses of failed logins are (country, city, network), from DB-IP's free
+    /// databases downloaded once a month and looked up on this server (docs/failed-logins.md).
+    pub geoip: bool,
     /// Bitwarden's push relay, for waking the phone apps: installation id and key from
     /// bitwarden.com/host. None: the apps sync when they are opened.
     pub push: Option<uwulock_notify::relay::RelaySettings>,
@@ -284,6 +287,7 @@ impl Default for Settings {
             remember_two_factor: true,
             max_file_mb: 500,
             hibp: true,
+            geoip: true,
             push: None,
             users_may_invite: false,
             invitations_per_user: 5,

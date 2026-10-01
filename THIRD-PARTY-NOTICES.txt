@@ -12,6 +12,12 @@ asked for.
 
 All logos are trademarks of their owners. Showing one does not mean its owner endorses UwULock.
 
+The admin portal's failed logins show where an address is from DB-IP's free databases "IP to
+City Lite" and "IP to ASN Lite" (https://db-ip.com), licensed under the Creative Commons
+Attribution 4.0 International licence (https://creativecommons.org/licenses/by/4.0/):
+"IP Geolocation by DB-IP". They are not part of the binary or the image: the server downloads
+them once a month while the setting `geoip` is on (see docs/failed-logins.md), unchanged.
+
 
 ------------------------------------------------------------------------------------------------
 1. 2FA Directory

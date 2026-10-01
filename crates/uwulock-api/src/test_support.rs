@@ -53,6 +53,7 @@ impl TestServer {
             backups: dir.path().join("backups"),
             data: dir.path().to_path_buf(),
             hibp_url: hibp_url.into(),
+            geoip_url: "http://127.0.0.1:9".into(),
             login_attempts: 10,
             start_settings: settings,
             // The tests of each feature need it on; tests of the switches turn them off.
@@ -270,7 +271,7 @@ pub(crate) async fn text(response: Response<Body>) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-fn urlencode(value: &str) -> String {
+pub(crate) fn urlencode(value: &str) -> String {
     value
         .bytes()
         .map(|byte| match byte {

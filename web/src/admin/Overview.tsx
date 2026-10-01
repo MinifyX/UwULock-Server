@@ -124,6 +124,7 @@ export function Overview() {
             value={data.failedLoginsDay}
             note={t('in den letzten 24 Stunden')}
             alarm={data.failedLoginsDay > 20}
+            onOpen={() => go('/security/failed-logins')}
           />
         </div>
       </Section>
@@ -211,19 +212,36 @@ function Stat({
   value,
   note,
   alarm,
+  onOpen,
 }: {
   label: string;
   value: number;
   note?: string;
   alarm?: boolean;
+  /** A tile that leads to its own page. */
+  onOpen?: () => void;
 }) {
-  return (
-    <Card as="div" className="stat">
+  const content = (
+    <>
       <span className="stat-value" data-alarm={alarm || undefined}>
         {value.toLocaleString()}
       </span>
       <span className="stat-label">{label}</span>
       {note && <span className="stat-note">{note}</span>}
+    </>
+  );
+  if (onOpen)
+    return (
+      <button type="button" className="card stat stat-link" onClick={onOpen}>
+        {content}
+        <span className="stat-more" aria-hidden>
+          {t('Ansehen')} →
+        </span>
+      </button>
+    );
+  return (
+    <Card as="div" className="stat">
+      {content}
     </Card>
   );
 }

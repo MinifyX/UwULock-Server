@@ -2,7 +2,8 @@
 // account web.mjs made: a file request — made by its owner, filled in by somebody with nothing
 // but the link (in another browser), read and taken over into an item — the emergency sheet as a
 // PDF, backups to a folder off-site from the admin portal, with the recovery key shown once, and
-// file requests switched off in the Features tab (gone from the vault, 404 for the link) and on again.
+// file requests switched off in the Features tab (gone from the vault, 404 for the link) and on
+// again, and a refused login on the failed-logins page with an address blocked and lifted.
 //
 //   node scripts/e2e/operations.mjs <origin> <email> <password> <backup folder> [screenshot directory]
 //
@@ -193,6 +194,57 @@ try {
   await owner.getByText('„Datei-Anfragen“ ist an ✧').waitFor({ timeout: 30000 });
   const on = await fetch(`${origin}/uwu/v1/public/file-requests/${accessId}`);
   if (on.status === 404 && (await on.json().catch(() => ({}))).code === 'feature_off') throw new Error('still off');
+
+  step('a refused login on the failed-logins page, and an address blocked and lifted');
+  const refused = await fetch(`${origin}/identity/connect/token`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      'bitwarden-client-name': 'cli',
+      'bitwarden-client-version': '2026.9.0',
+    },
+    body: new URLSearchParams({
+      grant_type: 'password',
+      username: 'nobody@example.com',
+      password: 'd3Jvbmc=',
+      scope: 'api offline_access',
+      client_id: 'cli',
+      deviceType: '8',
+      deviceIdentifier: 'e2e-device',
+      deviceName: 'e2e-laptop',
+    }),
+  });
+  if (refused.status !== 400) throw new Error(`a wrong login answered ${refused.status}`);
+  await owner.goto(`${origin}/admin#/`);
+  await owner.locator('.stat-link').click();
+  await owner.getByRole('heading', { name: 'Sicherheit & Anmeldung' }).waitFor({ timeout: 30000 });
+  const row = owner.locator('tr', { hasText: 'nobody@example.com' }).first();
+  await row.getByText('Konto existiert nicht').waitFor({ timeout: 30000 });
+  await row.getByRole('button', { name: 'Details' }).click();
+  await owner.getByText('e2e-laptop').waitFor();
+  await owner.getByText('cli 2026.9.0').waitFor();
+  await checkA11y(owner, 'failed logins');
+  await snap(owner, 'failed-logins');
+  // On a phone, in the light look.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.emulateMedia({ colorScheme: 'light' });
+  await snap(owner, 'failed-logins-phone');
+  await owner.setViewportSize({ width: 1280, height: 800 });
+  await owner.emulateMedia({ colorScheme: null });
+  await owner.getByRole('button', { name: 'IP sperren …' }).first().click();
+  const dialog = owner.locator('.modal');
+  await dialog.getByRole('button', { name: 'Adresse sperren' }).click();
+  await dialog.getByText('du würdest dich selbst aussperren').waitFor({ timeout: 30000 });
+  await dialog.getByLabel('IP-Adresse oder Netz').fill('203.0.113.9');
+  await dialog.getByRole('button', { name: 'Adresse sperren' }).click();
+  await dialog.waitFor({ state: 'detached', timeout: 30000 });
+  await owner.getByRole('tab', { name: 'Gesperrte Adressen' }).click();
+  const blocked = owner.locator('tr', { hasText: '203.0.113.9' });
+  await blocked.waitFor({ timeout: 30000 });
+  await checkA11y(owner, 'blocked addresses');
+  await snap(owner, 'blocked-addresses');
+  await blocked.getByRole('button', { name: /Aufheben/ }).click();
+  await blocked.waitFor({ state: 'detached', timeout: 30000 });
 } catch (error) {
   await snap(owner, 'failed').catch(() => undefined);
   console.error(error);

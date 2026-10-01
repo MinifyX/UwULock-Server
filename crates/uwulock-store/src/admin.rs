@@ -17,6 +17,37 @@ pub struct Event {
     pub ip: Option<String>,
     pub device_type: Option<i64>,
     pub detail: Option<String>,
+    /// What the client said about itself at a login: its `User-Agent`, its name and version
+    /// (Bitwarden's `Bitwarden-Client-Name`/`-Version`), the device's name.
+    pub user_agent: Option<String>,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
+    pub device_name: Option<String>,
+    /// Why a login was refused: `password`, `unknown-account`, `disabled`, `api-key`,
+    /// `two-factor`.
+    pub reason: Option<String>,
+}
+
+/// The columns of an event, in the order [`event_row`] reads them.
+pub(crate) const EVENT_COLUMNS: &str = "id, time, kind, user_id, email, ip, device_type, detail, user_agent, \
+     client_name, client_version, device_name, reason";
+
+pub(crate) fn event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Event> {
+    Ok(Event {
+        id: row.get(0)?,
+        time: row.get(1)?,
+        kind: row.get(2)?,
+        user_id: row.get(3)?,
+        email: row.get(4)?,
+        ip: row.get(5)?,
+        device_type: row.get(6)?,
+        detail: row.get(7)?,
+        user_agent: row.get(8)?,
+        client_name: row.get(9)?,
+        client_version: row.get(10)?,
+        device_name: row.get(11)?,
+        reason: row.get(12)?,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -249,7 +280,8 @@ impl Store {
     pub async fn log_event(&self, event: Event) -> Result<()> {
         self.sqlite_write(move |tx| {
             tx.prepare_cached(
-                "INSERT INTO events (time, kind, user_id, email, ip, device_type, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO events (time, kind, user_id, email, ip, device_type, detail, user_agent, client_name, \
+                 client_version, device_name, reason) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             )?
             .execute(params![
                 if event.time.is_empty() { clock::now() } else { event.time },
@@ -258,7 +290,12 @@ impl Store {
                 event.email,
                 event.ip,
                 event.device_type,
-                event.detail
+                event.detail,
+                event.user_agent,
+                event.client_name,
+                event.client_version,
+                event.device_name,
+                event.reason
             ])
             .map(drop)
         })
@@ -268,22 +305,11 @@ impl Store {
     /// The newest events first, of one kind or all, before the event `before` (for paging).
     pub async fn events(&self, kind: Option<String>, before: Option<i64>, limit: i64) -> Result<Vec<Event>> {
         self.sqlite_read(move |conn| {
-            conn.prepare_cached(
-                "SELECT id, time, kind, user_id, email, ip, device_type, detail FROM events \
-                 WHERE (?1 IS NULL OR kind = ?1) AND (?2 IS NULL OR id < ?2) ORDER BY id DESC LIMIT ?3",
-            )?
-            .query_map(params![kind, before, limit], |row| {
-                Ok(Event {
-                    id: row.get(0)?,
-                    time: row.get(1)?,
-                    kind: row.get(2)?,
-                    user_id: row.get(3)?,
-                    email: row.get(4)?,
-                    ip: row.get(5)?,
-                    device_type: row.get(6)?,
-                    detail: row.get(7)?,
-                })
-            })?
+            conn.prepare_cached(&format!(
+                "SELECT {EVENT_COLUMNS} FROM events \
+                 WHERE (?1 IS NULL OR kind = ?1) AND (?2 IS NULL OR id < ?2) ORDER BY id DESC LIMIT ?3"
+            ))?
+            .query_map(params![kind, before, limit], event_row)?
             .collect()
         })
         .await
@@ -294,6 +320,7 @@ impl Store {
         self.sqlite_write(|tx| {
             let now = clock::now();
             tx.execute("DELETE FROM events WHERE time < ?1", [clock::in_seconds(-EVENT_DAYS * 86_400)])?;
+            tx.execute("DELETE FROM ip_blocks WHERE expires < ?1", [&now])?;
             tx.execute(
                 "DELETE FROM security_notices WHERE time < ?1",
                 [clock::in_seconds(-crate::NOTICE_DAYS * 86_400)],

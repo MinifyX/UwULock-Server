@@ -474,6 +474,17 @@ Bitwardens „Families".
   mit einer Zeile in einfachen Worten und dem empfohlenen Wert, Gefährliches abgesetzt. Gleiche
   Bausteine und gleiche Hülle wie der Web-Tresor; alte Adressen leiten weiter.
   Admin-API `GET|PUT /uwu/v1/admin/features`, auf der Kommandozeile `uwulock-server features`.
+- [x] Fehlgeschlagene Anmeldungen (0.7, `docs/failed-logins.md`): Die Kachel auf der Übersicht
+  führt zu einer eigenen Seite (Sicherheit & Anmeldung) mit Filtern (Zeitraum, Konto, IP,
+  Grund), Details je Versuch (Grund, Zielkonto mit Link oder „existiert nicht", IP mit Land,
+  Stadt und Netz, Gerät, App und Version, User-Agent), Gruppierung nach IP mit Verlauf der
+  Adresse. Logins speichern dafür User-Agent, `Bitwarden-Client-Name`/`-Version` und den
+  Gerätenamen (Migration 0019). „IP sperren" sperrt eine Adresse oder ein Netz mit Ablauf oder
+  bis zum Aufheben; gesperrte Adressen bekommen an allen Anmelde-Endpunkten 403 `ip_blocked`
+  (Liste in der Doku), die eigene Adresse lässt sich nicht sperren, `uwulock-server blocks`
+  hebt Sperren auch von der Kommandozeile auf. GeoIP lokal: DB-IP City Lite + ASN Lite
+  (CC BY 4.0), monatlich heruntergeladen nach `<data>/geoip`, abschaltbar (`geoip`), keine
+  Abfragen einzelner Adressen bei Dritten.
 
 ### 0.7 — WLAN-Einträge und ein Tresor pro Web-Tresor (Server 0.7.0-beta.1)
 

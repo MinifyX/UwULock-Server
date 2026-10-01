@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { fromLocalInput, labelsText, localInput, parseLabels, randomToken } from './admin';
+import {
+  fromLocalInput,
+  labelsText,
+  localInput,
+  parseLabels,
+  placeText,
+  randomToken,
+} from './admin';
 
 describe('Loki labels', () => {
   it('go to name=value lines and back', () => {
@@ -33,5 +40,23 @@ describe('the deadline', () => {
     expect(fromLocalInput(localInput(iso))).toBe(iso);
     expect(localInput(null)).toBe('');
     expect(fromLocalInput('')).toBeNull();
+  });
+});
+
+describe('where an address is', () => {
+  it('reads as city, country and network, with what there is', () => {
+    expect(
+      placeText({
+        city: 'Berlin',
+        country: 'DE',
+        countryName: 'Deutschland',
+        asn: 64496,
+        network: 'Example Net',
+      }),
+    ).toBe('Berlin, Deutschland · Example Net (AS64496)');
+    expect(placeText({ country: 'AT' })).toBe('AT');
+    expect(placeText({ asn: 64497 })).toBe('AS64497');
+    expect(placeText({})).toBeNull();
+    expect(placeText(null)).toBeNull();
   });
 });

@@ -29,7 +29,10 @@ describe('the admin portal map', () => {
       'sign-in',
       'master-password',
       'admin-access',
+      'failed-logins',
+      'ip-blocks',
     ]);
+    expect(locate('/security/failed-logins', areas).tab.id).toBe('failed-logins');
     // SCIM needs SSO too.
     expect(
       visibleAreas((id) => id !== 'sso')

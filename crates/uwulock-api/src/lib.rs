@@ -19,6 +19,7 @@ pub mod alerts;
 mod attachments;
 mod auth;
 mod auth_requests;
+mod blocklist;
 pub mod branding;
 pub mod certificate;
 mod ciphers;
@@ -26,11 +27,13 @@ mod cors;
 pub mod diagnosis;
 pub mod emergency;
 mod errors;
+pub mod failed_logins;
 mod families;
 pub mod features;
 pub mod file_requests;
 pub mod files;
 mod folders;
+pub mod geoip;
 mod health;
 mod hibp;
 pub mod icon_db;
@@ -119,6 +122,8 @@ pub struct ApiConfig {
     pub data: PathBuf,
     /// Have I Been Pwned's range API, which the password check asks through this server.
     pub hibp_url: String,
+    /// Where DB-IP's free GeoIP databases are downloaded from (docs/failed-logins.md).
+    pub geoip_url: String,
     /// How many logins one address may try at once.
     pub login_attempts: u32,
     /// The settings a new server starts with, until an admin saves others.
@@ -216,6 +221,10 @@ pub struct AppState {
     pub send_domains: Arc<send_domains::Registry>,
     /// Masked addresses: connects waiting for UwUMail's answer, the refresh locks.
     pub masked: Arc<masked::Masked>,
+    /// Where addresses are, from DB-IP's databases on this server.
+    pub geoip: Arc<geoip::GeoIp>,
+    /// Addresses that may not log in.
+    pub blocks: Arc<blocklist::Blocks>,
 }
 
 impl AppState {
@@ -244,6 +253,9 @@ impl AppState {
         let alerts = Arc::new(alerts::Alerts::default());
         store.set_version_rule(settings.versions.rule(features.on(Feature::Versions)));
         let icons = Arc::new(icons::Icons::new(&config.data, icon_fetch::Upstream::default()));
+        let geoip = Arc::new(geoip::GeoIp::new(&config.data));
+        let blocks = Arc::new(blocklist::Blocks::default());
+        blocks.reload(&store).await;
         if let Some(success) = offsite.status().await.last_success {
             alerts.offsite_succeeded(success.max(0) as u64);
         }
@@ -284,6 +296,8 @@ impl AppState {
             twofa: Arc::default(),
             send_domains: Arc::default(),
             masked: Arc::default(),
+            geoip,
+            blocks,
         };
         send_domains::reload(&state).await;
         branding::reload(&state).await;
@@ -387,6 +401,8 @@ pub fn router(state: AppState) -> Router {
         .merge(invitations::routes())
         .merge(notices::routes())
         .merge(admin::routes())
+        .merge(blocklist::routes())
+        .merge(failed_logins::routes())
         .merge(features::routes())
         .merge(with(alerts::routes(), Feature::AdminNotifications))
         .merge(diagnosis::routes())
@@ -432,6 +448,7 @@ pub fn router(state: AppState) -> Router {
         .layer(axum::middleware::from_fn_with_state(state.clone(), cors::cors))
         .layer(axum::middleware::from_fn_with_state(state.clone(), send_hosts::guard))
         .layer(axum::middleware::from_fn_with_state(state.clone(), networks::guard))
+        .layer(axum::middleware::from_fn_with_state(state.clone(), blocklist::guard))
         .layer(axum::middleware::from_fn_with_state(state.clone(), metrics::track))
         .with_state(state)
         // A vault is JSON, and JSON shrinks to a fraction of itself. Clients ask for gzip; brotli

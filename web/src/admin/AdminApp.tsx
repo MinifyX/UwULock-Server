@@ -24,10 +24,12 @@ import { ComfortSettings } from './ComfortSettings';
 import { Diagnosis } from './Diagnosis';
 import { SaveBar, SettingsProvider } from './draft';
 import { Events } from './Events';
+import { FailedLogins } from './FailedLogins';
 import { Families } from './Families';
 import { FamilySettings } from './FamilySettings';
 import { Features } from './Features';
 import { Invitations } from './Invitations';
+import { IpBlocks } from './IpBlocks';
 import { Logs } from './Logs';
 import { MaskedServerSettings } from './MaskedServerSettings';
 import { Notifications } from './Notifications';
@@ -71,6 +73,10 @@ function content(tab: TabId, me: string, info: AccountInfo) {
       return <MasterPasswordTab />;
     case 'admin-access':
       return <AdminAccessTab />;
+    case 'failed-logins':
+      return <FailedLogins />;
+    case 'ip-blocks':
+      return <IpBlocks />;
     case 'sso':
       return <SsoProviderTab />;
     case 'sso-rules':

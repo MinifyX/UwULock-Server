@@ -2908,6 +2908,18 @@ jobs, send domains) and sends the realtime `info` message (§5).
 `uwulock-server features [list | on <id>… | off <id>…]` does the same on the command line, and
 `UWULOCK_FEATURES` (`all`, `none` or a list) is what a server starts with until the first switch.
 
+### 21.13 Failed logins, blocked addresses, GeoIP
+
+[failed-logins.md](failed-logins.md) has the details. `GET /uwu/v1/admin/failed-logins` (filters
+`hours`, `user`, `ip`, `reason`, `all`, paging with `before`/`limit`) lists refused logins with
+their reason, the account (or `null` when none exists), the client (`deviceName`, `deviceType`,
+`clientName`, `clientVersion`, `userAgent`) and `place` from the server's GeoIP databases;
+`…/failed-logins/by-ip` groups them per address. `GET|POST /uwu/v1/admin/ip-blocks` and
+`DELETE /uwu/v1/admin/ip-blocks/{id}` keep the blocked addresses; a blocked address gets 403
+`ip_blocked` from every login endpoint. `GET /uwu/v1/admin/geoip` and `POST /uwu/v1/admin/geoip/update`
+are the databases' state and a download now. The setting `geoip` (§21.1, default `true`) switches
+GeoIP on or off. `GET /uwu/v1/admin/events` stays as it is.
+
 ---
 
 ## 22. Metrics

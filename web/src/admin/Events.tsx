@@ -26,6 +26,16 @@ function detailText(kind: string, detail: string | null): string | null {
       (m) => t('Einladung für {email} zurückgezogen', { email: m[1]! }),
     ],
     [/^changed the settings$/, () => t('Einstellungen geändert')],
+    [
+      /^blocked (\S+) until lifted$/,
+      (m) => t('{ip} gesperrt, bis die Sperre aufgehoben wird', { ip: m[1]! }),
+    ],
+    [
+      /^blocked (\S+) for (\d+) hours$/,
+      (m) => t('{ip} für {n} Stunden gesperrt', { ip: m[1]!, n: m[2]! }),
+    ],
+    [/^lifted the block of (\S+)$/, (m) => t('Sperre von {ip} aufgehoben', { ip: m[1]! })],
+    [/^asked for the GeoIP databases$/, () => t('GeoIP-Datenbanken angefordert')],
     [/^wrote the backup (\S+)$/, (m) => t('Backup {name} geschrieben', { name: m[1]! })],
     [/^downloaded the backup (\S+)$/, (m) => t('Backup {name} heruntergeladen', { name: m[1]! })],
     [/^deleted the account (\S+)$/, (m) => t('Konto {email} gelöscht', { email: m[1]! })],

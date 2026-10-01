@@ -648,7 +648,9 @@ mod tests {
         assert_eq!(run.status(), StatusCode::ACCEPTED);
         let mut status = json(server.get_as(&admin.token, path).await).await;
         for _ in 0..500 {
-            if status["status"]["lastSuccess"].is_string() || status["status"]["lastError"].is_string() {
+            // The metric's time is set right after the status: wait for both.
+            let done = status["status"]["lastSuccess"].is_string() && server.state.alerts.offsite_success().is_some();
+            if done || status["status"]["lastError"].is_string() {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;

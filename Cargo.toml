@@ -42,6 +42,11 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 # Mail over SMTP, TLS by rustls with `ring` like everything else here.
 lettre = { version = "0.11", default-features = false, features = ["builder", "hostname", "pool", "smtp-transport", "tokio1-rustls-tls"] }
 libc = "0.2"
+# GeoIP for the failed logins: DB-IP's databases in MaxMind's format, mapped from disk rather
+# than read into memory (the city database is about 130 MB). Downloads come packed with gzip.
+flate2 = "1"
+maxminddb = { version = "0.32", features = ["mmap"] }
+memmap2 = "0.9"
 parking_lot = "0.12"
 # Website icons: the registrable domain above a host (`example.com` for `account.example.com`), by
 # the Public Suffix List compiled in — nothing is fetched for it.
