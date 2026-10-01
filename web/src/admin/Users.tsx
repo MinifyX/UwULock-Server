@@ -13,6 +13,7 @@ import {
 import { errorText } from '../lib/errors';
 import { ago, bytes, seconds, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
+import { useRoute } from '../lib/route';
 import { toast } from '../lib/toast';
 
 type Confirm = { user: User; action: UserAction | 'delete' } | null;
@@ -21,7 +22,10 @@ type Confirm = { user: User; action: UserAction | 'delete' } | null;
 export function Users({ me }: { me: string }) {
   useLanguage();
   const [list, setList] = useState<User[] | null>(null);
-  const [filter, setFilter] = useState('');
+  // `#/users?q=…`: the failed logins link to an account this way.
+  const asked = useRoute().query.get('q') ?? '';
+  const [filter, setFilter] = useState(asked);
+  useEffect(() => setFilter(asked), [asked]);
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
   const load = useCallback(() => {

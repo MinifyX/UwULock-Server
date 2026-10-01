@@ -17,6 +17,8 @@ export type TabId =
   | 'sign-in'
   | 'master-password'
   | 'admin-access'
+  | 'failed-logins'
+  | 'ip-blocks'
   | 'sso'
   | 'sso-rules'
   | 'scim'
@@ -77,13 +79,19 @@ export const AREAS: Area[] = [
     id: 'security',
     label: N_('Sicherheit & Anmeldung'),
     lead: N_(
-      'Wie sich Konten anmelden, wie stark Master-Passwörter sein müssen, und wer ins Admin-Portal kommt.',
+      'Wie sich Konten anmelden, wie stark Master-Passwörter sein müssen, wer ins Admin-Portal kommt, und wer es vergeblich versucht.',
     ),
     icon: 'shield',
     tabs: [
       { id: 'sign-in', path: '/security', label: N_('Anmeldung') },
       { id: 'master-password', path: '/security/master-password', label: N_('Master-Passwort') },
       { id: 'admin-access', path: '/security/admin-access', label: N_('Admin-Portal') },
+      {
+        id: 'failed-logins',
+        path: '/security/failed-logins',
+        label: N_('Fehlgeschlagene Anmeldungen'),
+      },
+      { id: 'ip-blocks', path: '/security/blocked', label: N_('Gesperrte Adressen') },
       { id: 'sso', path: '/security/sso', label: N_('SSO-Anbieter'), needs: ['sso'] },
       { id: 'sso-rules', path: '/security/sso-rules', label: N_('SSO-Regeln'), needs: ['sso'] },
       { id: 'scim', path: '/security/scim', label: N_('SCIM'), needs: ['sso', 'scim'] },

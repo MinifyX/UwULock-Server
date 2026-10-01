@@ -39,6 +39,7 @@ pub async fn app_state(config: &Config, store: Store, logs: Arc<LogBuffer>) -> R
         backups: config.backups(),
         data: config.data_dir.clone(),
         hibp_url: "https://api.pwnedpasswords.com".into(),
+        geoip_url: "https://download.db-ip.com/free".into(),
         login_attempts: config.login_attempts,
         start_settings: config.start_settings.clone(),
         start_features: config.start_features.clone(),
@@ -193,7 +194,7 @@ fn spawn_watch(state: AppState) {
 /// Once a day: a backup, and the old ones swept away — backups, events, codes, invitations and
 /// sessions that ran out, items that were in the trash for 30 days, Sends past their deletion
 /// date, files nothing claims any more, versions past their time, the delta sync's tombstones
-/// after 90 days; the icon library's index again.
+/// after 90 days; the icon library's index again; the GeoIP databases of a new month.
 /// Every hour: emergency access whose wait is over, reminders that became due, and the day's
 /// numbers for the admin portal.
 pub fn spawn_maintenance(config: Config, state: AppState) {
@@ -232,6 +233,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             }
             uwulock_api::icons::daily(&state).await;
             uwulock_api::reports::daily(&state).await;
+            uwulock_api::geoip::daily(&state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");

@@ -396,6 +396,35 @@ a {
   color: var(--uwu-muted);
 }
 
+/* A tile that leads to its own page (failed logins): the whole card is the button. */
+.stat-link {
+  justify-items: start;
+  min-height: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.stat-link:hover:not(:disabled) {
+  background: var(--uwu-surface);
+  border-color: var(--uwu-pink);
+}
+
+.stat-more {
+  font-size: var(--uwu-text-sm);
+  font-weight: 600;
+  color: var(--uwu-pink-ink);
+}
+
+/* The details of a row: label and value side by side, inside the row's detail cell. */
+.row-detail .row-fact-list {
+  margin: 0;
+  border: 1px solid var(--uwu-hairline);
+  border-radius: var(--uwu-radius-card);
+  background: var(--uwu-surface);
+}
+
 .facts {
   display: grid;
   margin: calc(-1 * var(--uwu-card-pad-y)) calc(-1 * var(--uwu-card-pad-x));

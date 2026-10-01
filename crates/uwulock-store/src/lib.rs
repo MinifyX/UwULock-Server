@@ -19,6 +19,7 @@ pub mod clock;
 pub mod emergency;
 pub mod file_requests;
 pub mod icons;
+pub mod logins;
 pub mod masked;
 mod migrate;
 mod migrations;
@@ -50,6 +51,7 @@ pub use backup::{SERVER_SECRETS, forget_secrets_in, restore, schema_of, setting_
 pub use emergency::EmergencyAccess;
 pub use file_requests::{ExtrasKey, FileRequest, FileRequestSummary, RequestFile, Submission};
 pub use icons::OwnIcon;
+pub use logins::{IpBlock, IpGroup, LoginFilter};
 pub use migrate::{Migration, MovedDevice, MovedTwoFactor, MovedUser};
 pub use migrations::SCHEMA_VERSION;
 pub use notices::{Channel, NOTICE_DAYS, Notice};

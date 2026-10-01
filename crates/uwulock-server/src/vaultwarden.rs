@@ -1189,6 +1189,7 @@ mod tests {
             backups: target.path().join("backups"),
             data: target.path().to_path_buf(),
             hibp_url: "http://127.0.0.1:9".into(),
+            geoip_url: "http://127.0.0.1:9".into(),
             login_attempts: 10,
             start_settings: uwulock_api::Settings::default(),
             start_features: uwulock_api::Features::all(),

@@ -188,6 +188,8 @@ export type Settings = {
   rememberTwoFactor: boolean;
   maxFileMb: number;
   hibp: boolean;
+  /** Where the addresses of failed logins are, from DB-IP's databases on the server. */
+  geoip: boolean;
   push: Push | null;
   usersMayInvite: boolean;
   invitationsPerUser: number;
@@ -289,6 +291,100 @@ export type Event = {
   ip: string | null;
   deviceType: string | null;
   detail: string | null;
+};
+
+/** Where an address is, from the GeoIP databases on the server. */
+export type Place = {
+  country?: string;
+  countryName?: string;
+  region?: string;
+  city?: string;
+  asn?: number;
+  network?: string;
+};
+
+/** Where an address is, in one line: "Berlin, Deutschland · Example Net (AS64496)". */
+export function placeText(place: Place | null | undefined): string | null {
+  if (!place) return null;
+  const where = [place.city, place.countryName ?? place.country].filter(Boolean).join(', ');
+  const network = place.network
+    ? `${place.network}${place.asn ? ` (AS${place.asn})` : ''}`
+    : place.asn
+      ? `AS${place.asn}`
+      : '';
+  return [where, network].filter(Boolean).join(' · ') || null;
+}
+
+export type FailedReason = 'password' | 'unknown-account' | 'disabled' | 'api-key' | 'two-factor';
+
+/** One login attempt: refused, or (in an address's history) one that worked. */
+export type LoginAttempt = {
+  id: number;
+  time: string;
+  kind: string;
+  reason: FailedReason | null;
+  /** The address that was typed. */
+  email: string | null;
+  /** The account it was for, while it is there; null: no such account. */
+  account: { id: string; email: string } | null;
+  ip: string | null;
+  place: Place | null;
+  deviceType: string | null;
+  deviceName: string | null;
+  userAgent: string | null;
+  clientName: string | null;
+  clientVersion: string | null;
+  detail: string | null;
+};
+
+export type LoginFilter = {
+  hours: number | null;
+  user: string;
+  ip: string;
+  reason: FailedReason | '';
+  /** The logins that worked too. */
+  all?: boolean;
+};
+
+export type IpGroup = {
+  ip: string;
+  attempts: number;
+  first: string;
+  last: string;
+  targets: number;
+  unknown: number;
+  emails: string[];
+  logins: number;
+  place: Place | null;
+  blocked: boolean;
+};
+
+export type IpBlock = {
+  id: number;
+  network: string;
+  reason: string;
+  created: string;
+  expires: string | null;
+  createdBy: string | null;
+  place: Place | null;
+};
+
+export type GeoIpStatus = {
+  enabled: boolean;
+  ready: boolean;
+  month: string | null;
+  cityBytes: number;
+  asnBytes: number;
+  attempted: string | null;
+  error: string | null;
+  updating: boolean;
+  source: {
+    name: string;
+    url: string;
+    license: string;
+    licenseUrl: string;
+    attribution: string;
+  };
 };
 
 export type LogLine = { seq: number; time: string; level: string; target: string; message: string };
@@ -429,6 +525,32 @@ export const events = (kind: string | null, before: number | null) => {
   if (before) query.set('before', String(before));
   return request<Event[]>(`${base}/events?${query}`);
 };
+function loginQuery(filter: LoginFilter): URLSearchParams {
+  const query = new URLSearchParams();
+  if (filter.hours) query.set('hours', String(filter.hours));
+  if (filter.user.trim()) query.set('user', filter.user.trim());
+  if (filter.ip.trim()) query.set('ip', filter.ip.trim());
+  if (filter.reason) query.set('reason', filter.reason);
+  if (filter.all) query.set('all', 'true');
+  return query;
+}
+export const failedLogins = (filter: LoginFilter, before: number | null) => {
+  const query = loginQuery(filter);
+  query.set('limit', '100');
+  if (before) query.set('before', String(before));
+  return request<{ attempts: LoginAttempt[]; more: boolean; geoip: boolean }>(
+    `${base}/failed-logins?${query}`,
+  );
+};
+export const failedByIp = (filter: LoginFilter) =>
+  request<{ groups: IpGroup[] }>(`${base}/failed-logins/by-ip?${loginQuery(filter)}`);
+export const ipBlocks = () =>
+  request<{ blocks: IpBlock[]; yourAddress: string }>(`${base}/ip-blocks`);
+export const blockIp = (network: string, reason: string, hours: number | null) =>
+  request<IpBlock>(`${base}/ip-blocks`, { body: { network, reason, hours } });
+export const unblockIp = (id: number) => request(`${base}/ip-blocks/${id}`, { method: 'DELETE' });
+export const geoipStatus = () => request<GeoIpStatus>(`${base}/geoip`);
+export const updateGeoip = () => request(`${base}/geoip/update`, { body: {} });
 export const logs = (after: number, level: string) =>
   request<LogLine[]>(`${base}/logs?after=${after}&level=${encodeURIComponent(level)}&limit=1000`);
 export const backups = () => request<Backup[]>(`${base}/backups`);

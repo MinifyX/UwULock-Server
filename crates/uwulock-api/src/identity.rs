@@ -64,22 +64,8 @@ async fn token(
     if send_host.is_some() && form.get("granttype") != Some("send_access") {
         return Err(ApiError::bad("Only Sends can be opened on this address."));
     }
-    let (grant, result) = match form.get("granttype") {
-        Some("password") => ("password", password_login(&state, ip, &headers, &form).await),
-        Some("refresh_token") => ("refresh_token", refresh(&state, ip, &form).await),
-        Some("client_credentials") => ("client_credentials", api_key_login(&state, ip, &form).await),
-        Some("webauthn") => ("webauthn", crate::passkeys::grant(&state, ip, &form).await),
-        Some("authorization_code") => ("authorization_code", crate::sso::grant(&state, ip, &headers, &form).await),
-        Some("send_access") => {
-            let proof = crate::sends::GrantProof {
-                password: form.get("passwordhashb64"),
-                email: form.get("email"),
-                otp: form.get("otp"),
-            };
-            ("send_access", crate::sends::grant(&state, ip, &headers, form.get("sendid"), proof).await)
-        }
-        _ => return Err(ApiError::bad("Invalid type")),
-    };
+    let client = LoginClient::new(&headers, &form);
+    let (grant, result) = CLIENT.scope(client, grant(&state, ip, &headers, &form)).await?;
     let outcome = match &result {
         Ok(_) => "success",
         Err(error) if error.message().contains("\"TwoFactorProviders\"") => "two_factor",
@@ -87,6 +73,72 @@ async fn token(
     };
     state.metrics.login(grant, outcome);
     result
+}
+
+/// The grant a token request asks for, and what came of it.
+async fn grant(
+    state: &AppState,
+    ip: std::net::IpAddr,
+    headers: &HeaderMap,
+    form: &TokenForm,
+) -> ApiResult<(&'static str, ApiResult<Response>)> {
+    Ok(match form.get("granttype") {
+        Some("password") => ("password", password_login(state, ip, headers, form).await),
+        Some("refresh_token") => ("refresh_token", refresh(state, ip, form).await),
+        Some("client_credentials") => ("client_credentials", api_key_login(state, ip, form).await),
+        Some("webauthn") => ("webauthn", crate::passkeys::grant(state, ip, form).await),
+        Some("authorization_code") => ("authorization_code", crate::sso::grant(state, ip, headers, form).await),
+        Some("send_access") => {
+            let proof = crate::sends::GrantProof {
+                password: form.get("passwordhashb64"),
+                email: form.get("email"),
+                otp: form.get("otp"),
+            };
+            ("send_access", crate::sends::grant(state, ip, headers, form.get("sendid"), proof).await)
+        }
+        _ => return Err(ApiError::bad("Invalid type")),
+    })
+}
+
+tokio::task_local! {
+    /// The client of the token request being answered, for the events [`log`] writes: set once
+    /// in [`token`], so every grant (password, API key, passkey, SSO) has it without passing it
+    /// along.
+    static CLIENT: LoginClient;
+}
+
+/// What a client says about itself at a login, cut to lengths worth keeping.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct LoginClient {
+    pub user_agent: Option<String>,
+    /// Bitwarden's `Bitwarden-Client-Name` (`web`, `browser`, `desktop`, `mobile`, `cli`), else
+    /// the token request's `client_id`.
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub device_name: Option<String>,
+}
+
+impl LoginClient {
+    pub(crate) fn new(headers: &HeaderMap, form: &TokenForm) -> Self {
+        let header = |name: &str, most: usize| {
+            headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .map(|text| clip(text, most))
+                .filter(|text| !text.is_empty())
+        };
+        LoginClient {
+            user_agent: header("user-agent", 300),
+            name: header("bitwarden-client-name", 40).or_else(|| form.get("clientid").map(|id| clip(id, 40))),
+            version: header("bitwarden-client-version", 40),
+            device_name: form.get("devicename").map(|name| clip(name, 128)),
+        }
+    }
+}
+
+/// `text` without control characters, at most `most` characters long.
+fn clip(text: &str, most: usize) -> String {
+    text.chars().filter(|char| !char.is_control()).take(most).collect::<String>().trim().to_string()
 }
 
 async fn password_login(
@@ -491,6 +543,15 @@ pub(crate) async fn log(
     device_type: i64,
     detail: &str,
 ) {
+    let client = CLIENT.try_with(Clone::clone).unwrap_or_default();
+    let reason = match (kind, detail) {
+        ("two-factor-failed", _) => Some("two-factor"),
+        ("login-failed", "account disabled") => Some("disabled"),
+        ("login-failed", "wrong API key") => Some("api-key"),
+        ("login-failed", _) if user.is_none() => Some("unknown-account"),
+        ("login-failed", _) => Some("password"),
+        _ => None,
+    };
     let event = Event {
         kind: kind.into(),
         user_id: user.map(|user| user.id.clone()),
@@ -498,6 +559,11 @@ pub(crate) async fn log(
         ip: Some(ip.to_string()),
         device_type: Some(device_type),
         detail: Some(detail.chars().take(200).collect()),
+        user_agent: client.user_agent,
+        client_name: client.name,
+        client_version: client.version,
+        device_name: client.device_name,
+        reason: reason.map(Into::into),
         ..Event::default()
     };
     if let Err(error) = state.store.log_event(event).await {

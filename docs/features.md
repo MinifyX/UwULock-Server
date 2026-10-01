@@ -17,7 +17,9 @@ These are never switched off, so Bitwarden's apps keep working unchanged:
   security notices.
 
 Website icons (`icons.automatic`) and the check against Have I Been Pwned (`hibp`) keep their own
-settings under *Settings*; metrics and log shipping are configured in `.env`.
+settings under *Settings*; metrics and log shipping are configured in `.env`. The failed logins
+page and blocking addresses are always there; their GeoIP (`geoip`, on by default) is a setting
+on that page ([failed-logins.md](failed-logins.md)).
 
 ## The switches
 

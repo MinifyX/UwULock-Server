@@ -153,7 +153,6 @@
   "Wie der Server mit dem Mailserver spricht. Der Port stellt sich passend ein.": "How the server talks to the mail server. The port adjusts to match.",
   "Wie groß eine Datei sein darf, und wie viel ein Konto insgesamt ablegt.": "How large a file may be, and how much one account stores in total.",
   "Wie schwer es zu erraten ist, als Stufe von 0 bis 4 (gemessen mit zxcvbn).": "How hard it is to guess, as a level from 0 to 4 (measured with zxcvbn).",
-  "Wie sich Konten anmelden, wie stark Master-Passwörter sein müssen, und wer ins Admin-Portal kommt.": "How accounts log in, how strong master passwords must be, and who gets into the admin portal.",
   "Wochen": "weeks",
   "Wohin": "Where to",
   "Wohin der Server meldet": "Where the server reports",

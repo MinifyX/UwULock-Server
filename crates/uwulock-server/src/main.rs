@@ -42,6 +42,15 @@ enum FeaturesAction {
 }
 
 #[derive(Subcommand)]
+enum BlocksAction {
+    /// The addresses that may not log in, and until when.
+    List,
+    /// Lift the block of an address or network, written as the list shows it. A running server
+    /// takes it over within seconds.
+    Remove { network: String },
+}
+
+#[derive(Subcommand)]
 enum BackupAction {
     /// Back up to the other system now, with the settings of the admin portal.
     Offsite,
@@ -146,6 +155,12 @@ enum Command {
     Features {
         #[command(subcommand)]
         action: Option<FeaturesAction>,
+    },
+    /// The addresses blocked from logging in (docs/failed-logins.md), and the way to lift a
+    /// block — also one an admin shut themselves out with.
+    Blocks {
+        #[command(subcommand)]
+        action: Option<BlocksAction>,
     },
     /// Move in from Vaultwarden: accounts, vaults, devices, two-step login, attachments, Sends,
     /// emergency access and organisations, from its data directory (`db.sqlite3` and the files
@@ -281,6 +296,7 @@ fn main() -> Result<(), String> {
         }),
         Command::Settings { action } => runtime()?.block_on(settings(config, action)),
         Command::Features { action } => runtime()?.block_on(features(config, action.unwrap_or(FeaturesAction::List))),
+        Command::Blocks { action } => runtime()?.block_on(blocks(config, action.unwrap_or(BlocksAction::List))),
         Command::ImportVaultwarden { path, dry_run, admins } => {
             runtime()?.block_on(import_vaultwarden(config, path, dry_run, admins))
         }
@@ -309,6 +325,36 @@ async fn invite(
         println!("Pass this link on — it is the only way to register with this invitation:");
     }
     println!("{}", invited.link);
+    Ok(())
+}
+
+/// `uwulock-server blocks [list] | blocks remove <network>`.
+async fn blocks(config: Config, action: BlocksAction) -> Result<(), String> {
+    let store = uwulock_server::open_store(&config)?;
+    match action {
+        BlocksAction::List => {
+            let blocks = store.ip_blocks().await.map_err(|error| error.to_string())?;
+            if blocks.is_empty() {
+                println!("No address is blocked.");
+            }
+            for block in blocks {
+                let until = block.expires.as_deref().unwrap_or("lifted");
+                let reason = if block.reason.is_empty() { String::new() } else { format!(" — {}", block.reason) };
+                println!("{}  until {until}{reason}", block.network);
+            }
+        }
+        BlocksAction::Remove { network } => {
+            // Written the way the server keeps it: `203.0.113.7/32` is `203.0.113.7`.
+            let network = uwulock_api::networks::IpNetwork::parse(&network)
+                .map(|parsed| parsed.to_string())
+                .unwrap_or_else(|_| network.trim().to_string());
+            if store.unblock_network(&network).await.map_err(|error| error.to_string())? {
+                println!("The block of {network} is lifted.");
+            } else {
+                return Err(format!("{network} is not blocked (see `uwulock-server blocks`)."));
+            }
+        }
+    }
     Ok(())
 }
 

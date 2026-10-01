@@ -27,6 +27,31 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   renaming), which it had from the desktop app and which did nothing: the web vault opens this
   server's vault, one account at a time. The menu now has *Lock* and *Log out*.
 
+**Failed logins.**
+
+- The overview's tile "Failed logins" leads to a page of its own (*Security & sign-in → Failed
+  logins*): every refused login of the 90 days with its reason (wrong password, no such account,
+  account disabled, wrong API key, wrong second step), the account it was for (with a link to it,
+  or "does not exist"), the IP address with country, city and network, the device, the app and
+  its version, and the user agent. Filters for the time range, the account, the address (also
+  `203.0.113.*`) and the reason; grouped by address with how many accounts were tried; the whole
+  history of an address, logins that worked included ([docs/failed-logins.md](docs/failed-logins.md)).
+- Logins now keep what the client said about itself: `User-Agent`, `Bitwarden-Client-Name` and
+  `-Version` (or the `client_id`), and the device's name — refused ones and those that worked.
+- **Blocking addresses.** "Block IP" blocks an address or a network for an hour up to 30 days, or
+  until lifted; *Security & sign-in → Blocked addresses* lists and lifts the blocks. A blocked
+  address gets 403 `ip_blocked` from every login endpoint — the token endpoint with all its
+  grants, the prelogin, registering, the password hint, the second step's mail, passkey and SSO
+  starts, "log in with a device" — so also in the web vault and the admin portal. The portal
+  will not block the admin's own address. `uwulock-server blocks` lists the blocks on the command
+  line, `uwulock-server blocks remove <address>` lifts one.
+- **GeoIP on the server.** Where an address is comes from DB-IP's free City Lite and ASN Lite
+  databases (CC BY 4.0), which the server downloads once a month into `<data>/geoip` (about
+  130 MB) and looks addresses up in — no address is sent anywhere. The setting `geoip` (on by
+  default) switches it off; then the files are deleted.
+- Database step 19: the event log gets the client's details and the reason, two indexes, and the
+  table of blocked addresses.
+
 ## 0.6.0-beta.2
 
 **Tidying up after 0.6.** The admin portal is sorted into areas with tabs, and every setting says

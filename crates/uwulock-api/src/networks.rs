@@ -46,6 +46,11 @@ impl IpNetwork {
         list.iter().filter(|entry| !entry.trim().is_empty()).map(|entry| IpNetwork::parse(entry)).collect()
     }
 
+    /// The prefix length: 32 or 128 for one address.
+    pub fn prefix(&self) -> u8 {
+        self.prefix
+    }
+
     pub fn contains(&self, ip: IpAddr) -> bool {
         match (self.address, canonical(ip)) {
             (IpAddr::V4(network), IpAddr::V4(ip)) => {
@@ -58,6 +63,27 @@ impl IpNetwork {
             }
             _ => false,
         }
+    }
+}
+
+/// One address as itself, a network as `address/prefix` with the host bits cleared.
+impl std::fmt::Display for IpNetwork {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let most = if self.address.is_ipv4() { 32 } else { 128 };
+        if self.prefix == most {
+            return write!(f, "{}", self.address);
+        }
+        let network: IpAddr = match self.address {
+            IpAddr::V4(v4) => {
+                let mask = if self.prefix == 0 { 0 } else { u32::MAX << (32 - u32::from(self.prefix)) };
+                std::net::Ipv4Addr::from(u32::from(v4) & mask).into()
+            }
+            IpAddr::V6(v6) => {
+                let mask = if self.prefix == 0 { 0 } else { u128::MAX << (128 - u32::from(self.prefix)) };
+                std::net::Ipv6Addr::from(u128::from(v6) & mask).into()
+            }
+        };
+        write!(f, "{network}/{}", self.prefix)
     }
 }
 
@@ -181,6 +207,9 @@ mod tests {
         let one = IpNetwork::parse("203.0.113.7").unwrap();
         assert!(one.contains("203.0.113.7".parse().unwrap()) && !one.contains("203.0.113.8".parse().unwrap()));
         assert!(IpNetwork::parse("0.0.0.0/0").unwrap().contains("198.51.100.1".parse().unwrap()));
+        assert_eq!(IpNetwork::parse("192.0.2.77/24").unwrap().to_string(), "192.0.2.0/24");
+        assert_eq!(IpNetwork::parse("2001:db8::7/64").unwrap().to_string(), "2001:db8::/64");
+        assert_eq!(IpNetwork::parse(" 203.0.113.7/32").unwrap().to_string(), "203.0.113.7");
         for bad in ["192.0.2.0/33", "lan", "192.0.2.0/x", "2001:db8::/129"] {
             assert!(IpNetwork::parse(bad).is_err(), "{bad}");
         }

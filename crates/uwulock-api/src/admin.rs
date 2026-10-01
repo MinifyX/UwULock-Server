@@ -486,6 +486,13 @@ async fn put_settings(
         state.relay.reset();
     }
     state.apply_settings(new.clone());
+    // GeoIP switched on: the databases come now rather than with the next daily run.
+    if new.geoip && !current.geoip && !state.geoip.ready() {
+        let background = state.clone();
+        tokio::spawn(async move {
+            let _ = crate::geoip::update_now(&background).await;
+        });
+    }
     record(&state, &admin, "changed the settings".into()).await;
     Ok(Json(settings_json(&new)))
 }
@@ -802,6 +809,7 @@ pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     state.count_legacy_hashes().await;
     crate::send_domains::reload(state).await;
     crate::branding::reload(state).await;
+    state.blocks.reload(&state.store).await;
     Ok(())
 }
 

@@ -26,6 +26,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0016_extras_private_wrap.sql"),
     include_str!("../migrations/sqlite/0017_feature_switches.sql"),
     include_str!("../migrations/sqlite/0018_review_lows.sql"),
+    include_str!("../migrations/sqlite/0019_failed_logins.sql"),
 ];
 
 /// The schema this build writes.
