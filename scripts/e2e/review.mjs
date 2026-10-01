@@ -133,7 +133,11 @@ try {
   step('the stack: one card per login with a problem, the worst first');
   await page.locator('.report-pane').getByRole('button', { name: 'Durchgehen' }).click();
   await card().waitFor({ timeout: 30000 });
-  expect((await progress()) === '1 von 2', `progress ${await progress()}`);
+  // Other scripts may have left logins with problems in this account: only ours are counted on.
+  const first = await progress();
+  const total = Number(first.split(' von ')[1]);
+  expect(first === `1 von ${total}` && total >= 2, `progress ${first}`);
+  const at = (n) => `${n} von ${total}`;
   expect((await card().getByRole('heading').innerText()).includes('Review Shop'), 'shop first');
   await card().getByText('Datenleck nach deiner letzten Passwortänderung', { exact: true }).waitFor();
   const open = card().getByRole('link', { name: /Seite öffnen & Passwort ändern/ });
@@ -146,17 +150,23 @@ try {
 
   step('arrow keys and dragging move through the stack');
   await page.keyboard.press('ArrowRight');
-  expect((await progress()) === '2 von 2', 'arrow right');
+  expect((await progress()) === at(2), 'arrow right');
   await page.keyboard.press('ArrowLeft');
-  expect((await progress()) === '1 von 2', 'arrow left');
+  expect((await progress()) === at(1), 'arrow left');
   const box = await card().boundingBox();
   const y = box.y + 30;
   await page.mouse.move(box.x + box.width - 40, y);
   await page.mouse.down();
   for (let x = box.x + box.width - 40; x > box.x + box.width - 260; x -= 20) await page.mouse.move(x, y);
   await page.mouse.up();
-  await page.waitForFunction(() => document.querySelector('[data-testid=review-progress]')?.textContent === '2 von 2');
-  expect((await card().getByRole('heading').innerText()).includes('Review Mail'), 'swiped to the mail');
+  await page.waitForFunction(
+    (text) => document.querySelector('[data-testid=review-progress]')?.textContent === text,
+    at(2),
+  );
+  for (let n = 2; n < total && !(await card().getByRole('heading').innerText()).includes('Review Mail'); n++) {
+    await page.keyboard.press('ArrowRight');
+  }
+  expect((await card().getByRole('heading').innerText()).includes('Review Mail'), 'the mail is in the stack');
 
   step('a problem ignored, undone, and ignored again');
   const reused = card().locator('.review-problem', { hasText: 'Mehrfach benutzt' });
@@ -169,7 +179,12 @@ try {
 
   step('later: the mail goes for this session');
   await card().getByRole('button', { name: 'Später' }).click();
-  expect((await progress()) === '1 von 1', `after later ${await progress()}`);
+  await page.waitForFunction(
+    (text) => document.querySelector('[data-testid=review-progress]')?.textContent?.endsWith(text),
+    ` von ${total - 1}`,
+  );
+  while (!(await progress()).startsWith('1 von')) await page.keyboard.press('ArrowLeft');
+  expect((await card().getByRole('heading').innerText()).includes('Review Shop'), 'back at the shop');
 
   step('a new password, generated and saved');
   await card().getByRole('button', { name: 'Neues Passwort erzeugen & speichern' }).click();
