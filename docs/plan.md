@@ -507,7 +507,7 @@ Bitwardens „Families".
 - [x] Web-Tresor: „Konto hinzufügen" (und Konto wechseln/umbenennen) aus dem Kontomenü und dem
   Sperrbildschirm entfernt — der Web-Tresor öffnet nur den Tresor dieses Servers, ein Konto zur
   Zeit (Test: `AccountCard.test.tsx`). Der Desktop-Client behält es.
-- [ ] „Verbinden" auf Android/iOS, WLAN im Desktop-Client und in der Erweiterung: UwULock-Client
+- [x] „Verbinden" auf Android (iOS: nicht möglich ohne Hotspot-Entitlement, dort QR + Kopieren), WLAN im Desktop-Client und in der Erweiterung: UwULock-Client 0.4.0-beta.1
   0.4.0-beta.1, gleicher Vertrag.
 
 
@@ -528,7 +528,7 @@ Bitwardens „Families".
   Server, Cache 7 Tage unter gesalzenem Hash, nichts geloggt), Prüfung auf
   `/.well-known/change-password` (über den geprüften Icon-Client, nie ins lokale Netz).
   `/uwu/v1/info` meldet sie unter `breaches`. Vertrag: `docs/uwu-api.md` §15.1–§15.7.
-- [ ] Dasselbe im UwULock-Client (Desktop, Android, iOS) nach §15.6/§15.7.
+- [x] Dasselbe im UwULock-Client (Desktop, Android, iOS) nach §15.6/§15.7: UwULock-Client 0.4.0-beta.1.
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
