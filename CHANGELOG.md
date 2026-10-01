@@ -3,7 +3,26 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.7.0-beta.1
+
+**Checking passwords one by one, more breach sources, Wi-Fi and failed logins.** The password
+check gets a second view that goes through the logins with a problem one card at a time — open
+the site's change-password page, save a new password, put it off or ignore it — and asks
+XposedOrNot as well as Have I Been Pwned; the server also keeps the public lists of breached
+sites, so a login whose site lost passwords after its last change is marked, and, if the admin
+and the account agree, checks addresses at XposedOrNot. The web vault has Wi-Fi networks with a
+QR code, stored so that Bitwarden's apps show them as notes, and imports them from 1Password,
+Proton Pass and LastPass. Failed logins have their own page in the admin portal with origin
+(from a GeoIP database on the server), device and app, and addresses can be blocked. The web
+vault opens only its own vault, and everything new was reviewed for security. It belongs with
+UwULock 0.4.0-beta.1. Update with `sudo bash update.sh`; database steps 19 and 22 run on their
+own, and the server then downloads the GeoIP databases (about 130 MB) by itself.
+
+**Maintenance.**
+
+- The image is built on a newer distroless base whose OpenSSL has the fixes for the two findings
+  the image scan skipped since 0.6.0-beta.2; the scan skips nothing any more.
+- The end-to-end tests and the web vault's crypto use UwULock 0.4.0-beta.1's core.
 
 **Wi-Fi networks.**
 
