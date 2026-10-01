@@ -25,7 +25,7 @@ import { revealSecret } from '../../lib/suite/sync';
 import { toast } from '../../lib/toast';
 import { Icon, type IconName } from '../Icon';
 import { save } from '../web/controls';
-import { KIND_ICON, kindLabel, workspaceLabel, authLabel } from './labels';
+import { kindIcon, kindLabel, workspaceLabel, authLabel } from './labels';
 
 type Props = {
   space: SpaceName;
@@ -274,6 +274,7 @@ export function SuiteDetail({
   const p = record.payload ?? {};
   const title = titleOf(record) || t('(ohne Namen)');
   const desktop = desktopSystem(navigator.userAgent, navigator.maxTouchPoints ?? 0);
+  const link = record.kind === 'host' ? deepLink(space, record.id) : null;
   const app = space === 'ssh' ? 'UwUSSH' : 'UwURDP';
 
   const hostTools =
@@ -286,12 +287,12 @@ export function SuiteDetail({
           <Icon name="copy" size={15} />
           {space === 'ssh' ? t('Befehl kopieren') : t('Adresse kopieren')}
         </button>
-        {desktop && (
+        {desktop && link && (
           <button
             className="quiet"
             onClick={() => {
               // The app asks the browser; only the record's id goes along.
-              window.location.href = deepLink(space, record.id);
+              window.location.href = link;
             }}
           >
             <Icon name="external" size={15} />
@@ -329,7 +330,7 @@ export function SuiteDetail({
     <article className="detail suite-detail" aria-label={title}>
       <header className="detail-head">
         <span className="item-tile" data-size="large" data-hue={space === 'ssh' ? '4' : '5'}>
-          <Icon name={KIND_ICON[record.kind] ?? 'note'} size={26} />
+          <Icon name={kindIcon(record.kind)} size={26} />
         </span>
         <div className="detail-title">
           <h2>{title}</h2>

@@ -60,7 +60,7 @@ const records = [
   }),
   rec('s1', 'secret'),
   rec('g1', 'group', { name: 'Homelab', workspace: 'private', position: 0 }),
-  rec('h1', 'host', {
+  rec('9b2d0c1e-0000-4000-8000-0000000000a1', 'host', {
     name: 'Router',
     address: 'router.example.com',
     port: 22,
@@ -70,7 +70,7 @@ const records = [
     identity_id: 'i1',
   }),
   rec('f1', 'port_forward', {
-    host_id: 'h1',
+    host_id: '9b2d0c1e-0000-4000-8000-0000000000a1',
     name: 'web',
     kind: 'local',
     bind_address: '127.0.0.1',
@@ -119,7 +119,7 @@ describe('a suite space in the web vault', () => {
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.textContent).toContain('Port-Weiterleitungen');
     await click(dialog.querySelector('button.danger'));
-    expect(pushed).toEqual([['remove h1', 'remove f1']]);
+    expect(pushed).toEqual([['remove 9b2d0c1e-0000-4000-8000-0000000000a1', 'remove f1']]);
 
     const tabs = [...container.querySelectorAll('[role="tab"]')];
     await click(tabs.find((t) => t.textContent?.startsWith('Identitäten')));

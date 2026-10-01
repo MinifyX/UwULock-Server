@@ -24,7 +24,7 @@ import { listbox } from '../listbox';
 import { Modal } from '../Modal';
 import { BackToList, Panes } from '../panes';
 import { Callout, Tabs } from '../ui';
-import { KIND_ICON, SPACE_LABEL, kindLabel, kindsLabel, workspaceLabel } from './labels';
+import { kindIcon, SPACE_LABEL, kindLabel, kindsLabel, workspaceLabel } from './labels';
 import { SuiteDetail } from './SuiteDetail';
 import { SuiteEditor, type EditorTarget } from './SuiteEditor';
 
@@ -346,7 +346,7 @@ function OpenSpace({
                   }}
                 >
                   <span className="item-tile" data-hue={space === 'ssh' ? '4' : '5'}>
-                    <Icon name={KIND_ICON[line.record.kind] ?? 'note'} size={18} />
+                    <Icon name={kindIcon(line.record.kind)} size={18} />
                   </span>
                   <span className="item-text">
                     <span className="item-name">{titleOf(line.record) || t('(ohne Namen)')}</span>

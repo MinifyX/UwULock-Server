@@ -108,18 +108,32 @@ async function show(space: SpaceName) {
   set(space, { status: 'open', ...shown });
 }
 
-/** Pull from the cursor until there is no more; from 0 again when the server says `reset`. */
+/** A server that keeps a pull going without getting anywhere. */
+const stuck = () => ({ kind: 'server', message: 'The server’s pull of this space goes nowhere.' });
+
+/**
+ * Pull from the cursor until there is no more; from 0 again when the server says `reset`. A
+ * server that says `reset` again right after one, or `hasMore` without moving the cursor on,
+ * is stopped there instead of being asked forever.
+ */
 async function pullAll(space: SpaceName) {
-  for (let round = 0; round < 10_000; round++) {
+  let resetJustNow = false;
+  for (let round = 0; ; round++) {
+    if (round >= 10_000) throw stuck();
     const since = cursors.get(space) ?? 0;
     const page = await request<Pull>(`${recordsPath(space)}?since=${since}&limit=500`);
     if (page.reset) {
+      if (resetJustNow) throw stuck();
+      resetJustNow = true;
       await call((core) => core.suiteForgetRecords(space));
       cursors.set(space, 0);
       continue;
     }
+    resetJustNow = false;
+    if (!Array.isArray(page.records) || !Number.isSafeInteger(page.cursor)) throw stuck();
     if (page.records.length)
       await call((core) => core.suiteMerge(space, JSON.stringify(page.records)));
+    if (page.hasMore && page.cursor <= since) throw stuck();
     cursors.set(space, page.cursor);
     if (!page.hasMore) break;
   }
@@ -183,17 +197,25 @@ export function loadSpace(space: SpaceName, fresh = false): Promise<void> {
  * Make the space when no app did yet: a fresh key under the extras key. When another device was
  * quicker (409 `exists`), take its space.
  */
-export async function createSpace(space: SpaceName): Promise<void> {
-  await openExtras();
-  const body = await callJson<{ id: string; key: string }>((core) => core.suiteCreateSpace(space));
-  try {
-    await request(`/uwu/v1/suite/spaces/${encodeURIComponent(space)}`, { method: 'PUT', body });
-    spaceIds.set(space, body.id);
-    cursors.set(space, 0);
-  } catch (error) {
-    if (errorCode(error) !== 'exists' && (error as ApiError).status !== 409) throw error;
-  }
-  await loadSpace(space, true);
+export function createSpace(space: SpaceName): Promise<void> {
+  // In line with loads and pulls of the space: none of them opens the space in the module
+  // between the fresh key and the server's answer to it.
+  return once(space, async () => {
+    await openExtras();
+    const body = await callJson<{ id: string; key: string }>((core) =>
+      core.suiteCreateSpace(space),
+    );
+    try {
+      await request(`/uwu/v1/suite/spaces/${encodeURIComponent(space)}`, { method: 'PUT', body });
+    } catch (error) {
+      if (errorCode(error) !== 'exists' && (error as ApiError).status !== 409) throw error;
+    }
+    try {
+      await open(space, true);
+    } catch (error) {
+      set(space, { status: 'error', error });
+    }
+  });
 }
 
 /** A secret's content: a password, a passphrase, a private key. */

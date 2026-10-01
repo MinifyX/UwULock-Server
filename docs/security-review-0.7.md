@@ -121,3 +121,67 @@ with `noopener`. The new features need nothing of the CSP (`script-src 'self'
 'wasm-unsafe-eval'`, unchanged). The Wi-Fi importers see strings only and keep the existing size
 and archive limits; `uwulock-core` in WASM clamps odd counts. The web vault knows only its own
 session: no second account, no other server.
+
+## 0.7.0-beta.2: SSH/RDP entries
+
+Before 0.7.0-beta.2, what PR #32 added (`git diff 8ff3bd3..5ada48a`) was reviewed by reading it
+end to end: the suite bindings of the WebAssembly module (`web/wasm/src/suite.rs`, over
+`uwulock_core::suite` at c87995c), `web/src/lib/suite/*` (sync, realtime, model, keys), the
+sections and editors in `web/src/components/suite/*`, and the assistant kinds of the server's
+space `ssh`. Attacker models: a hostile or compromised server, and a compromised device of the
+same account that writes records (valid, sealed with the space key) with odd content. Fixed in
+branch `security-suite`, each with a test. Nothing critical or high.
+
+| Id | Severity | Where | Finding | Fix | Status |
+|---|---|---|---|---|---|
+| WV-5 | Medium | Web vault, host extras, *Copy command* | The SSH command was built from the host's address and its identity's user name, shell-quoted, but a value starting with `-` stayed an argument to ssh: an address (or user) `-oProxyCommand=…` written by another device made the copied `ssh -oProxyCommand=…` run a command on the user's computer when pasted. Quoting doesn't help against that; control characters (line breaks, escape sequences) also went into the clipboard. | A destination starting with `-` gets `--` before it, so ssh takes it as a host name; control characters (C0, C1, U+2028/9) are replaced by a space. Test `model.test.ts` › "copies the ssh command …". | Fixed |
+| WV-6 | Low | Web vault, deleting a key or an identity | The record's `private_secret_id`, `passphrase_secret_id` or `password_secret_id` were tombstoned along with it if they named any live record. A key written by another device could name a host or a group, which a delete in the web vault then removed too. | Only records of kind `secret` go along. Test "takes along only secrets, whatever ids a record names as its own". | Fixed |
+| WV-7 | Low | WebAssembly module, merging pulls | Envelope ids were kept as the server spelled them. A UUID in another spelling (upper case, without hyphens, `{…}`, `urn:uuid:…`) opens with the same AAD (the AAD holds the 16 bytes), so a hostile server could show one record twice, make pointers at it miss, and get its spelling into the link to the app (`encodeURIComponent` kept it harmless, but the apps refuse it). | The module takes only ids in the server's own spelling (lower case, hyphenated) and drops the rest; the web vault builds `uwussh://`/`uwurdp://connect/<id>` only for such a UUID and otherwise offers no link. Tests `records_of_the_apps_and_unknown_kinds_pass_through` and "opens the app with nothing but the record's id". | Fixed |
+| WV-8 | Low | Web vault, `.rdp` file | Values had CR and LF replaced, but not other line breaks (VT, FF, NEL, U+2028/9) or control characters, which some `.rdp` readers may split on — a way to add a setting (drive redirection, `alternate shell`) to the downloaded file. | The same control-character filter as WV-5. Test "writes an .rdp file without a password and without drives". | Fixed |
+| WV-9 | Low | Web vault, pull | A hostile server answering `hasMore` without moving the cursor, or `reset` again and again, kept the page pulling for 10 000 requests. | A pull stops with an error when the cursor doesn't move on with `hasMore`, at a second `reset` in a row, or when a page isn't one. Test "is not pulled forever from a server that goes nowhere". | Fixed |
+| WV-10 | Low | Web vault, creating a space | *Create space* ran beside the space's loads (the realtime channel, the section opening): a load between the fresh key and the server's answer could open the listed space in the module over the one just made, or the other way round. | Creating runs in the same queue as loading and pulling the space. Test "is made in line with its loads". | Fixed |
+| WV-11 | Low | Web vault, details | The auth type and the kind were looked up with `in` in plain objects: an identity whose `auth_type` is `constructor` (written by another device) broke its details, as WV-3. | `Object.hasOwn` (`authLabel`, `kindLabel`, `kindIcon`). A host's identity must be of kind `identity` (and its group of kind `group`) for the command and the `.rdp` file. | Fixed |
+
+### Info
+
+- **WV-I1, rollback by a hostile server.** A record's `seq` is not in its AAD: a server can serve
+  an older sealed version of a record as the newest (or withhold changes). It can't forge one or
+  move one to another id, kind, space or clock (the AAD binds id, kind, space id, `updatedAt` and
+  `deleted`). An edit in the web vault on such an older copy gets a clock after it and so wins in
+  the apps, taking the old values of the other fields along. Same for the apps; a check that a
+  record's clock never goes back would hold only within one page load. Stays.
+- **WV-I2, secrets in the page.** The module hands a secret to the page only when it is shown,
+  copied or downloaded; the page shows it for at most a minute. As JavaScript strings these can't
+  be wiped, and edits pass through the page as text. The space keys and the sealed records stay
+  in the module (`SpaceKey` is zeroized on drop) and go at lock or another account
+  (`suite::forget_all`), as does the page's state (`forgetSuite`).
+- **WV-I3, the assistant's records reach the page.** `suiteRecords` hands over every known kind
+  but `secret` and `manifest`, so the page gets `assist_config` (providers and models, the API
+  key only as a pointer to a secret) and `assist_cache` (questions and commands). They are never
+  shown or written; their secrets are never asked for.
+- **WV-I4, the server sizes the pulls.** A page holds at most 500 records and 8 MiB; the web vault
+  trusts the server's pages as it trusts the vault's sync. The space key itself is not bound to
+  the space's name, but a key moved to another space opens none of its records (the AAD has the
+  prefix and the space id).
+- **WV-I5, the link into the app.** Offered only where the user agent isn't a phone or tablet;
+  it is a navigation to a custom scheme with the record id only, so CSP needs nothing new. The
+  realtime socket's token goes in the first message, not the URL (`connect-src 'self'`).
+
+### Checked and fine
+
+**Records.** Every record is opened with the space's key and the AAD of §6.2 (prefix of the
+space, id, kind, space id, clock, `deleted`); kinds outside the space's list are neither opened
+nor shown; `manifest` records are never shown, written or tombstoned; a secret's payload is never
+in the list. Edits are sealed with a fresh 24-byte nonce from the OS, a clock after the record's
+(`Hlc::after`) and `baseSeq` = its `seq`; tombstones are sealed empty; the module refuses a JSON
+payload for a secret and text for any other kind, and a push of more than 500 records. Conflicts
+take the server's version and ask the user again; 409 `space_changed` reads the space again.
+
+**Rendering.** All record fields go into React as text: no raw HTML, file names of downloads are
+filtered (`rdpFileName`), key downloads have fixed names, the `.rdp` file never carries a
+password and always turns drives off. The device id in `localStorage` is a random number, nothing
+else of the suite is stored in the browser, and nothing is logged.
+
+**Server.** `assist_config` and `assist_cache` are accepted in `ssh` only (UwURDP has no such
+kinds; discriminants 10 and 11 as in `uwussh-proto`), appended to the list; test
+`the_assistant_kinds_are_uwusshs_only`.

@@ -293,6 +293,7 @@ export function move(siblings: SuiteRecord[], id: string, by: -1 | 1): Map<strin
 export function usersOf(records: SuiteRecord[], id: string): SuiteRecord[] {
   return records.filter((r) => {
     const p = r.payload ?? {};
+    if (r.id === id) return false;
     switch (r.kind) {
       case 'host':
         return ref(p.identity_id) === id || ref(p.gateway_identity_id) === id;
@@ -306,7 +307,7 @@ export function usersOf(records: SuiteRecord[], id: string): SuiteRecord[] {
   });
 }
 
-/** The `secret` records a record owns. */
+/** The `secret` records a record says it owns (ids only: they may not exist, or be another kind). */
 export function secretsOf(record: SuiteRecord): string[] {
   const p = record.payload ?? {};
   const ids =
@@ -334,7 +335,7 @@ export type DeletePlan =
  * group leaves its hosts without a group.
  */
 export function deletePlan(records: SuiteRecord[], record: SuiteRecord): DeletePlan {
-  const live = new Set(records.map((r) => r.id));
+  const secretIds = new Set(records.filter((r) => r.kind === 'secret').map((r) => r.id));
   switch (record.kind) {
     case 'host': {
       const forwards = records
@@ -348,7 +349,8 @@ export function deletePlan(records: SuiteRecord[], record: SuiteRecord): DeleteP
       if (users.length) return { ok: false, users };
       return {
         ok: true,
-        tombstones: [record.id, ...secretsOf(record).filter((id) => live.has(id))],
+        // Only `secret` records go along: a record written elsewhere could name any id here.
+        tombstones: [record.id, ...secretsOf(record).filter((id) => secretIds.has(id))],
         edits: [],
       };
     }
@@ -370,10 +372,14 @@ export function deletePlan(records: SuiteRecord[], record: SuiteRecord): DeleteP
 
 /** The identity a host logs in with: its own, else (UwURDP) its group's. */
 export function identityOf(host: SuiteRecord, all: Index): SuiteRecord | null {
-  const own = all.get(ref(host.payload?.identity_id) ?? '');
+  const of = (id: Json | undefined, kind: string) => {
+    const found = all.get(ref(id) ?? '');
+    return found?.kind === kind ? found : undefined;
+  };
+  const own = of(host.payload?.identity_id, 'identity');
   if (own) return own;
-  const group = all.get(ref(host.payload?.group_id) ?? '');
-  return all.get(ref(group?.payload?.identity_id) ?? '') ?? null;
+  const group = of(host.payload?.group_id, 'group');
+  return of(group?.payload?.identity_id, 'identity') ?? null;
 }
 
 /** `ssh -p 2222 nyu@host.example.com`, or for RDP `host.example.com:3390`. */
@@ -382,9 +388,21 @@ export function connectCommand(space: SpaceName, host: SuiteRecord, all: Index):
   const address = str(p.address);
   const port = num(p.port, DEFAULT_PORT[space]);
   if (space === 'rdp') return portSuffix(address, port, 3389);
-  const user = str(identityOf(host, all)?.payload?.username);
-  const target = user ? `${quote(user)}@${quote(address)}` : quote(address);
-  return port && port !== 22 ? `ssh -p ${port} ${target}` : `ssh ${target}`;
+  const user = plain(str(identityOf(host, all)?.payload?.username));
+  const destination = user ? `${user}@${plain(address)}` : plain(address);
+  // `--`: a destination like `-oProxyCommand=…` (written by another device) is a host to ssh,
+  // never an option that runs a command.
+  const end = destination.startsWith('-') ? '-- ' : '';
+  const target = end + quote(destination);
+  return Number.isInteger(port) && port > 0 && port !== 22
+    ? `ssh -p ${port} ${target}`
+    : `ssh ${target}`;
+}
+
+/** Without control characters (line breaks, escape sequences): none belongs in a name. */
+function plain(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ');
 }
 
 /** Quoted for a shell when it has to be. */
@@ -392,9 +410,9 @@ function quote(text: string): string {
   return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
-/** An `.rdp` value: one line, no line breaks smuggled into another setting. */
+/** An `.rdp` value: one line, nothing smuggled into another setting. */
 function rdpValue(text: string): string {
-  return text.replace(/[\r\n]+/g, ' ');
+  return plain(text);
 }
 
 /**
@@ -449,9 +467,15 @@ export function rdpFileName(host: SuiteRecord): string {
   return `${name}.rdp`;
 }
 
-/** `uwussh://connect/<id>`: only the record's id travels, never an address or a login. */
-export function deepLink(space: SpaceName, id: string): string {
-  return `${space === 'ssh' ? 'uwussh' : 'uwurdp'}://connect/${encodeURIComponent(id)}`;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/**
+ * `uwussh://connect/<id>`: only the record's id travels, never an address or a login. `null`
+ * for an id that isn't a UUID as the apps write it (the apps take nothing else).
+ */
+export function deepLink(space: SpaceName, id: string): string | null {
+  if (!UUID.test(id)) return null;
+  return `${space === 'ssh' ? 'uwussh' : 'uwurdp'}://connect/${id}`;
 }
 
 /** Whether the browser runs on a desktop system, where UwUSSH and UwURDP are. */

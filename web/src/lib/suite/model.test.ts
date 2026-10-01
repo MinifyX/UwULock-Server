@@ -166,6 +166,16 @@ describe('deleting', () => {
     expect(deletePlan([identity, rdpHost], identity).ok).toBe(false);
   });
 
+  it('takes along only secrets, whatever ids a record names as its own', () => {
+    // Written by another device: the "secrets" of this key are a host and a group.
+    const odd = rec('k9', 'key', { private_secret_id: 'h2', passphrase_secret_id: 'g1' });
+    expect(deletePlan([odd, loose, group, ...secrets], odd)).toEqual({
+      ok: true,
+      tombstones: ['k9'],
+      edits: [],
+    });
+  });
+
   it('leaves a group’s hosts without a group, every other field kept', () => {
     const plan = deletePlan(records, group);
     expect(plan.ok && plan.tombstones).toEqual(['g1']);
@@ -185,6 +195,19 @@ describe('a host’s extras', () => {
       identity_id: null,
     });
     expect(connectCommand('ssh', odd, all)).toBe(`ssh 'x.example.com; rm -rf ~'\\'''`);
+    // An option in the user or the address stays a destination; control characters go.
+    const option = rec('p', 'host', { address: '-oProxyCommand=touch${IFS}/tmp/x', port: 22 });
+    expect(connectCommand('ssh', option, all)).toBe(`ssh -- '-oProxyCommand=touch\${IFS}/tmp/x'`);
+    const sneakyUser = rec('su', 'identity', { username: '-oProxyCommand=id' });
+    const viaUser = rec('vu', 'host', { address: 'a.example.com', port: 2200, identity_id: 'su' });
+    expect(connectCommand('ssh', viaUser, indexOf([sneakyUser, viaUser]))).toBe(
+      'ssh -p 2200 -- -oProxyCommand=id@a.example.com',
+    );
+    const controls = rec('c', 'host', { address: 'a.example.com\n\u001b[2Jrm -rf ~', port: 22 });
+    expect(connectCommand('ssh', controls, all)).toBe(`ssh 'a.example.com [2Jrm -rf ~'`);
+    // Only an identity logs in: a pointer at another kind is none.
+    const wrong = rec('w', 'host', { address: 'b.example.com', port: 22, identity_id: 'k1' });
+    expect(connectCommand('ssh', wrong, all)).toBe('ssh b.example.com');
     const v6 = rec('v', 'host', { address: '2001:db8::1', port: 3390 });
     expect(connectCommand('rdp', v6, all)).toBe('[2001:db8::1]:3390');
   });
@@ -223,10 +246,18 @@ describe('a host’s extras', () => {
     // A line break in a field can't smuggle in a setting.
     const sneaky = rec('s', 'host', { address: 'a.example.com\r\ndrivestoredirect:s:*' });
     expect(rdpFile(sneaky, all)).not.toContain('\r\ndrivestoredirect:s:*');
+    for (const lineBreak of ['\r', '\n', '\u000b', '\u000c', '\u0085', '\u2028', '\u2029']) {
+      const other = rec('s', 'host', { address: `a.example.com${lineBreak}redirectdrives:i:1` });
+      expect(rdpFile(other, all).split('\r\n')[0]).toBe(
+        'full address:s:a.example.com redirectdrives:i:1',
+      );
+    }
   });
 
   it('opens the app with nothing but the record’s id', () => {
-    expect(deepLink('ssh', 'h1')).toBe('uwussh://connect/h1');
+    expect(deepLink('ssh', 'h1')).toBeNull();
+    expect(deepLink('ssh', '9B2D0C1E-0000-4000-8000-000000000001')).toBeNull();
+    expect(deepLink('ssh', '9b2d0c1e-0000-4000-8000-000000000001/../x')).toBeNull();
     expect(deepLink('rdp', '9b2d0c1e-0000-4000-8000-000000000001')).toBe(
       'uwurdp://connect/9b2d0c1e-0000-4000-8000-000000000001',
     );
