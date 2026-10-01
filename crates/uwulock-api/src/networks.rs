@@ -39,11 +39,23 @@ impl IpNetwork {
                 .ok_or_else(|| format!("{text} has no valid prefix length"))?,
             None => most,
         };
-        Ok(IpNetwork { address: canonical(address), prefix })
+        // An IPv4 network in IPv6 clothes (`::ffff:192.0.2.0/120`) is that IPv4 network, the
+        // way the addresses it is compared with are; with a prefix shorter than the mapped
+        // range it stays IPv6.
+        Ok(match address {
+            IpAddr::V6(v6) if prefix >= 96 && v6.to_ipv4_mapped().is_some() => {
+                IpNetwork { address: canonical(address), prefix: prefix - 96 }
+            }
+            _ => IpNetwork { address, prefix },
+        })
     }
 
     pub fn parse_list(list: &[String]) -> Result<Vec<IpNetwork>, String> {
         list.iter().filter(|entry| !entry.trim().is_empty()).map(|entry| IpNetwork::parse(entry)).collect()
+    }
+
+    pub fn is_ipv4(&self) -> bool {
+        self.address.is_ipv4()
     }
 
     /// The prefix length: 32 or 128 for one address.
@@ -210,6 +222,13 @@ mod tests {
         assert_eq!(IpNetwork::parse("192.0.2.77/24").unwrap().to_string(), "192.0.2.0/24");
         assert_eq!(IpNetwork::parse("2001:db8::7/64").unwrap().to_string(), "2001:db8::/64");
         assert_eq!(IpNetwork::parse(" 203.0.113.7/32").unwrap().to_string(), "203.0.113.7");
+        // IPv4 written as IPv6 is IPv4, with its prefix counted from the IPv4 part.
+        let mapped = IpNetwork::parse("::ffff:203.0.113.0/120").unwrap();
+        assert_eq!(mapped.to_string(), "203.0.113.0/24");
+        assert!(mapped.contains("203.0.113.9".parse().unwrap()) && !mapped.contains("203.0.114.9".parse().unwrap()));
+        assert_eq!(IpNetwork::parse("::ffff:192.0.2.1").unwrap().to_string(), "192.0.2.1");
+        assert!(IpNetwork::parse("::ffff:192.0.2.1").unwrap().contains("::ffff:192.0.2.1".parse().unwrap()));
+        assert_eq!(IpNetwork::parse("::/64").unwrap().to_string(), "::/64");
         for bad in ["192.0.2.0/33", "lan", "192.0.2.0/x", "2001:db8::/129"] {
             assert!(IpNetwork::parse(bad).is_err(), "{bad}");
         }

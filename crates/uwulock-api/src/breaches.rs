@@ -52,6 +52,9 @@ const LIST_BYTES: usize = 16 * 1024 * 1024;
 const MOST_BREACHES: usize = 20_000;
 /// One answer about a password or an address.
 const ANSWER_BYTES: usize = 256 * 1024;
+/// Breaches of one domain at the most: a real list has a handful, and merging compares each
+/// with every other.
+const MOST_PER_DOMAIN: usize = 100;
 /// Breaches of two sources for one domain within this many days are one breach.
 const SAME_BREACH_DAYS: i64 = 90;
 /// Addresses checked in one request at the most, and how many of them may be asked anew.
@@ -139,10 +142,10 @@ async fn fetch(state: &AppState, url: &str, limit: usize, seconds: u64) -> Resul
             .timeout(Duration::from_secs(seconds))
             .send()
             .await
-            .map_err(|error| crate::outbound::error_text(&error))?;
+            .map_err(quiet)?;
         let status = response.status().as_u16();
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|error| crate::outbound::error_text(&error))? {
+        while let Some(chunk) = response.chunk().await.map_err(quiet)? {
             if bytes.len() + chunk.len() > limit {
                 return Err("the answer is far larger than it should be".to_string());
             }
@@ -151,6 +154,12 @@ async fn fetch(state: &AppState, url: &str, limit: usize, seconds: u64) -> Resul
         Ok((status, bytes))
     };
     tokio::time::timeout(Duration::from_secs(seconds), work).await.map_err(|_| "it took too long".to_string())?
+}
+
+/// An error of a request without its address: the address carries a password's prefix or an
+/// email address, and errors are logged.
+pub(crate) fn quiet(error: reqwest::Error) -> String {
+    crate::outbound::error_text(&error.without_url())
 }
 
 // ── XposedOrNot's passwords ───────────────────────────────
@@ -252,10 +261,16 @@ struct Mirrored {
     etag: String,
 }
 
+/// After the lists could not be fetched for a request, the next request waits this long before
+/// it asks again.
+const SITES_RETRY: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Default)]
 struct SiteList {
     mirrored: RwLock<Option<Arc<Mirrored>>>,
     refreshing: tokio::sync::Mutex<()>,
+    /// When a request last failed to fetch the lists.
+    failed: Mutex<Option<Instant>>,
 }
 
 fn sites_dir(state: &AppState) -> PathBuf {
@@ -379,6 +394,7 @@ pub fn merge(lists: Vec<Vec<Breach>>) -> Vec<Breach> {
     for list in lists {
         for breach in list {
             let same = by_domain.entry(breach.domain.clone()).or_default();
+            let room = same.len() < MOST_PER_DOMAIN;
             let twin = same.iter_mut().find(|known| {
                 breach.sources.keys().all(|source| !known.sources.contains_key(source))
                     && match (&known.date, &breach.date) {
@@ -403,7 +419,8 @@ pub fn merge(lists: Vec<Vec<Breach>>) -> Vec<Breach> {
                         known.added = breach.added;
                     }
                 }
-                None => same.push(breach),
+                None if room => same.push(breach),
+                None => {}
             }
         }
     }
@@ -417,14 +434,30 @@ pub fn merge(lists: Vec<Vec<Breach>>) -> Vec<Breach> {
 }
 
 impl SiteList {
-    /// From memory, else from disk, else fetched now.
+    /// From memory, else from disk, else fetched now — by one request at a time, and not again
+    /// for [`SITES_RETRY`] after that failed, so requests cannot pile up behind a source that is
+    /// down.
     async fn get(&self, state: &AppState) -> Option<Arc<Mirrored>> {
         if let Some(list) = self.mirrored.read().clone() {
             return Some(list);
         }
-        if self.load(state).await.is_none()
-            && let Err(error) = self.refresh(state).await
-        {
+        if let Some(list) = self.load(state).await {
+            return Some(list);
+        }
+        let failed_lately = || self.failed.lock().is_some_and(|at| at.elapsed() < SITES_RETRY);
+        if failed_lately() {
+            return None;
+        }
+        let _one_at_a_time = self.refreshing.lock().await;
+        // Another request may have fetched them, or failed, meanwhile.
+        if let Some(list) = self.mirrored.read().clone() {
+            return Some(list);
+        }
+        if failed_lately() {
+            return None;
+        }
+        if let Err(error) = self.refresh_locked(state).await {
+            *self.failed.lock() = Some(Instant::now());
             tracing::warn!(%error, "the lists of breached sites could not be fetched");
         }
         self.mirrored.read().clone()
@@ -460,6 +493,11 @@ impl SiteList {
     /// Fetch every source again; one that fails keeps what it had.
     async fn refresh(&self, state: &AppState) -> Result<(), String> {
         let _one_at_a_time = self.refreshing.lock().await;
+        self.refresh_locked(state).await
+    }
+
+    /// [`Self::refresh`], with `refreshing` held already.
+    async fn refresh_locked(&self, state: &AppState) -> Result<(), String> {
         let Some((_, upstream)) = state.icons.fetcher() else { return Err("no HTTP client".into()) };
         let (hibp_url, xon_url) = (upstream.hibp_breaches.clone(), upstream.xon_breaches.clone());
         let mut errors = Vec::new();
