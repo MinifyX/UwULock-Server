@@ -219,8 +219,15 @@ pub fn seal_tombstone(space: &str, id: &str, now_ms: u64, device: u32) -> Result
     })
 }
 
+/// The record `id`, checked against the space key first: an edit or tombstone takes its clock and
+/// `seq` from it, so a record the server made up or changed must never be the base of one we seal
+/// (a forged clock near the end would otherwise be signed with the real key and spread).
 fn known<'a>(opened: &'a Opened, id: &str) -> Result<&'a Envelope> {
-    opened.records.get(id).ok_or_else(|| Failure::new("not-found", "There is no such record."))
+    let envelope = opened.records.get(id).ok_or_else(|| Failure::new("not-found", "There is no such record."))?;
+    if opened.vault.open(envelope).is_err() {
+        return Err(Failure::new("broken", "This record can't be opened, so it can't be changed or deleted here."));
+    }
+    Ok(envelope)
 }
 
 /// The body of a push of `envelopes`, for the space as it is open.
@@ -398,6 +405,12 @@ mod tests {
         let list = shown["records"].as_array().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["payload"]["rdp"]["newer"], true);
+
+        // A record that doesn't open is never the base of something sealed with the real key: its
+        // clock and seq could be the server's.
+        let broken_id = "9b2d0c1e-0000-4000-8000-000000000078";
+        assert!(seal_edit("rdp", broken_id, r#"{"json":{"name":"x"}}"#, 1_790_000_000_001, 4).is_err());
+        assert!(seal_tombstone("rdp", broken_id, 1_790_000_000_001, 4).is_err());
 
         // Another spelling of a known id is not taken: one record, one id.
         for spelled in [

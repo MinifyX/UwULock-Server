@@ -33,7 +33,7 @@ UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, the next UwURDP be
   space; before, their sync was refused.
 
 **Security.** The new sections were reviewed ([docs/security-review-0.7.md](docs/security-review-0.7.md),
-"0.7.0-beta.2: SSH/RDP entries"); one medium and six low findings are fixed:
+"0.7.0-beta.2: SSH/RDP entries"); two medium and six low findings are fixed:
 
 - The copied SSH command can't turn a user or an address that starts with `-` (like
   `-oProxyCommand=…`, written by another device) into an option; control characters are dropped
@@ -42,6 +42,8 @@ UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, the next UwURDP be
   offered for an id that is a UUID; ids in other spellings from the server are not taken; a pull
   that doesn't move on stops; creating the space runs in line with loading it; odd values of a
   record (`constructor`) no longer break its details.
+- A record is checked against the space key before an edit or a delete is sealed on top of it,
+  so a server can't slip a made-up clock into what the web vault signs.
 
 **Maintenance.**
 
