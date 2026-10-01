@@ -1,8 +1,0 @@
-# Findings the image scan in CI may skip, each with its reason and an end date.
-#
-# OpenSSL in the distroless runtime (libssl3t64 3.5.7-1~deb13u2). The server never loads it: it
-# speaks TLS through rustls and links only libc, libm and libgcc_s. Both are about QUIC and DTLS,
-# which nothing here uses. Remove these lines once the distroless digest in docker/ carries
-# 3.5.7-1~deb13u3 or newer.
-CVE-2026-75804 exp:2026-10-14
-CVE-2026-84782 exp:2026-10-14

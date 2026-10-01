@@ -5,7 +5,7 @@ Bitwarden-kompatibel wie Vaultwarden, aber schneller, auf UwULock zugeschnitten,
 für eigene Funktionen — ohne dass die offizielle Bitwarden-Browsererweiterung, die Apps oder die
 CLI aufhören zu funktionieren.
 
-Stand: September 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
+Stand: Oktober 2026. Stufe 0 ist fertig (0.0.1), Stufe 1 als 0.1-Beta — mit Web-Tresor und
 Admin-Portal, die dafür aus Stufe 3 vorgezogen wurden. Stufen 2, 3 und 4 sind zusammen als
 0.4.0-beta.1 erschienen, nach einem Sicherheitsreview
 ([docs/security-review-2026-09.md](security-review-2026-09.md)), dessen übrige (niedrige) Funde
@@ -16,7 +16,12 @@ Sie sind zusammen als 0.6.0-beta.1 erschienen, nach einem Sicherheitsreview
 sind; passend dazu UwULock 0.3.0-beta.1 mit Browsererweiterung. Die niedrigen Funde und Hinweise
 dieses Reviews (SV-L1 bis SV-L41, SV-I1 bis SV-I4) behebt 0.6.0-beta.2, zusammen mit dem
 aufgeräumten Admin-Portal, Funktions-Schaltern und Icon-Datenbanken; passend dazu UwULock
-0.3.0-beta.2, UwUSSH 0.2.1 und UwURDP 0.1.0-beta.8. Stufe 5 (Firma) ist
+0.3.0-beta.2, UwUSSH 0.2.1 und UwURDP 0.1.0-beta.8. 0.7.0-beta.1 bringt die Passwortprüfung
+zum Durchgehen, weitere Leck-Quellen (XposedOrNot, Listen geleakter Seiten, E-Mail-Prüfung),
+WLAN-Einträge, die Seite für fehlgeschlagene Anmeldungen mit GeoIP und IP-Sperren sowie nur einen
+Tresor pro Web-Tresor, nach einem Sicherheitsreview ([docs/security-review-0.7.md](security-review-0.7.md)),
+dessen Funde alle behoben sind; passend dazu UwULock 0.4.0-beta.1 mit Android- und iOS-App.
+Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
 Die Schnittstellen, die Server, Web-Tresor, UwULock-Client, Browsererweiterung, UwUSSH, UwURDP,
@@ -506,7 +511,7 @@ Bitwardens „Families".
   0.4.0-beta.1, gleicher Vertrag.
 
 
-### 0.7 — Passwortprüfung zum Durchwischen und mehr Datenleck-Quellen (in Arbeit)
+### 0.7 — Passwortprüfung zum Durchwischen und mehr Datenleck-Quellen (Server 0.7.0-beta.1)
 
 - [x] Passwortprüfung „Durchgehen": eigene Ansicht neben dem Bericht (der bleibt), ein
   Kartenstapel mit einer Karte pro Login mit Problem (Datenleck, Datenleck der Website nach der
