@@ -4,7 +4,7 @@ import { errorText } from '../lib/errors';
 import { ago } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
-import { ContextMenu, type MenuItem } from './ContextMenu';
+import { ContextMenu, type MenuAnchor, type MenuItem } from './ContextMenu';
 import { Icon } from './Icon';
 import { Modal } from './Modal';
 
@@ -20,7 +20,7 @@ export function initialOf(account: { name?: string | null; label?: string; email
 export function AccountCard({ status }: { status: Status }) {
   useLanguage();
   const [, force] = useState(0);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [menu, setMenu] = useState<MenuAnchor | null>(null);
   // The address of the account to log out of, once asked.
   const [leaving, setLeaving] = useState<string | null>(null);
 
@@ -33,9 +33,11 @@ export function AccountCard({ status }: { status: Status }) {
   // The account this page is logged in to; the page knows no other.
   const email = status.email;
 
+  // The menu opens above the whole card (it sits at the foot of the sidebar), never over it.
   const open = (event: { currentTarget: HTMLElement }) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    setMenu({ x: rect.left, y: rect.bottom + 4 });
+    const card = event.currentTarget.closest('.account-card') ?? event.currentTarget;
+    const { left, top, right, bottom } = card.getBoundingClientRect();
+    setMenu({ left, top, right, bottom });
   };
 
   const items: MenuItem[] = email
@@ -97,8 +99,9 @@ export function AccountCard({ status }: { status: Status }) {
 
       {menu && (
         <ContextMenu
-          x={menu.x}
-          y={menu.y}
+          x={menu.left}
+          y={menu.top}
+          anchor={menu}
           items={items}
           label={t('Konto')}
           onClose={() => setMenu(null)}

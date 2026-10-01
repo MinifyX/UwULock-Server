@@ -11,9 +11,17 @@ export type MenuItem =
     }
   | 'separator';
 
+/** The edges of the button a menu belongs to, as `getBoundingClientRect` gives them. */
+export type MenuAnchor = { left: number; top: number; right: number; bottom: number };
+
 type Props = {
   x: number;
   y: number;
+  /**
+   * The button the menu opens from, instead of the pointer: the menu then sits right above it
+   * (or below, when there is no room above) and never covers it.
+   */
+  anchor?: MenuAnchor;
   items: MenuItem[];
   onClose: () => void;
   label: string;
@@ -24,7 +32,7 @@ type Props = {
  * Enter picks, Escape, Tab or a click anywhere else closes — and focus goes back
  * to where it was. It moves itself inside the window when it would stick out.
  */
-export function ContextMenu({ x, y, items, onClose, label }: Props) {
+export function ContextMenu({ x, y, anchor, items, onClose, label }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ x, y });
 
@@ -41,12 +49,11 @@ export function ContextMenu({ x, y, items, onClose, label }: Props) {
     const menu = ref.current;
     if (!menu) return;
     const rect = menu.getBoundingClientRect();
-    setPosition({
-      x: Math.max(8, Math.min(x, window.innerWidth - rect.width - 8)),
-      y: Math.max(8, Math.min(y, window.innerHeight - rect.height - 8)),
-    });
+    const fitX = (left: number) => Math.max(8, Math.min(left, window.innerWidth - rect.width - 8));
+    const fitY = (top: number) => Math.max(8, Math.min(top, window.innerHeight - rect.height - 8));
+    setPosition(anchor ? anchored(anchor, rect, fitX, fitY) : { x: fitX(x), y: fitY(y) });
     menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-  }, [x, y]);
+  }, [x, y, anchor]);
 
   useEffect(() => {
     const close = (event: Event) => {
@@ -97,7 +104,12 @@ export function ContextMenu({ x, y, items, onClose, label }: Props) {
       className="context-menu"
       role="menu"
       aria-label={label}
-      style={{ left: position.x, top: position.y }}
+      // As wide as its button at least: the account card's menu lines up with the card.
+      style={{
+        left: position.x,
+        top: position.y,
+        minWidth: anchor ? anchor.right - anchor.left : undefined,
+      }}
       onContextMenu={(event) => event.preventDefault()}
     >
       {items.map((item, index) =>
@@ -121,4 +133,23 @@ export function ContextMenu({ x, y, items, onClose, label }: Props) {
       )}
     </div>
   );
+}
+
+/**
+ * Where a menu of `size` goes next to `anchor`: above it when it fits there (the account card at
+ * the foot of the sidebar), else below it, else wherever it fits inside the window. Its left
+ * edge lines up with the anchor's.
+ */
+export function anchored(
+  anchor: MenuAnchor,
+  size: { width: number; height: number },
+  fitX: (left: number) => number,
+  fitY: (top: number) => number,
+): { x: number; y: number } {
+  const gap = 6;
+  const above = anchor.top - gap - size.height;
+  const below = anchor.bottom + gap;
+  const y =
+    above >= 8 ? above : below + size.height <= window.innerHeight - 8 ? below : fitY(above);
+  return { x: fitX(anchor.left), y };
 }
