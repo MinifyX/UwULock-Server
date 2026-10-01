@@ -524,57 +524,101 @@ export type Finding = {
   weak: boolean;
   reused: number;
   unsecured: boolean;
-  /** Times it was in a breach; `null` when that was not checked. */
+  /** Times it was in a breach (the most any source counted); `null` when that was not checked. */
   breached: number | null;
+  /** Which sources saw it: `hibp`, `xon`. Missing in reports from before 0.7. */
+  breachSources?: BreachSource[];
+  /** The login's website without `www.`, its first address, and when its password was last
+   * changed (else when the item was made). Missing in reports from before 0.7. */
+  host?: string | null;
+  uri?: string | null;
+  passwordChanged?: string | null;
 };
+
+export type BreachSource = 'hibp' | 'xon';
 
 export type Report = {
   findings: Finding[];
   checked: number;
   breachesChecked: boolean;
-  /** Have I Been Pwned did not answer for some passwords. */
+  /** A source did not answer for some passwords. */
   breachesIncomplete: boolean;
 };
 
-/** Check every login's password; with `breaches`, also against Have I Been Pwned. */
+/** Which sources a check asks: Have I Been Pwned, XposedOrNot (both through the server). */
+export type ReportSources = { hibp: boolean; xon: boolean };
+
+/**
+ * Check every login's password; with the sources given, also against Have I Been Pwned (five
+ * characters of a SHA-1) and XposedOrNot (ten characters of a Keccak-512), both asked through
+ * the server.
+ */
 export async function passwordReport(
-  breaches: boolean,
+  sources: ReportSources,
   progress?: (done: number, total: number) => void,
 ): Promise<Report> {
   const report = await callJson<{
-    findings: Omit<Finding, 'breached'>[];
+    findings: Omit<Finding, 'breached' | 'breachSources'>[];
     prefixes: string[];
+    xonPrefixes?: string[];
     checked: number;
   }>((core) => core.passwordReport());
   const counts = new Map<string, number>();
+  const seenBy = new Map<string, Set<BreachSource>>();
+  const found = (item: string, count: number, source: BreachSource) => {
+    counts.set(item, Math.max(counts.get(item) ?? 0, count));
+    const set = seenBy.get(item) ?? new Set<BreachSource>();
+    set.add(source);
+    seenBy.set(item, set);
+  };
   let incomplete = false;
-  if (breaches) {
-    const queue = [...report.prefixes];
-    let done = 0;
-    const worker = async () => {
-      for (let prefix = queue.shift(); prefix; prefix = queue.shift()) {
-        try {
-          const range = await request<string>(`/uwu/v1/hibp/${prefix}`);
-          const found = await callJson<[string, number][]>((core) =>
-            core.breaches(prefix, String(range)),
-          );
-          for (const [item, count] of found) counts.set(item, count);
-        } catch {
-          // The rest of the report still counts.
-          incomplete = true;
-        }
-        progress?.(++done, report.prefixes.length);
-      }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
+  const jobs: (() => Promise<void>)[] = [];
+  if (sources.hibp) {
+    for (const prefix of report.prefixes) {
+      jobs.push(async () => {
+        const range = await request<string>(`/uwu/v1/hibp/${prefix}`);
+        const hits = await callJson<[string, number][]>((core) =>
+          core.breaches(prefix, String(range)),
+        );
+        for (const [item, count] of hits) found(item, count, 'hibp');
+      });
+    }
   }
+  if (sources.xon) {
+    for (const prefix of report.xonPrefixes ?? []) {
+      jobs.push(async () => {
+        const answer = await request<{ count: number }>(`/uwu/v1/xon/${prefix}`);
+        const hits = await callJson<[string, number][]>((core) =>
+          core.xonBreaches(prefix, Number(answer.count) || 0),
+        );
+        for (const [item, count] of hits) found(item, count, 'xon');
+      });
+    }
+  }
+  const total = jobs.length;
+  let done = 0;
+  const worker = async () => {
+    for (let job = jobs.shift(); job; job = jobs.shift()) {
+      try {
+        await job();
+      } catch {
+        // The rest of the report still counts.
+        incomplete = true;
+      }
+      progress?.(++done, total);
+    }
+  };
+  if (total) progress?.(0, total);
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  const checked = sources.hibp || sources.xon;
   return {
     findings: report.findings.map((finding) => ({
       ...finding,
-      breached: breaches ? (counts.get(finding.id) ?? 0) : null,
+      breached: checked ? (counts.get(finding.id) ?? 0) : null,
+      breachSources: [...(seenBy.get(finding.id) ?? [])].sort(),
     })),
     checked: report.checked,
-    breachesChecked: breaches,
+    breachesChecked: checked,
     breachesIncomplete: incomplete,
   };
 }

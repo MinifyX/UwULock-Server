@@ -234,6 +234,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
             uwulock_api::icons::daily(&state).await;
             uwulock_api::reports::daily(&state).await;
             uwulock_api::geoip::daily(&state).await;
+            uwulock_api::breaches::daily(&state).await;
             match backups::write(&state.store, &config.backups(), None).await {
                 Ok(path) => {
                     tracing::info!(path = %path.display(), "nightly backup written");

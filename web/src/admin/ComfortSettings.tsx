@@ -145,6 +145,67 @@ export function ComfortSettings() {
                   onChange={(hibp) => setDraft({ ...draft, hibp })}
                 />
               </SettingRow>
+              {draft.breaches &&
+                (
+                  [
+                    [
+                      'xonPasswords',
+                      t('Auch XposedOrNot fragen'),
+                      t(
+                        'Eine zweite Liste gestohlener Passwörter, genauso anonym: nur die ersten zehn Zeichen eines Keccak-512-Hashes verlassen den Server.',
+                      ),
+                      t('an'),
+                    ],
+                    [
+                      'siteBreaches',
+                      t('Datenlecks von Websites'),
+                      t(
+                        'Der Server lädt einmal am Tag die öffentlichen Listen von Have I Been Pwned und XposedOrNot. Der Tresor zeigt, wo eine Website nach der letzten Passwortänderung ein Datenleck hatte – ohne dass der Server erfährt, welche Websites im Tresor sind.',
+                      ),
+                      t('an'),
+                    ],
+                    [
+                      'changePassword',
+                      t('Seiten zum Passwortändern finden'),
+                      t(
+                        'Der Server schaut nach, ob eine Website /.well-known/change-password hat, damit „Seite öffnen“ direkt dort landet. Er fragt nur öffentliche Adressen, nie das lokale Netz.',
+                      ),
+                      t('an'),
+                    ],
+                    [
+                      'emailCheck',
+                      t('Adressen bei XposedOrNot prüfen'),
+                      t(
+                        'Jedes Konto kann zustimmen, dass der Server seine Adressen im Klartext an XposedOrNot schickt. Höchstens 100 Abfragen am Tag für den ganzen Server; die Antworten bleiben eine Woche, nur unter einem Hash.',
+                      ),
+                      t('aus'),
+                    ],
+                  ] as const
+                ).map(([key, label, text, recommended]) => (
+                  <SettingRow
+                    key={key}
+                    label={label}
+                    description={<Explain recommended={recommended}>{text}</Explain>}
+                  >
+                    <Toggle
+                      label={label}
+                      checked={draft.breaches?.[key] ?? false}
+                      onChange={(on) =>
+                        setDraft({
+                          ...draft,
+                          breaches: {
+                            xonPasswords: true,
+                            siteBreaches: true,
+                            emailCheck: false,
+                            changePassword: true,
+                            ...draft.breaches,
+                            [key]: on,
+                          },
+                        })
+                      }
+                    />
+                  </SettingRow>
+                ))}
             </Section>
           </>
         );

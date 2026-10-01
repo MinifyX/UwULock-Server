@@ -5,6 +5,7 @@
 
 import a11y from './a11y.json';
 import admin from './admin.json';
+import breaches from './breaches.json';
 import app from './app.json';
 import comfort from './comfort.json';
 import editing from './editing.json';
@@ -28,6 +29,7 @@ import wifi from './wifi.json';
 export const EN: Readonly<Record<string, string>> = {
   ...a11y,
   ...admin,
+  ...breaches,
   ...app,
   ...comfort,
   ...editing,

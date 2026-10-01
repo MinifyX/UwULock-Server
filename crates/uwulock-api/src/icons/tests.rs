@@ -112,6 +112,7 @@ fn upstream(port: u16, allow: bool) -> Upstream {
         http_port: port,
         selfhst: format!("http://library.example.com:{port}"),
         twofa: format!("http://library.example.com:{port}/2fa.json"),
+        ..Upstream::default()
     }
 }
 

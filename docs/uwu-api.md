@@ -33,7 +33,7 @@ the same pull request that deviates from it, so it stays the truth.
 12. [Security notices](#12-security-notices)
 13. [Masked addresses](#13-masked-addresses)
 14. [Sends: domains, addresses, branding](#14-sends-domains-addresses-branding)
-15. [Reports: password health and 2FA directory](#15-reports-password-health-and-2fa-directory)
+15. [Reports: password health and 2FA directory](#15-reports-password-health-and-2fa-directory) (0.7: breach sources, review, ignore list — §15.1–§15.7)
 16. [Family (Stufe 4d)](#16-family-stufe-4d)
 17. [Secrets Manager (Stufe 5)](#17-secrets-manager-stufe-5)
 18. [Directory Connector (Stufe 5)](#18-directory-connector-stufe-5)
@@ -164,7 +164,8 @@ host and on every send domain; on a send domain it contains only `name`, `versio
     "delta-sync", "realtime", "suite", "icons", "own-icons", "icon-library", "versions",
     "travel-mode", "reminders", "file-requests", "security-notices", "masked-addresses",
     "send-domains", "send-emails", "families", "organizations", "secrets-manager",
-    "directory-connector", "sso", "health-report", "twofa-directory", "emergency-sheet"
+    "directory-connector", "sso", "health-report", "twofa-directory", "emergency-sheet",
+    "xon-passwords", "site-breaches", "change-password"
   ],
   "switches": {
     "families": true, "file-requests": true, "send-domains": true, "masked-addresses": true,
@@ -175,6 +176,7 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   "sendDomains": [
     { "id": "5b0c…", "url": "https://send.example.com" }
   ],
+  "breaches": { "hibp": true, "xonPasswords": true, "siteBreaches": true, "emailCheck": false, "changePassword": true },
   "icons": {
     "automatic": true,
     "url": "https://lock.example.com/icons",
@@ -213,6 +215,7 @@ host and on every send domain; on a send domain it contains only `name`, `versio
   `versions` with `perItem` 0). A server without `switches` is older: its `features` say it all.
   Not on a send domain.
 - `sendDomains`: the admin's send domains (§14.1), without the main host. Empty list when none.
+- `breaches` (0.7): which breach sources are on (§15.1). Not on a send domain.
 - `icons.url`: where the official clients and ours get automatic icons (§7.1). `automatic:false`
   means `/icons/…` answers 404 for everything.
 - `sso.identifier`: the value to type as "SSO identifier" in the official clients (any value
@@ -1952,6 +1955,8 @@ itself.
   (400). Answer: the object. Resetting the extras key deletes it.
 - `DELETE /uwu/v1/reports/health` → 200.
 - `GET /uwu/v1/hibp/{prefix}` — unchanged (k-anonymity range query through the server).
+- `GET /uwu/v1/xon/{prefix}`, `GET /uwu/v1/breaches/sites`, `POST /uwu/v1/breaches/emails`,
+  `GET /uwu/v1/change-password/{host}`, `/uwu/v1/reports/health/ignored` — §15.1–§15.6 (0.7).
 - `GET /uwu/v1/twofa-directory` — auth `user`, `ETag`/`If-None-Match`. The server mirrors the
   list of [2fa.directory](https://2fa.directory/) from its public API,
   **`https://api.2fa.directory/v3/all.json`** (pinned; `[["Name", {domain, "additional-domains",
@@ -1982,6 +1987,172 @@ itself.
   ignored). The server never learns which sites are in a vault.
 
 **Clients:** web vault; UwULock desktop may use both.
+
+### 15.1 Breach sources and their switches (0.7)
+
+Besides Have I Been Pwned's passwords (`hibp`, above), the admin switches four more sources on
+or off, each on its own (§21.1 `breaches`). A source that is off answers **404 `feature_off`**
+(the HIBP proxy keeps its 403). `/uwu/v1/info` and `/uwu/v1/account` both carry
+
+```json
+"breaches": { "hibp": true, "xonPasswords": true, "siteBreaches": true, "emailCheck": false, "changePassword": true }
+```
+
+and `features` lists `xon-passwords`, `site-breaches`, `email-breaches`, `change-password` for
+the ones that are on. A server without `breaches` is older: only `hibp` exists there. Every source
+is reached by the server only, through the icons' checked client (every address checked, never
+the local network, at most five redirects); the browser and the apps only talk to their server.
+
+### 15.2 XposedOrNot's passwords — `GET /uwu/v1/xon/{prefix}` — auth `user`
+
+`prefix` = the first **10 hex digits of the original Keccak-512** (not NIST SHA3-512; padding
+`0x01`) of the password's UTF-8 bytes, any case (lower case is sent on). "password" →
+`a6818b8188…`. The server asks `https://passwords.xposedornot.com/api/v1/pass/anon/{prefix}` and
+answers only the count; XposedOrNot's character statistics (`char`) are dropped:
+
+```json
+{ "object": "xonPassword", "count": 1590937 }
+```
+
+`count` 0 = not known (XposedOrNot's 404). Like the HIBP proxy: kept 24 h per account and prefix
+in memory, never written to disk or a log, same per-account limit (429), 400 for anything but 10
+hex digits, 502 `upstream` when XposedOrNot does not answer. Ten hex digits are 40 bits: a hit
+means "a password with this hash prefix was seen", which a client counts as breached, like a
+HIBP hit. Clients show `max(hibp count, xon count)` and which sources saw it.
+
+### 15.3 Breached sites — `GET /uwu/v1/breaches/sites` — auth `user`, `ETag`/`If-None-Match`
+
+The server fetches the public lists of Have I Been Pwned (`https://haveibeenpwned.com/api/v3/breaches`,
+CC BY 4.0) and XposedOrNot (`https://api.xposedornot.com/v1/breaches`) the first time an account
+asks, then once a day while it is in use (`data/breaches/{hibp,xon}.json`; a source that fails
+keeps its last copy), and hands out one merged list:
+
+```json
+{
+  "object": "siteBreaches",
+  "updated": "2026-10-01T03:00:00.000Z",
+  "sources": [
+    { "id": "hibp", "name": "Have I Been Pwned", "url": "https://haveibeenpwned.com/", "license": "CC BY 4.0", "updated": "…" },
+    { "id": "xon", "name": "XposedOrNot", "url": "https://xposedornot.com/", "license": null, "updated": "…" }
+  ],
+  "breaches": [
+    { "domain": "example.com", "title": "Example", "date": "2024-05-01", "added": "2024-06-01",
+      "records": 1200, "passwords": true, "dataClasses": ["Email addresses", "Passwords"],
+      "sources": { "hibp": "Example", "xon": "ExampleLeak" } }
+  ]
+}
+```
+
+- `domain`: lower case, ASCII (IDNA), without scheme, path or `www.`; only public names (no
+  addresses, no local names). Sorted by domain, then `date`.
+- `date`: when it happened (`YYYY-MM-DD`, may be null); `added`: when the source listed it.
+- `passwords`: passwords or their hashes were taken (`Passwords` in the data classes, or
+  XposedOrNot's `passwordRisk` `plaintext`/`easytocrack`/`hardtocrack`).
+- `sources`: source id → the breach's name there. XposedOrNot's name is what §15.4 answers.
+- Left out: HIBP's fabricated breaches, spam lists, malware and stealer logs; XposedOrNot's combo
+  lists and stealer logs; entries without a usable domain.
+- Merged: one breach of the same domain listed by both sources with dates at most 90 days apart
+  is one entry (earlier date, larger `records`, union of data classes, both names).
+- Attribution: show `sources[].name` (and `license` when set) wherever the list is used.
+- 502 `upstream` when there is no copy yet and the fetch fails.
+
+**Client rule — "site had a breach after your last password change"** (kind `siteBreach`): for
+each login with a password, take its first URI's host (without `www.`); its breaches are those of
+the host and of every domain above it (`login.example.com` → `example.com`), never of a bare
+top-level domain, never for IP addresses or names without a dot. The password changed at
+`login.passwordRevisionDate`, else the item's `creationDate`. The login is flagged by the latest
+breach with `passwords: true` whose `date` (else `added`) is **on or after** that day (string
+compare of `YYYY-MM-DD` with the first ten characters of the change date). The server never learns
+which sites are in a vault.
+
+### 15.4 Addresses — `POST /uwu/v1/breaches/emails` — auth `user`
+
+Needs the admin switch `emailCheck` (404 `feature_off` otherwise) **and** the account's consent
+(403 `opt_in` otherwise). The address goes to XposedOrNot in plain text — say so before asking for
+consent.
+
+- `GET /uwu/v1/breaches/emails/opt-in` → `{ "object": "emailBreachOptIn", "optedIn": false, "since": null }`
+- `PUT /uwu/v1/breaches/emails/opt-in` `{ "optedIn": true }` → the same object (`since` = the first
+  consent; withdrawing deletes it). `/uwu/v1/account` carries `emailBreachCheck: {optedIn, since}`,
+  or `null` while the switch is off.
+- `POST /uwu/v1/breaches/emails` `{ "emails": ["nyu@example.com", …] }` — at most 50, each a plain
+  address (trimmed and lower-cased by the server; anything else 400). Clients send the account's
+  address and the usernames of logins that are addresses. Answer, in the order given, duplicates
+  once:
+
+  ```json
+  { "object": "emailBreaches",
+    "results": [ { "email": "nyu@example.com", "status": "found", "breaches": ["Adobe", "ExampleLeak"] },
+                 { "email": "mio@example.com", "status": "later", "breaches": [] } ],
+    "retryAfter": 1 }
+  ```
+
+  `status`: `found` / `clean` (XposedOrNot does not know it) / `later` (not asked yet: the
+  budget is used up, ask again after `retryAfter` seconds) / `failed` (XposedOrNot did not answer
+  or gave something unreadable). `breaches` are XposedOrNot's breach names (= `sources.xon` of
+  §15.3, for title and date). `retryAfter` is null when nothing is left.
+- Budget: one queue for the whole server — a question at least 600 ms after the last, at most 24
+  an hour and 96 a day (XposedOrNot's free limits are 2/s, 25/h, 100/day), at most 24 new
+  questions a day caused by one account, at most 5 new questions per request and 30 s of waiting.
+  A 429 from XposedOrNot stops the queue for an hour (`retryAfter` 3600).
+- Answers are kept 7 days in the database (`breach_email_cache`) under SHA-256(salt ‖ 0x00 ‖
+  address); the 32-byte salt is sealed with the server secret (`secret.key`, not in the database).
+  Addresses are never logged, never stored in plain, never stored next to an account.
+
+### 15.5 Change-password pages — `GET /uwu/v1/change-password/{host}` — auth `user`
+
+Whether `https://{host}/.well-known/change-password` exists (W3C "A Well-Known URL for Changing
+Passwords"): the server GETs it (redirects followed, checked) and also
+`/.well-known/resource-that-should-not-exist-whose-status-code-should-not-be-200`; the page counts
+only when the first ends in 2xx and the second does not.
+
+```json
+{ "object": "changePassword", "host": "example.com", "url": "https://example.com/.well-known/change-password" }
+```
+
+`url` null = no such page: clients open the login's first `http(s)` URI instead (else
+`https://{host}/`). IP addresses, local names and anything that is not a public host name are
+never asked (`url` null, 200). Kept 7 days per account and host in memory; per-account limit
+(429). Clients open the URL in a new tab / the system browser; the browser never asks the site
+beforehand.
+
+### 15.6 What the check does not show again — `/uwu/v1/reports/health/ignored` — auth `user`
+
+The ignore list, shared by every UwULock app of the account: JSON encrypted under the **extras
+key** exactly like the health report (EncString type 2, at most 256 KiB, anything else 400).
+Resetting the extras key (`DELETE /uwu/v1/keys`) deletes it.
+
+- `GET` → `{ "object": "healthIgnores", "data": "2.…" | null, "revisionDate": "…" | null }`
+- `PUT` `{ "data": "2.…", "revisionDate": "<the one read>" | null }` → the object with the new
+  `revisionDate`. With `revisionDate` (also `null` = "I read none") the list is only replaced if
+  that is still what is stored, else **409 `conflict`**: load it again, apply the change again,
+  save again. Without the key it is replaced unconditionally.
+- `DELETE` → 200.
+
+The plain JSON inside (`version` 1; unknown keys are kept as far as a client can, unknown kinds
+are dropped):
+
+```json
+{ "version": 1, "ignored": [ { "itemId": "<cipher id>", "kind": "weak", "since": "2026-10-01T08:00:00.000Z" } ] }
+```
+
+`kind` is one of the stable problem ids: `breached` (HIBP or XposedOrNot saw the password),
+`siteBreach` (§15.3 rule), `reused`, `weak` (< 50 bits), `unsecured` (an `http://` URI), `twofa`
+(2FA possible, not set up, §15). An entry hides that kind for that item in the report and the
+review, on every device, until it is undone; one per item and kind. Clients drop entries of items
+that no longer exist when they save.
+
+### 15.7 The review one login at a time (client behaviour, 0.7)
+
+An extra view beside the report ("Durchgehen" / "Review one by one"): one card per login with at
+least one problem that is not ignored, ordered by weight (each kind outweighs all lighter ones:
+`breached` > `siteBreach` > `reused` > `weak` > `unsecured` > `twofa`, then by name), progress
+"3 von 12" / "3 of 12". Swipe (pointer drag ≥ 80 px; left = next) or ←/→ = next/previous. Per
+card: "Seite öffnen & Passwort ändern" (§15.5 URL, else the login URI, new tab), "Neues Passwort
+erzeugen & speichern" (generator; saving sets only the password, the old one goes into
+`passwordHistory` — newest first, at most five, `passwordRevisionDate` = now, as Bitwarden does),
+"Später" (hidden for this session only) and, per problem, "Ignorieren" (§15.6; "Rückgängig"
+right there and in the report's "Ignoriert" list).
 
 ---
 
@@ -2672,6 +2843,7 @@ defaults in brackets):
 | `secretsManager` | `{ enabled [true] }` (§17) |
 | `suite` | `{ maxRecords [50000], maxMb [256] }` (§6); on or off is a feature switch (§21.12) |
 | `securityNotices` | `{ mailOff [[]] }` — kinds not mailed (§12) |
+| `breaches` | `{ xonPasswords [true], siteBreaches [true], emailCheck [false], changePassword [true] }` (§15.1); `hibp` stays its own key |
 | `policies` | §20 |
 | `adminNetworks` | `["192.0.2.0/24", "2001:db8::/32"]` [[] = everywhere] (§21.4) |
 | `masked` | `{ servers: [{ url, name }] }` [[]] (§13) |
@@ -3022,6 +3194,8 @@ extension; it links to the web vault.
   `sso_states`, `scim_provisioned`, `org_api_keys`, `sm_projects`, `sm_secrets`,
   `sm_service_accounts`, `sm_access_tokens`, `sm_access_policies`, `notification_channels`,
   `health_reports`, `branding` (images).
+- 0.7 (migration 0022): `health_ignores`, `breach_email_opt_ins`, `breach_email_cache`; the
+  lists of breached sites on disk under `data/breaches/`.
 - Each in the SQLite migrations and the PostgreSQL ones (Stufe 5), behind `Store`.
 - As built in Stufe 4c (migration 0010): `sends.emails` only — `authType` is derived (addresses →
   0, a password hash → 1, else 2), no `auth_type` column; the codes (`send_otps`) live in memory

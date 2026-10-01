@@ -20,6 +20,11 @@ Website icons (`icons.automatic`) and the check against Have I Been Pwned (`hibp
 settings under *Settings*; metrics and log shipping are configured in `.env`. The failed logins
 page and blocking addresses are always there; their GeoIP (`geoip`, on by default) is a setting
 on that page ([failed-logins.md](failed-logins.md)).
+The other breach sources of the password check (0.7, *Vault & features → Icons & password
+check*, `breaches`) are settings too: XposedOrNot's passwords, the lists of breached sites and the
+change-password pages are on for every server, the check of addresses at XposedOrNot is off until
+the admin turns it on (and then each account still has to agree). Off, their endpoints answer 404
+`feature_off` and the vault hides them ([uwu-api.md](uwu-api.md) §15.1).
 
 ## The switches
 

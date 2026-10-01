@@ -96,6 +96,13 @@ impl TestServer {
         self
     }
 
+    /// With the breach sources' state `breaches`: other limits for the check of addresses.
+    pub(crate) fn with_breaches(mut self, breaches: crate::breaches::Breaches) -> Self {
+        self.state.breaches = Arc::new(breaches);
+        self.router = router(self.state.clone());
+        self
+    }
+
     /// With these icon databases instead of none, fetching icons from `upstream`.
     pub(crate) fn with_icon_databases(
         mut self,

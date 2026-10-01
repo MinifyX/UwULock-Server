@@ -42,12 +42,12 @@ pub struct Cache {
 }
 
 impl Cache {
-    fn get(&self, prefix: &str) -> Option<Arc<str>> {
+    pub(crate) fn get(&self, prefix: &str) -> Option<Arc<str>> {
         let ranges = self.ranges.lock();
         ranges.get(prefix).filter(|(_, at)| at.elapsed() < KEEP).map(|(range, _)| range.clone())
     }
 
-    fn put(&self, prefix: String, range: Arc<str>) {
+    pub(crate) fn put(&self, prefix: String, range: Arc<str>) {
         let mut ranges = self.ranges.lock();
         if ranges.len() >= MOST {
             ranges.retain(|_, (_, at)| at.elapsed() < KEEP);

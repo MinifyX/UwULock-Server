@@ -56,12 +56,10 @@
   "Entsperren mit Passkey": "Unlock with a passkey",
   "Findet schwache und doppelte Passwörter und Logins ohne https. Den Abgleich mit Datenlecks hat die Verwaltung dieses Servers ausgeschaltet.": "Finds weak and reused passwords and logins without https. Whoever runs this server turned off the check against breaches.",
   "Fingerabdruck": "Fingerprint",
-  "Fragt Have I Been Pwned … {done} von {total}": "Asking Have I Been Pwned … {done} of {total}",
   "Fragt Zugriff an": "Asks for access",
   "Freigegeben.": "Approved.",
   "Für die Bitwarden-CLI: „bw login --apikey“. Er meldet ohne zweiten Schritt an – behandle ihn wie dein Passwort.": "For the Bitwarden CLI: “bw login --apikey”. It logs in without a second step – treat it like your password.",
   "Gib ihm einen Namen, dann fragt der Browser nach dem Passkey.": "Give it a name, then the browser asks for the passkey.",
-  "Have I Been Pwned hat nicht für alle Passwörter geantwortet. Der Rest des Berichts stimmt; prüf später noch einmal.": "Have I Been Pwned didn't answer for every password. The rest of the report holds; check again later.",
   "Hinzufügen …": "Add …",
   "Höchstens so oft öffnen": "Open at most this often",
   "In Datenlecks": "In breaches",
@@ -170,6 +168,5 @@
   "„{name}“ ist danach weg, auf jedem Gerät.": "“{name}” is gone after that, on every device.",
   "„{name}“ meldet danach nicht mehr an.": "“{name}” won't log in after that.",
   "Annehmen": "Accept",
-  "Angenommen ✧": "Accepted ✧",
-  "Findet schwache und doppelte Passwörter, Logins ohne https – und Passwörter aus bekannten Datenlecks. Dafür fragt dein Server Have I Been Pwned nach den ersten fünf Zeichen des Hashs jedes Passworts; das Passwort selbst verlässt diesen Browser nie. Dein Server sieht diese fünf Zeichen dabei, schreibt sie aber nirgends auf.": "Finds weak and reused passwords, logins without https – and passwords from known breaches. For that, your server asks Have I Been Pwned about the first five characters of each password's hash; the password itself never leaves this browser. Your server sees these five characters along the way, but writes them down nowhere."
+  "Angenommen ✧": "Accepted ✧"
 }

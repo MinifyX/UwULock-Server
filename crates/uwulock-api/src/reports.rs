@@ -40,6 +40,7 @@ const REPORT_BYTES: usize = 1024 * 1024;
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
         .route("/uwu/v1/reports/health", get(health_report).put(set_health_report).delete(delete_health_report))
+        .route("/uwu/v1/reports/health/ignored", get(ignored).put(set_ignored).delete(delete_ignored))
 }
 
 /// 2FA Directory's list: the `twofa-directory` switch.
@@ -81,6 +82,58 @@ async fn set_health_report(
 
 async fn delete_health_report(State(state): State<AppState>, session: Session) -> ApiResult<StatusCode> {
     state.store.delete_health_report(&session.user.id).await?;
+    Ok(StatusCode::OK)
+}
+
+// ── What the password check does not show again ──────────
+
+/// The ignore list, at most (as the text of its EncString).
+const IGNORED_BYTES: usize = 256 * 1024;
+
+fn ignored_object(stored: Option<(String, String)>) -> Value {
+    let (data, revision) = stored.map_or((None, None), |(data, revision)| (Some(data), Some(revision)));
+    json!({ "object": "healthIgnores", "data": data, "revisionDate": revision })
+}
+
+async fn ignored(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
+    Ok(Json(ignored_object(state.store.health_ignores(&session.user.id).await?)))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IgnoredBody {
+    data: String,
+    /// The revision the client read (`null`: it read none); left out, the list is replaced
+    /// whatever is stored.
+    #[serde(default, deserialize_with = "present")]
+    revision_date: Option<Option<String>>,
+}
+
+/// A key that is there, also as `null`, as `Some`.
+fn present<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(Some)
+}
+
+async fn set_ignored(
+    State(state): State<AppState>,
+    session: Session,
+    Json(body): Json<IgnoredBody>,
+) -> ApiResult<Json<Value>> {
+    if body.data.len() > IGNORED_BYTES {
+        return Err(ApiError::bad("The list is too large."));
+    }
+    if !body.data.starts_with("2.") || body.data.split('|').count() != 3 {
+        return Err(ApiError::bad("The list has to be encrypted."));
+    }
+    let revision =
+        state.store.set_health_ignores(&session.user.id, &body.data, body.revision_date).await?.ok_or_else(|| {
+            ApiError::new(StatusCode::CONFLICT, "The list changed on another device. Load it again.").code("conflict")
+        })?;
+    Ok(Json(ignored_object(Some((body.data, revision)))))
+}
+
+async fn delete_ignored(State(state): State<AppState>, session: Session) -> ApiResult<StatusCode> {
+    state.store.delete_health_ignores(&session.user.id).await?;
     Ok(StatusCode::OK)
 }
 
@@ -268,6 +321,42 @@ mod tests {
         let deleted = server.call("DELETE", "/uwu/v1/reports/health", Some(&nyu.token), Value::Null).await;
         assert_eq!(deleted.status(), StatusCode::OK);
         assert!(body(server.get_as(&nyu.token, "/uwu/v1/reports/health").await).await["data"].is_null());
+    }
+
+    #[tokio::test]
+    async fn the_ignore_list_is_kept_encrypted_and_guarded_against_lost_changes() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let path = "/uwu/v1/reports/health/ignored";
+        let empty = body(server.get_as(&nyu.token, path).await).await;
+        assert_eq!(empty, json!({ "object": "healthIgnores", "data": null, "revisionDate": null }));
+        let plain = server.call("PUT", path, Some(&nyu.token), json!({ "data": "[]" })).await;
+        assert_eq!(plain.status(), StatusCode::BAD_REQUEST);
+        // The first save expects none.
+        let first =
+            server.call("PUT", path, Some(&nyu.token), json!({ "data": "2.a|b|c", "revisionDate": null })).await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let revision = body(first).await["revisionDate"].as_str().unwrap().to_string();
+        // Another device that read nothing is too late now.
+        let stale =
+            server.call("PUT", path, Some(&nyu.token), json!({ "data": "2.d|e|f", "revisionDate": null })).await;
+        assert_eq!(stale.status(), StatusCode::CONFLICT);
+        assert_eq!(body(stale).await["code"], "conflict");
+        let next =
+            server.call("PUT", path, Some(&nyu.token), json!({ "data": "2.d|e|f", "revisionDate": revision })).await;
+        assert_eq!(next.status(), StatusCode::OK);
+        // Without a revision it is simply replaced.
+        let forced = server.call("PUT", path, Some(&nyu.token), json!({ "data": "2.g|h|i" })).await;
+        assert_eq!(body(forced).await["data"], "2.g|h|i");
+        let other = server.account("other@example.com").await;
+        assert!(body(server.get_as(&other.token, path).await).await["data"].is_null());
+        // Resetting the extras key takes it along, like the report.
+        server.state.store.delete_extras_key(&nyu.id).await.unwrap();
+        assert!(body(server.get_as(&nyu.token, path).await).await["data"].is_null());
+        server.call("PUT", path, Some(&nyu.token), json!({ "data": "2.a|b|c" })).await;
+        let deleted = server.call("DELETE", path, Some(&nyu.token), Value::Null).await;
+        assert_eq!(deleted.status(), StatusCode::OK);
+        assert!(body(server.get_as(&nyu.token, path).await).await["data"].is_null());
     }
 
     #[test]

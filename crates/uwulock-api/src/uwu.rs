@@ -100,6 +100,17 @@ async fn info(
     if settings.hibp {
         features.push("hibp");
     }
+    // The other breach sources (§15), each on its own.
+    for (on, name) in [
+        (settings.breaches.xon_passwords, "xon-passwords"),
+        (settings.breaches.site_breaches, "site-breaches"),
+        (settings.breaches.email_check, "email-breaches"),
+        (settings.breaches.change_password, "change-password"),
+    ] {
+        if on {
+            features.push(name);
+        }
+    }
     let sso = crate::sso::active(&state, &settings);
     if sso {
         features.push("sso");
@@ -127,6 +138,7 @@ async fn info(
         "features": features,
         "switches": switches.working_json(),
         "sendDomains": send_domains,
+        "breaches": crate::breaches::info(&state),
         "branding": branding,
         "sso": {
             "enabled": sso,
@@ -219,6 +231,8 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "passwordHints": settings.password_hints,
         "rememberTwoFactor": settings.remember_two_factor,
         "hibp": settings.hibp,
+        "breaches": crate::breaches::info(&state),
+        "emailBreachCheck": crate::breaches::account_info(&state, &session.user.id).await?,
         "maxFileMb": settings.max_file_mb,
         "mayInvite": settings.users_may_invite || session.user.admin,
         "hasHint": session.user.password_hint.is_some(),

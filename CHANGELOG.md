@@ -52,6 +52,32 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 - Database step 19: the event log gets the client's details and the reason, two indexes, and the
   table of blocked addresses.
 
+**The password check, one login at a time, and more breach sources.**
+
+- *Durchgehen / Review one by one*: beside the report (which stays as it is), a stack of cards,
+  one per login with a problem — breached, a breach of the site after the last password change,
+  reused, weak, no https, 2FA possible. "3 von 12"; swipe or the arrow keys to move. Each card
+  opens the site's change-password page (or the login), generates and saves a new password (the
+  old one goes into the item's history, as in Bitwarden), puts the login off until later, or
+  ignores a problem for good. What is ignored is kept encrypted under the extras key, so every
+  UwULock app shares it, and can be undone in the report's new "Ignoriert" list. Works with touch
+  at phone width.
+- XposedOrNot's passwords as a second source next to Have I Been Pwned: the browser sends ten
+  characters of a Keccak-512 of each password through the server, which keeps the answers a day
+  per account and writes nothing down.
+- Breached sites: the server fetches the public lists of Have I Been Pwned and XposedOrNot once a
+  day, merges them by domain and hands them to the vault, which marks logins whose site lost
+  passwords after the login's password was last changed. No user data leaves the server.
+- Addresses at XposedOrNot (off by default): when the admin turns it on and an account agrees,
+  the server checks the account's address and the logins' addresses, within XposedOrNot's free
+  limits for the whole server, keeps the answers a week under a salted hash and logs no address.
+- Change-password pages: the server looks for `/.well-known/change-password` on the login's site
+  (never in the local network, like the icons) so "open the page" lands where the password is
+  changed.
+- Each source has its own switch in the admin portal (*Vault & features → Icons & password check*);
+  `/uwu/v1/info` and `/uwu/v1/account` say which are on. API: [docs/uwu-api.md](docs/uwu-api.md)
+  §15.1–§15.7. Migration 0022 adds `health_ignores`, `breach_email_opt_ins`, `breach_email_cache`.
+
 ## 0.6.0-beta.2
 
 **Tidying up after 0.6.** The admin portal is sorted into areas with tabs, and every setting says

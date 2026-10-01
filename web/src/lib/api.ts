@@ -753,6 +753,16 @@ export const saveItem = async (id: string | null, draft: Draft): Promise<string>
   return id;
 };
 
+/**
+ * Only a new password for the login `id`, as the password check saves it: the old one goes into
+ * the item's password history (Bitwarden keeps five).
+ */
+export const savePassword = async (id: string, password: string): Promise<void> => {
+  const sealed = await call((core) => core.sealPassword(id, password, new Date().toISOString()));
+  const body = JSON.parse(sealed) as Record<string, unknown>;
+  await changed(request(`/api/ciphers/${encodeURIComponent(id)}`, { method: 'PUT', body }));
+};
+
 async function summaryOf(id: string): Promise<ItemSummary> {
   const found = (await vaultItems()).find((item) => item.id === id);
   if (!found) throw { kind: 'not-found', message: "This item isn't in the vault any more." };
