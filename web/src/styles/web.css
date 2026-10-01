@@ -1677,3 +1677,30 @@ fieldset.send-access > legend {
   font-size: var(--uwu-text-sm);
   color: var(--uwu-muted);
 }
+
+/* ── Wi-Fi: the network to share as a QR code ─────────────── */
+
+.wifi-share {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--uwu-space-2) var(--uwu-space-4);
+  margin: var(--uwu-space-4) 0 0;
+}
+
+.wifi-share dt {
+  font-size: var(--uwu-text-sm);
+  font-weight: 600;
+  color: var(--uwu-muted);
+}
+
+.wifi-share dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wifi-share-password {
+  display: flex;
+  align-items: center;
+  gap: var(--uwu-space-2);
+}

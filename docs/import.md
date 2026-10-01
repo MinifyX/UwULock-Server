@@ -34,6 +34,15 @@ secret, …) — or goes into the **notes** when it is long or has several lines
 silently; the preview says how many items got such fields. A card or note that came with a user
 name, password or address keeps them the same way.
 
+**Wi-Fi networks** become UwULock's Wi-Fi type (a secure note with the fields of
+[docs/wifi.md](wifi.md)) wherever the source marks them clearly: 1Password's *Wireless Router*,
+Proton Pass's *Wi-Fi* items, LastPass's *Wi-Fi Password* form, and any entry that already carries
+the marker field `uwulock:type` = `wifi` (a KeePass entry, a Bitwarden JSON or CSV export). The
+network's name, password and security go into the network's fields; everything else of the
+entry stays a custom field. A security the contract has no name for keeps its original text in
+a field of its own, and the network gets WPA2 (or *None* without a password). The preview counts
+the networks apart from the notes.
+
 | App | Export to use | Logins | Notes | Cards | Identities | Folders | TOTP | Favourites |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Bitwarden, Vaultwarden, UwULock | JSON (unencrypted) or CSV | ✓ | ✓ | JSON | JSON | ✓ | ✓ | ✓ |
@@ -68,8 +77,9 @@ URLs (`KP2A_URL`, `KP2A_URL_1`, …), every other field as a custom field (prote
 tags and the expiry date as custom fields, and up to five older passwords from an entry's
 history. TOTP from KeePassXC's `otp` field (an `otpauth://` address, or the older
 `key=…&step=…&size=…`), from KeePass 2.47's *TimeOtp-\** fields and from KeeTrayTOTP's *TOTP
-Seed* and *TOTP Settings*; Steam codes as `steam://`. Attachments, icons and auto-type don't
-come along.
+Seed* and *TOTP Settings*; Steam codes as `steam://`. An entry with the field
+`uwulock:type` = `wifi` becomes a Wi-Fi network, its *Password* the network's. Attachments,
+icons and auto-type don't come along.
 
 KeePass's XML export and the CSV exports of KeePassXC (`"Group","Title","Username",…`) and
 KeePass 2 (`"Account","Login Name",…`) work too, with fewer details.
@@ -77,7 +87,9 @@ KeePass 2 (`"Account","Login Name",…`) work too, with fewer details.
 ### 1Password
 
 The `.1pux` export (*File → Export* in 1Password 8, "1PUX") has everything: categories become
-logins (also passwords, databases, servers, routers, API credentials), cards, identities (also
+logins (also passwords, databases, servers, API credentials), Wi-Fi networks (wireless routers:
+the network name, security and wireless password; the base station's name, password, address
+and storage password stay custom fields), cards, identities (also
 driver's licences, passports, memberships, reward programmes, social security numbers),
 secure notes (also software licences, bank accounts, email accounts, medical records, documents)
 and SSH keys. Section fields go to the matching place by their id, TOTP fields to the login,
@@ -87,7 +99,7 @@ attachments don't come along.
 
 The CSV export (1Password 8's `Title,Url,Username,Password,OTPAuth,Favorite,Archived,Tags,Notes`,
 and older ones with other columns) has logins only, plus cards and identities from older exports
-that name their type.
+that name their type, and Wi-Fi networks from rows of the type *Wireless Router*.
 
 ### Browsers
 
@@ -101,18 +113,20 @@ Firefox's own account (`chrome://FirefoxAccounts`) is left out.
 The unencrypted JSON export — the zip Proton Pass writes (`Proton Pass/data.json`), or the JSON
 taken out of it — has everything: logins (the email as a field when there is also a user name),
 aliases (as logins with the alias address), notes, cards (the PIN as a hidden field), identities,
-SSH keys and custom items, each with its extra fields. When there are several vaults, each
+SSH keys, Wi-Fi networks (SSID, password and WPA/WPA2/WPA3/WEP) and custom items, each with its
+extra fields. When there are several vaults, each
 becomes a folder. Items in the trash are left out. Passkeys don't come along.
 
 A PGP-encrypted export can't be read: export again without encryption. The CSV export works
-too, with logins, notes and aliases only.
+too, with logins, notes, aliases and Wi-Fi networks (whose name stands for the SSID there).
 
 ### LastPass
 
 The CSV export: sites as logins (grouping as folder, `\` as separator), secure notes as notes,
 and LastPass's forms — *Credit Card*, *Address*, *Passport*, *Driver's License*, *Social
-Security* — as cards and identities. The fields of other forms (bank accounts, Wi-Fi, …) become
-custom fields of a note. Form-fill profiles in older exports become cards and identities.
+Security* — as cards and identities, and the *Wi-Fi Password* form as a Wi-Fi network (SSID,
+password, the *Authentication* as its security; connection type, encryption and the rest stay
+custom fields). The fields of other forms (bank accounts, …) become custom fields of a note. Form-fill profiles in older exports become cards and identities.
 
 ## What doesn't come along
 

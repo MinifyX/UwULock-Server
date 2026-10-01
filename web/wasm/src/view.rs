@@ -24,7 +24,29 @@ fn last_four(number: &str) -> String {
     digits[digits.len().saturating_sub(4)..].to_string()
 }
 
+/// The marker field of UwULock's own item types, stored as custom fields of a secure note so
+/// that Bitwarden's apps show a note with fields (docs/wifi.md): `uwulock:type` = `wifi`.
+pub const TYPE_MARKER: &str = "uwulock:type";
+
+/// The value of a custom field with exactly this name, the first one.
+fn field_text<'a>(item: &'a Item, name: &str) -> Option<&'a Secret> {
+    item.fields.iter().find(|f| f.name.as_ref().is_some_and(|n| n.as_str() == name)).and_then(|f| f.value.as_ref())
+}
+
+/// Whether the item is a Wi-Fi network: a secure note with the marker field.
+pub fn is_wifi(item: &Item) -> bool {
+    item.kind == ItemKind::Note
+        && item.fields.iter().any(|f| {
+            f.kind == FieldKind::Text
+                && f.name.as_ref().is_some_and(|n| n.as_str() == TYPE_MARKER)
+                && f.value.as_ref().is_some_and(|v| v.trim().eq_ignore_ascii_case("wifi"))
+        })
+}
+
 fn subtitle(item: &Item) -> Option<String> {
+    if is_wifi(item) {
+        return field_text(item, "SSID").map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    }
     match item.kind {
         ItemKind::Login => {
             item.login.as_ref().and_then(|l| text(&l.username).or_else(|| l.uris.first().and_then(|u| host_of(&u.uri))))
@@ -46,11 +68,19 @@ fn subtitle(item: &Item) -> Option<String> {
     .filter(|s| !s.is_empty())
 }
 
+/// The kind the page shows: one of the vault's, or one of UwULock's own on top of a note.
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum ShownKind {
+    Vault(ItemKind),
+    Own(&'static str),
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ItemSummary {
     id: String,
-    kind: ItemKind,
+    kind: ShownKind,
     name: String,
     subtitle: Option<String>,
     host: Option<String>,
@@ -72,7 +102,7 @@ pub fn summary(item: &Item) -> ItemSummary {
     let login = item.login.as_ref();
     ItemSummary {
         id: item.id.clone(),
-        kind: item.kind,
+        kind: if is_wifi(item) { ShownKind::Own("wifi") } else { ShownKind::Vault(item.kind) },
         name: item.name.to_string(),
         subtitle: subtitle(item),
         host: login.and_then(|l| l.uris.iter().find_map(|u| host_of(&u.uri))),
@@ -303,4 +333,60 @@ pub fn totp(unlocked: &Unlocked, id: &str, now: u64) -> Result<TotpCode> {
     let totp = Totp::parse(secret)?;
     let (code, remaining) = totp.code_at(now);
     Ok(TotpCode { code: code.to_string(), remaining, period: totp.period })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uwulock_core::vault::Field;
+    use zeroize::Zeroizing;
+
+    fn field(name: &str, value: &str, kind: FieldKind) -> Field {
+        Field {
+            name: Some(Zeroizing::new(name.into())),
+            value: Some(Zeroizing::new(value.into())),
+            kind,
+            linked_id: None,
+        }
+    }
+
+    fn wifi() -> Item {
+        let mut item = Item::new(ItemKind::Note);
+        item.name = Zeroizing::new("Home".into());
+        item.fields = vec![
+            field(TYPE_MARKER, "wifi", FieldKind::Text),
+            field("SSID", "uwu-net", FieldKind::Text),
+            field("Password", "correct horse", FieldKind::Hidden),
+            field("Security", "WPA2", FieldKind::Text),
+        ];
+        item
+    }
+
+    #[test]
+    fn a_note_with_the_marker_is_a_wifi_network() {
+        let item = wifi();
+        let summary = serde_json::to_value(summary(&item)).unwrap();
+        assert_eq!(summary["kind"], "wifi");
+        assert_eq!(summary["subtitle"], "uwu-net");
+        assert_eq!(summary["hasPassword"], false, "the list's password is a login's");
+    }
+
+    #[test]
+    fn without_the_marker_or_as_another_kind_it_stays_what_it_is() {
+        let mut note = wifi();
+        note.fields.remove(0);
+        assert_eq!(serde_json::to_value(summary(&note)).unwrap()["kind"], "note");
+
+        let mut hidden_marker = wifi();
+        hidden_marker.fields[0].kind = FieldKind::Hidden;
+        assert!(!is_wifi(&hidden_marker), "the marker is a text field");
+
+        let mut other = wifi();
+        other.fields[0].value = Some(Zeroizing::new("router".into()));
+        assert!(!is_wifi(&other));
+
+        let mut login = Item::new(ItemKind::Login);
+        login.fields = wifi().fields;
+        assert_eq!(serde_json::to_value(summary(&login)).unwrap()["kind"], "login");
+    }
 }

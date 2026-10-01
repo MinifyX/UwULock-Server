@@ -6,6 +6,7 @@
 #   scripts/e2e/local.sh operations         # an account registered without a browser first
 #   scripts/e2e/local.sh family             # a family in the browser, then with Bitwarden's CLI
 #   scripts/e2e/local.sh domains            # send domains (send.localhost) and masked addresses
+#   scripts/e2e/local.sh wifi               # Wi-Fi networks, screenshots light/dark/phone
 #
 # HTTPS with a certificate from a test CA, as in CI: Bitwarden's CLI only talks HTTPS, and
 # WebAuthn (features.mjs) only works on a site the browser trusts. Screenshots go to
@@ -65,6 +66,7 @@ for test in "$@"; do
         features) node_ scripts/e2e/features.mjs "$origin" "$email" "$password" "$work/api-key" target/e2e-shots ;;
         operations) node_ scripts/e2e/operations.mjs "$origin" "$email" "$password" "$work/offsite" target/e2e-shots ;;
         comfort) node_ scripts/e2e/comfort.mjs "$origin" "$email" "$password" target/e2e-shots ;;
+        wifi) node_ scripts/e2e/wifi.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         sso) node_ scripts/e2e/sso.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         domains) node_ scripts/e2e/domains.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         family)

@@ -13,6 +13,7 @@ export const KIND_LABEL: Record<ItemKind, string> = {
   identity: N_('Identität'),
   note: N_('Sichere Notiz'),
   'ssh-key': N_('SSH-Schlüssel'),
+  wifi: N_('WLAN'),
 };
 
 /** The identity's fields, in the order they are shown. */
@@ -87,3 +88,15 @@ export const CARD_BRANDS = [
   'UnionPay',
   'RuPay',
 ];
+
+/** The securities a Wi-Fi network can have, as the editor and the details name them. */
+export const SECURITY_LABEL: Record<string, string> = {
+  WPA3: 'WPA3',
+  'WPA2/WPA3': N_('WPA2/WPA3 (gemischt)'),
+  WPA2: 'WPA2',
+  WPA: N_('WPA (veraltet)'),
+  WEP: N_('WEP (unsicher)'),
+  None: N_('Keine (offenes Netz)'),
+  'WPA2-Enterprise': 'WPA2-Enterprise',
+  'WPA3-Enterprise': 'WPA3-Enterprise',
+};

@@ -9,11 +9,13 @@
  */
 
 import { t } from '../i18n';
+import { securityOf, WIFI_FIELD, WIFI_MARKER, WIFI_TYPE } from '../wifi';
 import {
   FieldType,
   ItemType,
   type BitwardenExport,
   type ExportCard,
+  type ExportField,
   type ExportFolder,
   type ExportIdentity,
   type ExportItem,
@@ -122,6 +124,30 @@ const emptyIdentity = (): ExportIdentity => ({
   passportNumber: null,
   licenseNumber: null,
 });
+
+/** A Wi-Fi network as another app has it; `security` in that app's words. */
+export type WifiEntry = {
+  ssid?: string | null;
+  password?: string | null;
+  security?: string | null;
+  hidden?: boolean;
+  eap?: string | null;
+  phase2?: string | null;
+  identity?: string | null;
+  anonymous?: string | null;
+  ca?: string | null;
+};
+
+/** Whether the item carries UwULock's Wi-Fi marker (docs/wifi.md). */
+export function hasWifiMarker(item: ExportItem): boolean {
+  // Bitwarden's JSON, read as it is, may have no fields or fields without a value.
+  return (item.fields ?? []).some(
+    (field) =>
+      field?.name === WIFI_MARKER &&
+      typeof field.value === 'string' &&
+      field.value.trim().toLowerCase() === WIFI_TYPE,
+  );
+}
 
 export class Collector {
   private folders: ExportFolder[] = [];
@@ -252,6 +278,70 @@ export class Collector {
     this.field(item, name, value, type);
   }
 
+  /**
+   * Makes `item` a Wi-Fi network: a secure note with the marker and the network's fields in
+   * front of the fields it has (docs/wifi.md). A security the contract has no name for stays
+   * as a field of its own, and the network gets the likeliest one.
+   */
+  wifi(item: ExportItem, entry: WifiEntry) {
+    this.retype(item, ItemType.Note);
+    const security = securityOf(entry.security) ?? (blank(entry.password) ? 'None' : 'WPA2');
+    if (!blank(entry.security) && !securityOf(entry.security)) {
+      this.extra(item, `${WIFI_FIELD.security} (${t('Original')})`, entry.security);
+    }
+    const ssid = some(entry.ssid) ?? item.name;
+    const own: ExportField[] = [
+      { name: WIFI_MARKER, value: WIFI_TYPE, type: FieldType.Text },
+      { name: WIFI_FIELD.ssid, value: ssid, type: FieldType.Text },
+      { name: WIFI_FIELD.password, value: entry.password ?? '', type: FieldType.Hidden },
+      { name: WIFI_FIELD.security, value: security, type: FieldType.Text },
+      {
+        name: WIFI_FIELD.hidden,
+        value: entry.hidden ? 'true' : 'false',
+        type: FieldType.Boolean,
+      },
+    ];
+    if (security.endsWith('-Enterprise')) {
+      const enterprise = [
+        [WIFI_FIELD.eap, entry.eap],
+        [WIFI_FIELD.phase2, entry.phase2],
+        [WIFI_FIELD.identity, entry.identity],
+        [WIFI_FIELD.anonymous, entry.anonymous],
+        [WIFI_FIELD.ca, entry.ca],
+      ] as const;
+      for (const [name, value] of enterprise) {
+        if (!blank(value)) own.push({ name, value: value.trim(), type: FieldType.Text });
+      }
+    }
+    // A field of the contract the item had already (from the file) gives way to the network's.
+    const names = new Set(own.map((field) => field.name));
+    item.fields = [...own, ...item.fields.filter((field) => !names.has(field.name))];
+    if (!item.name.trim()) item.name = ssid ?? '';
+  }
+
+  /**
+   * An item that came with UwULock's Wi-Fi marker (a KeePass entry, a Bitwarden CSV row, or one
+   * an importer made): a proper network, its password in the network's field, and the fields in
+   * the contract's order and kinds.
+   */
+  private wifiFromMarker(item: ExportItem) {
+    const get = (name: string) => item.fields.find((field) => field.name === name)?.value;
+    const login = item.login;
+    const password = get(WIFI_FIELD.password) ?? login?.password ?? null;
+    if (login && password === login.password) login.password = null;
+    this.wifi(item, {
+      ssid: get(WIFI_FIELD.ssid),
+      password,
+      security: get(WIFI_FIELD.security),
+      hidden: get(WIFI_FIELD.hidden)?.trim().toLowerCase() === 'true',
+      eap: get(WIFI_FIELD.eap),
+      phase2: get(WIFI_FIELD.phase2),
+      identity: get(WIFI_FIELD.identity),
+      anonymous: get(WIFI_FIELD.anonymous),
+      ca: get(WIFI_FIELD.ca),
+    });
+  }
+
   attachment(count = 1) {
     this.attachments += count;
   }
@@ -262,6 +352,7 @@ export class Collector {
 
   result(): { data: BitwardenExport; warnings: string[] } {
     for (const item of this.items) {
+      if (hasWifiMarker(item)) this.wifiFromMarker(item);
       if (!item.name.trim()) item.name = '--';
       // A card or a note with a password or an address from the source: kept, as fields.
       if (item.type !== ItemType.Login && item.login) {

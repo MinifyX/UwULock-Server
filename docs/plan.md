@@ -475,6 +475,25 @@ Bitwardens „Families".
   Bausteine und gleiche Hülle wie der Web-Tresor; alte Adressen leiten weiter.
   Admin-API `GET|PUT /uwu/v1/admin/features`, auf der Kommandozeile `uwulock-server features`.
 
+### 0.7 — WLAN-Einträge und ein Tresor pro Web-Tresor (Server 0.7.0-beta.1)
+
+- [x] WLAN als eigener Eintragstyp im Web-Tresor (`docs/wifi.md`): gespeichert wie bei Bitwarden
+  als sichere Notiz mit eigenen Feldern und dem Marker `uwulock:type` = `wifi`, damit die
+  offiziellen Apps eine Notiz mit Feldern zeigen. Feste Feldnamen (englisch, nie übersetzt):
+  `SSID`, `Password`, `Security`, `Hidden network`, nur bei Enterprise `EAP method`, `Phase 2`,
+  `Identity`, `Anonymous identity`, `CA certificate`. Fremde Felder bleiben unverändert. Eigenes
+  Icon, eigener Filter, eigener Editor (Enterprise-Felder nur bei Enterprise), Generator,
+  Kopieren, QR-Code zum Teilen (lokal mit uqr gezeichnet, Passwort erst auf Klick sichtbar).
+  Die WebAssembly erkennt den Marker (`view.rs`, `is_wifi`) und meldet `kind: "wifi"`.
+- [x] Import: 1Password *Wireless Router* (1PUX, CSV), Proton Pass *wifi* (JSON, CSV), LastPass
+  *Wi-Fi Password* und alles mit Marker (KeePass, Bitwarden) wird zum WLAN; der JSON-Export
+  behält alle Felder.
+- [x] Web-Tresor: „Konto hinzufügen" (und Konto wechseln/umbenennen) aus dem Kontomenü und dem
+  Sperrbildschirm entfernt — der Web-Tresor öffnet nur den Tresor dieses Servers, ein Konto zur
+  Zeit (Test: `AccountCard.test.tsx`). Der Desktop-Client behält es.
+- [ ] „Verbinden" auf Android/iOS, WLAN im Desktop-Client und in der Erweiterung: UwULock-Client
+  0.4.0-beta.1, gleicher Vertrag.
+
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
 Was CI nicht kann, von Hand gegen die Beta, mit dem Server als „selbst gehostet":

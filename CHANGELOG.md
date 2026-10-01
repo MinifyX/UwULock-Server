@@ -3,6 +3,30 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+**Wi-Fi networks.**
+
+- The web vault has a Wi-Fi item type: its own icon, its own filter under *Types* and its own
+  choice under *New*. The editor has the network's name (the item's name follows it), the
+  security (WPA3, WPA2/WPA3, WPA2, WPA, WEP, none, WPA2-/WPA3-Enterprise), the password with the
+  generator and *Hidden network*; EAP method, phase 2, identity, anonymous identity and CA
+  certificate appear only for Enterprise. The details copy every value and share the network as
+  a QR code (`WIFI:…`, drawn in the browser), with the password hidden until asked.
+- Stored the Bitwarden way, as a secure note with custom fields and the marker
+  `uwulock:type` = `wifi`: Bitwarden's apps show a note with fields, every UwULock app a network.
+  Other fields of the item stay as they are, and the JSON export keeps every field
+  ([docs/wifi.md](docs/wifi.md) has the contract all UwULock apps share).
+- The import makes Wi-Fi networks of 1Password's wireless routers (1PUX and CSV), Proton Pass's
+  Wi-Fi items (JSON and CSV), LastPass's *Wi-Fi Password* form and of every entry that already
+  has the marker (KeePass, Bitwarden); the preview counts them apart from the notes.
+
+**One vault in the web vault.**
+
+- The account menu in the web vault no longer offers *Add account* (or other accounts, or
+  renaming), which it had from the desktop app and which did nothing: the web vault opens this
+  server's vault, one account at a time. The menu now has *Lock* and *Log out*.
+
 ## 0.6.0-beta.2
 
 **Tidying up after 0.6.** The admin portal is sorted into areas with tabs, and every setting says

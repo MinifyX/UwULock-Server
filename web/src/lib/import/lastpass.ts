@@ -97,6 +97,10 @@ function readForm(collector: Collector, item: ExportItem, extra: string) {
   const { pairs, notes } = formLines(extra);
   let mapping: Mapping<ExportCard> | Mapping<ExportIdentity> | null = null;
   let fullName: string | null = null;
+  if (type === 'Wi-Fi Password') {
+    readWifiForm(collector, item, pairs, notes);
+    return;
+  }
   if (type === 'Credit Card') {
     collector.retype(item, ItemType.Card);
     mapping = CARD;
@@ -132,6 +136,28 @@ function readForm(collector: Collector, item: ExportItem, extra: string) {
     [item.identity.firstName, item.identity.middleName, item.identity.lastName] =
       splitName(fullName);
   }
+  collector.appendNote(item, notes);
+}
+
+/**
+ * LastPass's "Wi-Fi Password" form: SSID, Password and Authentication ("WPA2-PSK", "WEP",
+ * "WPA2-Enterprise", …) make the network; Connection Type, Encryption and the rest stay fields.
+ */
+function readWifiForm(
+  collector: Collector,
+  item: ExportItem,
+  pairs: [string, string][],
+  notes: string,
+) {
+  const network: { ssid?: string; password?: string; security?: string } = {};
+  for (const [key, value] of pairs) {
+    if (!some(value)) continue;
+    if (key === 'SSID' && network.ssid === undefined) network.ssid = value;
+    else if (key === 'Password' && network.password === undefined) network.password = value;
+    else if (key === 'Authentication' && network.security === undefined) network.security = value;
+    else if (key !== 'Language') collector.field(item, key, value);
+  }
+  collector.wifi(item, network);
   collector.appendNote(item, notes);
 }
 

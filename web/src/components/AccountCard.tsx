@@ -1,13 +1,5 @@
 import { useEffect, useState } from 'react';
-import {
-  lock,
-  logout,
-  renameAccount,
-  switchAccount,
-  syncNow,
-  type AccountBrief,
-  type Status,
-} from '../lib/api';
+import { lock, logout, syncNow, type Status } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { ago } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
@@ -21,22 +13,16 @@ export function initialOf(account: { name?: string | null; label?: string; email
 }
 
 /**
- * The account at the foot of the sidebar: whose vault this is, when it was
- * last synced — and the way to the other accounts. One account is open at a
- * time; the others keep their own keys and their own vault.
+ * The account at the foot of the sidebar: whose vault this is, when it was last synced, and
+ * its menu (lock, log out). The web vault is this server's and opens one account's vault: it
+ * offers no other account and no other server, unlike the desktop app's card it comes from.
  */
-export function AccountCard({
-  status,
-  onAddAccount,
-}: {
-  status: Status;
-  onAddAccount: () => void;
-}) {
+export function AccountCard({ status }: { status: Status }) {
   useLanguage();
   const [, force] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [renaming, setRenaming] = useState<AccountBrief | null>(null);
-  const [leaving, setLeaving] = useState<AccountBrief | null>(null);
+  // The address of the account to log out of, once asked.
+  const [leaving, setLeaving] = useState<string | null>(null);
 
   // "vor 3 Min." keeps itself up to date.
   useEffect(() => {
@@ -44,39 +30,20 @@ export function AccountCard({
     return () => window.clearInterval(timer);
   }, []);
 
-  const others = status.accounts.filter((account) => !account.active);
-  const current = status.accounts.find((account) => account.active) ?? null;
+  // The account this page is logged in to; the page knows no other.
+  const email = status.email;
 
   const open = (event: { currentTarget: HTMLElement }) => {
     const rect = event.currentTarget.getBoundingClientRect();
     setMenu({ x: rect.left, y: rect.bottom + 4 });
   };
 
-  const items: MenuItem[] = [
-    ...others.map((account): MenuItem => ({
-      label: account.unlocked ? account.label : t('{label} (gesperrt)', { label: account.label }),
-      icon: account.unlocked ? 'unlock' : 'lock',
-      onSelect: () => void switchAccount(account.id).catch((e) => toast(errorText(e), 'error')),
-    })),
-    ...(others.length ? (['separator'] as MenuItem[]) : []),
-    { label: t('Konto hinzufügen'), icon: 'plus', onSelect: onAddAccount },
-    ...(current
-      ? ([
-          {
-            label: t('Konto umbenennen'),
-            icon: 'pencil',
-            onSelect: () => setRenaming(current),
-          },
-          { label: t('Sperren'), icon: 'lock', onSelect: () => void lock() },
-          {
-            label: t('Abmelden'),
-            icon: 'logout',
-            danger: true,
-            onSelect: () => setLeaving(current),
-          },
-        ] as MenuItem[])
-      : []),
-  ];
+  const items: MenuItem[] = email
+    ? [
+        { label: t('Sperren'), icon: 'lock', onSelect: () => void lock() },
+        { label: t('Abmelden'), icon: 'logout', danger: true, onSelect: () => setLeaving(email) },
+      ]
+    : [];
 
   return (
     <>
@@ -85,7 +52,7 @@ export function AccountCard({
           className="account-switch"
           aria-haspopup="menu"
           aria-expanded={Boolean(menu)}
-          title={t('Konto wechseln')}
+          title={t('Konto')}
           onClick={open}
         >
           <span className="avatar" aria-hidden>
@@ -133,12 +100,10 @@ export function AccountCard({
           x={menu.x}
           y={menu.y}
           items={items}
-          label={t('Konten')}
+          label={t('Konto')}
           onClose={() => setMenu(null)}
         />
       )}
-
-      {renaming && <RenameAccount account={renaming} onClose={() => setRenaming(null)} />}
 
       {leaving && (
         <Modal
@@ -152,9 +117,8 @@ export function AccountCard({
                 className="danger"
                 data-secondary
                 onClick={() => {
-                  const id = leaving.id;
                   setLeaving(null);
-                  void logout(id)
+                  void logout()
                     .then(() => toast(t('Abgemeldet.')))
                     .catch((e) => toast(errorText(e), 'error'));
                 }}
@@ -170,55 +134,11 @@ export function AccountCard({
           <p className="dialog-lead">
             {t(
               '{email} wird von diesem Gerät entfernt – die Sitzung, die Schlüssel und der zwischengespeicherte Tresor. Auf dem Server bleibt alles, wie es ist.',
-              { email: leaving.email },
+              { email: leaving },
             )}
           </p>
         </Modal>
       )}
     </>
-  );
-}
-
-function RenameAccount({ account, onClose }: { account: AccountBrief; onClose: () => void }) {
-  useLanguage();
-  const [label, setLabel] = useState(account.label);
-  const save = () => {
-    void renameAccount(account.id, label.trim()).catch((e) => toast(errorText(e), 'error'));
-    onClose();
-  };
-  return (
-    <Modal
-      title={t('Konto umbenennen')}
-      onCancel={onClose}
-      footer={
-        <>
-          <span className="spacer" />
-          <button data-secondary onClick={onClose}>
-            {t('Abbrechen')}
-          </button>
-          <button className="primary" onClick={save}>
-            {t('Übernehmen')}
-          </button>
-        </>
-      }
-    >
-      <p className="dialog-lead">
-        {t('Nur hier auf diesem Gerät. Leer lassen: dann steht wieder {server} da.', {
-          server: account.server,
-        })}
-      </p>
-      <label className="field">
-        <span>{t('Name')}</span>
-        <input
-          type="text"
-          value={label}
-          maxLength={40}
-          autoFocus
-          placeholder={account.server}
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && save()}
-        />
-      </label>
-    </Modal>
   );
 }

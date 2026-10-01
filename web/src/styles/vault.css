@@ -1185,25 +1185,6 @@
   color: var(--uwu-muted);
 }
 
-.lock-accounts {
-  display: grid;
-  gap: var(--uwu-space-1);
-  margin-top: var(--uwu-space-1);
-}
-
-.lock-account-row {
-  display: flex;
-  align-items: center;
-  gap: var(--uwu-space-2);
-  width: 100%;
-  font-size: var(--uwu-text-sm);
-}
-
-.lock-account-row small {
-  margin-left: auto;
-  color: var(--uwu-muted);
-}
-
 /* ── Menus ─────────────────────────────────────────────── */
 /* The switcher, the folder actions and the way to a new item all use it. */
 

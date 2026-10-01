@@ -61,7 +61,8 @@ export type LoginStep =
   | { step: 'two-factor'; methods: TwoFactorMethod[]; message: string | null }
   | { step: 'new-device' };
 
-export type ItemKind = 'login' | 'note' | 'card' | 'identity' | 'ssh-key';
+/** `wifi` is a secure note with UwULock's marker field (lib/wifi.ts); saved as a `note`. */
+export type ItemKind = 'login' | 'note' | 'card' | 'identity' | 'ssh-key' | 'wifi';
 
 export type ItemSummary = {
   id: string;
@@ -576,9 +577,6 @@ export const logout = async (_id?: string): Promise<Status> => {
   profile = null;
   return announce();
 };
-
-export const switchAccount = async (_id: string) => status();
-export const renameAccount = async (_id: string, _label: string) => status();
 
 // ── Locking by itself ─────────────────────────────────────
 

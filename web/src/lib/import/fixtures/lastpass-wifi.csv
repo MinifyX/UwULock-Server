@@ -1,0 +1,21 @@
+url,username,password,totp,extra,name,grouping,fav
+http://sn,,,,"NoteType:Wi-Fi Password
+Language:de-DE
+SSID:uwu-net
+Password:lp-wifi
+Connection Type:ESS
+Connection Mode:auto
+Authentication:WPA2-PSK
+Encryption:AES
+Use 802.1X:
+FIPS Mode:
+Key Type:
+Protected:
+Key Index:
+Notes:Router im Flur",Zuhause,WLAN,0
+http://sn,,,,"NoteType:Wi-Fi Password
+Language:de-DE
+SSID:campus
+Password:eduroam-pass
+Authentication:WPA2-Enterprise
+Notes:",Campus,,0

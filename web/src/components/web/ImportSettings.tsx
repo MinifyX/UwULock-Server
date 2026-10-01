@@ -262,6 +262,7 @@ function ImportPreview({
     [summary.cards, t('Karten')],
     [summary.identities, t('Identitäten')],
     [summary.sshKeys, t('SSH-Schlüssel')],
+    [summary.wifi, t('WLANs')],
   ].filter(([n]) => Number(n) > 0) as [number, string][];
 
   const run = async () => {
@@ -328,7 +329,11 @@ function ImportPreview({
           <li key={i}>
             <span className="import-item-name">{item.name}</span>
             <span className="import-item-detail">
-              {[t(TYPE_LABELS[item.type]), item.detail, item.folder ?? t('Ohne Ordner')]
+              {[
+                item.wifi ? t('WLAN') : t(TYPE_LABELS[item.type]),
+                item.detail,
+                item.folder ?? t('Ohne Ordner'),
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </span>

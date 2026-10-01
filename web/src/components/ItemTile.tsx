@@ -10,6 +10,7 @@ const KIND_ICON: Record<ItemKind, IconName> = {
   identity: 'id',
   note: 'note',
   'ssh-key': 'key',
+  wifi: 'wifi',
 };
 
 /** Six soft tile colours; each item keeps its own, by name. */

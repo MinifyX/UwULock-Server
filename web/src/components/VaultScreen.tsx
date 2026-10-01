@@ -69,6 +69,7 @@ const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
   { type: 'identity', label: N_('Identitäten'), icon: 'id' },
   { type: 'note', label: N_('Notizen'), icon: 'note' },
   { type: 'ssh-key', label: N_('SSH-Schlüssel'), icon: 'key' },
+  { type: 'wifi', label: N_('WLAN'), icon: 'wifi' },
 ];
 
 function matches(filter: Filter, item: ItemSummary): boolean {
@@ -110,7 +111,6 @@ type Props = {
   status: Status;
   /** The search field, for Ctrl+F from the app. */
   searchRef: React.RefObject<HTMLInputElement | null>;
-  onAddAccount: () => void;
   /** A file request to open, from the link in the mail about it. */
   openRequest?: string | null;
   /** The items due for a new password, from the link in the reminder's mail. */
@@ -129,7 +129,6 @@ type Editing = { summary: ItemSummary | null; kind: ItemKind };
 export function VaultScreen({
   status,
   searchRef,
-  onAddAccount,
   openRequest,
   openDue,
   openItem,
@@ -683,7 +682,7 @@ export function VaultScreen({
           )}
 
           <span className="spacer" />
-          <AccountCard status={status} onAddAccount={onAddAccount} />
+          <AccountCard status={status} />
         </nav>
 
         {filter.kind === 'family' && familiesOn ? (

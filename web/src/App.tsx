@@ -299,7 +299,6 @@ export function App() {
               status={status}
               onUnlocked={setStatus}
               onLoggedOut={() => void vaultStatus().then(setStatus)}
-              onAddAccount={() => undefined}
             />
           ) : mustSetUp ? (
             <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
@@ -309,7 +308,6 @@ export function App() {
               <VaultScreen
                 status={status}
                 searchRef={searchRef}
-                onAddAccount={() => undefined}
                 openRequest={fileRequest}
                 openDue={route.path === '/vault' && route.query.get('due') === '1'}
                 openItem={route.path === '/vault' ? route.query.get('itemId') : null}

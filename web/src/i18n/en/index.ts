@@ -22,6 +22,7 @@ import suite from './suite.json';
 import switches from './switches.json';
 import vault from './vault.json';
 import web from './web.json';
+import wifi from './wifi.json';
 
 export const EN: Readonly<Record<string, string>> = {
   ...a11y,
@@ -43,4 +44,5 @@ export const EN: Readonly<Record<string, string>> = {
   ...switches,
   ...vault,
   ...web,
+  ...wifi,
 };
