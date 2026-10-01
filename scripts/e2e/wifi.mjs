@@ -29,6 +29,12 @@ async function open(scheme, viewport) {
     locale: 'de-DE',
     colorScheme: scheme,
   });
+  // The theme follows the system here, so the light and dark runs show both.
+  await context.addInitScript(() => {
+    if (!localStorage.getItem('uwulock.settings')) {
+      localStorage.setItem('uwulock.settings', JSON.stringify({ theme: 'system' }));
+    }
+  });
   const page = await context.newPage();
   page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
   page.on('console', (message) => {
@@ -59,9 +65,9 @@ try {
   if ((await page.getByLabel('Name', { exact: true }).inputValue()) !== 'campus') {
     throw new Error('the name does not follow the SSID');
   }
-  if (await page.getByLabel('EAP-Methode').count()) throw new Error('EAP shown for WPA2');
+  if (await page.getByLabel('EAP-Methode', { exact: true }).count()) throw new Error('EAP shown for WPA2');
   await page.getByLabel('Sicherheit').selectOption('WPA2-Enterprise');
-  await page.getByLabel('EAP-Methode').selectOption('PEAP');
+  await page.getByLabel('EAP-Methode', { exact: true }).selectOption('PEAP');
   await page.getByLabel('Identität', { exact: true }).fill('nyu@example.com');
   await page.getByLabel('WLAN-Passwort').fill('correct; horse');
   await snap(page, 'editor-enterprise');
@@ -71,7 +77,7 @@ try {
   await page.getByRole('button', { name: 'Neu', exact: true }).click();
   await page.getByRole('menuitem', { name: 'WLAN' }).click();
   await page.getByLabel('Netzwerkname (SSID)').fill('uwu-net');
-  await page.getByRole('button', { name: 'Passwort-Generator' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Passwort-Generator' }).click();
   await page.locator('.modal').last().getByRole('button', { name: /Übernehmen|Verwenden/ }).click();
   await page.getByLabel('Verstecktes Netzwerk (sendet seinen Namen nicht)').check();
   await snap(page, 'editor');
@@ -109,7 +115,7 @@ try {
     await other.page.getByRole('button', { name: 'Als QR-Code teilen' }).waitFor();
     await snap(other.page, `${name}-details`);
     await other.page.getByRole('button', { name: 'Bearbeiten' }).click();
-    await other.page.getByLabel('EAP-Methode').waitFor();
+    await other.page.getByLabel('EAP-Methode', { exact: true }).waitFor();
     await snap(other.page, `${name}-editor`);
     await other.page.getByRole('button', { name: 'Abbrechen' }).click();
     await other.page.getByRole('button', { name: 'Als QR-Code teilen' }).click();
