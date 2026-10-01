@@ -530,6 +530,25 @@ Bitwardens „Families".
   `/uwu/v1/info` meldet sie unter `breaches`. Vertrag: `docs/uwu-api.md` §15.1–§15.7.
 - [x] Dasselbe im UwULock-Client (Desktop, Android, iOS) nach §15.6/§15.7: UwULock-Client 0.4.0-beta.1.
 
+### 0.7 — SSH- und RDP-Einträge im Web-Tresor (Server 0.7.0-beta.2)
+
+- [x] Server nimmt UwUSSH 0.3s `assist_config` (10) und `assist_cache` (11) im Bereich `ssh` an
+  (nicht in `rdp`); `docs/uwu-api.md` §6.1.
+- [x] web/wasm: Bindings auf `uwulock_core::suite` (Bereich öffnen/anlegen, Seiten zusammenführen,
+  Einträge als JSON, Geheimnisse nur auf Nachfrage, neu/ändern/Tombstone mit HLC, Push-Body,
+  Ed25519 erzeugen/lesen). Schlüssel und versiegelte Einträge bleiben im Modul.
+- [x] Web-Tresor: eigene Abschnitte „SSH (UwUSSH)" und „Remote Desktop (UwURDP)" unter UwU-Apps
+  (aus bei Schalter `suite`): Liste nach Bereich/Gruppe mit Suche, Editoren für Host (RDP mit
+  allen Einstellungen, Gateway, Laufwerke), Gruppe, Identität (Passwort zeigen/kopieren/ändern mit
+  Generator), Schlüssel (Import, Ed25519 im Browser, privater Schlüssel zeigen/herunterladen),
+  Snippet, Port-Weiterleitung; bekannte Hosts ansehen und löschen; Reihenfolge; Löschen wie in
+  den Apps; Konflikte und 409 `space_changed`; Live über `/uwu/v1/realtime`; leerer Bereich kann
+  angelegt werden; Befehl kopieren, `.rdp` ohne Passwort/Laufwerke, „In UwUSSH/UwURDP öffnen"
+  (Deep Link, nur Desktop). Regeln: `docs/uwu-api.md` §6.7.
+- [x] Tests: vitest (Modell, Sync, Ansicht), wasm-Tests, uwulock-e2e (Web-Tresor legt Bereich und
+  Einträge an, UwUSSH öffnet sie, Bearbeitung behält fremde Felder, Tombstone).
+- [ ] Von Hand: mit echten UwUSSH-/UwURDP-Daten gegen die Beta; Deep Links mit den App-Builds.
+
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
 Was CI nicht kann, von Hand gegen die Beta, mit dem Server als „selbst gehostet":

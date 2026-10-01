@@ -8,6 +8,7 @@
 #   scripts/e2e/local.sh domains            # send domains (send.localhost) and masked addresses
 #   scripts/e2e/local.sh wifi               # Wi-Fi networks, screenshots light/dark/phone
 #   scripts/e2e/local.sh review             # the password check one login at a time
+#   scripts/e2e/local.sh suite              # UwUSSH's and UwURDP's entries, screenshots light/dark/phone
 #   scripts/e2e/local.sh theme              # account menu placement, admin theme, light/dark/phone
 #
 # HTTPS with a certificate from a test CA, as in CI: Bitwarden's CLI only talks HTTPS, and
@@ -70,6 +71,7 @@ for test in "$@"; do
         comfort) node_ scripts/e2e/comfort.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         wifi) node_ scripts/e2e/wifi.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         review) node_ scripts/e2e/review.mjs "$origin" "$email" "$password" target/e2e-shots ;;
+        suite) node_ scripts/e2e/suite.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         theme) node_ scripts/e2e/theme.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         sso) node_ scripts/e2e/sso.mjs "$origin" "$email" "$password" target/e2e-shots ;;
         domains) node_ scripts/e2e/domains.mjs "$origin" "$email" "$password" target/e2e-shots ;;

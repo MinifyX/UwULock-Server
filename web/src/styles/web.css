@@ -1851,3 +1851,71 @@ fieldset.send-access > legend {
     transition: none;
   }
 }
+
+/* ── Suite vault: UwUSSH's and UwURDP's records ─────────── */
+
+/* Seven kinds in a narrow list: the views wrap, a little smaller than a form's choice. */
+.suite-kinds .segmented {
+  width: 100%;
+}
+
+.suite-kinds .segmented button {
+  padding: var(--uwu-space-1) var(--uwu-space-2);
+  font-size: var(--uwu-text-sm);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--uwu-space-1);
+}
+
+.suite-count {
+  font-size: var(--uwu-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--uwu-muted);
+}
+
+/* A workspace or a group of hosts, between the rows of the list. */
+.suite-heading {
+  padding: var(--uwu-space-3) var(--uwu-space-3) var(--uwu-space-1);
+  font-size: var(--uwu-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--uwu-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suite-value {
+  min-width: 0;
+}
+
+/* Keys and fingerprints are long words: they break anywhere. */
+.suite-wrap {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
+.suite-secret {
+  margin: 0;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* A host has more tools than an item: they wrap within the pane instead of past it. */
+.suite-detail .detail-tools {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.icon-button.suite-down .icon {
+  rotate: 180deg;
+}
+
+.suite-file {
+  justify-self: start;
+  cursor: pointer;
+}

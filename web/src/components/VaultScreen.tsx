@@ -40,6 +40,9 @@ import { FamilyView, NewFamilyDialog } from './web/FamilyView';
 import { FileRequestsView } from './web/FileRequestsView';
 import { useSwitch } from '../lib/switches';
 import { SendsView } from './web/SendsView';
+import { SuiteView } from './suite/SuiteView';
+import { SPACE_LABEL } from './suite/labels';
+import type { SpaceName } from '../lib/suite/model';
 import {
   STATUS,
   acceptInvitation,
@@ -63,7 +66,8 @@ export type Filter =
   | { kind: 'sends' }
   | { kind: 'requests' }
   | { kind: 'health' }
-  | { kind: 'review' };
+  | { kind: 'review' }
+  | { kind: 'suite'; space: SpaceName };
 
 const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
   { type: 'login', label: N_('Logins'), icon: 'globe' },
@@ -80,7 +84,8 @@ function matches(filter: Filter, item: ItemSummary): boolean {
     filter.kind === 'requests' ||
     filter.kind === 'health' ||
     filter.kind === 'review' ||
-    filter.kind === 'family'
+    filter.kind === 'family' ||
+    filter.kind === 'suite'
   )
     return false;
   if (filter.kind === 'trash') return item.deleted;
@@ -209,6 +214,7 @@ export function VaultScreen({
   // Extras the server may have switched off (docs/features.md).
   const requestsOn = useSwitch('file-requests');
   const familiesOn = useSwitch('families');
+  const suiteOn = useSwitch('suite');
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const detailRef = useRef<HTMLElement>(null);
 
@@ -324,9 +330,11 @@ export function VaultScreen({
                         ? t('Sends')
                         : filter.kind === 'requests'
                           ? t('Datei-Anfragen')
-                          : filter.kind === 'review'
-                            ? t('Passwörter durchgehen')
-                            : t('Passwortprüfung');
+                          : filter.kind === 'suite'
+                            ? t(SPACE_LABEL[filter.space])
+                            : filter.kind === 'review'
+                              ? t('Passwörter durchgehen')
+                              : t('Passwortprüfung');
 
   const pick = (next: Filter) => {
     setFilter(next);
@@ -393,7 +401,7 @@ export function VaultScreen({
     ];
     const onKey = (event: KeyboardEvent) => {
       if (!singleKey(event)) return;
-      const items = !['sends', 'requests', 'health', 'review'].includes(filter.kind);
+      const items = !['sends', 'requests', 'health', 'review', 'suite'].includes(filter.kind);
       const key = event.key.toLowerCase();
       if (key === '/' && items) {
         searchRef.current?.focus();
@@ -590,6 +598,28 @@ export function VaultScreen({
             </>
           )}
 
+          {suiteOn && (
+            <>
+              <h2>{t('UwU-Apps')}</h2>
+              <ul className="nav-list">
+                {(['ssh', 'rdp'] as const).map((space) => (
+                  <li key={space}>
+                    <button
+                      className="nav-row"
+                      aria-current={
+                        filter.kind === 'suite' && filter.space === space ? 'true' : undefined
+                      }
+                      onClick={() => pick({ kind: 'suite', space })}
+                    >
+                      <Icon name={space === 'ssh' ? 'terminal' : 'monitor'} size={16} />
+                      <span className="nav-label">{t(SPACE_LABEL[space])}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
           {invitations.map((invitation) => (
             <div key={invitation.id} className="family-invitation" role="group">
               <p>
@@ -709,6 +739,8 @@ export function VaultScreen({
               void reload();
             }}
           />
+        ) : filter.kind === 'suite' && suiteOn ? (
+          <SuiteView key={filter.space} space={filter.space} />
         ) : filter.kind === 'sends' ? (
           <SendsView />
         ) : filter.kind === 'requests' && requestsOn ? (

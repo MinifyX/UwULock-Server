@@ -5078,7 +5078,7 @@ dependencies = [
 [[package]]
 name = "uwulock-bitwarden"
 version = "0.4.0-beta.1"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=3d0e358d24b01e919130b0d42e978e1fa63bc82f#3d0e358d24b01e919130b0d42e978e1fa63bc82f"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=c87995c490285e89a5ff451d8fad894be3629885#c87995c490285e89a5ff451d8fad894be3629885"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5102,7 +5102,7 @@ dependencies = [
 [[package]]
 name = "uwulock-core"
 version = "0.4.0-beta.1"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=3d0e358d24b01e919130b0d42e978e1fa63bc82f#3d0e358d24b01e919130b0d42e978e1fa63bc82f"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=c87995c490285e89a5ff451d8fad894be3629885#c87995c490285e89a5ff451d8fad894be3629885"
 dependencies = [
  "aes 0.8.4",
  "argon2 0.5.3",

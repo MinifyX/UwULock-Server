@@ -3,6 +3,41 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.7.0-beta.2
+
+**UwUSSH's and UwURDP's entries in the web vault.** The web vault has two new sections in the
+sidebar, *SSH (UwUSSH)* and *Remote Desktop (UwURDP)*, with everything the apps keep in the suite
+vault — viewable and editable, while the switch *Suite vault* is on. The links into the apps need
+UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, the next UwURDP beta).
+
+- Hosts by workspace and group, groups, identities, SSH keys, snippets, port forwards and known
+  hosts, each with a search, details and an editor. RDP hosts with every setting: display and
+  resolution, colour depth, audio, clipboard, console session, NLA, wallpaper, graphics pipeline,
+  gateway with its own login, drive redirection (also per group, with the group's login).
+- Passwords are shown, copied and changed, with the generator; keys are imported (OpenSSH, PEM,
+  PuTTY) or made new as Ed25519 in the browser, optionally with a passphrase, and the private key
+  is shown or downloaded.
+- A host's extras: copy the command (`ssh -p 2222 user@host`, or `host:port`), download an RDP
+  host as an `.rdp` file (without password, drives off), and on a computer *In UwUSSH öffnen* /
+  *In UwURDP öffnen* (`uwussh://connect/<id>`, `uwurdp://connect/<id>`: only the entry's id goes
+  along).
+- Deleting works as in the apps: a host takes its port forwards along; an identity or a key goes
+  only when nothing uses it any more (else the web vault lists what does), and its password or key
+  with it; a group leaves its hosts without a group.
+- The records are written by the apps' rules (their clocks, `baseSeq`, fresh nonces, tombstones),
+  and fields the web vault doesn't know stay as they are. When something changed on another
+  device meanwhile, the web vault reloads it and asks to apply the change again. Changes in the
+  apps show up at once (the realtime channel).
+- When no app has synced yet, the web vault can create the space.
+- The server takes UwUSSH 0.3's assistant records (`assist_config`, `assist_cache`) in the SSH
+  space; before, their sync was refused.
+
+**Maintenance.**
+
+- The web vault's crypto and the end-to-end tests use UwULock-Client's core with the suite module.
+- A new end-to-end test: the web vault makes the space and writes entries, UwUSSH opens them, and
+  an edit in the web vault keeps what the app added.
+
 ## 0.7.0-beta.1
 
 **Checking passwords one by one, more breach sources, Wi-Fi and failed logins.** The password
