@@ -20,7 +20,7 @@ import { useFeature } from '../lib/branding';
 import { errorText, maskedErrorText } from '../lib/errors';
 import { charClasses, copiedText, spacedCode, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
-import { IDENTITY_LABEL, KIND_LABEL } from '../lib/items';
+import { IDENTITY_LABEL, KIND_LABEL, SECURITY_LABEL } from '../lib/items';
 import {
   reloadMaskedLinks,
   STATE_LABEL,
@@ -30,10 +30,12 @@ import {
 } from '../lib/masked';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
+import { isEnterprise, readWifi } from '../lib/wifi';
 import { Attachments } from './web/Attachments';
 import { ItemComfort } from './web/ItemComfort';
 import { ShareAsSend } from './web/ShareAsSend';
 import { ShareToFamily, shareTargets } from './web/ShareToFamily';
+import { WifiShare } from './web/WifiShare';
 import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
@@ -401,6 +403,7 @@ export function ItemDetail({
   const [asking, setAsking] = useState<null | 'trash' | 'permanent'>(null);
   const [sharing, setSharing] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [sharingWifi, setSharingWifi] = useState(false);
   const [busy, setBusy] = useState(false);
   const id = summary.id;
   const link = useMaskedLinks(useFeature('masked-addresses'))[id] ?? null;
@@ -438,6 +441,8 @@ export function ItemDetail({
     .map((c) => c.name);
 
   const d = detail;
+  const wifi = d && !d.locked && summary.kind === 'wifi' ? readWifi(d.fields ?? []) : null;
+  const fields = wifi ? wifi.others : (d?.fields ?? []);
   return (
     <article className="detail" aria-label={summary.name}>
       <header className="detail-head">
@@ -588,6 +593,10 @@ export function ItemDetail({
           collectionIds={summary.collectionIds}
           onClose={() => setMoving(false)}
         />
+      )}
+
+      {sharingWifi && wifi && (
+        <WifiShare itemId={id} wifi={wifi} onClose={() => setSharingWifi(false)} />
       )}
 
       {asking && (
@@ -791,6 +800,70 @@ export function ItemDetail({
             </Section>
           )}
 
+          {wifi && (
+            <Section>
+              <Row
+                label={t('Netzwerkname (SSID)')}
+                mono
+                actions={
+                  wifi.ssid && wifi.from.ssid !== undefined ? (
+                    <CopyButton id={id} field={`field:${wifi.from.ssid}`} label="SSID" />
+                  ) : undefined
+                }
+              >
+                {wifi.ssid || <span className="muted">—</span>}
+              </Row>
+              {wifi.password?.hasValue && wifi.security !== 'None' && (
+                <SecretRow id={id} field={`field:${wifi.password.index}`} label={t('Passwort')} />
+              )}
+              <Row label={t('Sicherheit')}>
+                {wifi.security ? (
+                  t(SECURITY_LABEL[wifi.security] ?? wifi.security)
+                ) : (
+                  <span className="muted">—</span>
+                )}
+              </Row>
+              <Row label={t('Verstecktes Netzwerk')}>
+                <span className="bool" data-on={wifi.hidden || undefined}>
+                  {wifi.hidden ? t('Ja') : t('Nein')}
+                </span>
+              </Row>
+              {isEnterprise(wifi.security) &&
+                (
+                  [
+                    ['eap', t('EAP-Methode')],
+                    ['phase2', t('Phase 2')],
+                    ['identity', t('Identität')],
+                    ['anonymous', t('Anonyme Identität')],
+                    ['ca', t('CA-Zertifikat')],
+                  ] as const
+                ).map(([key, label]) =>
+                  wifi[key] ? (
+                    <Row
+                      key={key}
+                      label={label}
+                      actions={
+                        wifi.from[key] !== undefined ? (
+                          <CopyButton id={id} field={`field:${wifi.from[key]}`} label={label} />
+                        ) : undefined
+                      }
+                    >
+                      {wifi[key] === 'none' ? t('Keine') : wifi[key]}
+                    </Row>
+                  ) : null,
+                )}
+              <button
+                className="quiet"
+                onClick={() => setSharingWifi(true)}
+                aria-haspopup="dialog"
+                data-wifi-share
+              >
+                <Icon name="qr" size={15} />
+                {t('Als QR-Code teilen')}
+              </button>
+            </Section>
+          )}
+
           {d.notes && (
             <Section title={t('Notizen')}>
               <div className="notes">
@@ -800,9 +873,9 @@ export function ItemDetail({
             </Section>
           )}
 
-          {d.fields && d.fields.length > 0 && (
+          {fields.length > 0 && (
             <Section title={t('Eigene Felder')}>
-              {d.fields.map((field) => {
+              {fields.map((field) => {
                 const label = field.name || t('Feld {n}', { n: field.index + 1 });
                 if (field.kind === 'hidden' && field.hasValue)
                   return (

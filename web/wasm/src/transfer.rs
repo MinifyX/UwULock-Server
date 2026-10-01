@@ -616,6 +616,115 @@ mod tests {
 }
 
 #[cfg(test)]
+mod wifi_tests {
+    use super::*;
+    use crate::view;
+
+    /// A Wi-Fi network as UwULock's apps write it, with a field of another app's beside it.
+    const WIFI: &str = r#"{"encrypted": false, "folders": [], "items": [
+        {"type": 2, "name": "Home", "secureNote": {"type": 0}, "notes": "router in the hall",
+         "fields": [
+            {"name": "uwulock:type", "value": "wifi", "type": 0},
+            {"name": "SSID", "value": "uwu-net", "type": 0},
+            {"name": "Password", "value": "correct; horse", "type": 1},
+            {"name": "Security", "value": "WPA2-Enterprise", "type": 0},
+            {"name": "Hidden network", "value": "true", "type": 2},
+            {"name": "EAP method", "value": "PEAP", "type": 0},
+            {"name": "Phase 2", "value": "MSCHAPV2", "type": 0},
+            {"name": "Identity", "value": "nyu@example.com", "type": 0},
+            {"name": "Anonymous identity", "value": "anonymous@example.com", "type": 0},
+            {"name": "CA certificate", "value": "radius.example.com", "type": 0},
+            {"name": "Router admin", "value": "http://192.0.2.1", "type": 0}
+         ]}]}"#;
+
+    fn unlocked_with(items: Vec<Item>) -> Unlocked {
+        let user_key = SymmetricKey::generate();
+        let mut vault = uwulock_core::vault::Vault::default();
+        vault.items = items;
+        Unlocked {
+            email: "nyu@example.com".into(),
+            kdf: uwulock_core::crypto::Kdf::Pbkdf2 { iterations: 5000 },
+            protected_key: String::new(),
+            private_key: None,
+            vault,
+            user_key,
+            reprompt_ok: Default::default(),
+            attachments: Default::default(),
+            sends: Vec::new(),
+            send_auth: Default::default(),
+            report: Vec::new(),
+            extras: None,
+        }
+    }
+
+    fn fields(value: &Value) -> Vec<(String, String, u64)> {
+        value["items"][0]["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| {
+                (f["name"].as_str().unwrap().into(), f["value"].as_str().unwrap().into(), f["type"].as_u64().unwrap())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_wifi_network_goes_through_import_and_export_unchanged() {
+        let (mut items, _, _) = read_json(WIFI, "2026-10-01T00:00:00.000Z").unwrap();
+        for (index, item) in items.iter_mut().enumerate() {
+            item.id = format!("w{index}");
+        }
+        assert!(view::is_wifi(&items[0]));
+        assert_eq!(serde_json::to_value(view::summary(&items[0])).unwrap()["kind"], "wifi");
+
+        let unlocked = unlocked_with(items);
+        let exported: Value = serde_json::from_str(&export(&unlocked, "json").unwrap()).unwrap();
+        let original: Value = serde_json::from_str(WIFI).unwrap();
+        assert_eq!(exported["items"][0]["type"], 2, "still a secure note for Bitwarden's apps");
+        assert_eq!(exported["items"][0]["notes"], "router in the hall");
+        assert_eq!(fields(&exported), fields(&original), "every field, its kind and its order");
+
+        // And back in again, as another vault would read the export.
+        let (again, _, _) = read_json(&exported.to_string(), "2026-10-01T00:00:00.000Z").unwrap();
+        assert!(view::is_wifi(&again[0]));
+        assert_eq!(again[0].fields.len(), 11);
+    }
+
+    #[test]
+    fn a_saved_wifi_network_keeps_the_password_the_editor_never_saw() {
+        let (mut items, _, _) = read_json(WIFI, "2026-10-01T00:00:00.000Z").unwrap();
+        items[0].id = "w0".into();
+        let unlocked = unlocked_with(items);
+        // The editor's draft: the SSID changed, the password (field 2) left alone, the
+        // enterprise fields gone with WPA2, the other app's field kept as it was.
+        let draft: crate::draft::Draft = serde_json::from_value(json!({
+            "kind": "note", "name": "Home", "notes": null, "favorite": false, "reprompt": false,
+            "folderId": null,
+            "fields": [
+                {"name": "uwulock:type", "kind": "text", "value": "wifi", "from": 0},
+                {"name": "SSID", "kind": "text", "value": "uwu-net-5g", "from": 1},
+                {"name": "Password", "kind": "hidden", "value": null, "from": 2},
+                {"name": "Security", "kind": "text", "value": "WPA2", "from": 3},
+                {"name": "Hidden network", "kind": "boolean", "value": "false", "from": 4},
+                {"name": "Router admin", "kind": "text", "value": "http://192.0.2.1", "from": 10}
+            ]
+        }))
+        .unwrap();
+        let sealed = crate::draft::seal(&unlocked, "w0", draft, "2026-10-01T00:00:00.000Z").unwrap();
+        let mut cipher = serde_json::to_value(&sealed).unwrap();
+        cipher["id"] = json!("w0");
+        let cipher: uwulock_core::wire::Cipher =
+            serde_json::from_value(uwulock_core::wire::lowercase_keys(cipher)).unwrap();
+        let item = unlocked.vault.open_cipher(&cipher, &unlocked.user_key).unwrap().unwrap();
+        assert!(view::is_wifi(&item));
+        let password = item.fields.iter().find(|f| f.name.as_deref().map(String::as_str) == Some("Password")).unwrap();
+        assert_eq!(password.value.as_deref().map(String::as_str), Some("correct; horse"));
+        assert_eq!(password.kind, FieldKind::Hidden);
+        assert_eq!(item.fields.len(), 6);
+    }
+}
+
+#[cfg(test)]
 mod passkey_tests {
     use super::*;
 
