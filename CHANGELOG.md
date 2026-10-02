@@ -3,10 +3,7 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## 0.7.0-beta.3
-
-**Restores that work on a new machine.** A disaster-recovery drill restored a filled server from
-SFTP, S3, a folder and a local backup onto a clean one; this release fixes what it found.
+## Unreleased
 
 - **Web vault: items, entry Sends, passkeys and a new look.** Needs UwULock-Client's core at
   `2a8a708` (pinned in `web/wasm` and `uwulock-e2e`).
@@ -34,6 +31,12 @@ SFTP, S3, a folder and a local backup onto a clean one; this release fixes what 
   - More Nyu: empty trash, Sends and file requests, loading, unlocking, the password check, toasts and
     empty lists in the admin portal. Every animation follows *Appearance → Animations* and the
     system's wish for less motion.
+
+## 0.7.0-beta.3
+
+**Restores that work on a new machine.** A disaster-recovery drill restored a filled server from
+SFTP, S3, a folder and a local backup onto a clean one; this release fixes what it found.
+
 - **Bitwarden's push relay is gone (plan change).** The server no longer wakes Bitwarden's phone
   apps through Bitwarden's relay: it needed an installation id and key from bitwarden.com/host and
   sent account and device ids to Bitwarden with every change. Bitwarden's apps for iOS and Android
