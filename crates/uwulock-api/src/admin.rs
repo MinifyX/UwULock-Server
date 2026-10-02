@@ -797,8 +797,10 @@ pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     }
     let settings =
         Settings::load(&state.store, &state.config.start_settings, &state.secret).await.map_err(ApiError::internal)?;
-    let features =
-        crate::Features::load(&state.store, &state.config.start_features).await.map_err(ApiError::internal)?;
+    // The restored database may have been written while another `UWULOCK_FEATURES` counted.
+    let start = state.config.start_features.as_ref();
+    crate::Features::remember_start(&state.store, start).await.map_err(ApiError::internal)?;
+    let features = crate::Features::load(&state.store, start).await.map_err(ApiError::internal)?;
     if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
         tracing::warn!(%error, "the mail server of the restored settings");
     }

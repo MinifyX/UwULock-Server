@@ -57,7 +57,7 @@ enum BackupAction {
     /// The snapshots on the other system, with the settings of the admin portal.
     List,
     /// Put a snapshot from the other system into an empty data directory: for a new machine,
-    /// before its server starts the first time. The recovery key comes from
+    /// before its server starts the first time (install.sh --no-start). The recovery key comes from
     /// UWULOCK_BACKUP_KEY or is asked for; an SFTP password from UWULOCK_BACKUP_SFTP_PASSWORD;
     /// S3 keys from UWULOCK_BACKUP_S3_ACCESS_KEY and UWULOCK_BACKUP_S3_SECRET_KEY.
     Restore(Box<OffsiteRestore>),
@@ -401,7 +401,7 @@ async fn settings(config: Config, action: SettingsAction) -> Result<(), String> 
 async fn features(config: Config, action: FeaturesAction) -> Result<(), String> {
     use uwulock_api::{Feature, Features};
     let store = uwulock_server::open_store(&config)?;
-    let mut current = Features::load(&store, &config.start_features).await?;
+    let mut current = Features::load(&store, config.start_features.as_ref()).await?;
     let (names, on) = match action {
         FeaturesAction::List => {
             for feature in Feature::ALL {
@@ -452,7 +452,7 @@ async fn import_vaultwarden(config: Config, path: PathBuf, dry_run: bool, admins
     println!("Imported. Point the clients at this server; they stay logged in.");
     // Organisations are managed with what families bring: that switch has to be on for them.
     if summary.organizations > 0 {
-        let mut features = uwulock_api::Features::load(&store, &config.start_features).await?;
+        let mut features = uwulock_api::Features::load(&store, config.start_features.as_ref()).await?;
         if !features.switched_on(uwulock_api::Feature::Families) {
             features.set(uwulock_api::Feature::Families, true);
             features.save(&store).await.map_err(|error| error.to_string())?;
@@ -559,6 +559,7 @@ async fn offsite(
             );
             println!("Everybody logs in again. Backups to the other system are switched off on this machine:");
             println!("turn them on in the admin portal once the target is the right one.");
+            println!("The feature switches came along; see them with: docker compose run --rm uwulock features");
             println!("Start the server: docker compose up -d");
             Ok(())
         }

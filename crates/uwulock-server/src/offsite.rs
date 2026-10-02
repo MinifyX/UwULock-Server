@@ -123,16 +123,39 @@ impl Drop for Quiet {
 }
 
 async fn open(target: &Target, key: Option<&str>) -> Result<Repository, String> {
+    let given = key.is_some();
     let key = key.map(RepoKey::from_recovery_text).transpose().map_err(|error| error.to_string())?;
     // An SFTP server is asked only for its host key until `--host-key` confirms it (SV-L27).
-    let storage = Storage::open(target).await.map_err(|error| match error {
+    let storage = Storage::open(target).await.map_err(opening)?;
+    Repository::open_existing(storage, key).await.map_err(|error| match error {
+        uwulock_backup::Error::WrongKey if !given => no_key().into(),
+        other => other.to_string(),
+    })
+}
+
+/// What went wrong reaching the backup server, said for the command line.
+fn opening(error: uwulock_backup::Error) -> String {
+    match error {
         uwulock_backup::Error::HostKeyUnconfirmed { seen } => format!(
             "The backup server shows the host key {seen}. Check it (on the server: \
              ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub) and run again with --host-key {seen}"
         ),
+        // Unlike the portal, the command line remembers no key to forget: it trusts the one
+        // given with --host-key, so the advice is to give the other one.
+        uwulock_backup::Error::HostKeyChanged { expected, seen } => format!(
+            "The backup server shows the host key {seen}, not {expected} as given with --host-key; \
+             nothing was sent to it. Check it (on the server: ssh-keygen -lf \
+             /etc/ssh/ssh_host_ed25519_key.pub); if {seen} is right, run again with --host-key {seen}"
+        ),
         other => other.to_string(),
-    })?;
-    Repository::open_existing(storage, key).await.map_err(|error| error.to_string())
+    }
+}
+
+/// An encrypted backup, and no recovery key: not a wrong one, none at all.
+fn no_key() -> &'static str {
+    "This backup is encrypted, and no recovery key was given. Set UWULOCK_BACKUP_KEY \
+     (docker compose run --rm -e UWULOCK_BACKUP_KEY uwulock backup restore …, with the key in \
+     UWULOCK_BACKUP_KEY of the shell), or run the command in a terminal to be asked for it."
 }
 
 /// The snapshots there, newest first.
@@ -168,14 +191,19 @@ pub async fn restore(
     .await;
     repo.storage.close().await;
     let manifest = restored?;
+    switch_off_offsite(into, &manifest).await?;
+    Ok(manifest)
+}
+
+/// The database is closed again when this returns.
+async fn switch_off_offsite(into: &Path, manifest: &Manifest) -> Result<(), String> {
     let store = uwulock_store::Store::open_sqlite(&into.join("uwulock.db"), &uwulock_store::Options { readers: 1 })
         .map_err(|error| error.to_string())?;
     let offsite = uwulock_backup::Offsite::new(store, into, &manifest.hostname, &manifest.version);
     let mut settings = offsite.settings().await.map_err(|error| error.to_string())?;
     settings.enabled = false;
     settings.enabled_since = None;
-    offsite.save_settings(&settings).await.map_err(|error| error.to_string())?;
-    Ok(manifest)
+    offsite.save_settings(&settings).await.map_err(|error| error.to_string())
 }
 
 /// `1.4 MB`.
@@ -230,16 +258,27 @@ mod tests {
             ..Default::default()
         };
         offsite.save_settings(&settings).await.unwrap();
+        // Switched on by `UWULOCK_FEATURES` only: not in the environment of the new machine.
+        uwulock_api::Features::remember_start(&store, Some(&uwulock_api::Features::all())).await.unwrap();
         let report = offsite.run_now().await.unwrap();
 
-        assert!(restore(&target, None, None, &tempfile::tempdir().unwrap().path().join("x")).await.is_err(), "the key");
+        let error = restore(&target, None, None, &tempfile::tempdir().unwrap().path().join("x")).await.unwrap_err();
+        assert!(error.contains("no recovery key was given") && error.contains("UWULOCK_BACKUP_KEY"), "{error}");
         let listed = list(&target, Some(&key)).await.unwrap();
         assert_eq!(listed[0].name, report.snapshot);
         let new = tempfile::tempdir().unwrap();
         let manifest = restore(&target, Some(&key.to_lowercase()), None, new.path()).await.unwrap();
         assert_eq!(manifest.name, report.snapshot);
         assert_eq!(std::fs::read(new.path().join("sends/s1/f1")).unwrap(), b"a send's file");
+        let mut left: Vec<String> = std::fs::read_dir(new.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["secret.key", "sends", "uwulock.db"], "no backup-tmp, no -wal or -shm");
         let restored = Store::open_sqlite(&new.path().join("uwulock.db"), &Options { readers: 1 }).unwrap();
+        let features = uwulock_api::Features::load(&restored, None).await.unwrap();
+        assert_eq!(features, uwulock_api::Features::all(), "the switches came along");
         let settings = Offsite::new(restored, new.path(), "", "").settings().await.unwrap();
         assert!(!settings.enabled && settings.key.as_deref() == Some(key.as_str()), "{settings:?}");
     }
@@ -255,5 +294,15 @@ mod tests {
             .unwrap();
         assert_eq!(s3.shown(), "s3://bucket/lock at https://s3.example.com");
         assert_eq!(size(1_500_000), "1.5 MB");
+    }
+
+    #[test]
+    fn a_changed_host_key_is_answered_with_the_new_one_to_pass() {
+        let changed =
+            uwulock_backup::Error::HostKeyChanged { expected: "SHA256:old".into(), seen: "SHA256:new".into() };
+        let text = opening(changed);
+        assert!(text.contains("run again with --host-key SHA256:new") && !text.contains("forget"), "{text}");
+        let unconfirmed = opening(uwulock_backup::Error::HostKeyUnconfirmed { seen: "SHA256:new".into() });
+        assert!(unconfirmed.contains("--host-key SHA256:new"), "{unconfirmed}");
     }
 }

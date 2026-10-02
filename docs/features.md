@@ -71,6 +71,16 @@ the admin turns it on (and then each account still has to agree). Off, their end
 - A **new server** starts with only the vault and the website icons. `UWULOCK_FEATURES` in `.env`
   sets what it starts with instead: `all`, `none` or names like `families,file-requests`. It
   counts only as long as nobody switched anything in the admin portal.
+- While it counts, the server **keeps what it says in the database** (`features.start` in the
+  `server` table), at every start and after a restore in the portal. `.env` is not in a backup, the
+  database is: a server restored on a new machine without `UWULOCK_FEATURES` keeps the switches
+  the old one had through it ([backups.md](backups.md)). The order is: the switches an admin
+  switched (portal or command line) win over everything; until then `UWULOCK_FEATURES`, when it is
+  set, also a changed one; without it, what it said last; without that, none. So the documented
+  rule holds — the line counts until somebody switches, and a server that is switched once keeps
+  the admin's switches whatever `.env` says. The other way round was not chosen: writing the
+  line's values as switched would have frozen it at the first start, and a changed
+  `UWULOCK_FEATURES` would no longer count although nobody switched.
 - A server **updated from 0.6.0-beta.1** keeps on what it uses: an extra with data (an
   organisation, a file request, a reminder, an own icon, a version …) or set up (a UwUMail
   server, an SSO provider, a SCIM token, an off-site target, a non-mail notification channel)

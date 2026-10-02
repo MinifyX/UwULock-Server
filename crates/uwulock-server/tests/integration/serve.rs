@@ -78,7 +78,7 @@ async fn plain_http_answers_and_is_healthy() {
 async fn a_new_server_starts_with_only_the_vault_and_icons() {
     let dir = tempfile::tempdir().unwrap();
     let mut config = config_in(dir.path());
-    config.start_features = uwulock_api::Features::parse_list("reminders").unwrap();
+    config.start_features = Some(uwulock_api::Features::parse_list("reminders").unwrap());
     let server = start(config).await;
     let client = reqwest::Client::new();
     let info: serde_json::Value =
@@ -224,7 +224,7 @@ async fn a_send_domain_certificate_from_an_acme_ca() {
     };
     config.send_domain_acme = uwulock_server::config::Acme { domain: String::new(), ..acme.clone() };
     config.tls = TlsMode::Acme(acme);
-    config.start_features = uwulock_api::Features::none().with(uwulock_api::Feature::SendDomains, true);
+    config.start_features = Some(uwulock_api::Features::none().with(uwulock_api::Feature::SendDomains, true));
     uwulock_server::open_store(&config).unwrap().add_send_domain("send.uwulock.test", "acme").await.unwrap();
     let server = start(config.clone()).await;
     config.listen = server.addr;

@@ -36,7 +36,10 @@ sudo bash install.sh --domain vault.example.com --acme-email admin@example.com -
 sudo bash install.sh --behind-proxy https://vault.example.com --admin you@example.com --yes
 ```
 
-`sudo bash install.sh --help` lists every flag.
+`sudo bash install.sh --help` lists every flag. `--no-start` sets everything up but does not
+start the server, for a new machine that takes over from an old one: the backup goes into the
+empty data directory first ([backups.md](backups.md#on-a-new-machine-from-the-command-line)),
+then `sudo docker compose up -d` starts it.
 
 ## The first admin, and everybody else
 
@@ -343,6 +346,51 @@ Attachments, the files of Sends and uploads to file requests are not in the data
 files next to it, in `/data/attachments`, `/data/sends` and `/data/file-requests`, encrypted by
 the clients. The backups on another system carry them; a copy by hand should too. A file whose attachment or Send is deleted stays another week before the nightly sweep
 takes it, so a backup from that week that is put back still finds its files.
+
+### To another machine by hand
+
+For another machine, `/data/backups` alone is not enough. The database needs what lies next to
+it in `/data`:
+
+- `secret.key`: it opens the values the database keeps sealed (the passwords and tokens in the
+  settings, the SSO client secret, the notification channels, the off-site settings, the UwUMail
+  tokens of masked addresses). Without it the server refuses to start; started once with
+  `UWULOCK_NEW_SECRET_KEY=1` it starts, but all those values are empty and have to be entered
+  again.
+- `attachments`, `sends` and `file-requests`: the files, encrypted by the clients. Without them
+  the items are there, their files are not.
+- `acme`: the Let's Encrypt account and certificates, only with `--domain`; without it a new
+  certificate is fetched.
+
+The website icons (`icons`), the GeoIP databases (`geoip`) and the breach lists (`breaches`) are
+fetched again. On the old machine:
+
+```bash
+cd /opt/uwulock
+sudo docker compose exec uwulock uwulock-server backup
+mkdir move
+for item in backups secret.key attachments sends file-requests acme; do
+  sudo docker compose cp "uwulock:/data/$item" move/   # one that never was used is not there
+done
+sudo cp .env move/env
+```
+
+Carry `move` to the new machine (it holds `secret.key`: treat it like the server itself), set the
+server up there without starting it (`sudo bash install.sh --no-start` with the same answers, or
+`.env` from `move/env`), and put the files into its volume. The container runs as uid 10001, so
+everything there has to belong to it:
+
+```bash
+cd /opt/uwulock
+sudo docker volume create uwulock_uwulock-data
+sudo docker run --rm -v uwulock_uwulock-data:/data -v "$PWD/move:/move:ro" alpine \
+  sh -c 'cp -a /move/. /data/ && rm -f /data/env && chown -R 10001:10001 /data && chmod 0600 /data/secret.key'
+sudo docker compose run --rm uwulock restore            # lists the backups
+sudo docker compose run --rm uwulock restore uwulock-2026-09-25-031000.db
+sudo docker compose up -d
+```
+
+The backups on another system ([backups.md](backups.md)) carry all of this by themselves.
 
 ## Push notifications for the phone apps
 

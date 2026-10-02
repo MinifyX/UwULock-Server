@@ -5,8 +5,8 @@
 #   sudo bash install.sh
 #
 # It installs Docker when it is missing, asks how your clients reach this machine, sets up
-# /opt/uwulock and starts the server. Every answer is a flag as well, so it can run without
-# questions:
+# /opt/uwulock and starts the server (unless --no-start). Every answer is a flag as well, so it
+# can run without questions:
 #
 #   sudo bash install.sh --domain vault.example.com --yes
 #   sudo bash install.sh --behind-proxy https://vault.example.com --yes
@@ -33,6 +33,9 @@
 #   --no-docker-install    stop instead of installing Docker when it is missing
 #   --from-checkout        take compose.yaml and the rest from the repository this script is in
 #   --no-pull              start the image already on this machine (for trying a build)
+#   --no-start             set everything up, but do not start the server: to put a backup into
+#                          the empty data directory first (docs/backups.md), then
+#                          docker compose up -d
 #   --yes                  ask nothing; whatever is not passed keeps its default
 #   --help
 #
@@ -58,6 +61,7 @@ update_check=on
 docker_install=true
 from_checkout=false
 pull=true
+start=true
 ask=true
 
 die() {
@@ -83,6 +87,7 @@ while [ $# -gt 0 ]; do
     --no-docker-install) docker_install=false; shift ;;
     --from-checkout) from_checkout=true; shift ;;
     --no-pull) pull=false; shift ;;
+    --no-start) start=false; shift ;;
     --yes | -y) ask=false; shift ;;
     -h | --help)
       # Piped into bash, there is no file to read the help from.
@@ -650,6 +655,24 @@ give_up() {
 if $pull; then
   step "fetching the image"
   docker compose pull --quiet </dev/null || give_up "the image could not be fetched"
+fi
+
+# Set up, not started: the data directory stays empty, for a restore into it.
+if ! $start; then
+  cat <<READY
+
+  UwULock Server is set up in $dir, but not started (--no-start).
+
+  To put a snapshot from another system into it first (docs/backups.md), for example:
+
+    cd $dir && sudo docker compose run --rm uwulock backup restore --sftp backup@nas.example.com:/path …
+
+  Then start it:  cd $dir && sudo docker compose up -d
+
+READY
+  [ -n "$admin" ] && warn "--admin needs a running server: once it runs, invite $admin with
+      cd $dir && sudo docker compose exec uwulock uwulock-server invite --admin $admin"
+  exit 0
 fi
 
 step "starting UwULock Server"

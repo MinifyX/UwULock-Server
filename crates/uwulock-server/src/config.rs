@@ -76,9 +76,10 @@ pub struct Config {
     /// in the portal.
     pub start_settings: Settings,
     /// The extras a new server starts with switched on (`UWULOCK_FEATURES`: `all`, or names
-    /// like `families,file-requests`); none unless it says so. A server that has its switches
-    /// in the database keeps those (docs/features.md).
-    pub start_features: uwulock_api::Features,
+    /// like `families,file-requests`); `None` when it is not set: then what the database kept
+    /// from an earlier start with it, or none. A server that has its switches in the database
+    /// keeps those (docs/features.md).
+    pub start_features: Option<uwulock_api::Features>,
     /// Servers whose `Date` header the diagnosis compares the clock with. GitHub, which the
     /// update check asks anyway, unless the update check is off or `UWULOCK_TIME_SOURCE` says
     /// otherwise (`off` for none).
@@ -100,7 +101,7 @@ impl Default for Config {
             login_attempts: 10,
             channel: None,
             start_settings: Settings::default(),
-            start_features: uwulock_api::Features::none(),
+            start_features: None,
             time_sources: Vec::new(),
             send_domain_acme: Acme {
                 domain: String::new(),
@@ -167,8 +168,9 @@ impl Config {
             None => Vec::new(),
         };
         if let Some(features) = var("UWULOCK_FEATURES") {
-            config.start_features =
-                uwulock_api::Features::parse_list(&features).map_err(|error| format!("UWULOCK_FEATURES: {error}"))?;
+            config.start_features = Some(
+                uwulock_api::Features::parse_list(&features).map_err(|error| format!("UWULOCK_FEATURES: {error}"))?,
+            );
         }
         if let Some(language) = var("UWULOCK_LANGUAGE") {
             config.start_settings.default_language = match language.to_ascii_lowercase().as_str() {
@@ -464,9 +466,10 @@ mod tests {
     #[test]
     fn a_new_server_starts_with_the_features_it_is_told() {
         use uwulock_api::{Feature, Features};
-        assert_eq!(config(&[]).unwrap().start_features, Features::none(), "only the vault and icons");
-        assert_eq!(config(&[("UWULOCK_FEATURES", "all")]).unwrap().start_features, Features::all());
-        let some = config(&[("UWULOCK_FEATURES", "families, file-requests")]).unwrap().start_features;
+        assert_eq!(config(&[]).unwrap().start_features, None, "what the database kept, or only the vault and icons");
+        assert_eq!(config(&[("UWULOCK_FEATURES", "all")]).unwrap().start_features, Some(Features::all()));
+        assert_eq!(config(&[("UWULOCK_FEATURES", "none")]).unwrap().start_features, Some(Features::none()));
+        let some = config(&[("UWULOCK_FEATURES", "families, file-requests")]).unwrap().start_features.unwrap();
         assert_eq!(some.names(), [Feature::Families.id(), Feature::FileRequests.id()]);
         assert!(config(&[("UWULOCK_FEATURES", "families,teleport")]).is_err());
     }

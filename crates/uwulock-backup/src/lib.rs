@@ -544,13 +544,18 @@ pub async fn restore_into(repo: &Repository, snapshot: &str, data_dir: &Path) ->
     }
     let manifest = repo.manifest(snapshot).await?;
     fits_this_server(&manifest)?;
-    tokio::fs::create_dir_all(data_dir.join(TEMP_DIR)).await?;
-    restore_files(repo, &manifest, data_dir).await?;
-    let fetched = data_dir.join(TEMP_DIR).join("restore.db");
-    fetch_database(repo, &manifest, &fetched).await?;
-    let aside = uwulock_store::with_suffix(&database, ".before-restore");
-    let placed = uwulock_store::restore(&fetched, &database, &aside).map_err(Error::Config);
-    let _ = tokio::fs::remove_file(&fetched).await;
+    let temp = data_dir.join(TEMP_DIR);
+    tokio::fs::create_dir_all(&temp).await?;
+    let placed = async {
+        restore_files(repo, &manifest, data_dir).await?;
+        let fetched = temp.join("restore.db");
+        fetch_database(repo, &manifest, &fetched).await?;
+        let aside = uwulock_store::with_suffix(&database, ".before-restore");
+        uwulock_store::restore(&fetched, &database, &aside).map_err(Error::Config)
+    }
+    .await;
+    // No server runs here yet (there was no database): the folder is the restore's alone.
+    let _ = tokio::fs::remove_dir_all(&temp).await;
     placed?;
     Ok(manifest)
 }
