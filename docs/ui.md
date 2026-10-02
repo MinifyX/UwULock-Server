@@ -35,7 +35,7 @@ A value that is not on these scales needs a reason in a comment.
 | `RepeatRow` | `aux?: 'wide' \| 'narrow'` | A repeated row: main control, optional second one, remove button. |
 | `Card` | `heading?`, `aside?`, `as?: 'section' \| 'div' \| 'li' \| 'article'` | A framed block with an optional head. |
 | `Section` | `heading?`, `lead?` | A part of a page or settings section, with the shared small heading. |
-| `SettingRow` | `label`, `description?`, children = the control | The control wraps below the text on a phone. A `Toggle`, `Select` or `Segmented` inside takes the description as its own; other controls are a group named after the setting. |
+| `SettingRow` | `label`, `description?`, children = the control | The control wraps below the text on a phone. A `Toggle`, `Select` or `Segmented` inside takes the description as its own; buttons alone are a group named after the setting. |
 | `ButtonRow` | `end?` | Buttons side by side that wrap. |
 | `Tabs` | `label`, `tabs: {id, label, extra?, disabled?}[]`, `value`, `onChange(id)`, `variant?: 'line' \| 'segmented'`, `idPrefix?` | Arrow keys, Home and End; roving tab stop. With `idPrefix` (from `useTabsId()`), `TabPanel` names its tab. |
 | `TabPanel` | `idPrefix`, `tab`, `className?` | The picked tab's content. |

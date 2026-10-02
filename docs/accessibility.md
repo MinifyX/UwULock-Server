@@ -115,7 +115,7 @@ selects, switches and check boxes 3:1 (their own token, `--uwu-control`).
 - Hidden secrets read *verborgen* instead of a row of dots; the one-time code's countdown says
   *noch 25 Sekunden gültig* rather than a bare number.
 - A setting row's line about it is the description of its switch, select or choice, so the reader
-  says what *Reisemodus* does along with *an* or *aus*. A row with buttons instead (*Einrichten …*)
+  says what *Reisemodus* does along with *an* or *aus*. A row of only buttons (*Einrichten …*)
   is a group named after the setting, so the reader says which setting the button belongs to.
 - Lists are list boxes: the focus stays on the list and the reader announces the selected entry
   (and whether it is ticked). Enter opens it; in the vault the focus moves into the item, and

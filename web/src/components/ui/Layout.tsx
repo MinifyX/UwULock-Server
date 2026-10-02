@@ -1,4 +1,5 @@
-import { isValidElement, useId, type ReactNode } from 'react';
+import { Children, isValidElement, useId, type ReactNode } from 'react';
+import { Button } from './Button';
 import { SettingContext } from './setting';
 
 /**
@@ -72,9 +73,9 @@ export function Section({
 /**
  * One setting: its name and a line about it on the left, its control on the right.
  *
- * A switch, a select or a choice (anything with a `label` of its own) takes the line about it as
- * its description. Other controls (buttons like "Einrichten …") are a group named after the
- * setting, so a screen reader says which setting a button belongs to.
+ * A switch, a select or a choice takes the line about it as its description. Buttons alone (like
+ * "Einrichten …") are a group named after the setting, so a screen reader says which setting a
+ * button belongs to.
  */
 export function SettingRow({
   label,
@@ -88,7 +89,12 @@ export function SettingRow({
   const id = useId();
   const labelId = `${id}-label`;
   const descriptionId = description ? `${id}-description` : undefined;
-  const named = isValidElement<{ label?: unknown }>(children) && children.props.label !== undefined;
+  // Buttons ("Einrichten …") say nothing of the setting they belong to: they go in a group named
+  // after it. A field, a switch or a select has a name of its own and stays as it is.
+  const buttons = Children.toArray(children).filter(isValidElement);
+  const grouped =
+    buttons.length > 0 &&
+    buttons.every((child) => child.type === 'button' || child.type === Button);
   return (
     <div className="setting-row">
       <div className="setting-text">
@@ -105,9 +111,9 @@ export function SettingRow({
         <SettingContext.Provider value={{ labelId, descriptionId }}>
           <div
             className="setting-control"
-            role={named ? undefined : 'group'}
-            aria-labelledby={named ? undefined : labelId}
-            aria-describedby={named ? undefined : descriptionId}
+            role={grouped ? 'group' : undefined}
+            aria-labelledby={grouped ? labelId : undefined}
+            aria-describedby={grouped ? descriptionId : undefined}
           >
             {children}
           </div>
