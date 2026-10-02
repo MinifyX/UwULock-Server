@@ -54,6 +54,8 @@
 .nyu-bob,
 .nyu-hop,
 .nyu-walk,
+.nyu-fly,
+.nyu-scan,
 .nyu-plug,
 .nyu-sparks,
 .nyu-twinkle,
@@ -98,6 +100,25 @@
 
 .nyu-zzz path:nth-child(2) {
   animation-delay: 1.2s;
+}
+
+.nyu-fly {
+  animation: nyu-fly 2.6s ease-in-out infinite;
+}
+
+.nyu-scan {
+  animation: nyu-scan 2s ease-in-out infinite;
+}
+
+/* Once, when it appears: a little hop (the toast's Nyu, a check that is done). */
+.nyu-pop {
+  transform-origin: 50% 100%;
+  animation: nyu-pop 520ms cubic-bezier(0.3, 1.4, 0.6, 1);
+}
+
+/* For waiting: shows only when the wait is long enough to notice, so a quick load never flashes. */
+.nyu-delayed {
+  animation: nyu-fade-in 300ms ease-out 400ms both;
 }
 
 @keyframes nyu-bob {
@@ -233,5 +254,46 @@
   50.01%,
   100% {
     opacity: 0;
+  }
+}
+
+@keyframes nyu-fly {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0);
+  }
+  50% {
+    transform: translate(6px, -8px) rotate(-4deg);
+  }
+}
+
+@keyframes nyu-scan {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(18px, 14px);
+  }
+}
+
+@keyframes nyu-pop {
+  0% {
+    transform: translateY(0) scale(0.6);
+  }
+  45% {
+    transform: translateY(-4px) scale(1.1);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes nyu-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }

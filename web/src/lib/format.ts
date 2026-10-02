@@ -46,7 +46,9 @@ export function copiedText(field: string, seconds: number): string {
         ? t('Passwort kopiert')
         : field === 'totp'
           ? t('Code kopiert')
-          : t('Kopiert');
+          : field === 'totp-next'
+            ? t('Nächster Code kopiert')
+            : t('Kopiert');
   return seconds > 0 ? t('{what} ✧ – wird nach {n} s geleert', { what, n: seconds }) : `${what} ✧`;
 }
 

@@ -5,6 +5,7 @@ import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 /**
  * Nobody registers without an invitation. One goes out by mail when the server can send any;
@@ -102,7 +103,7 @@ export function Invitations() {
       </Section>
       <Section heading={t('Offene Einladungen')}>
         {list?.length === 0 ? (
-          <p className="empty-note">{t('Keine offenen Einladungen.')}</p>
+          <EmptyNote>{t('Keine offenen Einladungen.')}</EmptyNote>
         ) : (
           <Table
             label={t('Offene Einladungen')}

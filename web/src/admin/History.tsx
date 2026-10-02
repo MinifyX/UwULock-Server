@@ -4,6 +4,7 @@ import { stats, type Day } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
+import { EmptyNote } from '../components/NyuStates';
 
 const WIDTH = 300;
 const HEIGHT = 80;
@@ -146,11 +147,11 @@ export function History() {
         />
       </div>
       {!last || days.length < 2 ? (
-        <p className="empty-note">
+        <EmptyNote>
           {t(
             'Der Server schreibt seine Zahlen jede Stunde auf. Ab morgen gibt es hier einen Verlauf.',
           )}
-        </p>
+        </EmptyNote>
       ) : (
         <div className="chart-grid">
           <Card title={t('Nutzer')} value={last.users.toLocaleString()} days={days}>

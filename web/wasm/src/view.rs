@@ -197,6 +197,12 @@ pub fn detail(unlocked: &Unlocked, id: &str) -> Result<Value> {
                 "openable": u.uri.starts_with("http://") || u.uri.starts_with("https://"),
             })).collect::<Vec<_>>(),
             "passkeys": l.passkey_count(),
+            // Their details (site, user, created) for the item's passkey card; nothing secret.
+            "passkeyList": unlocked
+                .vault
+                .item_key(item, &unlocked.user_key)
+                .map(|key| uwulock_core::passkey::list(item, key))
+                .unwrap_or_default(),
         })
     });
     let card = item.card.as_ref().map(|c| {
@@ -269,7 +275,8 @@ pub fn detail(unlocked: &Unlocked, id: &str) -> Result<Value> {
 
 /// A single value of an item, by name: `password`, `username`, `notes`, `uri:<n>`,
 /// `card-number`, `card-code`, `card-name`, `card-expiry`, `identity:<name>`, `ssh-private`,
-/// `ssh-public`, `ssh-fingerprint`, `field:<n>`, `history:<n>`, `totp` (the current code).
+/// `ssh-public`, `ssh-fingerprint`, `field:<n>`, `history:<n>`, `totp` (the current code),
+/// `totp-next` (the code of the next period, shown in the last seconds of the current one).
 pub fn value_of(unlocked: &Unlocked, id: &str, field: &str, now: u64) -> Result<Zeroizing<String>> {
     let item = find(unlocked, id)?;
     if item.reprompt && !unlocked.reprompt_ok.contains(id) {
@@ -288,6 +295,10 @@ pub fn value_of(unlocked: &Unlocked, id: &str, field: &str, now: u64) -> Result<
         "totp" => {
             let secret = clone(login.and_then(|l| l.totp.as_ref()))?;
             Ok(Totp::parse(&secret)?.code_at(now).0)
+        }
+        "totp-next" => {
+            let secret = clone(login.and_then(|l| l.totp.as_ref()))?;
+            Ok(Totp::parse(&secret)?.next_code_at(now))
         }
         "notes" => clone(item.notes.as_ref()),
         "card-number" => clone(card.and_then(|c| c.number.as_ref())),
@@ -313,11 +324,35 @@ pub fn value_of(unlocked: &Unlocked, id: &str, field: &str, now: u64) -> Result<
     }
 }
 
+/// The codes at one moment: `{code, remaining, period, next, showNext}`. `next` is the code of
+/// the following period; `showNext` is true in its last
+/// [`uwulock_core::totp::NEXT_CODE_WINDOW`] seconds, when the page shows it below ("Nächster").
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TotpCode {
     code: String,
     remaining: u64,
     period: u64,
+    next: String,
+    show_next: bool,
+}
+
+impl From<uwulock_core::totp::Codes> for TotpCode {
+    fn from(codes: uwulock_core::totp::Codes) -> Self {
+        TotpCode {
+            show_next: codes.show_next(),
+            code: codes.code.to_string(),
+            next: codes.next.to_string(),
+            remaining: codes.remaining,
+            period: codes.period,
+        }
+    }
+}
+
+/// The codes of an authenticator key that is no item's: the one in an entry Send, for the Send
+/// page. Needs no unlocked vault.
+pub fn totp_codes(secret: &str, now: u64) -> Result<TotpCode> {
+    Ok(Totp::parse(secret)?.codes_at(now).into())
 }
 
 pub fn totp(unlocked: &Unlocked, id: &str, now: u64) -> Result<TotpCode> {
@@ -330,9 +365,7 @@ pub fn totp(unlocked: &Unlocked, id: &str, now: u64) -> Result<TotpCode> {
         .as_ref()
         .and_then(|l| l.totp.as_ref())
         .ok_or_else(|| Failure::new("not-found", "No authenticator key."))?;
-    let totp = Totp::parse(secret)?;
-    let (code, remaining) = totp.code_at(now);
-    Ok(TotpCode { code: code.to_string(), remaining, period: totp.period })
+    Ok(Totp::parse(secret)?.codes_at(now).into())
 }
 
 #[cfg(test)]

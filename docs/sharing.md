@@ -2,14 +2,32 @@
 
 ## Share an item as a Send
 
-*Web vault → an item → Share as Send* (the Send button beside the star) makes a text Send out of the item:
-you tick which values go in — username, password, websites, notes, custom fields, a card's or an
-identity's fields, an SSH key — and each becomes a line `Label: value` under the item's name.
-**The authenticator key (TOTP) is never among them**, whatever is ticked: whoever has it can make
-the codes for good, which is not what "share this login" means.
+*Web vault → an item → Share as Send* (the Send button beside the star) makes a Send out of the
+item: you tick which values go in — username, password, websites (each listed with its address,
+so several can be told apart), notes, custom fields, a card's or an identity's fields, an SSH key
+— and, for a login with an authenticator key, **the one-time codes**. Those are never ticked at
+the start.
 
-It is an ordinary Send, so it also shows up under *Sends*, in the UwULock app and in the official
-Bitwarden apps. What it starts with:
+It is an **entry Send**: an ordinary text Send whose text is two things.
+
+- The readable lines, `Label: value` under the item's name, for the official Bitwarden apps and
+  anybody who opens it there. **The authenticator key is never among them.**
+- A last line `uwulock-entry:v1:<base64url(JSON)>` with the same values as JSON —
+  `{name, username?, password?, websites[], notes?, fields[{name, value, hidden}], totp?}`
+  (uwulock-core `entry_send`; the same contract in the web vault's WebAssembly and the apps).
+
+UwULock's Send page sees that line, hides the raw text and shows the item the way the vault does:
+each value with a copy button, the password and hidden fields as dots until a click, websites as
+links. With the codes chosen, `totp` holds the key **only so the page can make the codes**: it
+shows the current code counting down and, in the last 10 seconds, the next one ("Next: 123 456")
+with its own copy button — never the key, never a QR code. The dialog says so plainly: whoever has
+the link could still dig the key out of the Send, so share codes only with someone you would
+trust with your two-step login anyway. A text without the marker, with another version or one
+that does not decode is shown as the plain text it is; Sends made before 0.8 stay as they were.
+In your own list (*Sends*) an entry Send shows its readable lines, marked *shared as an item*.
+
+It shows up under *Sends*, in the UwULock app and in the official Bitwarden apps. What it starts
+with:
 
 - it goes after **one day** (and stops opening then),
 - it opens **once**,
@@ -20,7 +38,8 @@ The link appears at once, with a button to copy it. Send it another way than the
 has one.
 
 Everything happens in the browser: the values are put together and encrypted there, with a key
-that only travels in the link after the `#`. The server stores what it cannot read.
+that only travels in the link after the `#`. The server stores what it cannot read — to it an
+entry Send is a text Send like any other.
 
 ## Sends only for given addresses
 

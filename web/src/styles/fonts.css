@@ -1,0 +1,12 @@
+/*
+ * UwU Sans, the default font (brand/fonts/uwu-sans, the same file as UwUMail's). Manrope, Rubik
+ * and DM Sans come from @fontsource (imported in main.tsx). The browser only fetches the one in
+ * use; see lib/fonts.ts.
+ */
+@font-face {
+  font-family: 'UwU Sans';
+  src: url('../assets/fonts/UwUSans[wght].woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}

@@ -55,8 +55,10 @@ could not be opened any more.
 
 ## Reminders to renew a password
 
-*Web vault → an item → Reminder to renew → Remind me …*: after a number of months (counted from
-the last change of the password, or from when the item was made) or on a day. When it is due, the
+*Web vault → an item → Edit → Remind me to renew* (a switch, off by default): after a number of
+months (counted from the last change of the password, or from when the item was made) or on a
+day. Only while it is on does the item's page show a *Reminder to renew* card with the next date;
+switching it off in the editor removes the reminder. When it is due, the
 item gets a bell in the list, the vault a *Due* section, and you a mail — "An item in your vault is
 due for a new password" — that names no item and links to the list. The server keeps only the
 item's id and the day. A new password moves a repeating reminder on; a reminder for a day that has

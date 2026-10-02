@@ -34,21 +34,14 @@ import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { ItemTile } from '../ItemTile';
 import { Modal } from '../Modal';
-import { radioArrows } from './controls';
+import { radioArrows, Toggle } from './controls';
 
 /**
  * What the web vault adds to an item: its icon, a reminder to renew its password, and its
  * earlier versions. Each in a card of its own below the item's fields, where the server has
  * the feature switched on.
  */
-export function ItemComfort({
-  summary,
-  passwordDate,
-}: {
-  summary: ItemSummary;
-  /** When the login's password was last changed, for a reminder after some months. */
-  passwordDate: string | null;
-}) {
+export function ItemComfort({ summary }: { summary: ItemSummary }) {
   useLanguage();
   useComfort();
   const ownIcons = useSwitch('own-icons');
@@ -59,7 +52,7 @@ export function ItemComfort({
   return (
     <>
       {ownIcons && <IconCard summary={summary} />}
-      {reminders && <ReminderCard summary={summary} passwordDate={passwordDate} />}
+      {reminders && <ReminderCard summary={summary} />}
       {versions && <VersionsCard summary={summary} />}
     </>
   );
@@ -350,66 +343,82 @@ function LibraryDialog({
 
 // ── The reminder ──────────────────────────────────────────
 
-function ReminderCard({
-  summary,
+/** The reminder as the editor holds it: switched on or off, and when. */
+export type ReminderForm = { on: boolean; mode: 'months' | 'day'; months: number; day: string };
+
+/** The editor's reminder for the item `id` (or a new one), from what the server keeps. */
+export function reminderForm(id: string | null): ReminderForm {
+  const reminder = id ? reminderOf(id) : null;
+  return {
+    on: Boolean(reminder),
+    mode: reminder && !reminder.everyMonths ? 'day' : 'months',
+    months: reminder?.everyMonths ?? 12,
+    day: reminder?.due ?? '',
+  };
+}
+
+/**
+ * After the item `id` was saved: the reminder as the editor left it, set, changed or removed.
+ * Nothing happens when nothing changed. A reminder switched on without a day stays off.
+ */
+export async function saveReminder(
+  id: string,
+  before: ReminderForm,
+  after: ReminderForm,
+): Promise<void> {
+  const same =
+    before.on === after.on &&
+    (!after.on ||
+      (before.mode === after.mode &&
+        (after.mode === 'months' ? before.months === after.months : before.day === after.day)));
+  if (same) return;
+  if (!after.on) {
+    if (reminderOf(id)) await removeReminder(id);
+    return;
+  }
+  if (after.mode === 'day' && !after.day) return;
+  await setReminder(
+    id,
+    after.mode === 'months' ? { everyMonths: after.months } : { due: after.day },
+  );
+}
+
+/**
+ * The reminder in the editor: off unless switched on; then after some months or on a day. The
+ * item's details show it only while it is on.
+ */
+export function ReminderFields({
+  value,
+  onChange,
   passwordDate,
 }: {
-  summary: ItemSummary;
-  passwordDate: string | null;
+  value: ReminderForm;
+  onChange: (next: ReminderForm) => void;
+  /** Whether the months count from the password's last change (else from the item's creation). */
+  passwordDate: boolean;
 }) {
-  const reminder = reminderOf(summary.id);
-  const [editing, setEditing] = useState(false);
-  const [mode, setMode] = useState<'months' | 'day'>(reminder?.everyMonths ? 'months' : 'day');
-  const [months, setMonths] = useState(reminder?.everyMonths ?? 12);
-  const [day, setDay] = useState(reminder?.due ?? '');
-  const [busy, setBusy] = useState(false);
-
-  const save = async () => {
-    setBusy(true);
-    try {
-      await setReminder(summary.id, mode === 'months' ? { everyMonths: months } : { due: day });
-      setEditing(false);
-      toast(t('Erinnerung gespeichert ✧'));
-    } catch (e) {
-      toast(errorText(e), 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const remove = async () => {
-    setBusy(true);
-    try {
-      await removeReminder(summary.id);
-      toast(t('Erinnerung entfernt.'));
-    } catch (e) {
-      toast(errorText(e), 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
+  useLanguage();
+  const set = (patch: Partial<ReminderForm>) => onChange({ ...value, ...patch });
   return (
-    <section className="detail-card comfort-card">
-      <h3 className="detail-card-title">{t('Erinnerung ans Erneuern')}</h3>
-      {reminder && !editing && (
-        <p className="comfort-line">
-          {reminder.isDue && <span className="chip chip-due">{t('Fällig')}</span>}
-          {reminder.everyMonths
-            ? t('Alle {n} Monate, das nächste Mal am {day}.', {
-                n: reminder.everyMonths,
-                day: reminder.due,
-              })
-            : t('Am {day}.', { day: reminder.due })}
-        </p>
-      )}
-      {!reminder && !editing && (
-        <p className="field-hint">
-          {t(
-            'Der Server kennt nur den Tag und schickt dann eine Mail, die den Eintrag nicht nennt.',
-          )}
-        </p>
-      )}
-      {editing && (
+    <div className="reminder-fields" data-reminder>
+      <div className="setting-row">
+        <div className="setting-text">
+          <p className="setting-label">{t('Ans Erneuern erinnern')}</p>
+          <p className="setting-description">
+            {t(
+              'Der Server kennt nur den Tag und schickt dann eine Mail, die den Eintrag nicht nennt.',
+            )}
+          </p>
+        </div>
+        <div className="setting-control">
+          <Toggle
+            label={t('Ans Erneuern erinnern')}
+            checked={value.on}
+            onChange={(on) => set({ on })}
+          />
+        </div>
+      </div>
+      {value.on && (
         <div className="comfort-form">
           <div
             className="segmented"
@@ -420,23 +429,23 @@ function ReminderCard({
             <button
               type="button"
               role="radio"
-              aria-checked={mode === 'months'}
-              tabIndex={mode === 'months' ? 0 : -1}
-              onClick={() => setMode('months')}
+              aria-checked={value.mode === 'months'}
+              tabIndex={value.mode === 'months' ? 0 : -1}
+              onClick={() => set({ mode: 'months' })}
             >
               {t('Nach Monaten')}
             </button>
             <button
               type="button"
               role="radio"
-              aria-checked={mode === 'day'}
-              tabIndex={mode === 'day' ? 0 : -1}
-              onClick={() => setMode('day')}
+              aria-checked={value.mode === 'day'}
+              tabIndex={value.mode === 'day' ? 0 : -1}
+              onClick={() => set({ mode: 'day' })}
             >
               {t('An einem Tag')}
             </button>
           </div>
-          {mode === 'months' ? (
+          {value.mode === 'months' ? (
             <label className="field">
               <span>
                 {passwordDate
@@ -447,49 +456,44 @@ function ReminderCard({
                 type="number"
                 min={1}
                 max={60}
-                value={months}
+                value={value.months}
                 onChange={(event) =>
-                  setMonths(Math.max(1, Math.min(60, Number(event.target.value) || 1)))
+                  set({ months: Math.max(1, Math.min(60, Number(event.target.value) || 1)) })
                 }
               />
             </label>
           ) : (
             <label className="field">
               <span>{t('Tag')}</span>
-              <input type="date" value={day} onChange={(event) => setDay(event.target.value)} />
+              <input
+                type="date"
+                value={value.day}
+                onChange={(event) => set({ day: event.target.value })}
+              />
             </label>
           )}
         </div>
       )}
-      <div className="comfort-actions">
-        {editing ? (
-          <>
-            <button
-              className="primary"
-              disabled={busy || (mode === 'day' && !day)}
-              onClick={() => void save()}
-            >
-              {t('Speichern')}
-            </button>
-            <button className="quiet" disabled={busy} onClick={() => setEditing(false)}>
-              {t('Abbrechen')}
-            </button>
-          </>
-        ) : (
-          <>
-            <button className="quiet" disabled={busy} onClick={() => setEditing(true)}>
-              <Icon name="bell" size={15} />
-              {reminder ? t('Ändern') : t('Erinnern …')}
-            </button>
-            {reminder && (
-              <button className="quiet danger-text" disabled={busy} onClick={() => void remove()}>
-                <Icon name="trash" size={15} />
-                {t('Entfernen')}
-              </button>
-            )}
-          </>
-        )}
-      </div>
+    </div>
+  );
+}
+
+/** The reminder in the item's details: only there while it is switched on (in the editor). */
+function ReminderCard({ summary }: { summary: ItemSummary }) {
+  const reminder = reminderOf(summary.id);
+  if (!reminder) return null;
+  return (
+    <section className="detail-card comfort-card" data-reminder-card>
+      <h3 className="detail-card-title">{t('Erinnerung ans Erneuern')}</h3>
+      <p className="comfort-line">
+        {reminder.isDue && <span className="chip chip-due">{t('Fällig')}</span>}
+        {reminder.everyMonths
+          ? t('Alle {n} Monate, das nächste Mal am {day}.', {
+              n: reminder.everyMonths,
+              day: reminder.due,
+            })
+          : t('Am {day}.', { day: reminder.due })}
+      </p>
     </section>
   );
 }

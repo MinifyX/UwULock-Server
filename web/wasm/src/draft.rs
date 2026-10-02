@@ -229,6 +229,31 @@ pub fn seal(unlocked: &Unlocked, id: &str, draft: Draft, now: &str) -> Result<Ci
     Ok(item.seal(outer)?)
 }
 
+/// A copy of the item `source` as a new item, the draft laid over it ("Duplizieren"). Whatever
+/// the editor never had — a password nobody looked at, the authenticator key, a hidden field —
+/// comes from the source, and so do its passkeys: they stay under the item's own key, which the
+/// copy keeps (Bitwarden's clone keeps it too). Attachments, the history of earlier versions and
+/// the archive stay with the source.
+pub fn seal_clone(unlocked: &Unlocked, source: &str, draft: Draft, now: &str) -> Result<CipherRequest> {
+    let mut item = find(unlocked, source)?.clone();
+    if item.reprompt && !unlocked.reprompt_ok.contains(source) {
+        return Err(Failure::new("refused", "Enter your master password to open this item first."));
+    }
+    if item.kind != draft.kind {
+        return Err(Failure::new("invalid", "An item keeps its kind."));
+    }
+    item.id = String::new();
+    item.revision_date = None;
+    item.creation_date = None;
+    item.deleted = false;
+    item.archived_date = None;
+    item.attachments = 0;
+    apply(&mut item, draft, now)?;
+    item.can_save()?;
+    let outer = unlocked.vault.outer_key(item.organization_id.as_deref(), &unlocked.user_key)?;
+    Ok(item.seal(outer)?)
+}
+
 /// The login `id` with only a new password, encrypted for the server. The old password goes into
 /// the history (Bitwarden keeps five), and the revision date of the password is now.
 pub fn seal_password(unlocked: &Unlocked, id: &str, password: String, now: &str) -> Result<CipherRequest> {

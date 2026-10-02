@@ -27,7 +27,7 @@ A value that is not on these scales needs a reason in a comment.
 | `Field` | `label`, `hint?`, `hintTone?: 'default' \| 'warn'`, `error?`, `tools?`, `hideLabel?`, one control as child | Gives the control its id, `aria-describedby` and `aria-invalid`. `tools` (up to three IconButtons) sit inside the control, at its end. |
 | `TextField` | `label`, `value`, `onChange(value)`, `hint?`, `error?`, `tools?`, `mono?`, input attributes | A Field around an input. |
 | `Select` | `value`, `options: {value, label}[]`, `onChange(value)`, `label?`, `disabled?`, `id?` | Wrap in a Field for a visible label. |
-| `Checkbox` | `label`, `checked`, `onChange(checked)`, `disabled?` | Several in a `<div className="checks">`. |
+| `Checkbox` | `label`, `checked`, `onChange(checked)`, `disabled?` | Several in a `<div className="checks">`. Every `input[type=checkbox]` looks the same (below). |
 | `Toggle` | `label`, `checked`, `onChange(checked)`, `disabled?` | A switch; the row beside it says what it does. |
 | `Segmented` | `label`, `value`, `options: {value, label}[]`, `onChange(value)`, `wide?` | A radio group with arrow keys. |
 | `FormRow` | `min?: 'narrow' \| 'default' \| 'wide'` (120/180/240 px) | Fields side by side as they fit, stacked on a phone. |
@@ -43,11 +43,45 @@ A value that is not on these scales needs a reason in a comment.
 | `Callout` | `tone?: 'info' \| 'accent' \| 'ok' \| 'warning' \| 'error'`, `title?`, `icon?: IconName \| null`, `actions?` | A notice in a page or dialog; `error` is announced. |
 | `Table` | `label?`, `head` (the `<th>`s), rows as children | Scrolls sideways inside its frame on a phone; the frame then takes the keyboard focus. |
 | `DangerZone` | `heading`, `lead?` | What cannot be undone (deleting, restoring, strict rules), framed apart at the end of a page. Its buttons still ask first. |
+| `TotpCodes` | `code: TotpCode`, `onCopyNext?` | A one-time code with its countdown ring; in the last 10 seconds (`showNext`) the next code below it, small, with its own copy button. The item details and the Send page of an entry Send use it. |
 | `Modal` | `title`, `onCancel`, `footer?`, `size?: 'default' \| 'wide'`, `tone?: 'default' \| 'warning'`, `closable?` | Focus trap, Escape, scroll hairlines on the body. Footer: `<span className="spacer" />`, then the safe choice (`data-secondary`), then the primary one. |
 
 Plain classes for what needs no component: `.form` (a form's rows with even gaps),
 `.form-note`, `.form-error`, `.field-hint`, `.checks`, `.button-link`, `.settings-heading` and
 `.settings-lead`.
+
+## Fonts
+
+*Appearance → Font* (per device, `font` in `uwulock.settings`; vault and admin portal alike):
+**UwU Sans** (the default, as in UwUMail), Manrope (UwULock's font before 0.8), Rubik, DM Sans or
+the system's. The picker shows each choice in itself. `applyAppearance` sets `--uwu-font`,
+`--uwu-tracking` and `data-font` on `<html>` (`web/src/lib/fonts.ts`); every file comes from this
+server (`font-src 'self'`), and the browser only fetches the one in use. UwU Sans is UwUMail's
+build (`brand/fonts/uwu-sans`, keep it byte-identical with UwUMail's copy); the licences (all SIL
+OFL 1.1) are in `THIRD-PARTY-NOTICES.txt`.
+
+UwU Sans turns `:3` into Nyu and `<3` into a heart. In a password manager no value may look
+different from what it is, so contextual alternates are off for the whole page
+(`font-variant-ligatures: no-contextual`, again on fields, code and buttons).
+
+## Checkboxes and switches
+
+Every `input[type=checkbox]` has UwUMail's look, in CSS only (`appearance: none`), so it stays a
+native checkbox for keyboards and screen readers: 18 px, 6 px corners, a 2 px border, pink with a
+check mark when ticked, a dash when mixed, the focus ring, a dimmed disabled state, high contrast
+(`data-contrast=high`) and the system's colours in Windows contrast themes; a small pop when
+ticked. `Toggle` is UwUMail's switch: 44 × 24, a thumb that slides, pink when on.
+
+## Nyu
+
+Nyu, the mascot (`web/src/components/nyu/`), is decoration everywhere (`aria-hidden`), and every
+animation of hers follows *Appearance → Animations* (`data-motion=reduced` on `<html>`, which also
+follows the system's wish for less motion). Scenes (`NyuScene`) show empty states — the vault,
+an empty trash (`tidy`), no Sends (`letter`), no file requests (`files`) — loading (`connecting`,
+only after a moment), unlocking (`keys`) and the password check (`search` while it runs, `done`
+when nothing was found). Toasts carry a small Nyu: starry-eyed for a toast ending in ✧ (copied,
+saved), happy for a note, sad for an error. Empty lists in the admin portal and the settings use
+`EmptyNote`, a small sleepy Nyu in front of the text.
 
 ## Theme
 

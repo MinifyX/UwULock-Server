@@ -3,6 +3,7 @@ import { initialOf } from '../components/AccountCard';
 import { Icon } from '../components/Icon';
 import { LoginScreen } from '../components/LoginScreen';
 import { NyuScene } from '../components/nyu/scenes';
+import { NyuLoading } from '../components/NyuStates';
 import { Appearance } from '../components/SettingsDialog';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { SkipLink, TitleBar } from '../components/TitleBar';
@@ -188,12 +189,12 @@ export function AdminApp() {
   }, [area, areas, portal]);
 
   let body;
-  if (status === null) body = null;
+  if (status === null) body = <NyuLoading />;
   // The portal needs the session, not the vault: logging in opens the vault, and it is locked
   // again at once, so no key and nothing decrypted stays in an admin tab.
   else if (status.state === 'logged-out')
     body = <LoginScreen target="admin" onDone={() => void lock()} />;
-  else if (info === null) body = null;
+  else if (info === null) body = <NyuLoading />;
   else if (info === 'none' || !info.admin) {
     body = (
       <div className="lock">

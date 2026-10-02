@@ -13,7 +13,6 @@
   "Code schicken": "Send code",
   "Das Symbol im Browser-Tab. Quadratisch sieht am besten aus.": "The icon in the browser tab. Square looks best.",
   "Der Code stimmt nicht oder ist abgelaufen.": "The code is wrong or has expired.",
-  "Die gewählten Felder kommen als Text in einen neuen Send. Der Schlüssel für Einmal-Codes (TOTP) ist nie dabei.": "The chosen fields go into a new Send as text. The key for one-time codes (TOTP) is never included.",
   "Die Liste der Websites mit Zwei-Schritt-Anmeldung war gerade nicht zu haben; dieser Teil fehlt im Bericht.": "The list of websites with two-step login wasn't available just now; this part is missing from the report.",
   "Diesen Send dürfen nur bestimmte Leute öffnen. Gib deine E-Mail-Adresse ein: Steht sie auf der Liste, bekommst du einen Code.": "Only certain people may open this Send. Enter your email address: if it's on the list, you'll get a code.",
   "Dieser Eintrag hat nichts, was sich teilen lässt.": "This item has nothing that can be shared.",

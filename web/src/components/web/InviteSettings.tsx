@@ -11,6 +11,7 @@ import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
+import { EmptyNote } from '../NyuStates';
 
 /**
  * Inviting people to this server, when an admin lets everybody: up to a quota, and never as an
@@ -112,7 +113,7 @@ export function InviteSettings() {
       )}
       <h3 className="settings-heading">{t('Meine offenen Einladungen')}</h3>
       {mine.invitations.length === 0 ? (
-        <p className="empty-note">{t('Keine offenen Einladungen.')}</p>
+        <EmptyNote>{t('Keine offenen Einladungen.')}</EmptyNote>
       ) : (
         <ul className="device-list">
           {mine.invitations.map((invitation: MyInvitation) => (

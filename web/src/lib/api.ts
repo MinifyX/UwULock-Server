@@ -107,6 +107,8 @@ export type ItemDetail = {
     passwordRevisionDate: string | null;
     uris: { uri: string; match: number | null; host: string | null; openable: boolean }[];
     passkeys: number;
+    /** The passkeys' details, for the item's passkey card; nothing secret. */
+    passkeyList?: PasskeyInfo[];
   } | null;
   card?: {
     cardholderName: string | null;
@@ -134,7 +136,33 @@ export type ItemDetail = {
   creationDate?: string | null;
 };
 
-export type TotpCode = { code: string; remaining: number; period: number };
+/**
+ * The one-time codes at one moment. `next` is the code of the following period; `showNext` is
+ * true in the last 10 seconds of the current one, when it is shown below ("Nächster: …").
+ */
+export type TotpCode = {
+  code: string;
+  remaining: number;
+  period: number;
+  next: string;
+  showNext: boolean;
+};
+
+/** A passkey of a login, as its details show it (uwulock-core `passkey::list`). */
+export type PasskeyInfo = {
+  /** Its place among the login's passkeys: what deleting takes. */
+  index: number;
+  /** `false` for one UwULock can't open: it can still be deleted, the rest is empty. */
+  readable: boolean;
+  credentialId: string;
+  rpId: string;
+  rpName: string | null;
+  userName: string | null;
+  userDisplayName: string | null;
+  /** An ISO date, or empty. */
+  creationDate: string;
+  discoverable: boolean;
+};
 
 /**
  * What the editor sends back. A secret it never had — a password nobody
@@ -185,7 +213,15 @@ export type GeneratorOptions = {
   digits: boolean;
   symbols: boolean;
   avoidAmbiguous: boolean;
+  /** At least this many of each set (0 and 1 both mean: at least one, when the set is on). */
+  minLowercase: number;
+  minUppercase: number;
+  minNumber: number;
+  minSpecial: number;
 };
+
+/** A generated password; `length` is raised past the one asked for when the minimums need it. */
+export type Generated = { password: string; bits: number; length: number; required: number };
 
 export type UpdateInfo = { version: string; notes: string | null };
 export type ProjectPage = 'source' | 'releases' | 'issues' | 'license' | 'suite';
@@ -723,7 +759,7 @@ export const copyGenerated = (text: string) => copy(text);
 export const totpCode = (id: string) =>
   callJson<TotpCode>((core) => core.totp(id, Date.now() / 1000));
 export const generatePassword = (options: GeneratorOptions) =>
-  callJson<{ password: string; bits: number }>((core) => core.generate(JSON.stringify(options)));
+  callJson<Generated>((core) => core.generate(JSON.stringify(options)));
 
 // ── Saving ────────────────────────────────────────────────
 
@@ -751,6 +787,30 @@ export const saveItem = async (id: string | null, draft: Draft): Promise<string>
   }
   await changed(request(`/api/ciphers/${encodeURIComponent(id)}`, { method: 'PUT', body }));
   return id;
+};
+
+/**
+ * A copy of the item `sourceId` as a new item, with the editor's draft laid over it. Its
+ * passkeys and every value the editor never saw come along from the source; attachments don't.
+ */
+export const saveClone = async (sourceId: string, draft: Draft): Promise<string> => {
+  const sealed = await call((core) =>
+    core.sealClone(sourceId, JSON.stringify(draft), new Date().toISOString()),
+  );
+  const body = JSON.parse(sealed) as Record<string, unknown>;
+  const session = currentSession();
+  body.encryptedFor = (profile?.id as string | undefined) ?? session?.email;
+  const created = await changed(request<{ id: string }>('/api/ciphers', { body }));
+  return created.id;
+};
+
+/** Deletes a login's passkey at `index`, if it still is `credentialId` (else a `conflict`). */
+export const deletePasskey = async (id: string, passkey: PasskeyInfo): Promise<void> => {
+  const sealed = await call((core) =>
+    core.deletePasskey(id, passkey.index, passkey.credentialId || undefined),
+  );
+  const body = JSON.parse(sealed) as Record<string, unknown>;
+  await changed(request(`/api/ciphers/${encodeURIComponent(id)}`, { method: 'PUT', body }));
 };
 
 /**

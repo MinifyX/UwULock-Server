@@ -39,6 +39,7 @@ import {
 import { useSwitch } from '../../lib/switches';
 import { t, useLanguage } from '../../lib/i18n';
 import { Icon } from '../Icon';
+import { NyuScene } from '../nyu/scenes';
 import { breachText, hidden, problemTitle } from './HealthReview';
 
 type Props = {
@@ -314,9 +315,12 @@ export function HealthReport({ onOpen, onReview }: Props) {
           </p>
         )}
         {busy && (
-          <p className="dialog-lead" role="status">
-            {busy}
-          </p>
+          <div className="health-busy">
+            <NyuScene name="search" className="health-scene" />
+            <p className="dialog-lead" role="status">
+              {busy}
+            </p>
+          </div>
         )}
         {error && (
           <p className="form-error" role="alert">
@@ -330,7 +334,12 @@ export function HealthReport({ onOpen, onReview }: Props) {
             )}
           </p>
         )}
-        {clean && <p className="dialog-lead">{t('Alles gut: nichts gefunden ✧')}</p>}
+        {clean && !busy && (
+          <div className="health-clean">
+            <NyuScene name="done" className="health-scene nyu-pop" />
+            <p className="dialog-lead">{t('Alles gut: nichts gefunden ✧')}</p>
+          </div>
+        )}
         {group(
           t('In Datenlecks'),
           t('Diese Passwörter tauchen in bekannten Datenlecks auf. Ändere sie zuerst.'),

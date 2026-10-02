@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   revealField,
+  saveClone,
   saveItem,
   vaultItem,
   type Draft,
@@ -30,6 +31,7 @@ import {
   useUsableMasked,
   type MaskedAddress,
 } from '../lib/masked';
+import { useSwitch } from '../lib/switches';
 import { toast } from '../lib/toast';
 import {
   EAP_METHODS,
@@ -42,8 +44,10 @@ import {
 } from '../lib/wifi';
 import { useCloseGuard } from './CloseGuard';
 import { GeneratorDialog } from './GeneratorDialog';
+import { Icon } from './Icon';
 import { Modal } from './Modal';
 import { Button, Callout, Checkbox, Field, FieldGroup, FormRow, IconButton, RepeatRow } from './ui';
+import { reminderForm, ReminderFields, saveReminder, type ReminderForm } from './web/ItemComfort';
 import { NewMaskedDialog } from './web/MaskedSettings';
 
 /**
@@ -105,6 +109,8 @@ type Form = {
   fingerprint: string;
   fields: FieldRow[];
   wifi: WifiForm;
+  /** The reminder to renew the password (Settings switch `reminders`), saved after the item. */
+  reminder: ReminderForm;
 };
 
 function emptyForm(kind: ItemKind): Form {
@@ -142,6 +148,7 @@ function emptyForm(kind: ItemKind): Form {
       ca: '',
       from: {},
     },
+    reminder: reminderForm(null),
   };
 }
 
@@ -401,12 +408,14 @@ type Props = {
   /** The item to change, or `null` with a kind for a new one. */
   summary: ItemSummary | null;
   kind: ItemKind;
+  /** A copy of `summary` as a new item: its values, passkeys included, saved as another item. */
+  clone?: boolean;
   overview: Overview | null;
   onClose: () => void;
   onSaved: (id: string) => void;
 };
 
-export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props) {
+export function ItemEditor({ summary, kind, clone = false, overview, onClose, onSaved }: Props) {
   useLanguage();
   const [form, setForm] = useState<Form>(() => emptyForm(kind));
   const [initial, setInitial] = useState<string>(() => JSON.stringify(emptyForm(kind)));
@@ -417,7 +426,14 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
   const [locked, setLocked] = useState(false);
   const [generator, setGenerator] = useState<null | 'password' | 'wifi'>(null);
   const [nextKey, setNextKey] = useState(1000);
-  const id = summary?.id ?? null;
+  /** The item the values come from: the one edited, or the one copied. */
+  const sourceId = summary?.id ?? null;
+  /** The item saved over: none for a new item or a copy. */
+  const id = clone ? null : sourceId;
+  const [passkeys, setPasskeys] = useState(0);
+  const [hasPasswordDate, setHasPasswordDate] = useState(false);
+  const reminders = useSwitch('reminders') && !summary?.deleted;
+  const [savedReminder, setSavedReminder] = useState<ReminderForm>(() => reminderForm(null));
   // A masked address as the username, when UwUMail is connected.
   const maskedOn = useFeature('masked-addresses');
   const masked = useUsableMasked(maskedOn && kind === 'login');
@@ -438,6 +454,15 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
           return;
         }
         const next = formOf(summary, detail);
+        setPasskeys(detail.login?.passkeys ?? 0);
+        setHasPasswordDate(Boolean(detail.login?.passwordRevisionDate));
+        if (clone) {
+          // A copy starts without a reminder, and with a name that tells it apart.
+          next.name = t('{name} (Kopie)', { name: summary.name });
+        } else {
+          next.reminder = reminderForm(summary.id);
+          setSavedReminder(next.reminder);
+        }
         setForm(next);
         setInitial(JSON.stringify(next));
       })
@@ -446,7 +471,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
     return () => {
       stopped = true;
     };
-  }, [summary]);
+  }, [summary, clone]);
 
   const set = (patch: Partial<Form>) => setForm((current) => ({ ...current, ...patch }));
   const setWifi = (patch: Partial<WifiForm>) =>
@@ -470,7 +495,15 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
     setBusy(true);
     setError(null);
     try {
-      const saved = await saveItem(id, draftOf(form, kind));
+      const draft = draftOf(form, kind);
+      const saved =
+        clone && sourceId ? await saveClone(sourceId, draft) : await saveItem(id, draft);
+      if (reminders) {
+        // The item is saved either way; a reminder that didn't take is said.
+        await saveReminder(saved, savedReminder, form.reminder).catch((e) =>
+          toast(errorText(e), 'error'),
+        );
+      }
       if (pendingLink && !id) {
         // The item is saved either way; the address just would not know it.
         await updateMasked(pendingLink, { cipherId: saved }).then(
@@ -480,7 +513,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
         setPendingLink(null);
       }
       setInitial(JSON.stringify(form));
-      toast(id ? t('Gespeichert ✧') : t('Angelegt ✧'));
+      toast(id ? t('Gespeichert ✧') : clone ? t('Dupliziert ✧') : t('Angelegt ✧'));
       onSaved(saved);
     } catch (e) {
       setError(errorText(e));
@@ -500,9 +533,11 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
     <>
       <Modal
         title={
-          id
-            ? t('{kind} bearbeiten', { kind: t(KIND_LABEL[kind]) })
-            : t('Neu: {kind}', { kind: t(KIND_LABEL[kind]) })
+          clone
+            ? t('{kind} duplizieren', { kind: t(KIND_LABEL[kind]) })
+            : id
+              ? t('{kind} bearbeiten', { kind: t(KIND_LABEL[kind]) })
+              : t('Neu: {kind}', { kind: t(KIND_LABEL[kind]) })
         }
         size="wide"
         onCancel={guard.request}
@@ -533,8 +568,37 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
               </p>
             )}
 
+            {clone && (
+              <Callout>
+                {passkeys > 0
+                  ? t(
+                      'Das wird ein neuer Eintrag mit denselben Werten. Die Passkeys kommen mit, Anhänge nicht.',
+                    )
+                  : t('Das wird ein neuer Eintrag mit denselben Werten. Anhänge kommen nicht mit.')}
+              </Callout>
+            )}
+
             <FormRow>
-              <Field label={t('Name')}>
+              <Field
+                label={t('Name')}
+                tools={
+                  <button
+                    type="button"
+                    className="icon-button favorite-toggle"
+                    aria-pressed={form.favorite}
+                    aria-label={t('Favorit')}
+                    title={form.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
+                    onClick={() => set({ favorite: !form.favorite })}
+                    data-favorite
+                  >
+                    <Icon
+                      name="star"
+                      size={16}
+                      className={form.favorite ? 'badge-star' : undefined}
+                    />
+                  </button>
+                }
+              >
                 <input
                   type="text"
                   value={form.name}
@@ -585,7 +649,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   label={t('Passwort')}
                   secret={form.password}
                   onChange={(password) => set({ password })}
-                  itemId={id}
+                  itemId={sourceId}
                   field="password"
                 >
                   <IconButton
@@ -598,7 +662,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   label={t('Einmal-Code (TOTP)')}
                   secret={form.totp}
                   onChange={(totp) => set({ totp })}
-                  itemId={id}
+                  itemId={sourceId}
                   field="totp"
                   hint={t('Der Schlüssel aus der App: Base32 oder eine otpauth://-Adresse.')}
                 />
@@ -702,7 +766,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   label={t('Kartennummer')}
                   secret={form.number}
                   onChange={(number) => set({ number })}
-                  itemId={id}
+                  itemId={sourceId}
                   field="card-number"
                 />
                 <FormRow min="narrow">
@@ -732,7 +796,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                     label={t('Prüfnummer')}
                     secret={form.code}
                     onChange={(code) => set({ code })}
-                    itemId={id}
+                    itemId={sourceId}
                     field="card-code"
                   />
                 </FormRow>
@@ -755,7 +819,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                           },
                         })
                       }
-                      itemId={id}
+                      itemId={sourceId}
                       field={`identity:${field.name}`}
                     />
                   ) : (
@@ -789,7 +853,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   label={t('Privater Schlüssel')}
                   secret={form.privateKey}
                   onChange={(privateKey) => set({ privateKey })}
-                  itemId={id}
+                  itemId={sourceId}
                   field="ssh-private"
                   multiline
                 />
@@ -851,7 +915,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                     label={t('WLAN-Passwort')}
                     secret={form.wifi.password}
                     onChange={(password) => setWifi({ password })}
-                    itemId={form.wifi.from.password === undefined ? null : id}
+                    itemId={form.wifi.from.password === undefined ? null : sourceId}
                     field={
                       form.wifi.from.password === undefined
                         ? undefined
@@ -1026,7 +1090,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                       label={t('Wert')}
                       hideLabel
                       secret={field.value}
-                      itemId={id}
+                      itemId={sourceId}
                       field={field.from === null ? undefined : `field:${field.from}`}
                       onChange={(value) =>
                         set({
@@ -1072,12 +1136,15 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
               ))}
             </FieldGroup>
 
-            <div className="checks">
-              <Checkbox
-                label={t('Favorit')}
-                checked={form.favorite}
-                onChange={(favorite) => set({ favorite })}
+            {reminders && (
+              <ReminderFields
+                value={form.reminder}
+                onChange={(reminder) => set({ reminder })}
+                passwordDate={hasPasswordDate}
               />
+            )}
+
+            <div className="checks">
               <Checkbox
                 label={t('Vor dem Anzeigen nach dem Master-Passwort fragen')}
                 checked={form.reprompt}

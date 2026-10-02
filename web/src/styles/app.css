@@ -14,8 +14,29 @@ body {
   color: var(--uwu-ink);
   font-family: var(--uwu-font);
   font-size: var(--uwu-text-base);
+  letter-spacing: var(--uwu-tracking);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
+  /*
+   * UwU Sans turns ":3" into Nyu and "<3" into a heart. In a password manager a name, a value or
+   * a password must always look exactly like what it is, so contextual alternates stay off on
+   * the whole page, and once more on everything that takes typing or shows code.
+   */
+  font-variant-ligatures: no-contextual;
+  font-feature-settings: 'calt' 0;
+}
+
+input,
+textarea,
+select,
+button,
+[contenteditable],
+code,
+pre,
+kbd,
+samp {
+  font-variant-ligatures: no-contextual;
+  font-feature-settings: 'calt' 0;
 }
 
 /*

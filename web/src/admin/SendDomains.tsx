@@ -30,6 +30,7 @@ import { t, useLanguage } from '../lib/i18n';
 import { hostOf } from '../lib/links';
 import { toast } from '../lib/toast';
 import { Branding } from './Branding';
+import { EmptyNote } from '../components/NyuStates';
 
 function tlsOptions() {
   return [
@@ -113,7 +114,7 @@ export function SendDomains() {
         {list === null ? (
           <ResultLine result={result} />
         ) : list.length === 0 ? (
-          <p className="empty-note">{t('Noch keine Send-Domains.')}</p>
+          <EmptyNote>{t('Noch keine Send-Domains.')}</EmptyNote>
         ) : (
           <div className="card-list">
             {list.map((domain) => (

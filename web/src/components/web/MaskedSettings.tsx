@@ -31,6 +31,7 @@ import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { PasswordPrompt, Row } from './controls';
+import { EmptyNote } from '../NyuStates';
 
 /** Why connecting did not work, from the way back (`?result=error&reason=…`). */
 export function connectFailureText(reason: Extract<ConnectResult, { ok: false }>['reason']) {
@@ -535,7 +536,7 @@ function Addresses({
       )}
       {list === null && !error && <p className="empty-note">{t('Lädt …')}</p>}
       {list !== null && shown.length === 0 && (
-        <p className="empty-note">{t('Noch keine maskierten Adressen.')}</p>
+        <EmptyNote>{t('Noch keine maskierten Adressen.')}</EmptyNote>
       )}
       {shown.length > 0 && (
         <ul className="masked-list">

@@ -6,6 +6,7 @@ import { when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
 import { BlockDialog } from './FailedLogins';
+import { EmptyNote } from '../components/NyuStates';
 
 /**
  * *Sicherheit → Gesperrte Adressen*: the addresses and networks that may not log in, until when,
@@ -84,7 +85,7 @@ export function IpBlocks() {
           </tr>
         ))}
       </Table>
-      {list?.length === 0 && <p className="empty-note">{t('Keine Adresse ist gesperrt.')}</p>}
+      {list?.length === 0 && <EmptyNote mood="happy">{t('Keine Adresse ist gesperrt.')}</EmptyNote>}
       <p className="field-hint">
         {t(
           'Auf der Kommandozeile: uwulock-server blocks listet die Sperren, uwulock-server blocks remove <Adresse> hebt eine auf – auch wenn du dich ausgesperrt hast.',

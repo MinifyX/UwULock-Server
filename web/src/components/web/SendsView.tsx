@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { isEntrySend, readableOf } from '../../lib/entrySend';
 import { listen } from '../../lib/events';
 import { errorText } from '../../lib/errors';
 import {
@@ -19,6 +20,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { domainOf, type SendDomain } from '../../lib/links';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
+import { NyuScene } from '../nyu/scenes';
 import { Modal } from '../Modal';
 import { listbox } from '../listbox';
 import { BackToList, Panes } from '../panes';
@@ -124,6 +126,7 @@ export function SendsView() {
           </ul>
         ) : (
           <div className="list-empty">
+            <NyuScene name="letter" className="empty-scene" />
             <p>
               {t(
                 'Noch keine Sends. Ein Send ist ein Text oder eine Datei hinter einem Link – für jemanden ohne Konto, verschlüsselt, und nach einer Frist wieder weg.',
@@ -181,8 +184,10 @@ export function SendsView() {
               {current.kind === 0 ? (
                 <div className="detail-row">
                   <div className="detail-text">
-                    <span className="detail-label">{t('Text')}</span>
-                    <span className="detail-value multiline">{current.text}</span>
+                    <span className="detail-label">
+                      {isEntrySend(current.text) ? t('Text · als Eintrag geteilt') : t('Text')}
+                    </span>
+                    <span className="detail-value multiline">{readableOf(current.text ?? '')}</span>
                   </div>
                 </div>
               ) : (

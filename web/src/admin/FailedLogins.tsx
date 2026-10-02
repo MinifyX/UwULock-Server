@@ -36,6 +36,7 @@ import { go } from '../lib/route';
 import { toast } from '../lib/toast';
 import { ApiError } from '../lib/web/http';
 import { SettingsTab } from './draft';
+import { EmptyNote } from '../components/NyuStates';
 
 export const REASONS: Record<FailedReason, string> = {
   password: N_('Falsches Passwort'),
@@ -230,7 +231,7 @@ function Attempts({
         ))}
       </Table>
       {list?.length === 0 && (
-        <p className="empty-note">{t('Keine abgelehnten Anmeldungen in diesem Zeitraum.')}</p>
+        <EmptyNote mood="happy">{t('Keine abgelehnten Anmeldungen in diesem Zeitraum.')}</EmptyNote>
       )}
       {more && (
         <ButtonRow>
@@ -456,7 +457,7 @@ function Groups({
         ))}
       </Table>
       {groups?.length === 0 && (
-        <p className="empty-note">{t('Keine abgelehnten Anmeldungen in diesem Zeitraum.')}</p>
+        <EmptyNote mood="happy">{t('Keine abgelehnten Anmeldungen in diesem Zeitraum.')}</EmptyNote>
       )}
     </>
   );
@@ -532,7 +533,7 @@ function HistoryDialog({
           </tr>
         ))}
       </Table>
-      {list?.length === 0 && <p className="empty-note">{t('Noch nichts.')}</p>}
+      {list?.length === 0 && <EmptyNote>{t('Noch nichts.')}</EmptyNote>}
     </Modal>
   );
 }

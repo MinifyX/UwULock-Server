@@ -1006,7 +1006,11 @@
   translate: -50% 0;
   z-index: 30;
   max-width: min(560px, calc(100% - 32px));
-  padding: var(--uwu-space-2) var(--uwu-space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--uwu-space-2);
+  padding: var(--uwu-space-1) var(--uwu-space-4) var(--uwu-space-1) var(--uwu-space-2);
+  min-height: 36px;
   border-radius: var(--uwu-radius-pill);
   background: var(--uwu-ink);
   color: var(--uwu-canvas);
@@ -1020,6 +1024,12 @@
   background: var(--uwu-alarm);
   /* The alarm colour is dark in the light theme and light in the dark one. */
   color: var(--uwu-canvas);
+}
+
+/* Nyu at the start of a toast (components/Toasts.tsx). */
+.toast-nyu {
+  flex: none;
+  display: inline-flex;
 }
 
 @keyframes toast-in {

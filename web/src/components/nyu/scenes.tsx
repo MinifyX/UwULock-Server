@@ -447,6 +447,109 @@ function Sleepy() {
   );
 }
 
+/** Sends: Nyu sends a paper plane off, a dashed trail behind it. */
+function Letter() {
+  return (
+    <>
+      <Shadow cx={140} rx={96} />
+      <path
+        className="nyu-cable"
+        d="M70 76 C110 30 170 40 214 70"
+        fill="none"
+        stroke={NYU.violet}
+        strokeWidth={4}
+        opacity="0.7"
+      />
+      <NyuFigure
+        mood="happy"
+        x={130}
+        y={136}
+        scale={0.58}
+        tilt={-4}
+        edge={NYU_EDGE}
+        front={<Paw x={232} y={104} className="nyu-wave" />}
+      />
+      <Sticker edge={EDGE}>
+        <g className="nyu-fly">
+          <path d="M218 70 L294 38 L266 100 L252 80 Z" fill={NYU.paper} {...S} strokeWidth={5} />
+          <path d="M252 80 L294 38 L246 92" fill={NYU.sky} {...S} strokeWidth={5} />
+        </g>
+      </Sticker>
+      <Sticker edge={12}>
+        <Heart x={40} y={150} size={0.7} fill={NYU.lilac} />
+        <Star x={296} y={130} r={9} className="nyu-twinkle" />
+      </Sticker>
+    </>
+  );
+}
+
+/** The trash is empty: Nyu beams next to a sparkling clean bin. */
+function Tidy() {
+  return (
+    <>
+      <Shadow cx={170} rx={110} />
+      <NyuFigure mood="sparkle" x={122} y={134} scale={0.58} tilt={-4} edge={NYU_EDGE} />
+      <Sticker edge={EDGE}>
+        <g transform="rotate(5 246 160)">
+          <path d="M220 124 H274 L266 200 H228 Z" fill={NYU.sky} {...S} />
+          <path
+            d="M236 140 l2 46 M247 140 v46 M258 140 l-2 46"
+            stroke={NYU.outline}
+            strokeWidth={4}
+            opacity="0.5"
+          />
+          <rect x="210" y="110" width="74" height="14" rx="6" fill={NYU.lilac} {...S} />
+          <path d="M236 110 v-8 h22 v8" fill="none" {...S} strokeWidth={5} />
+        </g>
+      </Sticker>
+      <Sticker edge={10}>
+        <g className="nyu-sparks">
+          <Star x={296} y={86} r={10} />
+          <Star x={206} y={76} r={7} />
+          <Star x={300} y={170} r={6} />
+        </g>
+      </Sticker>
+    </>
+  );
+}
+
+/** Checking: Nyu looks over a login card with a magnifying glass. */
+function Search() {
+  return (
+    <>
+      <Shadow cx={160} />
+      <NyuFigure
+        mood="happy"
+        x={118}
+        y={134}
+        scale={0.58}
+        tilt={-4}
+        edge={NYU_EDGE}
+        front={<Paw x={226} y={150} />}
+      />
+      <Sticker edge={EDGE}>
+        <VaultCard x={252} y={150} rotate={6} />
+      </Sticker>
+      <Sticker edge={EDGE}>
+        <g className="nyu-scan">
+          <path d="M222 112 L204 136" stroke={NYU.outline} strokeWidth={10} />
+          <circle cx="238" cy="92" r="24" fill={NYU.sky} fillOpacity={0.6} {...S} />
+          <path
+            className="no-edge"
+            d="M226 84 q6 -8 16 -8"
+            fill="none"
+            stroke={NYU.paper}
+            strokeWidth={5}
+          />
+        </g>
+      </Sticker>
+      <Sticker edge={10}>
+        <Star x={40} y={56} r={9} className="nyu-twinkle" />
+      </Sticker>
+    </>
+  );
+}
+
 const SCENES = {
   welcome: Welcome,
   done: Done,
@@ -459,6 +562,9 @@ const SCENES = {
   files: Files,
   keys: Keys,
   sleepy: Sleepy,
+  letter: Letter,
+  tidy: Tidy,
+  search: Search,
 } satisfies Record<string, () => ReactNode>;
 
 export type SceneName = keyof typeof SCENES;

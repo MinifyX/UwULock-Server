@@ -105,12 +105,16 @@ try {
   await snap('home-network-icon');
   await page.locator('.item-list').getByText('Bank').first().click();
 
-  step('a reminder that is due, and the list from the mail');
-  await page.getByRole('button', { name: 'Erinnern …' }).click();
+  step('a reminder that is due (switched on in the editor), and the list from the mail');
+  if (await page.locator('[data-reminder-card]').count()) {
+    throw new Error('the item shows a reminder that was never switched on');
+  }
+  await page.getByRole('button', { name: 'Bearbeiten', exact: true }).click();
+  await page.getByRole('switch', { name: 'Ans Erneuern erinnern' }).click();
   await page.getByRole('radio', { name: 'An einem Tag' }).click();
   await page.getByLabel('Tag', { exact: true }).fill('2020-01-01');
-  await page.locator('.comfort-card').getByRole('button', { name: 'Speichern' }).click();
-  await page.locator('.chip-due').first().waitFor();
+  await page.locator('.modal').getByRole('button', { name: 'Speichern' }).click();
+  await page.locator('[data-reminder-card] .chip-due').first().waitFor();
   await page.goto(`${origin}/#/vault?due=1`);
   await page.locator('.list-pane[aria-label="Fällig"]').waitFor();
   await page.locator('.item-list').getByText('Bank').first().waitFor();

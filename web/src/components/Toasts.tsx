@@ -1,4 +1,19 @@
-import { useToast } from '../lib/toast';
+import { useToast, type Toast } from '../lib/toast';
+import { Nyu } from './nyu/Nyu';
+
+/**
+ * A small Nyu at the start of a toast: sad for an error, starry-eyed when something worked or was
+ * copied (those notes end in ✧), otherwise just happy. She hops in once; with animations off she
+ * simply sits there. Decoration only: screen readers hear the text.
+ */
+function ToastNyu({ toast }: { toast: Toast }) {
+  const mood = toast.tone === 'error' ? 'sad' : toast.text.includes('✧') ? 'sparkle' : 'happy';
+  return (
+    <span className="toast-nyu nyu-pop">
+      <Nyu size={22} mood={mood} blink={false} title="" />
+    </span>
+  );
+}
 
 /**
  * The toast at the bottom, in two live regions that are always there: screen readers only read
@@ -14,14 +29,16 @@ export function Toasts() {
       <div role="status" aria-live="polite" aria-atomic="true">
         {info && (
           <div className="toast" data-tone="info" key={info.id}>
-            {info.text}
+            <ToastNyu toast={info} />
+            <span>{info.text}</span>
           </div>
         )}
       </div>
       <div role="alert" aria-live="assertive" aria-atomic="true">
         {error && (
           <div className="toast" data-tone="error" key={error.id}>
-            {error.text}
+            <ToastNyu toast={error} />
+            <span>{error.text}</span>
           </div>
         )}
       </div>

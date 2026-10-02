@@ -20,6 +20,7 @@ mod health;
 mod kdbx;
 mod keys;
 mod orgs;
+mod passkeys;
 mod requests;
 mod suite;
 mod transfer;
@@ -264,9 +265,19 @@ pub fn reveal(id: &str, field: &str, now: f64) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| Ok(view::value_of(unlocked, id, field, now as u64)?.to_string()))?)
 }
 
+/// An item's one-time codes: `{code, remaining, period, next, showNext}`. `next` is the code of
+/// the following period, `showNext` true in the last 10 seconds, when the page shows it below
+/// ("Nächster: 123 456"); `reveal(id, "totp-next", now)` gives it alone, for copying.
 #[wasm_bindgen]
 pub fn totp(id: &str, now: f64) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&view::totp(unlocked, id, now as u64)?))?)
+}
+
+/// The codes of an authenticator key itself (the one in an entry Send), in the shape of
+/// [`totp`]. Needs no unlocked vault: the Send page of whoever has the link uses it.
+#[wasm_bindgen(js_name = totpCodes)]
+pub fn totp_codes(secret: &str, now: f64) -> Result<String, JsValue> {
+    Ok(json(&view::totp_codes(secret, now as u64)?)?)
 }
 
 /// The master password again, for an item that asks for it before showing anything.
@@ -300,18 +311,37 @@ pub fn seal_password(id: &str, password: String, now: &str) -> Result<String, Js
     Ok(with_unlocked(|unlocked| json(&draft::seal_password(unlocked, id, password, now)?))?)
 }
 
+/// A copy of the item `source` as a new item, with the editor's draft laid over it: what
+/// "Duplizieren" saves. Its passkeys come along (they stay under the item's own key), its
+/// attachments don't.
+#[wasm_bindgen(js_name = sealClone)]
+pub fn seal_clone(source: &str, draft: &str, now: &str) -> Result<String, JsValue> {
+    let draft: draft::Draft = serde_json::from_str(draft).map_err(Failure::from)?;
+    Ok(with_unlocked(|unlocked| json(&draft::seal_clone(unlocked, source, draft, now)?))?)
+}
+
 /// Text encrypted under the user key: a folder name.
 #[wasm_bindgen(js_name = encryptText)]
 pub fn encrypt_text(text: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| Ok(EncString::encrypt(text.as_bytes(), &unlocked.user_key).to_string()))?)
 }
 
+/// A random password: `{password, bits, length, required}`. The options take `minLowercase`,
+/// `minUppercase`, `minNumber` and `minSpecial` too; `length` is the one the password has — more
+/// than asked for when the minimums need more — and `required` what they add up to. Minimums
+/// beyond 128 characters are refused as `invalid`.
 #[wasm_bindgen]
 pub fn generate(options: &str) -> Result<String, JsValue> {
     let options: uwulock_core::generator::Options = serde_json::from_str(options).map_err(Failure::from)?;
+    options.check().map_err(|error| Failure::new("invalid", error.to_string()))?;
     let password = uwulock_core::generator::password(&options);
     let bits = uwulock_core::generator::entropy_bits(&password);
-    Ok(json(&serde_json::json!({ "password": password.as_str(), "bits": bits }))?)
+    Ok(json(&serde_json::json!({
+        "password": password.as_str(),
+        "bits": bits,
+        "length": options.effective_length(),
+        "required": options.required(),
+    }))?)
 }
 
 /// How strong a password is, in bits, for the strength meter.
@@ -451,8 +481,9 @@ pub fn seal_send(id: &str, draft: &str, data: Option<Vec<u8>>) -> Result<files::
     Ok(with_unlocked(|unlocked| files::seal_send(unlocked, id, draft, data.as_deref()))?)
 }
 
-/// The values of an item that "Share as Send" offers: `[{ name, label }]`, `label` only for
-/// custom fields (their own name).
+/// The values of an item that "Share as Send" offers: `[{ name, label, uri?, entryOnly? }]`,
+/// `label` only for custom fields (their own name), `uri` the address of a website, and
+/// `entryOnly` for `totp`, which only an entry Send takes (as live codes).
 #[wasm_bindgen(js_name = shareableFields)]
 pub fn shareable_fields(item_id: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&files::shareable(unlocked, item_id)?))?)
@@ -463,6 +494,14 @@ pub fn shareable_fields(item_id: &str) -> Result<String, JsValue> {
 pub fn share_item(draft: &str) -> Result<String, JsValue> {
     let draft: files::ShareDraft = serde_json::from_str(draft).map_err(Failure::from)?;
     Ok(with_unlocked(|unlocked| json(&files::share_item(unlocked, draft)?))?)
+}
+
+/// The entry in a Send's text: `{entry, readable}`, or `null` for a plain text. `entry` is
+/// `{name, username?, password?, websites[], notes?, fields[{name, value, hidden}], totp?}`;
+/// `totp` is shown only as live codes ([`totp_codes`]). No login needed.
+#[wasm_bindgen(js_name = decodeEntrySend)]
+pub fn decode_entry_send(text: &str) -> Result<String, JsValue> {
+    Ok(files::decode_entry_send(text)?)
 }
 
 /// For somebody with a Send's link: the password's hash, to open it. No login needed.
@@ -785,4 +824,20 @@ pub fn ssh_inspect_public_key(line: &str) -> Result<String, JsValue> {
 pub fn ssh_passphrase_opens(text: &str, passphrase: String) -> Result<bool, JsValue> {
     let passphrase = Zeroizing::new(passphrase);
     Ok(suite::passphrase_opens(text, &passphrase)?)
+}
+
+// ── An item's passkeys ────────────────────────────────────
+
+/// The passkeys of an item: `[{index, readable, credentialId, rpId, rpName, userName,
+/// userDisplayName, creationDate, discoverable}]`. Nothing secret.
+#[wasm_bindgen(js_name = itemPasskeys)]
+pub fn item_passkeys(id: &str) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&passkeys::list(unlocked, id)?))?)
+}
+
+/// The item `id` without its passkey at `index` (checked against `credential_id` when given):
+/// the body of `PUT /api/ciphers/<id>`.
+#[wasm_bindgen(js_name = deletePasskey)]
+pub fn delete_passkey(id: &str, index: u32, credential_id: Option<String>) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&passkeys::delete(unlocked, id, index as usize, credential_id.as_deref())?))?)
 }

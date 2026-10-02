@@ -15,6 +15,7 @@ import { ago, bytes, seconds, when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { useRoute } from '../lib/route';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 type Confirm = { user: User; action: UserAction | 'delete' } | null;
 
@@ -89,7 +90,7 @@ export function Users({ me }: { me: string }) {
           />
         ))}
       </Table>
-      {shown?.length === 0 && <p className="empty-note">{t('Niemand gefunden.')}</p>}
+      {shown?.length === 0 && <EmptyNote mood="puzzled">{t('Niemand gefunden.')}</EmptyNote>}
       {confirm && (
         <Modal
           title={t('Sicher?')}
