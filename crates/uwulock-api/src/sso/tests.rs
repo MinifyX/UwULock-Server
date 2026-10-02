@@ -431,6 +431,7 @@ async fn admins_only_with_sso_and_sso_only() {
 
     // Switching it on from a password login would lock the admin out.
     let mut wanted = serde_json::to_value(server.state.settings().sso).unwrap();
+    wanted.as_object_mut().unwrap().remove("clientSecret");
     wanted["adminsOnlyWithSso"] = true.into();
     let response = server.call("PUT", "/uwu/v1/admin/sso", Some(&password_token), wanted.clone()).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -644,6 +645,12 @@ async fn the_portal_sets_sso_up_by_hand_and_keeps_the_secret_to_itself() {
         "scopes": ["openid", "email"], "signups": "group", "adminGroup": " vault-admins ", "label": "Firma",
         "identifier": "firma", "groupsClaim": "groups",
     });
+    // Another provider wants the master password (R1-3).
+    let refused = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), settings.clone()).await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(json(refused).await["code"], "password_required");
+    let mut settings = settings;
+    settings["masterPasswordHash"] = password_hash("admin@example.com").into();
     let response = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), settings.clone()).await;
     assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
     let shown = json(response).await;
@@ -657,6 +664,17 @@ async fn the_portal_sets_sso_up_by_hand_and_keeps_the_secret_to_itself() {
     let general = json(server.get_as(&token, "/uwu/v1/admin/settings").await).await;
     assert_eq!(general["sso"]["clientSecretSet"], true);
     assert!(general["sso"].get("clientSecret").is_none());
+
+    // A label is not who logs in as whom: no password needed.
+    let mut label = settings.clone();
+    label.as_object_mut().unwrap().remove("clientSecret");
+    label.as_object_mut().unwrap().remove("masterPasswordHash");
+    label["label"] = "Company".into();
+    let response = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), label.clone()).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+    label["trustUnverifiedEmail"] = true.into();
+    let refused = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), label).await;
+    assert_eq!(json(refused).await["code"], "password_required");
 
     // Left out: kept for the same provider and client, gone for another.
     let mut again = settings.clone();
@@ -697,7 +715,7 @@ async fn pairing_with_uwuauth_fills_everything_in() {
             "POST",
             "/uwu/v1/admin/sso/pair",
             Some(&token),
-            json!({ "url": provider.issuer, "code": "AAAA-BBBB-CCCC" }),
+            json!({ "url": provider.issuer, "code": "AAAA-BBBB-CCCC", "masterPasswordHash": password_hash("admin@example.com") }),
         )
         .await;
     assert_eq!(wrong.status(), StatusCode::BAD_REQUEST);
@@ -705,7 +723,12 @@ async fn pairing_with_uwuauth_fills_everything_in() {
 
     // The whole QR text will do.
     let qr = format!("{}/#pair={CODE}", provider.issuer);
-    let response = server.call("POST", "/uwu/v1/admin/sso/pair", Some(&token), json!({ "code": qr })).await;
+    let refused = server.call("POST", "/uwu/v1/admin/sso/pair", Some(&token), json!({ "code": qr })).await;
+    assert_eq!(json(refused).await["code"], "password_required", "pairing sets the provider (R1-3)");
+    let hash = password_hash("admin@example.com");
+    let response = server
+        .call("POST", "/uwu/v1/admin/sso/pair", Some(&token), json!({ "code": qr, "masterPasswordHash": hash }))
+        .await;
     assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
     let shown = json(response).await;
     assert_eq!((shown["enabled"].clone(), shown["clientId"].clone()), (json!(true), json!("uwulock-vault")));
@@ -746,7 +769,12 @@ async fn pairing_with_uwuauth_fills_everything_in() {
         (json!(false), Value::Null, json!(false))
     );
     let not_uwuauth = server
-        .call("POST", "/uwu/v1/admin/sso/pair", Some(&token), json!({ "url": "http://127.0.0.1:9", "code": CODE }))
+        .call(
+            "POST",
+            "/uwu/v1/admin/sso/pair",
+            Some(&token),
+            json!({ "url": "http://127.0.0.1:9", "code": CODE, "masterPasswordHash": hash }),
+        )
         .await;
     assert_eq!(not_uwuauth.status(), StatusCode::BAD_GATEWAY);
 }

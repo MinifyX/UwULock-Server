@@ -1147,12 +1147,35 @@ async fn get_settings(State(state): State<AppState>, _admin: Admin) -> Json<Valu
     Json(settings_json(&state))
 }
 
+/// The SSO settings as the portal saves them, with the admin's master password hash when the
+/// change is one that decides who logs in as whom.
+#[derive(Deserialize)]
+struct PutSettings {
+    #[serde(flatten)]
+    settings: SsoSettings,
+    #[serde(default, rename = "masterPasswordHash")]
+    master_password_hash: Option<String>,
+}
+
+/// Whether going from `current` to `new` changes who may log in as whom: another provider or
+/// client, a new secret, trusting unverified addresses, other extensions, or SSO on or off. A
+/// session that got away must not do that without the master password (R1-3).
+fn needs_password(current: &SsoSettings, new: &SsoSettings, new_secret: bool) -> bool {
+    new_secret
+        || current.issuer != new.issuer
+        || current.client_id != new.client_id
+        || current.trust_unverified_email != new.trust_unverified_email
+        || current.extension_ids != new.extension_ids
+        || current.enabled != new.enabled
+}
+
 async fn put_settings(
     State(state): State<AppState>,
     admin: Admin,
     // `clientSecret` comes as typed, when it changes.
-    Json(mut new): Json<SsoSettings>,
+    Json(body): Json<PutSettings>,
 ) -> ApiResult<Json<Value>> {
+    let mut new = body.settings;
     let mut all = state.settings();
     let current = all.sso.clone();
     new.issuer = new.issuer.trim().trim_end_matches('/').to_string();
@@ -1176,6 +1199,12 @@ async fn put_settings(
         None => None,
     };
     new.check().map_err(ApiError::bad)?;
+    let new_secret = new.client_secret != current.client_secret;
+    if needs_password(&current, &new, new_secret) {
+        crate::accounts::check_password(&state, &admin.0.user, body.master_password_hash.as_deref())
+            .await
+            .map_err(|error| error.code("password_required"))?;
+    }
     if new.enabled && new.admins_only_with_sso && !admin.0.sso {
         return Err(ApiError::bad(
             "Log in to the admin portal with SSO first: with “admins only with SSO”, a password login would not get you back in.",
@@ -1247,6 +1276,9 @@ struct PairData {
     #[serde(default)]
     url: Option<String>,
     code: String,
+    /// Pairing sets the provider: the admin's master password, as for any other provider (R1-3).
+    #[serde(default, rename = "masterPasswordHash")]
+    master_password_hash: Option<String>,
 }
 
 /// `<UwUAuth>/#pair=<code>` from the QR code, or the address and the code as typed.
@@ -1272,6 +1304,9 @@ fn pairing_input(url: Option<&str>, code: &str) -> Result<(String, String), Stri
 }
 
 async fn pair(State(state): State<AppState>, admin: Admin, Json(data): Json<PairData>) -> ApiResult<Json<Value>> {
+    crate::accounts::check_password(&state, &admin.0.user, data.master_password_hash.as_deref())
+        .await
+        .map_err(|error| error.code("password_required"))?;
     let (base, code) = pairing_input(data.url.as_deref(), &data.code).map_err(ApiError::bad)?;
     let public = state.config.public.clone();
     let public_url = reqwest::Url::parse(&public).map_err(ApiError::internal)?;

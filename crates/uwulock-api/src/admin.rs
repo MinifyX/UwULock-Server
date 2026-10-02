@@ -296,8 +296,17 @@ async fn user_action(
     State(state): State<AppState>,
     admin: Admin,
     Path((id, action)): Path<(String, String)>,
+    body: Option<Json<crate::two_factor::Secret>>,
 ) -> ApiResult<Json<Value>> {
     let target = state.store.user(&id).await?.ok_or_else(|| ApiError::not_found("No such account."))?;
+    // Another admin, or an account without its second step: a session that got away must not
+    // do that without the master password (R1-3).
+    if matches!(action.as_str(), "make-admin" | "reset-two-factor") {
+        let hash = body.as_ref().and_then(|Json(secret)| secret.master_password_hash.as_deref());
+        crate::accounts::check_password(&state, &admin.0.user, hash)
+            .await
+            .map_err(|error| error.code("password_required"))?;
+    }
     let yourself = target.id == admin.0.user.id;
     let last_admin = target.admin && state.store.admin_count().await? <= 1;
     match action.as_str() {
@@ -869,6 +878,16 @@ mod tests {
         );
         let last = format!("/uwu/v1/admin/users/{}/remove-admin", admin.id);
         assert_eq!(server.call("POST", &last, Some(&admin.token), json!({})).await.status(), StatusCode::BAD_REQUEST);
+
+        // Another admin and a reset second step want the master password (R1-3).
+        for action in ["make-admin", "reset-two-factor"] {
+            let refused = server.call("POST", &path(action), Some(&admin.token), json!({})).await;
+            assert_eq!(json(refused).await["code"], "password_required", "{action}");
+            let body = json!({ "masterPasswordHash": password_hash(&admin.email) });
+            let done = server.call("POST", &path(action), Some(&admin.token), body).await;
+            assert_eq!(done.status(), StatusCode::OK, "{action}");
+        }
+        assert!(server.state.store.user(&user.id).await.unwrap().unwrap().admin);
 
         let response =
             server.call("DELETE", &format!("/uwu/v1/admin/users/{}", user.id), Some(&admin.token), json!({})).await;

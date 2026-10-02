@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Badge, Button, DangerZone, Field, Modal, Table } from '../components/ui';
+import { PasswordPrompt } from '../components/web/controls';
 import {
+  actionNeedsPassword,
   deleteUser,
   deleteUserDevice,
   userAction,
@@ -29,6 +31,8 @@ export function Users({ me }: { me: string }) {
   useEffect(() => setFilter(asked), [asked]);
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
+  /** make-admin and reset-two-factor: with the admin's master password. */
+  const [asking, setAsking] = useState<{ user: User; action: UserAction } | null>(null);
   const load = useCallback(() => {
     users().then(setList, (e) => toast(errorText(e), 'error'));
   }, []);
@@ -83,9 +87,11 @@ export function Users({ me }: { me: string }) {
             open={open === user.id}
             onToggle={() => setOpen(open === user.id ? null : user.id)}
             onAction={(action) =>
-              action === 'enable' || action === 'make-admin'
+              action === 'enable'
                 ? void run(user, action)
-                : setConfirm({ user, action })
+                : action !== 'delete' && actionNeedsPassword(action)
+                  ? setAsking({ user, action })
+                  : setConfirm({ user, action })
             }
           />
         ))}
@@ -103,11 +109,7 @@ export function Users({ me }: { me: string }) {
                 {t('Abbrechen')}
               </Button>
               <Button
-                variant={
-                  confirm.action === 'delete' || confirm.action === 'reset-two-factor'
-                    ? 'danger'
-                    : 'primary'
-                }
+                variant={confirm.action === 'delete' ? 'danger' : 'primary'}
                 onClick={() => {
                   void run(confirm.user, confirm.action);
                   setConfirm(null);
@@ -135,13 +137,33 @@ export function Users({ me }: { me: string }) {
               t('Jedes Gerät von {email} muss sich neu anmelden.', {
                 email: confirm.user.email,
               })}
-            {confirm.action === 'reset-two-factor' &&
-              t(
-                'Die Zwei-Schritt-Anmeldung von {email} wird ausgeschaltet. Mach das nur, wenn du sicher bist, dass wirklich diese Person fragt.',
-                { email: confirm.user.email },
-              )}
           </p>
         </Modal>
+      )}
+      {asking && (
+        <PasswordPrompt
+          title={asking.action === 'make-admin' ? t('Zum Admin machen?') : t('Sicher?')}
+          tone={asking.action === 'reset-two-factor' ? 'warning' : 'default'}
+          lead={
+            asking.action === 'make-admin'
+              ? t(
+                  '{email} kann danach alles im Admin-Portal: Konten, Einstellungen, Backups. Bestätige mit deinem Master-Passwort.',
+                  { email: asking.user.email },
+                )
+              : t(
+                  'Die Zwei-Schritt-Anmeldung von {email} wird ausgeschaltet. Mach das nur, wenn du sicher bist, dass wirklich diese Person fragt.',
+                  { email: asking.user.email },
+                )
+          }
+          confirm={asking.action === 'make-admin' ? t('Zum Admin machen') : t('Ausschalten')}
+          onCancel={() => setAsking(null)}
+          action={async (password) => {
+            await userAction(asking.user.id, asking.action, password);
+            setAsking(null);
+            toast(t('Erledigt ✧'), 'info');
+            load();
+          }}
+        />
       )}
     </>
   );

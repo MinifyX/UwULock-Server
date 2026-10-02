@@ -482,11 +482,17 @@ export const checkMaskedServer = (url: string) =>
 
 export const overview = () => request<Overview>(`${base}/overview`);
 export const users = () => request<User[]>(`${base}/users`);
-export const userAction = (id: string, action: UserAction) =>
-  request<User>(`${base}/users/${encodeURIComponent(id)}/${action}`, {
+/** What the admin's master password is asked for: another admin, or a second step taken away. */
+export const actionNeedsPassword = (action: UserAction) =>
+  action === 'make-admin' || action === 'reset-two-factor';
+
+export async function userAction(id: string, action: UserAction, password?: string) {
+  const body = password ? { masterPasswordHash: await passwordHash(password) } : {};
+  return request<User>(`${base}/users/${encodeURIComponent(id)}/${action}`, {
     method: 'POST',
-    body: {},
+    body,
   });
+}
 export const deleteUser = (id: string) =>
   request(`${base}/users/${encodeURIComponent(id)}`, { method: 'DELETE' });
 export const userDevices = (id: string) =>
@@ -555,7 +561,7 @@ export const createBackup = () => request<Backup>(`${base}/backups`, { method: '
  * here from the password and the account's key derivation, and the master key it takes is
  * wiped again right after.
  */
-async function passwordHash(password: string): Promise<string> {
+export async function passwordHash(password: string): Promise<string> {
   const email = currentSession()?.email;
   if (!email) throw new ApiError(401, 'The session has ended. Log in again.', null);
   const kdf = await prelogin(email);

@@ -7,6 +7,7 @@
  * provider; the connector page brings code and state back to `#/sso` here.
  */
 
+import { passwordHash } from './admin';
 import { request } from './web/http';
 
 const STARTED = 'uwulock.sso';
@@ -126,12 +127,38 @@ export type SsoSettings = {
 const base = '/uwu/v1/admin';
 
 export const ssoSettings = () => request<SsoSettings>(`${base}/sso`);
-export const saveSso = (settings: SsoSettings) =>
-  request<SsoSettings>(`${base}/sso`, { method: 'PUT', body: settings });
+/**
+ * Whether saving `draft` over `current` changes who may log in as whom — another provider or
+ * client, a new secret, unverified addresses, extensions, SSO on or off: then the server asks
+ * for the admin's master password.
+ */
+export function ssoNeedsPassword(current: SsoSettings, draft: SsoSettings, secret: string) {
+  return (
+    secret !== '' ||
+    current.issuer.trim().replace(/\/+$/, '') !== draft.issuer.trim().replace(/\/+$/, '') ||
+    current.clientId.trim() !== draft.clientId.trim() ||
+    Boolean(current.trustUnverifiedEmail) !== Boolean(draft.trustUnverifiedEmail) ||
+    JSON.stringify(current.extensionIds ?? []) !==
+      JSON.stringify(
+        (draft.extensionIds ?? []).map((id) => id.trim().toLowerCase()).filter(Boolean),
+      ) ||
+    current.enabled !== draft.enabled
+  );
+}
+
+export async function saveSso(settings: SsoSettings, password?: string) {
+  const masterPasswordHash = password ? await passwordHash(password) : undefined;
+  return request<SsoSettings>(`${base}/sso`, {
+    method: 'PUT',
+    body: { ...settings, masterPasswordHash },
+  });
+}
 export const testSso = (issuer: string) =>
   request<{ ok: boolean; error: string | null }>(`${base}/sso/test`, { body: { issuer } });
-export const pairSso = (url: string, code: string) =>
-  request<SsoSettings>(`${base}/sso/pair`, { body: { url, code } });
+export async function pairSso(url: string, code: string, password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<SsoSettings>(`${base}/sso/pair`, { body: { url, code, masterPasswordHash } });
+}
 export const unpairSso = () => request<SsoSettings>(`${base}/sso/pairing`, { method: 'DELETE' });
 export const newScimToken = () => request<{ token: string }>(`${base}/scim/token`, { body: {} });
 
