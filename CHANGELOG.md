@@ -47,7 +47,8 @@ UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, UwURDP 0.1.0-beta.
 
 **Maintenance.**
 
-- The web vault's crypto and the end-to-end tests use UwULock-Client's core with the suite module.
+- The web vault's crypto and the end-to-end tests use UwULock-Client's core with the suite module
+  (UwULock 0.4.0-beta.2).
 - A new end-to-end test: the web vault makes the space and writes entries, UwUSSH opens them, and
   an edit in the web vault keeps what the app added.
 

@@ -17,7 +17,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # UwULock's crypto and vault, the same the desktop app uses, at the commit uwulock-e2e tests.
-uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "c87995c490285e89a5ff451d8fad894be3629885" }
+uwulock-core = { git = "https://github.com/MinifyX/UwULock-Client", rev = "0dac221886c8ffb971efb2c730e044f6fa43fea4" }
 base64 = "0.22"
 # KeePass files: their key derivations (Argon2d/Argon2id, AES-KDF), the same crates uwulock-core
 # takes its Argon2id and AES from.
