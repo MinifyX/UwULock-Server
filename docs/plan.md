@@ -21,6 +21,10 @@ zum Durchgehen, weitere Leck-Quellen (XposedOrNot, Listen geleakter Seiten, E-Ma
 WLAN-Einträge, die Seite für fehlgeschlagene Anmeldungen mit GeoIP und IP-Sperren sowie nur einen
 Tresor pro Web-Tresor, nach einem Sicherheitsreview ([docs/security-review-0.7.md](security-review-0.7.md)),
 dessen Funde alle behoben sind; passend dazu UwULock 0.4.0-beta.1 mit Android- und iOS-App.
+0.7.0-beta.2 bringt die Einträge von UwUSSH und UwURDP als eigene Abschnitte in den Web-Tresor,
+nach einem Sicherheitsreview (ebenfalls [docs/security-review-0.7.md](security-review-0.7.md)),
+dessen Funde alle behoben sind; passend dazu UwUSSH 0.3.0-beta.2, UwURDP 0.1.0-beta.11 und
+UwULock 0.4.0-beta.2.
 Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 

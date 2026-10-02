@@ -8,7 +8,7 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 **UwUSSH's and UwURDP's entries in the web vault.** The web vault has two new sections in the
 sidebar, *SSH (UwUSSH)* and *Remote Desktop (UwURDP)*, with everything the apps keep in the suite
 vault — viewable and editable, while the switch *Suite vault* is on. The links into the apps need
-UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, the next UwURDP beta).
+UwUSSH and UwURDP builds that know them (UwUSSH 0.3.0-beta.2, UwURDP 0.1.0-beta.11).
 
 - Hosts by workspace and group, groups, identities, SSH keys, snippets, port forwards and known
   hosts, each with a search, details and an editor. RDP hosts with every setting: display and
