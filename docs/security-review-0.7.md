@@ -130,7 +130,7 @@ end to end: the suite bindings of the WebAssembly module (`web/wasm/src/suite.rs
 sections and editors in `web/src/components/suite/*`, and the assistant kinds of the server's
 space `ssh`. Attacker models: a hostile or compromised server, and a compromised device of the
 same account that writes records (valid, sealed with the space key) with odd content. Fixed in
-branch `security-suite`, each with a test. Nothing critical or high.
+branch `security-suite` (WV-12 in `security-suite-clock`), each with a test. Nothing critical or high.
 
 | Id | Severity | Where | Finding | Fix | Status |
 |---|---|---|---|---|---|
@@ -141,6 +141,7 @@ branch `security-suite`, each with a test. Nothing critical or high.
 | WV-9 | Low | Web vault, pull | A hostile server answering `hasMore` without moving the cursor, or `reset` again and again, kept the page pulling for 10 000 requests. | A pull stops with an error when the cursor doesn't move on with `hasMore`, at a second `reset` in a row, or when a page isn't one. Test "is not pulled forever from a server that goes nowhere". | Fixed |
 | WV-10 | Low | Web vault, creating a space | *Create space* ran beside the space's loads (the realtime channel, the section opening): a load between the fresh key and the server's answer could open the listed space in the module over the one just made, or the other way round. | Creating runs in the same queue as loading and pulling the space. Test "is made in line with its loads". | Fixed |
 | WV-11 | Low | Web vault, details | The auth type and the kind were looked up with `in` in plain objects: an identity whose `auth_type` is `constructor` (written by another device) broke its details, as WV-3. | `Object.hasOwn` (`authLabel`, `kindLabel`, `kindIcon`). A host's identity must be of kind `identity` (and its group of kind `group`) for the command and the `.rdp` file. | Fixed |
+| WV-12 | Medium | WebAssembly module, edit and delete | Found by the client review (UwULock-Client CL-M5): an edit or tombstone takes its clock and `baseSeq` from the record as pulled, but the module never checked that record before sealing on top of it. A hostile server could serve a record (a secret, a tombstone, one that doesn't open) with a clock near the end of time; the web vault then sealed an edit or delete with a clock after it, under the real space key, and every device merging it inherited the clock. | The record is opened with the space key before an edit or tombstone is sealed on it; one that doesn't open can't be changed or deleted ("broken"). Test in `records_of_the_apps_and_unknown_kinds_pass_through`. | Fixed |
 
 ### Info
 
