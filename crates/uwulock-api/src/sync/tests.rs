@@ -332,6 +332,57 @@ async fn a_member_hears_only_of_what_they_could_see() {
 }
 
 #[tokio::test]
+async fn edits_out_of_reach_tell_a_member_nothing_but_a_move_out_does() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let mio = server.account("mio@example.com").await;
+    let (org, reached) = family_with(&server, &nyu, &mio).await;
+    let other = json!({ "name": type2(), "users": [] });
+    let other =
+        json(server.call("POST", &format!("/api/organizations/{org}/collections"), Some(&nyu.token), other).await)
+            .await["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    let create = |collection: &str| {
+        let mut item = login_item("2.shared|s|s");
+        item["organizationId"] = json!(org);
+        json!({ "cipher": item, "collectionIds": [collection] })
+    };
+    let hidden = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), create(&other)).await).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let moved = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), create(&reached)).await).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let full = sync(&server, &mio.token, "include=vault,uwu").await;
+
+    // An edit and the trash of an item in a collection Mio does not see: not a word (R1-7).
+    let mut edit = login_item("2.edited|e|e");
+    edit["organizationId"] = json!(org);
+    assert_eq!(
+        server.call("PUT", &format!("/api/ciphers/{hidden}"), Some(&nyu.token), edit).await.status(),
+        StatusCode::OK
+    );
+    server.call("PUT", &format!("/api/ciphers/{hidden}/delete"), Some(&nyu.token), json!({})).await;
+    let renamed = json!({ "name": type2(), "users": [] });
+    server.call("PUT", &format!("/api/organizations/{org}/collections/{other}"), Some(&nyu.token), renamed).await;
+    let quiet = since_for(&server, &mio.token, "vault,uwu", &full["cursor"]).await;
+    assert_eq!(quiet["reset"], false);
+    assert_eq!(quiet["vault"]["deleted"]["ciphers"], json!([]), "{quiet}");
+    assert_eq!(quiet["vault"]["deleted"]["collections"], json!([]), "{quiet}");
+
+    // An item moved out of her collection is gone for her.
+    let body = json!({ "collectionIds": [other] });
+    let response = server.call("PUT", &format!("/api/ciphers/{moved}/collections"), Some(&nyu.token), body).await;
+    assert!(response.status().is_success(), "{}", text(response).await);
+    let gone = since_for(&server, &mio.token, "vault,uwu", &quiet["cursor"]).await;
+    assert_eq!(gone["vault"]["deleted"]["ciphers"], json!([moved]), "{gone}");
+}
+
+#[tokio::test]
 async fn reminders_and_masked_links_go_with_the_membership() {
     let server = TestServer::new().await;
     let nyu = server.account("nyu@example.com").await;
