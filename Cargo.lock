@@ -4994,7 +4994,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-api"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "argon2 0.5.3",
  "axum",
@@ -5038,7 +5038,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-backup"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "axum",
  "bytes",
@@ -5064,7 +5064,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-bench"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "clap",
  "reqwest 0.13.5",
@@ -5077,8 +5077,8 @@ dependencies = [
 
 [[package]]
 name = "uwulock-bitwarden"
-version = "0.4.0-beta.1"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=c87995c490285e89a5ff451d8fad894be3629885#c87995c490285e89a5ff451d8fad894be3629885"
+version = "0.4.0-beta.2"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=0dac221886c8ffb971efb2c730e044f6fa43fea4#0dac221886c8ffb971efb2c730e044f6fa43fea4"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5101,8 +5101,8 @@ dependencies = [
 
 [[package]]
 name = "uwulock-core"
-version = "0.4.0-beta.1"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=c87995c490285e89a5ff451d8fad894be3629885#c87995c490285e89a5ff451d8fad894be3629885"
+version = "0.4.0-beta.2"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=0dac221886c8ffb971efb2c730e044f6fa43fea4#0dac221886c8ffb971efb2c730e044f6fa43fea4"
 dependencies = [
  "aes 0.8.4",
  "argon2 0.5.3",
@@ -5132,7 +5132,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-e2e"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5152,7 +5152,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-mail"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "lettre",
  "parking_lot",
@@ -5164,7 +5164,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-notify"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "axum",
  "parking_lot",
@@ -5180,7 +5180,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-server"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "axum",
  "axum-server",
@@ -5217,7 +5217,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-store"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -5235,7 +5235,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-web"
-version = "0.7.0-beta.1"
+version = "0.7.0-beta.2"
 
 [[package]]
 name = "valuable"
