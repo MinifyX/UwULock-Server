@@ -3,6 +3,7 @@ import { Callout, Checkbox, Segmented } from '../components/ui';
 import { logs, type LogLine } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
+import { EmptyNote } from '../components/NyuStates';
 
 /** The server's newest log lines, as they come; nothing secret is ever logged. */
 export function Logs() {
@@ -69,7 +70,7 @@ export function Logs() {
             <span className="log-message">{line.message}</span>
           </p>
         ))}
-        {lines.length === 0 && <p className="empty-note">{t('Noch nichts.')}</p>}
+        {lines.length === 0 && <EmptyNote>{t('Noch nichts.')}</EmptyNote>}
       </div>
     </>
   );

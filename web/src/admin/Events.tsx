@@ -5,6 +5,7 @@ import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 const KINDS: Record<string, string> = {
   login: N_('Anmeldung'),
@@ -127,7 +128,7 @@ export function Events() {
           </tr>
         ))}
       </Table>
-      {list.length === 0 && <p className="empty-note">{t('Noch nichts.')}</p>}
+      {list.length === 0 && <EmptyNote>{t('Noch nichts.')}</EmptyNote>}
       {more && (
         <ButtonRow>
           <Button onClick={() => load(list[list.length - 1]?.id ?? null)}>

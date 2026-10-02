@@ -23,3 +23,16 @@ describe('the appearance', () => {
     expect(document.documentElement.dataset.theme).toBe('light');
   });
 });
+
+describe('the font setting', () => {
+  it('keeps a known font and falls back to UwU Sans for anything else', async () => {
+    const { sanitize, DEFAULT_SETTINGS } = await import('./settings');
+    expect(DEFAULT_SETTINGS.font).toBe('uwu');
+    for (const font of ['uwu', 'manrope', 'rubik', 'dmsans', 'system'] as const)
+      expect(sanitize({ font }).font).toBe(font);
+    for (const font of ['comic-sans', '', null, 3, { font: 'uwu' }, 'UWU'])
+      expect(sanitize({ font }).font).toBe('uwu');
+    // An old copy of the settings, from before the font could be chosen.
+    expect(sanitize({ theme: 'light' }).font).toBe('uwu');
+  });
+});

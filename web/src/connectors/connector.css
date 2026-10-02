@@ -1,4 +1,5 @@
 @import '../styles/tokens.css';
+@import '../styles/fonts.css';
 
 /* The WebAuthn connectors: a button, and on their own page a little around it. */
 .connector {
@@ -7,6 +8,8 @@
   display: grid;
   place-items: center;
   font-family: var(--uwu-font);
+  font-variant-ligatures: no-contextual;
+  font-feature-settings: 'calt' 0;
   color: var(--uwu-ink);
   background: var(--uwu-canvas);
 }

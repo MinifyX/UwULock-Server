@@ -1275,8 +1275,8 @@ dependencies = [
 
 [[package]]
 name = "uwulock-core"
-version = "0.4.0-beta.2"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=0dac221886c8ffb971efb2c730e044f6fa43fea4#0dac221886c8ffb971efb2c730e044f6fa43fea4"
+version = "0.4.0-beta.3"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=2a8a70877f04a31d5c80780b9e36dfd6342c13f5#2a8a70877f04a31d5c80780b9e36dfd6342c13f5"
 dependencies = [
  "aes",
  "argon2",

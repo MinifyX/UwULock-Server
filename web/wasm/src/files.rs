@@ -8,6 +8,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use uwulock_core::crypto::{self, EncString, SymmetricKey};
+use uwulock_core::entry_send;
 use uwulock_core::send;
 use uwulock_core::wire;
 use wasm_bindgen::prelude::*;
@@ -338,8 +339,10 @@ fn reprompted<'a>(unlocked: &'a Unlocked, id: &str) -> Result<&'a uwulock_core::
 }
 
 /// The values of an item that can go into a Send, by uwulock-core's names (`username`,
-/// `password`, `uri:0`, `field:2`, …), each with the field's own name where it has one. Only
-/// those with a value; never the authenticator key.
+/// `password`, `uri:0`, `field:2`, …), each with the field's own name where it has one and a
+/// website's address (`uri`), so the choice can name it. Only those with a value. The
+/// authenticator key only as `totp` with `entryOnly`: an entry Send shows live codes from it,
+/// never the key; a plain text Send can't take it.
 pub fn shareable(unlocked: &Unlocked, item_id: &str) -> Result<Vec<Value>> {
     let item = reprompted(unlocked, item_id)?;
     let mut names: Vec<String> = ["username", "password"].map(String::from).to_vec();
@@ -351,7 +354,7 @@ pub fn shareable(unlocked: &Unlocked, item_id: &str) -> Result<Vec<Value>> {
     names.extend(["ssh-public", "ssh-private", "ssh-fingerprint"].map(String::from));
     names.push("notes".into());
     names.extend((0..item.fields.len()).map(|n| format!("field:{n}")));
-    Ok(names
+    let mut list: Vec<Value> = names
         .into_iter()
         .filter(|name| send::shareable_value(item, name).is_some())
         .map(|name| {
@@ -359,9 +362,27 @@ pub fn shareable(unlocked: &Unlocked, item_id: &str) -> Result<Vec<Value>> {
                 .strip_prefix("field:")
                 .and_then(|n| n.parse::<usize>().ok())
                 .and_then(|n| item.fields.get(n)?.name.as_ref().map(|n| n.to_string()));
-            json!({ "name": name, "label": label })
+            let uri = name
+                .strip_prefix("uri:")
+                .and_then(|n| n.parse::<usize>().ok())
+                .and_then(|n| item.login.as_ref()?.uris.get(n).map(|u| u.uri.to_string()));
+            let mut entry = json!({ "name": name, "label": label });
+            if let Some(uri) = uri {
+                entry["uri"] = json!(uri);
+            }
+            entry
         })
-        .collect())
+        .collect();
+    if has_totp(item) && !send::withheld(item, "totp") {
+        // After the password, where the item shows it too.
+        let at = list.iter().position(|v| v["name"] == "password").map_or(0, |i| i + 1);
+        list.insert(at, json!({ "name": "totp", "label": null, "entryOnly": true }));
+    }
+    Ok(list)
+}
+
+fn has_totp(item: &uwulock_core::vault::Item) -> bool {
+    item.login.as_ref().and_then(|l| l.totp.as_ref()).is_some_and(|t| !t.trim().is_empty())
 }
 
 #[derive(Deserialize)]
@@ -390,6 +411,11 @@ pub struct ShareDraft {
     emails: Vec<String>,
     #[serde(default)]
     hide_email: bool,
+    /// An entry Send (`uwulock_core::entry_send`): the readable lines plus the
+    /// `uwulock-entry:v1:` line UwULock's Send page shows as an entry. Only then may `fields`
+    /// name `totp`.
+    #[serde(default)]
+    entry: bool,
 }
 
 /// A text Send of the chosen values of an item: `{ request, urlKey }`, the body of
@@ -397,10 +423,17 @@ pub struct ShareDraft {
 pub fn share_item(unlocked: &Unlocked, draft: ShareDraft) -> Result<Value> {
     let item = reprompted(unlocked, &draft.item_id)?;
     let fields: Vec<(String, String)> = draft.fields.into_iter().map(|field| (field.name, field.label)).collect();
-    let text = send::share_text(item, &fields);
-    if text.as_str() == item.name.as_str() {
+    let chosen = fields
+        .iter()
+        .filter(|(name, _)| {
+            !send::withheld(item, name)
+                && (send::shareable_value(item, name).is_some() || (draft.entry && name == "totp" && has_totp(item)))
+        })
+        .count();
+    if chosen == 0 {
         return Err(Failure::new("invalid", "Choose at least one field that has a value."));
     }
+    let text = if draft.entry { entry_send::share_entry_text(item, &fields) } else { send::share_text(item, &fields) };
     let sealed = send::TextSend {
         name: draft.name,
         notes: None,
@@ -454,6 +487,19 @@ pub fn open_access(access: &str, url_key: &str) -> Result<Value> {
         "expirationDate": send.expiration_date,
         "creator": value.get("creatorIdentifier").cloned().unwrap_or(Value::Null),
     }))
+}
+
+/// The entry in a Send's text (`uwulock_core::entry_send`) as JSON `{entry, readable}`, or
+/// `null` when the text is plain (no marker, another version, garbled): then the page shows the
+/// text as it is.
+pub fn decode_entry_send(text: &str) -> Result<String> {
+    Ok(match entry_send::decode(text) {
+        Some(entry) => serde_json::to_string(&json!({
+            "entry": entry,
+            "readable": entry_send::readable_part(text),
+        }))?,
+        None => "null".into(),
+    })
 }
 
 /// A Send's file, opened with the key from the link.
@@ -519,5 +565,90 @@ mod tests {
         unlocked.reprompt_ok.insert("bank".into());
         assert_eq!(shareable(&unlocked, "bank").unwrap()[0]["name"], "password");
         assert!(share_item(&unlocked, draft()).unwrap()["urlKey"].is_string());
+    }
+
+    /// A login with two websites and an authenticator key, no re-prompt.
+    fn shop(unlocked: &mut Unlocked) {
+        let mut item = Item::new(ItemKind::Login);
+        item.id = "shop".into();
+        item.name = Zeroizing::new("Shop".into());
+        item.login = Some(Login {
+            username: Some(Zeroizing::new("nyu".into())),
+            password: Some(Zeroizing::new("hunter2".into())),
+            totp: Some(Zeroizing::new("JBSWY3DPEHPK3PXP".into())),
+            uris: vec![
+                uwulock_core::vault::LoginUri {
+                    uri: Zeroizing::new("https://shop.example.com".into()),
+                    match_kind: None,
+                    checksum: None,
+                },
+                uwulock_core::vault::LoginUri {
+                    uri: Zeroizing::new("https://login.example.net".into()),
+                    match_kind: None,
+                    checksum: None,
+                },
+            ],
+            ..Login::default()
+        });
+        unlocked.vault.items.push(item);
+    }
+
+    #[test]
+    fn the_choice_names_each_website_and_offers_codes_only_for_an_entry() {
+        let mut unlocked = unlocked();
+        shop(&mut unlocked);
+        let list = shareable(&unlocked, "shop").unwrap();
+        let names: Vec<&str> = list.iter().map(|v| v["name"].as_str().unwrap()).collect();
+        assert_eq!(names, ["username", "password", "totp", "uri:0", "uri:1"]);
+        assert_eq!(list[2]["entryOnly"], true);
+        assert_eq!(list[3]["uri"], "https://shop.example.com");
+        assert_eq!(list[4]["uri"], "https://login.example.net");
+    }
+
+    fn shop_draft(entry: bool, fields: &[&str]) -> ShareDraft {
+        serde_json::from_value(json!({
+            "itemId": "shop",
+            "fields": fields.iter().map(|name| json!({ "name": name, "label": name })).collect::<Vec<_>>(),
+            "name": "Shop",
+            "deletionDate": "2026-09-29T12:00:00.000Z",
+            "entry": entry,
+        }))
+        .unwrap()
+    }
+
+    /// The text a recipient gets, opened with the link's key.
+    fn opened(unlocked: &Unlocked, draft: ShareDraft) -> String {
+        let made = share_item(unlocked, draft).unwrap();
+        let request = &made["request"];
+        let access = json!({ "id": "s1", "type": 0, "name": request["name"], "text": request["text"] });
+        open_access(&access.to_string(), made["urlKey"].as_str().unwrap()).unwrap()["text"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn an_entry_send_carries_the_codes_key_only_in_its_marker() {
+        let mut unlocked = unlocked();
+        shop(&mut unlocked);
+        // A plain Send can't take the authenticator key alone.
+        assert_eq!(share_item(&unlocked, shop_draft(false, &["totp"])).unwrap_err().kind, "invalid");
+
+        let text = opened(&unlocked, shop_draft(true, &["username", "totp", "uri:1"]));
+        let decoded: Value = serde_json::from_str(&decode_entry_send(&text).unwrap()).unwrap();
+        let entry = &decoded["entry"];
+        assert_eq!(entry["name"], "Shop");
+        assert_eq!(entry["username"], "nyu");
+        assert_eq!(entry["websites"], json!(["https://login.example.net"]));
+        assert_eq!(entry["totp"], "JBSWY3DPEHPK3PXP");
+        assert!(entry.get("password").is_none());
+        let readable = decoded["readable"].as_str().unwrap();
+        assert!(readable.starts_with("Shop"));
+        assert!(!readable.contains("JBSWY3DPEHPK3PXP"), "the readable lines never hold the key");
+        assert!(!readable.contains(entry_send::MARKER));
+
+        // A plain Send stays plain text.
+        let plain = opened(&unlocked, shop_draft(false, &["username"]));
+        assert_eq!(decode_entry_send(&plain).unwrap(), "null");
     }
 }

@@ -19,12 +19,14 @@ import {
 } from '../../lib/requests';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
+import { NyuScene } from '../nyu/scenes';
 import { Modal } from '../Modal';
 import { listbox } from '../listbox';
 import { BackToList, Panes } from '../panes';
 import { PasswordInput } from '../PasswordInput';
 import { PasswordPrompt, save } from './controls';
 import { SendDomainField, useDefaultSendDomain, useSendDomains } from './SendDomainSelect';
+import { EmptyNote } from '../NyuStates';
 
 /**
  * File requests: a link somebody without an account uploads files and a message to —
@@ -169,6 +171,7 @@ export function FileRequestsView({ open }: { open?: string | null }) {
           requests &&
           problem !== 'lost' && (
             <div className="list-empty">
+              <NyuScene name="files" className="empty-scene" />
               <p>
                 {t(
                   'Noch keine Datei-Anfragen. Mach einen Link, über den dir jemand ohne Konto Dateien schickt – etwa einen Ausweis-Scan. Verschlüsselt wird im Browser des Absenders, nur du kannst es öffnen.',
@@ -399,7 +402,7 @@ function RequestDetail({
 
       <h3 className="detail-subhead">{t('Angekommen')}</h3>
       {arrived?.length === 0 && (
-        <p className="empty-note">{t('Noch nichts. Du bekommst eine Mail, wenn etwas ankommt.')}</p>
+        <EmptyNote>{t('Noch nichts. Du bekommst eine Mail, wenn etwas ankommt.')}</EmptyNote>
       )}
       {arrived?.map((submission) => (
         <section

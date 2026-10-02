@@ -215,13 +215,17 @@ try {
   await nyu.getByText(/Einträge importiert/).waitFor({ timeout: 30000 });
   await nyu.keyboard.press('Escape');
 
-  step('an item shared as a Send, only for one address');
+  step('an item shared as an entry Send with its one-time codes, only for one address');
   await nyu.getByPlaceholder(/Tresor durchsuchen/).fill('example.com (nyu)');
   await nyu.locator('.item-list').getByText('example.com (nyu)').first().click();
   await nyu.getByRole('button', { name: 'Als Send teilen' }).click();
   const share = nyu.locator('.modal');
   await share.getByRole('checkbox', { name: 'Benutzername' }).waitFor();
-  if (await share.getByText(/Einmal-Code|TOTP/).count() > 1) throw new Error('the TOTP key is offered');
+  // The codes are a choice of their own, never ticked from the start.
+  const codes = share.getByRole('checkbox', { name: /Einmal-Codes/ });
+  if (await codes.isChecked()) throw new Error('the one-time codes are ticked from the start');
+  await codes.check();
+  await share.locator('[data-totp-hint]').waitFor();
   await share.getByRole('radio', { name: 'Nur bestimmte Adressen' }).click();
   await share.getByLabel('E-Mail-Adressen').fill('friend@example.com');
   await snap(nyu, 'share');
@@ -251,14 +255,21 @@ try {
   await friend.getByText('Der Code stimmt nicht oder ist abgelaufen.').waitFor();
   await friend.getByLabel('Code', { exact: true }).fill(code);
   await friend.getByRole('button', { name: 'Öffnen' }).click();
-  const text = friend.locator('.send-text');
-  await text.waitFor({ timeout: 30000 });
-  const shared = await text.innerText();
-  if (!shared.includes('Benutzername: nyu') || !shared.includes('Passwort: apple-pass')) {
-    throw new Error(`the Send says ${shared}`);
+  // An entry Send: shown as the item, with copy buttons and live codes, never as raw text.
+  const entry = friend.locator('[data-shared-entry]');
+  await entry.waitFor({ timeout: 30000 });
+  if (await friend.locator('.send-text').count()) throw new Error('the entry Send shows its raw text');
+  await entry.getByText('nyu', { exact: true }).waitFor();
+  await entry.locator('.totp-code').filter({ hasText: /^\d{3} \d{3}$/ }).waitFor();
+  if (await entry.getByText('apple-pass').count()) throw new Error('the password shows before a click');
+  await entry.getByRole('button', { name: 'Passwort zeigen' }).click();
+  await entry.getByText('apple-pass').waitFor();
+  const html = await friend.content();
+  if (html.includes('JBSWY3DPEHPK3PXP') || html.includes('otpauth')) {
+    throw new Error('the Send page shows the TOTP key');
   }
-  if (shared.includes('JBSWY3DPEHPK3PXP')) throw new Error('the TOTP key went into the Send');
   await snap(friend, 'send-opened');
+  await checkA11y(friend, 'entry Send');
   await friend.context().close();
 } catch (error) {
   await snap(nyu, 'failed').catch(() => undefined);

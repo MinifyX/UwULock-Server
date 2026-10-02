@@ -1,0 +1,94 @@
+/*
+ * Items in 0.8: the generator's minimums, the next one-time code, websites behind an expander,
+ * the passkeys card, the star in the editor and entry Sends on the Send page.
+ */
+
+/* ── Generator minimums ────────────────────────────────── */
+
+.generator-minimums {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(5.5rem, 1fr));
+  gap: var(--uwu-space-2);
+}
+
+.generator-minimums .field-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.generator-minimums input {
+  width: 100%;
+}
+
+/* ── The next one-time code ────────────────────────────── */
+
+.totp-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--uwu-space-1);
+}
+
+.totp-next {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--uwu-space-2);
+  font-size: var(--uwu-text-sm);
+  color: var(--uwu-muted);
+  animation: totp-next-in 240ms ease-out;
+}
+
+.totp-next .mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  color: var(--uwu-ink);
+}
+
+@keyframes totp-next-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* ── Passkeys ──────────────────────────────────────────── */
+
+.passkey-row {
+  align-items: center;
+}
+
+.passkey-row .passkey-icon {
+  flex: none;
+  color: var(--uwu-pink-ink);
+}
+
+/* ── The editor: the star, the reminder ────────────────── */
+
+.favorite-toggle[aria-pressed='true'] {
+  color: var(--uwu-pink-ink);
+}
+
+.reminder-fields {
+  display: grid;
+  gap: var(--uwu-space-3);
+}
+
+.reminder-fields .setting-row {
+  padding: 0;
+  border: 0;
+}
+
+/* ── An entry Send on the Send page ────────────────────── */
+
+.shared-entry {
+  display: grid;
+  gap: var(--uwu-space-3);
+}
+
+.shared-entry .detail-card {
+  margin: 0;
+}
+
+.share-choice.uri {
+  overflow-wrap: anywhere;
+}

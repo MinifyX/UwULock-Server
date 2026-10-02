@@ -160,8 +160,17 @@ export async function removeSendAuth(sendId: string): Promise<void> {
   await sync();
 }
 
-/** The values of an item "Share as Send" offers, by uwulock-core's names; never the TOTP key. */
-export type ShareableField = { name: string; label: string | null };
+/**
+ * The values of an item "Share as Send" offers, by uwulock-core's names. `uri` is a website's
+ * address, for the choice; `entryOnly` marks `totp`, which only an entry Send takes — its page
+ * shows live codes, never the key.
+ */
+export type ShareableField = {
+  name: string;
+  label: string | null;
+  uri?: string;
+  entryOnly?: boolean;
+};
 
 export const shareableFields = (itemId: string) =>
   callJson<ShareableField[]>((core) => core.shareableFields(itemId));
@@ -178,6 +187,11 @@ export type ShareDraft = {
   password: string | null;
   emails: string[];
   hideEmail: boolean;
+  /**
+   * An entry Send: the readable lines plus a last line UwULock's Send page shows as an entry
+   * (lib/entrySend.ts). Still a text Send that every client opens.
+   */
+  entry?: boolean;
 };
 
 /** A text Send of an item's chosen values. An ordinary Send, in every client. */

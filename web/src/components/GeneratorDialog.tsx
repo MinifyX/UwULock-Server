@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { copyGenerated, generatePassword, type GeneratorOptions } from '../lib/api';
+import { copyGenerated, generatePassword, type Generated, type GeneratorOptions } from '../lib/api';
 import { useFeature } from '../lib/branding';
 import { errorText, maskedErrorText } from '../lib/errors';
 import { copiedText } from '../lib/format';
@@ -12,6 +12,14 @@ import {
   useUsableMasked,
   type MaskedConnection,
 } from '../lib/masked';
+import {
+  effectiveLength,
+  GENERATOR_SETS,
+  loadGenerator,
+  MAX_MINIMUM,
+  requiredLength,
+  saveGenerator,
+} from '../lib/generator';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
 import { Icon } from './Icon';
@@ -19,36 +27,6 @@ import { Colored } from './ItemDetail';
 import { Modal } from './Modal';
 import { Segmented } from './web/controls';
 import { MaskedDomainField } from './web/MaskedSettings';
-
-const KEY = 'uwulock.generator';
-
-const DEFAULTS: GeneratorOptions = {
-  length: 20,
-  lowercase: true,
-  uppercase: true,
-  digits: true,
-  symbols: true,
-  avoidAmbiguous: false,
-};
-
-/** Only the options are remembered, never a password. */
-function loadOptions(): GeneratorOptions {
-  try {
-    const raw = JSON.parse(window.localStorage.getItem(KEY) ?? '{}') as Partial<GeneratorOptions>;
-    const bool = (v: unknown, d: boolean) => (typeof v === 'boolean' ? v : d);
-    return {
-      length:
-        typeof raw.length === 'number' ? Math.min(128, Math.max(5, Math.round(raw.length))) : 20,
-      lowercase: bool(raw.lowercase, DEFAULTS.lowercase),
-      uppercase: bool(raw.uppercase, DEFAULTS.uppercase),
-      digits: bool(raw.digits, DEFAULTS.digits),
-      symbols: bool(raw.symbols, DEFAULTS.symbols),
-      avoidAmbiguous: bool(raw.avoidAmbiguous, DEFAULTS.avoidAmbiguous),
-    };
-  } catch {
-    return DEFAULTS;
-  }
-}
 
 function strength(bits: number): { level: 1 | 2 | 3 | 4; label: string } {
   if (bits < 50) return { level: 1, label: t('schwach') };
@@ -66,8 +44,8 @@ export function GeneratorDialog({
   onUse?: (password: string) => void;
 }) {
   useLanguage();
-  const [options, setOptions] = useState<GeneratorOptions>(loadOptions);
-  const [result, setResult] = useState<{ password: string; bits: number } | null>(null);
+  const [options, setOptions] = useState<GeneratorOptions>(loadGenerator);
+  const [result, setResult] = useState<Generated | null>(null);
   // Masked addresses, when UwUMail is connected — not from the editor's password field.
   const masked = useUsableMasked(useFeature('masked-addresses') && !onUse);
   const [mode, setMode] = useState<'password' | 'masked'>('password');
@@ -83,11 +61,7 @@ export function GeneratorDialog({
 
   useEffect(() => {
     void roll(options);
-    try {
-      window.localStorage.setItem(KEY, JSON.stringify(options));
-    } catch {
-      // Remembering is a convenience.
-    }
+    saveGenerator(options);
   }, [options, roll]);
 
   const set = (patch: Partial<GeneratorOptions>) => {
@@ -108,12 +82,11 @@ export function GeneratorDialog({
   };
 
   const meter = result ? strength(result.bits) : null;
-  const sets: { key: 'uppercase' | 'lowercase' | 'digits' | 'symbols'; label: string }[] = [
-    { key: 'uppercase', label: 'A–Z' },
-    { key: 'lowercase', label: 'a–z' },
-    { key: 'digits', label: '0–9' },
-    { key: 'symbols', label: '!@#$%^&*' },
-  ];
+  const required = requiredLength(options);
+  const length = effectiveLength(options);
+  const [showMinimums, setShowMinimums] = useState(() =>
+    GENERATOR_SETS.some((set) => options[set.min] > 1),
+  );
 
   if (masked && mode === 'masked') {
     return (
@@ -216,18 +189,25 @@ export function GeneratorDialog({
         )}
         <label className="field">
           <span>
-            {t('Länge')} <b>{options.length}</b>
+            {t('Länge')} <b>{length}</b>
           </span>
           <input
             type="range"
             min={5}
             max={64}
-            value={Math.min(options.length, 64)}
+            value={Math.min(length, 64)}
             onChange={(e) => set({ length: Number(e.target.value) })}
           />
         </label>
+        {length > options.length && (
+          <p className="field-hint" data-generator-raised>
+            {t('Für die Mindestzahlen braucht es {n} Zeichen – die Länge ist darum {n}.', {
+              n: required,
+            })}
+          </p>
+        )}
         <div className="generator-sets" role="group" aria-label={t('Zeichen')}>
-          {sets.map(({ key, label }) => (
+          {GENERATOR_SETS.map(({ key, label }) => (
             <label key={key} className="check chip-check">
               <input
                 type="checkbox"
@@ -238,6 +218,49 @@ export function GeneratorDialog({
             </label>
           ))}
         </div>
+        <button
+          type="button"
+          className="quiet history-toggle"
+          aria-expanded={showMinimums}
+          onClick={() => setShowMinimums(!showMinimums)}
+        >
+          <Icon name="sliders" size={15} />
+          {t('Mindestens je Zeichenart')}
+          <Icon name="chevron" size={14} className={showMinimums ? 'turned' : undefined} />
+        </button>
+        {showMinimums && (
+          <div
+            className="generator-minimums"
+            role="group"
+            aria-label={t('Mindestens je Zeichenart')}
+          >
+            {GENERATOR_SETS.map(({ key, min, label }) => (
+              <label key={min} className="field">
+                <span className="mono">{label}</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={MAX_MINIMUM}
+                  disabled={!options[key]}
+                  value={options[key] ? Math.max(1, options[min]) : 0}
+                  aria-label={t('Mindestens {set}', { set: label })}
+                  onChange={(e) =>
+                    set({
+                      [min]: Math.min(
+                        MAX_MINIMUM,
+                        Math.max(0, Math.round(Number(e.target.value) || 0)),
+                      ),
+                    })
+                  }
+                />
+              </label>
+            ))}
+            <p className="field-hint">
+              {t('Jede eingeschaltete Zeichenart kommt mindestens einmal vor.')}
+            </p>
+          </div>
+        )}
         <label className="check">
           <input
             type="checkbox"

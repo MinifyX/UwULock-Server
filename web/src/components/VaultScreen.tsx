@@ -132,7 +132,8 @@ type Props = {
 };
 
 /** What the editor is open for: an item to change, or a new one of that kind. */
-type Editing = { summary: ItemSummary | null; kind: ItemKind };
+/** `clone`: a copy of `summary` as a new item ("Duplizieren"). */
+type Editing = { summary: ItemSummary | null; kind: ItemKind; clone?: boolean };
 
 export function VaultScreen({
   status,
@@ -989,10 +990,18 @@ export function VaultScreen({
                 </ul>
               ) : (
                 <div className="list-empty" role="status">
-                  {loaded && (
+                  {loaded ? (
                     <>
                       <NyuScene
-                        name={query ? 'puzzled' : items.length ? 'sleepy' : 'pick'}
+                        name={
+                          query
+                            ? 'puzzled'
+                            : !items.length
+                              ? 'pick'
+                              : filter.kind === 'trash'
+                                ? 'tidy'
+                                : 'sleepy'
+                        }
                         className="empty-scene"
                       />
                       <p>
@@ -1000,13 +1009,19 @@ export function VaultScreen({
                           ? t('Nichts gefunden für „{query}“.', {
                               query: query.trim(),
                             })
-                          : items.length
-                            ? t('Hier ist nichts. (˘ω˘)')
-                            : t(
-                                'Dein Tresor ist noch leer. Leg oben rechts den ersten Eintrag an.',
-                              )}
+                          : !items.length
+                            ? t('Dein Tresor ist noch leer. Leg oben rechts den ersten Eintrag an.')
+                            : filter.kind === 'trash'
+                              ? t('Der Papierkorb ist leer. Blitzblank ✧')
+                              : t('Hier ist nichts. (˘ω˘)')}
                       </p>
                     </>
+                  ) : (
+                    // Opening the vault: Nyu only shows up when it takes a moment.
+                    <div className="nyu-loading nyu-delayed">
+                      <NyuScene name="connecting" className="empty-scene" />
+                      <p>{t('Öffnet deinen Tresor …')}</p>
+                    </div>
                   )}
                 </div>
               )}
@@ -1038,6 +1053,7 @@ export function VaultScreen({
                   summary={current}
                   overview={overview}
                   onEdit={() => setEditing({ summary: current, kind: current.kind })}
+                  onClone={() => setEditing({ summary: current, kind: current.kind, clone: true })}
                 />
               ) : (
                 <div className="detail-empty">
@@ -1205,9 +1221,10 @@ export function VaultScreen({
 
         {editing && (
           <ItemEditor
-            key={editing.summary?.id ?? `new-${editing.kind}`}
+            key={`${editing.clone ? 'clone-' : ''}${editing.summary?.id ?? `new-${editing.kind}`}`}
             summary={editing.summary}
             kind={editing.kind}
+            clone={editing.clone}
             overview={overview}
             onClose={() => setEditing(null)}
             onSaved={(id) => {

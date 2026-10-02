@@ -34,6 +34,7 @@ import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 const KINDS: { value: ChannelKind; label: string }[] = [
   { value: 'mail', label: N_('Mail') },
@@ -126,9 +127,9 @@ export function Notifications() {
           />
         ))}
         {channels.length === 0 && (
-          <p className="empty-note">
+          <EmptyNote>
             {t('Kein Kanal: Der Server meldet sich nur im Log und in der Übersicht.')}
-          </p>
+          </EmptyNote>
         )}
         {adding ? (
           <ChannelCard

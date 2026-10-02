@@ -38,7 +38,11 @@
   --uwu-radius-card: 16px;
   --uwu-radius-pill: 999px;
 
-  --uwu-font: 'Manrope Variable', 'Manrope', 'Segoe UI', system-ui, sans-serif;
+  /* Settings → Darstellung → Schrift sets both on <html> (lib/fonts.ts); UwU Sans by default. */
+  --uwu-font:
+    'UwU Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans', Arial,
+    sans-serif;
+  --uwu-tracking: -0.008em;
   --uwu-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
   /*

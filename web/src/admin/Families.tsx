@@ -6,6 +6,7 @@ import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 /**
  * The families on the server (and Stufe 5's organisations): their names, owners and how many
@@ -30,7 +31,7 @@ export function Families() {
         )}
       >
         {list?.length === 0 ? (
-          <p className="empty-note">{t('Noch keine Familien.')}</p>
+          <EmptyNote>{t('Noch keine Familien.')}</EmptyNote>
         ) : (
           <Table
             label={t('Familien')}

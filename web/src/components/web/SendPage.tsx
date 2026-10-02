@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { decodeEntrySend, type SharedEntry } from '../../lib/entrySend';
 import { errorText } from '../../lib/errors';
 import {
   downloadSendFile,
@@ -14,6 +15,7 @@ import { Icon } from '../Icon';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
 import { save } from './controls';
+import { SharedEntryView } from './SharedEntry';
 import { WelcomeMark } from '../TitleBar';
 
 /** What the page asks for before the Send opens. */
@@ -35,6 +37,23 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(false);
+  /** An entry Send's entry, once its text was read; `null` for a plain text. */
+  const [entry, setEntry] = useState<SharedEntry | null>(null);
+
+  useEffect(() => {
+    let stopped = false;
+    setEntry(null);
+    if (send?.kind === 0 && send.text) {
+      // A text that doesn't decode is shown as the text it is.
+      decodeEntrySend(send.text).then(
+        (found) => !stopped && setEntry(found?.entry ?? null),
+        () => undefined,
+      );
+    }
+    return () => {
+      stopped = true;
+    };
+  }, [send]);
 
   const load = async (proof: SendProof = {}) => {
     setBusy(true);
@@ -195,7 +214,9 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             <h1 className="card-title">{send.name || t('Send')}</h1>
             {send.creator && <p className="field-hint">{t('Von {who}', { who: send.creator })}</p>}
             {send.kind === 0 ? (
-              shown ? (
+              shown && entry ? (
+                <SharedEntryView entry={entry} />
+              ) : shown ? (
                 <>
                   <pre className="send-text">{send.text}</pre>
                   <div className="form-actions">
@@ -216,7 +237,7 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
               ) : (
                 <button className="primary" onClick={() => setShown(true)}>
                   <Icon name="eye" size={15} />
-                  {t('Text zeigen')}
+                  {entry ? t('Eintrag zeigen') : t('Text zeigen')}
                 </button>
               )
             ) : (

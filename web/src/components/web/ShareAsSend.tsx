@@ -22,6 +22,7 @@ function labelOf(field: ShareableField): string {
   const { name } = field;
   if (name.startsWith('field:')) return field.label || t('Feld');
   if (name.startsWith('uri:')) return t('Website');
+  if (name === 'totp') return t('Einmal-Code (TOTP)');
   if (name.startsWith('identity:')) {
     const key = name.slice('identity:'.length);
     return IDENTITY_LABEL[key] ? t(IDENTITY_LABEL[key]) : key;
@@ -41,20 +42,33 @@ function labelOf(field: ShareableField): string {
   return labels[name] ?? name;
 }
 
-/** What is ticked at first: a login's name, password and website; anything else all of it. */
-function ticked(fields: ShareableField[]): Set<string> {
+/** What the choice shows: a website with its address, so several can be told apart. */
+function choiceOf(field: ShareableField): string {
+  if (field.uri) return `${t('Website')} · ${field.uri}`;
+  if (field.name === 'totp') return t('Einmal-Codes (nur die Codes, nie der Schlüssel)');
+  return labelOf(field);
+}
+
+/**
+ * What is ticked at first: a login's name, password and website; anything else all of it. Never
+ * the one-time codes: those are a choice of their own.
+ */
+export function ticked(fields: ShareableField[]): Set<string> {
   const login = fields.filter(
     ({ name }) => name === 'username' || name === 'password' || name === 'uri:0',
   );
-  return new Set((login.length ? login : fields).map(({ name }) => name));
+  const all = fields.filter(({ entryOnly }) => !entryOnly);
+  return new Set((login.length ? login : all).map(({ name }) => name));
 }
 
 const DAYS = [1, 2, 3, 7, 14, 30];
 
 /**
- * "Share as Send": the chosen values of an item as the text of a new Send — an ordinary one, so
- * the official apps show it too. Never the authenticator key: whoever has that makes the codes
- * for good. It opens once and goes after a day, unless changed here.
+ * "Share as Send": the chosen values of an item as a new entry Send — an ordinary text Send, so
+ * the official apps show it too, whose last line lets UwULock's Send page show it as an entry
+ * with copy buttons. The one-time codes only when chosen, and then only as live codes on that
+ * page: the readable text never holds the authenticator key. It opens once and goes after a
+ * day, unless changed here.
  */
 export function ShareAsSend({
   itemId,
@@ -120,6 +134,7 @@ export function ShareAsSend({
         password: access === 1 ? password : null,
         emails: access === 0 ? addresses : [],
         hideEmail: false,
+        entry: true,
       });
       // New Sends start on the account's default domain; another one is set afterwards.
       if (domains.length > 0 && chosenDomain !== fallback.value)
@@ -192,7 +207,7 @@ export function ShareAsSend({
       >
         <p className="dialog-lead">
           {t(
-            'Die gewählten Felder kommen als Text in einen neuen Send. Der Schlüssel für Einmal-Codes (TOTP) ist nie dabei.',
+            'Die gewählten Felder kommen in einen neuen Send. Auf der Send-Seite von UwULock erscheinen sie als Eintrag mit Kopier-Knöpfen, in den Bitwarden-Apps als Text.',
           )}
         </p>
         <fieldset className="field send-access">
@@ -215,10 +230,19 @@ export function ShareAsSend({
                       setChosen(next);
                     }}
                   />
-                  <span>{labelOf(field)}</span>
+                  <span className={field.uri ? 'share-choice uri' : 'share-choice'}>
+                    {choiceOf(field)}
+                  </span>
                 </label>
               ))}
             </div>
+          )}
+          {chosen.has('totp') && (
+            <p className="field-hint" data-totp-hint>
+              {t(
+                'Die Send-Seite zeigt nur die aktuellen Codes. Der Schlüssel dafür steckt aber verschlüsselt im Send: Teile ihn nur mit jemandem, dem du die Zwei-Schritt-Anmeldung auch so anvertrauen würdest.',
+              )}
+            </p>
           )}
         </fieldset>
         <label className="field">

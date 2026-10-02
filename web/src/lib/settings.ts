@@ -9,6 +9,7 @@
 
 import { useSyncExternalStore } from 'react';
 import pkg from '../../package.json';
+import { applyFont, DEFAULT_FONT, isFontChoice, type FontChoice } from './fonts';
 import { language } from './i18n';
 
 export type ThemeSetting = 'system' | 'light' | 'dark';
@@ -30,6 +31,8 @@ export type Settings = {
   theme: ThemeSetting;
   motion: MotionSetting;
   contrast: ContrastSetting;
+  /** The page's font (lib/fonts.ts): UwU Sans unless this device picked another. */
+  font: FontChoice;
   /**
    * Shortcuts of a single key (`?`, `/`, `N`, …) outside text fields. They can get in the way of
    * speech input and some screen readers, so they can be switched off (WCAG 2.1.4).
@@ -53,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   motion: 'system',
   contrast: 'system',
+  font: DEFAULT_FONT,
   singleKeys: true,
   // Someone who installed a beta wants the next beta too.
   updateChannel: pkg.version.includes('-') ? 'beta' : 'stable',
@@ -82,6 +86,7 @@ export function sanitize(raw: unknown): Settings {
     theme: oneOf(input.theme, ['system', 'light', 'dark'] as const, d.theme),
     motion: oneOf(input.motion, ['system', 'on', 'off'] as const, d.motion),
     contrast: oneOf(input.contrast, ['system', 'normal', 'high'] as const, d.contrast),
+    font: isFontChoice(input.font) ? input.font : d.font,
     singleKeys: bool(input.singleKeys, d.singleKeys),
     updateChannel: oneOf(input.updateChannel, ['stable', 'beta'] as const, d.updateChannel),
     autoLock: oneOf(input.autoLock, [0, 1, 5, 15, 30, 60, 240] as const, d.autoLock),
@@ -162,7 +167,8 @@ export function highContrast(): boolean {
 }
 
 /**
- * Puts theme, contrast and motion on <html>, now and whenever the setting or the system changes.
+ * Puts theme, contrast, motion and the font on <html>, now and whenever the setting or the
+ * system changes.
  */
 export function applyAppearance() {
   const apply = () => {
@@ -174,6 +180,7 @@ export function applyAppearance() {
     else document.documentElement.dataset.motion = 'reduced';
     if (highContrast()) document.documentElement.dataset.contrast = 'high';
     else delete document.documentElement.dataset.contrast;
+    applyFont(current.font);
   };
   apply();
   watchOtherTabs();

@@ -8,6 +8,32 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 **Restores that work on a new machine.** A disaster-recovery drill restored a filled server from
 SFTP, S3, a folder and a local backup onto a clean one; this release fixes what it found.
 
+- **Web vault: items, entry Sends, passkeys and a new look.** Needs UwULock-Client's core at
+  `2a8a708` (pinned in `web/wasm` and `uwulock-e2e`).
+  - Password generator: a minimum per kind of character (A–Z, a–z, 0–9, symbols); the length grows
+    to fit them and says so. Remembered in the browser with the other options.
+  - One-time codes: in the last 10 seconds of a code the next one shows below it, small, with a copy
+    button of its own ("Nächster: 123 456").
+  - An item's page shows its first website; the others are behind "+2 more websites".
+  - Editor: the favourite is a star in the name field instead of a checkbox; the reminder to renew
+    is a switch in the editor, and the item's page shows the reminder only while it is on.
+  - Passkeys: an item's page lists its passkeys — site, user, created — and deletes one after
+    asking, instead of "Has a passkey – UwULock can't use it yet". *Duplicate* (own items) makes a
+    copy with the passkeys; attachments stay behind.
+  - Share as Send: the choice lists each website with its address; the one-time codes can be shared
+    (never ticked at the start). It is now an entry Send: readable lines for the Bitwarden apps (never
+    the authenticator key), and a last line `uwulock-entry:v1:…` from which UwULock's Send page shows
+    the item with copy buttons, secrets behind the eye and live codes — never the key or a QR code.
+    Plain Sends look as before (docs/sharing.md).
+  - Font choice like UwUMail (*Appearance → Font*, per device): UwU Sans (the new default), Manrope,
+    Rubik, DM Sans or the system's; only the chosen one is loaded, all from the server. UwU Sans'
+    `:3`/`<3` ligatures are off everywhere, so values always look as they are. Licences (SIL OFL 1.1)
+    in THIRD-PARTY-NOTICES.txt.
+  - Checkboxes and switches in UwUMail's style, still native controls, with high contrast and Windows
+    contrast themes.
+  - More Nyu: empty trash, Sends and file requests, loading, unlocking, the password check, toasts and
+    empty lists in the admin portal. Every animation follows *Appearance → Animations* and the
+    system's wish for less motion.
 - **Bitwarden's push relay is gone (plan change).** The server no longer wakes Bitwarden's phone
   apps through Bitwarden's relay: it needed an installation id and key from bitwarden.com/host and
   sent account and device ids to Bitwarden with every change. Bitwarden's apps for iOS and Android

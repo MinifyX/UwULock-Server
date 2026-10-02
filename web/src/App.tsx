@@ -3,6 +3,7 @@ import { GeneratorDialog } from './components/GeneratorDialog';
 import { Icon } from './components/Icon';
 import { LockScreen } from './components/LockScreen';
 import { LoginScreen } from './components/LoginScreen';
+import { NyuLoading } from './components/NyuStates';
 import { SettingsDialog, type SettingsSection } from './components/SettingsDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { SkipLink, TitleBar } from './components/TitleBar';
@@ -290,7 +291,9 @@ export function App() {
                 setStatus(next);
               }}
             />
-          ) : status === null ? null : status.state === 'logged-out' ? (
+          ) : status === null ? (
+            <NyuLoading />
+          ) : status.state === 'logged-out' ? (
             <LoginScreen onDone={setStatus} />
           ) : status.state === 'locked' && info?.hasMasterPassword === false ? (
             <SetPasswordScreen status={status} info={info} onDone={setStatus} />

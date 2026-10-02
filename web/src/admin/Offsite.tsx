@@ -38,6 +38,7 @@ import { errorText } from '../lib/errors';
 import { bytes, when } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 const KINDS: { value: OffsiteKind; label: string }[] = [
   { value: 'sftp', label: 'SFTP' },
@@ -627,7 +628,7 @@ export function Offsite() {
             )}
           </Callout>
         )}
-        {list?.length === 0 && <p className="empty-note">{t('Noch keine Stände am Ziel.')}</p>}
+        {list?.length === 0 && <EmptyNote>{t('Noch keine Stände am Ziel.')}</EmptyNote>}
       </DangerZone>
       {confirmingKey && (
         <Modal

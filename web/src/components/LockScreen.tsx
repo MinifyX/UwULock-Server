@@ -46,7 +46,8 @@ export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
   return (
     <div className="lock">
       <form className="lock-card" onSubmit={submit} aria-busy={busy}>
-        <NyuScene name="sleepy" className="lock-scene" />
+        {/* Nyu wakes up and holds up her key while the vault opens. */}
+        <NyuScene name={busy ? 'keys' : 'sleepy'} className="lock-scene" />
         <h1 className="card-title">{t('Dein Tresor ist gesperrt')}</h1>
         <p className="lock-account">
           <b>{status.email}</b>

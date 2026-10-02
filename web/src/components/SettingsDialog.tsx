@@ -6,6 +6,7 @@ import { useFeature, useServerInfo } from '../lib/branding';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { updateSettings, useSettings, type AutoLock, type ClipboardClear } from '../lib/settings';
 import { switchedOff, useSwitch } from '../lib/switches';
+import { FontPicker } from './FontPicker';
 import { Modal } from './Modal';
 import { Nyu } from './nyu/Nyu';
 import { AccountSettings } from './web/AccountSettings';
@@ -88,6 +89,14 @@ export function Appearance({ vault = true }: { vault?: boolean }) {
             { value: 'dark', label: t('Dunkel') },
           ]}
         />
+      </Row>
+      <Row
+        label={t('Schrift')}
+        description={t(
+          'Nyu mag UwU Sans am liebsten, aber du entscheidest. Gilt nur auf diesem Gerät.',
+        )}
+      >
+        <FontPicker />
       </Row>
       <Row label={t('Animationen')} description={t('„System“ folgt der Einstellung des Systems.')}>
         <Segmented

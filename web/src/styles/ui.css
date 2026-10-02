@@ -406,10 +406,109 @@ button.icon-button {
 
 .check input {
   margin: 0;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--uwu-pink-solid);
+}
+
+/*
+ * Checkboxes as in UwUMail: an 18 px box with soft corners, pink when ticked, a check mark that
+ * pops in. Drawn on the native <input type="checkbox">, so the keyboard, screen readers and forms
+ * work as they always do. The mark is the colour on the pink fill (white in the light theme, dark
+ * on the light pink of the dark one), so it keeps its contrast in every theme.
+ */
+input[type='checkbox'] {
+  --uwu-check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.2 8.4 6.6 11.6 12.8 4.6' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  --uwu-check-dash: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E");
+  appearance: none;
   flex: none;
+  display: inline-grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 2px solid var(--uwu-control);
+  border-radius: 6px;
+  background: var(--uwu-surface);
+  vertical-align: -0.2em;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+input[type='checkbox']::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: var(--uwu-on-pink);
+  mask: var(--uwu-check-mark) center / contain no-repeat;
+  transform: scale(0);
+  transition: transform 120ms ease;
+}
+
+input[type='checkbox']:hover:not(:disabled) {
+  border-color: var(--uwu-pink-solid);
+}
+
+input[type='checkbox']:checked,
+input[type='checkbox']:indeterminate {
+  border-color: var(--uwu-pink-solid);
+  background: var(--uwu-pink-solid);
+}
+
+input[type='checkbox']:checked::before {
+  transform: scale(1);
+  animation: uwu-check-pop 240ms cubic-bezier(0.3, 1.5, 0.6, 1);
+}
+
+input[type='checkbox']:indeterminate::before {
+  mask-image: var(--uwu-check-dash);
+  transform: scale(1);
+}
+
+input[type='checkbox']:focus-visible {
+  outline-offset: 2px;
+}
+
+input[type='checkbox']:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.check:has(> input:disabled) {
+  cursor: default;
+  color: var(--uwu-muted);
+}
+
+@keyframes uwu-check-pop {
+  0% {
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* No pop when animations are off (by the setting, or the system's wish, see lib/settings.ts). */
+:root[data-motion='reduced'] input[type='checkbox'],
+:root[data-motion='reduced'] input[type='checkbox']::before {
+  animation: none;
+  transition: none;
+}
+
+/* Windows' contrast themes draw no backgrounds: the system's own checkbox is the clear one. */
+@media (forced-colors: active) {
+  input[type='checkbox'] {
+    appearance: auto;
+    width: 16px;
+    height: 16px;
+    border: 0;
+  }
+
+  input[type='checkbox']::before {
+    display: none;
+  }
 }
 
 .checks {
@@ -475,13 +574,14 @@ button.icon-button {
 button.toggle {
   flex: none;
   position: relative;
-  width: 40px;
+  width: 44px;
   height: 24px;
   padding: 0;
   border: 0;
   border-radius: var(--uwu-radius-pill);
   /* The outline colour of controls: an off switch keeps 3:1 against the page (WCAG 1.4.11). */
   background: var(--uwu-control);
+  transition: background-color 200ms ease;
 }
 
 .toggle:hover:not(:disabled) {
@@ -495,18 +595,75 @@ button.toggle {
 
 .toggle-thumb {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 16px;
-  height: 16px;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 1px 2px rgba(20, 16, 22, 0.25);
-  transition: transform 140ms ease;
+  box-shadow: 0 1px 3px rgba(20, 16, 22, 0.3);
+  transition: transform 200ms cubic-bezier(0.3, 1.3, 0.6, 1);
 }
 
 .toggle[aria-checked='true'] .toggle-thumb {
-  transform: translateX(16px);
+  transform: translateX(20px);
+}
+
+.toggle:disabled {
+  opacity: 0.5;
+}
+
+/* Darstellung → Schrift: each font shown in itself, two or more side by side. */
+.setting-control:has(> .font-picker) {
+  flex: 1 1 100%;
+}
+
+.font-picker {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--uwu-space-2);
+}
+
+.font-picker button {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: var(--uwu-space-2) var(--uwu-space-3);
+  border: 1px solid var(--uwu-border);
+  border-radius: var(--uwu-radius-control);
+  background: var(--uwu-surface);
+  color: var(--uwu-ink);
+  font-weight: 400;
+  text-align: left;
+  letter-spacing: normal;
+}
+
+.font-picker button:hover {
+  border-color: var(--uwu-control);
+  background: var(--uwu-canvas);
+}
+
+.font-picker button[aria-checked='true'] {
+  border-color: var(--uwu-pink-solid);
+  background: var(--uwu-pink-tint);
+  color: var(--uwu-pink-ink);
+  box-shadow: inset 0 0 0 1px var(--uwu-pink-solid);
+}
+
+.font-picker-name {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.font-picker-sample {
+  font-size: var(--uwu-text-md);
+  color: var(--uwu-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.font-picker button[aria-checked='true'] .font-picker-sample {
+  color: inherit;
 }
 
 /* ── Tabs ──────────────────────────────────────────────── */

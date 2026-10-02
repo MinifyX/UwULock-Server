@@ -8,7 +8,9 @@ import admin from './admin.json';
 import breaches from './breaches.json';
 import app from './app.json';
 import comfort from './comfort.json';
+import design from './design.json';
 import editing from './editing.json';
+import entries from './entries.json';
 import families from './families.json';
 import failedlogins from './failedlogins.json';
 import features from './features.json';
@@ -33,7 +35,9 @@ export const EN: Readonly<Record<string, string>> = {
   ...breaches,
   ...app,
   ...comfort,
+  ...design,
   ...editing,
+  ...entries,
   ...families,
   ...failedlogins,
   ...features,

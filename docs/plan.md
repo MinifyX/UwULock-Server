@@ -574,6 +574,37 @@ Bitwardens Erweiterung, Desktop-App und den Web-Tresor, `/uwu/v1/realtime` für 
   XposedOrNot laufen nebeneinander, HIBP-Ergebnisse sofort, Fortschritt pro Quelle; „unvollständig"
   nur bei echten Ausfällen. Vertrag: `docs/uwu-api.md` §15.2.
 
+### 0.8 — Web-Tresor: Einträge, Sends als Eintrag, Passkeys, Design (Server 0.8.0-beta.1)
+
+Kern aus UwULock-Client PR #26 (`2a8a708`, in `web/wasm` und `uwulock-e2e` gepinnt).
+
+- [x] web/wasm: `generate` mit Mindestzahlen (`minLowercase`, `minUppercase`, `minNumber`,
+  `minSpecial`; Antwort `length`, `required`; Summe > 128 → `invalid`), `totp` mit `next`/`showNext`,
+  `reveal(id, "totp-next")`, `totpCodes(secret, now)` (ohne Tresor), `decodeEntrySend(text)`,
+  `itemPasskeys`, `deletePasskey(id, index, credentialId?)`, `sealClone(quelle, entwurf, jetzt)`,
+  Details mit `login.passkeyList`, `shareableFields` mit `uri` je Website und `totp` (`entryOnly`),
+  `shareItem` mit `entry: true` (`entry_send::share_entry_text`).
+- [x] Generator: Mindestzahl je Zeichenart (aufklappbar), Länge wächst mit und sagt es; im Browser
+  gemerkt wie die anderen Optionen.
+- [x] TOTP: in den letzten 10 Sekunden „Nächster: 123 456" klein darunter, mit eigenem
+  Kopierknopf (Eintrag und Send-Seite).
+- [x] Websites: in den Details nur die erste, die anderen hinter „+2 weitere Websites".
+- [x] Editor: Favorit als Stern im Namensfeld statt Checkbox; „Ans Erneuern erinnern" als Schalter
+  im Editor, die Karte in den Details nur, solange sie an ist.
+- [x] Passkeys: Karte mit Site (rpId/rpName), Benutzer, Erstellt; löschen (mit Rückfrage, prüft
+  die Credential-ID); „Duplizieren" legt eine Kopie mit den Passkeys an (eigene Einträge; Anhänge
+  nicht); Export behielt sie schon.
+- [x] Als Send teilen: Websites mit Adresse in der Auswahl, Einmal-Codes wählbar (nie vorab),
+  immer als Eintrags-Send (`uwulock-entry:v1:`, docs/sharing.md); die Send-Seite zeigt den
+  Eintrag mit Kopierknöpfen und Live-Codes, nie den Schlüssel; einfache Sends wie bisher.
+- [x] Design: Schriftwahl wie UwUMail (UwU Sans Standard, Manrope, Rubik, DM Sans, System; Lizenzen
+  in THIRD-PARTY-NOTICES.txt), Ligaturen aus; Checkboxen und Schalter im UwUMail-Stil; mehr Nyu
+  (leere Listen, Laden, Entsperren, Passwortprüfung, Toasts), alles mit reduzierter Bewegung.
+- [x] Tests: wasm (Eintrags-Send, Codes nur im Marker, Passkeys auflisten/löschen/Konflikt,
+  Duplikat behält Passkeys), vitest (Generator, Eintrags-Send, Details, Editor, Send-Seite,
+  Schrift), Browsertest (`comfort.mjs` Erinnerung im Editor, `sharing.mjs` Eintrags-Send mit
+  Codes).
+
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
 Was CI nicht kann, von Hand gegen die Beta, mit dem Server als „selbst gehostet":

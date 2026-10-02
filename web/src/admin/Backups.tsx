@@ -7,6 +7,7 @@ import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
+import { EmptyNote } from '../components/NyuStates';
 
 /**
  * What the time stamp in a backup's name says: `2026-09-25-031000`, and whether it is the one
@@ -68,9 +69,9 @@ export function Backups() {
           </Button>
         </ButtonRow>
         {list?.length === 0 ? (
-          <p className="empty-note">
+          <EmptyNote>
             {t('Noch keine Backups. Das erste schreibt der Server zehn Minuten nach dem Start.')}
-          </p>
+          </EmptyNote>
         ) : (
           <Table
             label={t('Backups auf diesem Server')}
