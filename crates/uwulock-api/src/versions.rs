@@ -119,6 +119,7 @@ async fn restore(
         Found::Own(_) => crate::notify::cipher(&state, &session, Kind::CipherUpdate, &cipher),
         Found::Org(item) => {
             crate::organizations::notify(&state, &session, Kind::CipherUpdate, &cipher, &item.collection_ids, &users)
+                .await
         }
     }
     let found = visible(&state, &session, &id).await?;

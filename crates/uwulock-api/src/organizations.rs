@@ -94,8 +94,10 @@ pub(crate) async fn org_cipher_json(state: &AppState, item: &OrgCipher) -> ApiRe
     ))
 }
 
-/// Tell every member who can see it that an organisation's item changed.
-pub(crate) fn notify(
+/// Tell every member who can see it that an organisation's item changed. Members who don't see
+/// it (any more) hear only "sync your vault", without the item's id or collections (R1-8): one
+/// it just left goes from their vault that way.
+pub(crate) async fn notify(
     state: &AppState,
     session: &Session,
     kind: Kind,
@@ -103,20 +105,25 @@ pub(crate) fn notify(
     collections: &[String],
     users: &[String],
 ) {
+    let seeing = match cipher.organization_id.as_deref() {
+        Some(org) => state.store.org_members_seeing(org, collections).await.unwrap_or_default(),
+        None => users.iter().cloned().collect(),
+    };
     for user in users {
+        let subject = if seeing.contains(user) {
+            Subject::Cipher {
+                id: cipher.id.clone(),
+                organization_id: cipher.organization_id.clone(),
+                collection_ids: Some(collections.to_vec()),
+                revision: cipher.revision.clone(),
+            }
+        } else {
+            Subject::User { date: cipher.revision.clone() }
+        };
+        let kind = if seeing.contains(user) { kind } else { Kind::Vault };
         crate::notify::publish(
             state,
-            Update {
-                kind,
-                user_id: user.clone(),
-                subject: Subject::Cipher {
-                    id: cipher.id.clone(),
-                    organization_id: cipher.organization_id.clone(),
-                    collection_ids: Some(collections.to_vec()),
-                    revision: cipher.revision.clone(),
-                },
-                acting_device: Some(session.device.clone()),
-            },
+            Update { kind, user_id: user.clone(), subject, acting_device: Some(session.device.clone()) },
         );
     }
 }
@@ -180,7 +187,7 @@ async fn share_one(state: &AppState, session: &Session, id: &str, data: Share) -
         .share_cipher(&session.user.id, moved, data.collection_ids.clone(), keys)
         .await?
         .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
-    notify(state, session, Kind::CipherUpdate, &saved, &data.collection_ids, &users);
+    notify(state, session, Kind::CipherUpdate, &saved, &data.collection_ids, &users).await;
     Ok(saved)
 }
 
@@ -257,7 +264,7 @@ async fn change_collections(state: &AppState, session: &Session, id: &str, ids: 
     }
     let (saved, users) =
         state.store.save_org_cipher(&session.user.id, item.cipher.clone(), Some(target.clone()), Vec::new()).await?;
-    notify(state, session, Kind::CipherUpdate, &saved, &target, &users);
+    notify(state, session, Kind::CipherUpdate, &saved, &target, &users).await;
     state.store.org_cipher(&session.user.id, id).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))
 }
 

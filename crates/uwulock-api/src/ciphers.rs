@@ -538,7 +538,7 @@ async fn create_wrapped(
     cipher.organization_id = Some(org);
     let (saved, users) =
         state.store.save_org_cipher(&session.user.id, cipher, Some(data.collection_ids.clone()), Vec::new()).await?;
-    crate::organizations::notify(&state, &session, Kind::CipherCreate, &saved, &data.collection_ids, &users);
+    crate::organizations::notify(&state, &session, Kind::CipherCreate, &saved, &data.collection_ids, &users).await;
     let item = state
         .store
         .org_cipher(&session.user.id, &saved.id)
@@ -580,7 +580,8 @@ async fn update(
             let org = item.cipher.organization_id.clone();
             let cipher = apply(data, item.cipher, org.as_deref())?;
             let (saved, users) = state.store.save_org_cipher(&session.user.id, cipher, None, keys).await?;
-            crate::organizations::notify(&state, &session, Kind::CipherUpdate, &saved, &item.collection_ids, &users);
+            crate::organizations::notify(&state, &session, Kind::CipherUpdate, &saved, &item.collection_ids, &users)
+                .await;
             let item = state
                 .store
                 .org_cipher(&session.user.id, &id)
@@ -720,7 +721,8 @@ async fn apply_bulk(state: &AppState, session: &Session, ids: Vec<String>, what:
         let org = item.cipher.organization_id.clone().unwrap_or_default();
         let users = state.store.org_bulk(&org, &id, what).await?;
         if !users.is_empty() {
-            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users);
+            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users)
+                .await;
             done.push(id);
         }
     }
@@ -739,7 +741,8 @@ async fn single(state: &AppState, session: &Session, id: String, what: Bulk) -> 
             let item = writable(item)?;
             let org = item.cipher.organization_id.clone().unwrap_or_default();
             let users = state.store.org_bulk(&org, &id, what).await?;
-            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users);
+            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users)
+                .await;
         }
     }
     Ok(())

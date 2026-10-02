@@ -349,10 +349,16 @@ async fn edits_out_of_reach_tell_a_member_nothing_but_a_move_out_does() {
         item["organizationId"] = json!(org);
         json!({ "cipher": item, "collectionIds": [collection] })
     };
+    let mut listening = server.state.hub.listen(&mio.id).unwrap();
     let hidden = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), create(&other)).await).await["id"]
         .as_str()
         .unwrap()
         .to_string();
+    // The hub tells her to sync, but not the id or collection of an item she can't see (R1-8).
+    let message = listening.messages.try_recv().expect("a message for Mio");
+    let leaks = |needle: &str| message.windows(needle.len()).any(|window| window == needle.as_bytes());
+    assert!(!leaks(&hidden) && !leaks(&other));
+    drop(listening);
     let moved = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), create(&reached)).await).await["id"]
         .as_str()
         .unwrap()

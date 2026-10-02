@@ -104,7 +104,7 @@ pub(crate) async fn changed(
         }
         Some(org) => {
             let users = state.store.org_members_users(org).await?;
-            crate::organizations::notify(state, session, Kind::CipherUpdate, cipher, collections, &users);
+            crate::organizations::notify(state, session, Kind::CipherUpdate, cipher, collections, &users).await;
             let item = state
                 .store
                 .org_cipher(&session.user.id, &cipher.id)
