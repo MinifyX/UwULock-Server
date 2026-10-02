@@ -46,7 +46,7 @@ export function PasswordPrompt({
   const errorId = useId();
   const submit = async (event?: FormEvent) => {
     event?.preventDefault();
-    if (!password) return;
+    if (!password || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -84,6 +84,7 @@ export function PasswordPrompt({
         <label className="field">
           <span>{t('Master-Passwort')}</span>
           <PasswordInput
+            label={t('Master-Passwort')}
             value={password}
             onChange={setPassword}
             autoFocus

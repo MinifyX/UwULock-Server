@@ -25,6 +25,7 @@ import { lock, setSecurity, syncNow, touch, vaultStatus, type Status } from './l
 import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
+import { useScreen } from './lib/focus';
 import { useRoute } from './lib/route';
 import { useServerInfo } from './lib/branding';
 import { switchedOff, switchOfLink } from './lib/switches';
@@ -213,6 +214,31 @@ export function App() {
     if (wasSetUp.current && !mustSetUp && unlocked) void syncNow().then(setStatus, () => undefined);
     wasSetUp.current = Boolean(mustSetUp);
   }, [mustSetUp, unlocked]);
+
+  // Which screen shows, for the page's title and for moving the focus when it changes: after
+  // logging in or unlocking, the focus was left on nothing and a screen reader said nothing.
+  const screen: [string, string] | null = ssoForward
+    ? ['sso', t('Anmelden')]
+    : unavailable
+      ? ['unavailable', '']
+      : sendLink
+        ? ['send', t('Send')]
+        : requestLink
+          ? ['request', t('Datei-Anfrage')]
+          : (joinNew && joining) || registering
+            ? ['register', t('Konto anlegen')]
+            : status === null
+              ? null
+              : status.state === 'logged-out'
+                ? ['login', t('Anmelden')]
+                : status.state === 'locked' && info?.hasMasterPassword === false
+                  ? ['set-password', t('Master-Passwort festlegen')]
+                  : status.state === 'locked'
+                    ? ['locked', t('Entsperren')]
+                    : mustSetUp
+                      ? ['two-factor', t('Zwei-Schritt-Anmeldung')]
+                      : ['vault', t('Tresor')];
+  useScreen(screen?.[0] ?? null, screen?.[1] ?? '');
 
   return (
     <div className="shell">

@@ -15,6 +15,7 @@ import {
 } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { copiedText } from '../lib/format';
+import { focusContent } from '../lib/focus';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { dueItems, useComfort } from '../lib/comfort';
 import { KIND_LABEL } from '../lib/items';
@@ -420,6 +421,10 @@ export function VaultScreen({
         setQuery('');
         setChecked(new Set());
         setView('list');
+        // The list that had the focus may be gone (Sends have their own): to the new section.
+        window.setTimeout(() => {
+          if (!document.activeElement || document.activeElement === document.body) focusContent();
+        });
       } else {
         return;
       }

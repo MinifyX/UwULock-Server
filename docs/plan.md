@@ -359,7 +359,11 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   (Fertig: Übersicht der Kürzel mit `?`, Listen mit Pfeiltasten, Sprung zum Inhalt, Live-Regionen
   für Meldungen, Kontrast „Hoch" (oder wie das System), axe-core 4.13 einmal pro Hauptseite in
   den Browsertests, schwere Funde lassen sie scheitern — zusammen etwa 3 s.
-  `docs/accessibility.md`; mit einem echten Screenreader noch nicht ausprobiert.)
+  `docs/accessibility.md`. Mit Orca 46 in Chromium durchgegangen (Tresor und Admin-Portal,
+  deutsch und englisch, Tasten als echte Tastendrücke, gesprochener Text aus Orcas Log); die Funde
+  (Namen der Passwortfelder, Fokus nach Anmelden, Entsperren und Fehlern, Seitentitel, Fokus bei
+  Schaltern, die gerade speichern, und mehr) sind behoben, die wichtigen in den Browsertests
+  festgehalten. NVDA, JAWS, VoiceOver und TalkBack noch nicht.)
 - [x] Eigenes Branding im Admin-Portal: Name, Logo (hell und dunkel), Akzentfarbe und Favicon für
   Web-Tresor, Anmeldung, Send- und Datei-Anfrage-Seiten und Mails; wie bei UwUMail Server (dort
   `docs/branding.md`). Die offiziellen Clients bleiben, wie sie sind. Mit den Send-Domains aus

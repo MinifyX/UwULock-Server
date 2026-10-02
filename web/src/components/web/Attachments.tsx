@@ -91,7 +91,7 @@ export function Attachments({
           <div className="detail-actions">
             <button
               className="icon-button"
-              title={t('Herunterladen')}
+              title={t('{name} herunterladen', { name: attachment.fileName })}
               aria-label={t('{name} herunterladen', { name: attachment.fileName })}
               disabled={Boolean(busy)}
               onClick={() => void open(attachment)}
@@ -101,7 +101,7 @@ export function Attachments({
             {editable && (
               <button
                 className="icon-button"
-                title={t('Löschen')}
+                title={t('{name} löschen', { name: attachment.fileName })}
                 aria-label={t('{name} löschen', { name: attachment.fileName })}
                 disabled={Boolean(busy)}
                 onClick={() => setDeleting(attachment)}

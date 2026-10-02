@@ -146,6 +146,16 @@ try {
     CHANGE_PAGE,
   );
   expect((await open.getAttribute('target')) === '_blank', 'opens in a new tab');
+  // Screen readers: each move says which card it is, by name; "Zurück" on the first card is
+  // aria-disabled, not disabled, so it keeps the focus (docs/accessibility.md).
+  await page.locator('.review [aria-live]', { hasText: `1 von ${total}: Review Shop` }).waitFor();
+  await page.getByRole('navigation', { name: 'Karten' }).getByRole('button', { name: 'Zurück' }).focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('aria-disabled') === 'true',
+    null,
+    { timeout: 2000 },
+  );
   await snap('card');
 
   step('arrow keys and dragging move through the stack');
@@ -188,6 +198,10 @@ try {
 
   step('a new password, generated and saved');
   await card().getByRole('button', { name: 'Neues Passwort erzeugen & speichern' }).click();
+  // Its "Übernehmen" waits for the first password: the focus is in the dialog all the same.
+  await page.waitForFunction(() => document.activeElement?.closest('[role=dialog]'), null, {
+    timeout: 2000,
+  });
   await page.locator('.modal').getByRole('button', { name: 'Übernehmen' }).click();
   await card().getByText('Neues Passwort gespeichert – jetzt noch auf der Website ändern.').waitFor({ timeout: 30000 });
   await snap('saved');

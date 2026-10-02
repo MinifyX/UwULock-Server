@@ -187,7 +187,12 @@ function DisableForm({
       <h3 className="settings-heading">{t('Reisemodus ausschalten')}</h3>
       <label className="field">
         <span>{t('Master-Passwort')}</span>
-        <PasswordInput value={password} onChange={setPassword} disabled={busy} />
+        <PasswordInput
+          label={t('Master-Passwort')}
+          value={password}
+          onChange={setPassword}
+          disabled={busy}
+        />
       </label>
       {providers.length > 1 && (
         <label className="field">

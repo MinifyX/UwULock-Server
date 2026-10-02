@@ -35,15 +35,21 @@ A value that is not on these scales needs a reason in a comment.
 | `RepeatRow` | `aux?: 'wide' \| 'narrow'` | A repeated row: main control, optional second one, remove button. |
 | `Card` | `heading?`, `aside?`, `as?: 'section' \| 'div' \| 'li' \| 'article'` | A framed block with an optional head. |
 | `Section` | `heading?`, `lead?` | A part of a page or settings section, with the shared small heading. |
-| `SettingRow` | `label`, `description?`, children = the control | The control wraps below the text on a phone. |
+| `SettingRow` | `label`, `description?`, children = the control | The control wraps below the text on a phone. A `Toggle`, `Select` or `Segmented` inside takes the description as its own; other controls are a group named after the setting. |
 | `ButtonRow` | `end?` | Buttons side by side that wrap. |
 | `Tabs` | `label`, `tabs: {id, label, extra?, disabled?}[]`, `value`, `onChange(id)`, `variant?: 'line' \| 'segmented'`, `idPrefix?` | Arrow keys, Home and End; roving tab stop. With `idPrefix` (from `useTabsId()`), `TabPanel` names its tab. |
 | `TabPanel` | `idPrefix`, `tab`, `className?` | The picked tab's content. |
 | `Badge` | `tone?: 'accent' \| 'ok' \| 'alarm' \| 'neutral'`, `label?` | A count or a state on a pill; `label` explains a bare number. |
+| `Masked` | `text?` | A secret not shown: dots on screen, *verborgen* for screen readers. |
 | `Callout` | `tone?: 'info' \| 'accent' \| 'ok' \| 'warning' \| 'error'`, `title?`, `icon?: IconName \| null`, `actions?` | A notice in a page or dialog; `error` is announced. |
 | `Table` | `label?`, `head` (the `<th>`s), rows as children | Scrolls sideways inside its frame on a phone; the frame then takes the keyboard focus. |
 | `DangerZone` | `heading`, `lead?` | What cannot be undone (deleting, restoring, strict rules), framed apart at the end of a page. Its buttons still ask first. |
 | `Modal` | `title`, `onCancel`, `footer?`, `size?: 'default' \| 'wide'`, `tone?: 'default' \| 'warning'`, `closable?` | Focus trap, Escape, scroll hairlines on the body. Footer: `<span className="spacer" />`, then the safe choice (`data-secondary`), then the primary one. |
+
+`PasswordInput` (`web/src/components/PasswordInput.tsx`) goes in a `Field`, or inside a
+`<label>` with its own `label` as well: a label around it would otherwise name the field with the
+eye's name and any hint in it. While its form works (`disabled`), it is read-only, so it keeps the
+focus.
 
 Plain classes for what needs no component: `.form` (a form's rows with even gaps),
 `.form-note`, `.form-error`, `.field-hint`, `.checks`, `.button-link`, `.settings-heading` and

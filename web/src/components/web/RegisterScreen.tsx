@@ -85,7 +85,7 @@ export function RegisterScreen({ token, email, family, onDone }: Props) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (password !== repeat || hintGivesAway) return;
+    if (busy || password !== repeat || hintGivesAway) return;
     // The meter may still show the bits of a few keys ago: the check takes them now.
     const refused = passwordProblem(password, await strength(password).catch(() => 0), rules);
     if (refused) {
@@ -168,6 +168,7 @@ export function RegisterScreen({ token, email, family, onDone }: Props) {
             <label className="field">
               <span>{t('Master-Passwort')}</span>
               <PasswordInput
+                label={t('Master-Passwort')}
                 value={password}
                 onChange={setPassword}
                 autoComplete="new-password"
@@ -201,6 +202,7 @@ export function RegisterScreen({ token, email, family, onDone }: Props) {
             <label className="field">
               <span>{t('Master-Passwort wiederholen')}</span>
               <PasswordInput
+                label={t('Master-Passwort wiederholen')}
                 value={repeat}
                 onChange={setRepeat}
                 autoComplete="new-password"
@@ -222,6 +224,8 @@ export function RegisterScreen({ token, email, family, onDone }: Props) {
                 maxLength={50}
                 disabled={Boolean(busy)}
                 aria-invalid={hintGivesAway || undefined}
+                // Its own name: the label around it holds the hint too, said again as description.
+                aria-label={t('Hinweis (freiwillig)')}
                 aria-describedby="register-hint"
               />
               <small className="field-hint" id="register-hint">

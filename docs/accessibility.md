@@ -2,8 +2,8 @@
 
 The web vault and the admin portal aim at **WCAG 2.2 level AA**: everything works with the
 keyboard alone, with a screen reader, and in a high-contrast mode. This page lists the keyboard
-shortcuts, what the high-contrast mode does, notes for screen-reader users, how it is tested, and
-what is known not to be there yet.
+shortcuts, what the high-contrast mode does, notes for screen-reader users, how it is tested (also
+with Orca, a real screen reader), and what is known not to be there yet.
 
 ## Keyboard
 
@@ -88,6 +88,17 @@ selects, switches and check boxes 3:1 (their own token, `--uwu-control`).
 
 ## Screen readers
 
+- The page's title names the screen (*Anmelden – UwULock*, *Tresor – UwULock*, *Funktionen –
+  Tresor & Funktionen – Admin-Portal – UwULock*). When the screen changes — logged in, unlocked,
+  registered, another section by its number key, another admin area by its key — the focus moves
+  to the new content (the vault's list, the admin area's page), so the reader says where it is
+  instead of nothing; a screen that focuses a field of its own (the unlock screen) keeps that.
+- Fields and buttons keep the focus while the form works: the login's, unlock's and code's fields
+  are read-only, not switched off, while they wait for the server, so a wrong password is read out
+  and the focus is still in the field for the next try. A button or switch that is switched off
+  while it saves (a feature switch of the admin portal, *Nochmal prüfen*, the star of an item)
+  hands the focus to the form or page around it and gets it back afterwards
+  (`web/src/lib/focus.ts`).
 - Landmarks: the bar is a banner, the sidebars are navigation, the page is `main`; the vault has
   a (hidden) heading of its own, the admin portal a visible one per area and a hidden one per
   tab, and headings go in
@@ -95,7 +106,17 @@ selects, switches and check boxes 3:1 (their own token, `--uwu-control`).
 - Every button that shows only an icon has a name; decorative pictures (Nyu, icons next to text)
   are hidden; logos have their text next to them. Buttons that switch something say whether it is
   on (`aria-pressed`, switches, radio groups), menus whether they are open, sidebars which entry
-  is the current one.
+  is the current one. A toggle button keeps one name and says its state only by being pressed or
+  not (*Passwort zeigen*, *Favorit*, *Archiviert*); its tooltip may say what a click does.
+  Buttons repeated per row name their row (*Öffnen: Shop*, *Feld hinzufügen: Text*).
+- Password fields are named by their label alone. A `<label>` around a field names it with all
+  its text, so `PasswordInput` inside one takes `label` too: otherwise the eye's *Passwort zeigen*
+  and the strength line ended up in the field's name.
+- Hidden secrets read *verborgen* instead of a row of dots; the one-time code's countdown says
+  *noch 25 Sekunden gültig* rather than a bare number.
+- A setting row's line about it is the description of its switch, select or choice, so the reader
+  says what *Reisemodus* does along with *an* or *aus*. A row with buttons instead (*Einrichten …*)
+  is a group named after the setting, so the reader says which setting the button belongs to.
 - Lists are list boxes: the focus stays on the list and the reader announces the selected entry
   (and whether it is ticked). Enter opens it; in the vault the focus moves into the item, and
   Escape brings it back to the list.
@@ -104,6 +125,11 @@ selects, switches and check boxes 3:1 (their own token, `--uwu-control`).
   the password rules on registering.
 - Notes at the bottom ("Copied", "Saved") are read out politely, errors at once: the live regions
   are always on the page, so readers notice what appears in them.
+- Dialogs keep the focus inside even when something else tries to move it (a click on the page, a
+  reader's own cursor), and take it on opening even when the button meant to have it waits for its
+  content (the generator's *Übernehmen*).
+- The password check's stack of cards says each move with the card's name (*2 von 3: Shop*);
+  *Zurück* and *Weiter* at the ends are `aria-disabled`, not disabled, so they keep the focus.
 - The page's language (`<html lang>`) follows the chosen language.
 - Single-key shortcuts can be switched off (see above) if they get in the way of the reader's own
   keys.
@@ -125,15 +151,83 @@ are printed as notes. Each check takes 60–350 ms; together they add about thre
 list, `N` opens the new-item menu and Escape gives it back again, Space ticks an entry of the
 list, `7`, `8`, `J` and `K` switch areas of the admin portal.
 
+What the Orca test below found is locked in where it is cheap (ARIA and focus checks on pages the
+tests open anyway): `web.mjs` checks the password field's and the eye's names on registering, the
+title and the focus on the vault after registering and after unlocking, a wrong unlock password
+that leaves the focus in its field, *verborgen* and the star's state in an item, and the title and
+the focus after `7` in the admin portal; `review.mjs` checks the card's name in the live region,
+the focus kept by *Zurück* on the first card, and the focus in the generator. The unit tests in
+`web/src/components/ui/a11y.test.tsx` check the setting rows, `PasswordInput`, `Masked` and the
+focus kept through a busy button.
+
+## Tested with Orca
+
+On 2026-10-02 the web vault and the admin portal (0.7.0-beta.2 plus these fixes, German and once
+in English) were gone through with **Orca 46.1**, the GNOME screen reader, in **Chromium 153**
+(Chrome for Testing). Orca ran in a container: Ubuntu 24.04 with Xvfb, a D-Bus session,
+at-spi2-core 2.52, speech-dispatcher with espeak-ng into PulseAudio's null sink, and Openbox;
+Chromium with `--force-renderer-accessibility`. Keys went in as real X key events (`xdotool`), so
+Orca saw them as a user's (Tab, Shift+Tab, Enter, Space, arrows, Escape, its browse mode's
+arrows); what Orca said came from its debug log (`orca --debug-file`, the `SPEECH OUTPUT` lines).
+Playwright only set things up over CDP (opening a page, typing text) and never sent keys Orca was
+meant to hear.
+
+Gone through: registering, logging in (a wrong password too), the unlock screen, the vault with
+its list, search and sidebar, the new-item menu, the editor of a login (every field, a one-time
+code, own fields), an item's details read in browse mode, the password generator, Sends and a new
+text Send, the password check and its stack of cards, the settings (two-step login, emergency
+access), the shortcut overview, toasts and errors, dialogs (focus inside, Escape, focus back), and
+in the admin portal the areas, their tabs, the failed logins with their table and the feature
+switches.
+
+**Found and fixed:** the password fields were named "Master-Passwort Passwort zeigen Stärke: geht
+so Mindestens 12 Zeichen"; the eye said "Passwort verbergen, gedrückt"; after logging in,
+unlocking or registering the focus was on nothing and Orca said nothing; a wrong password at
+login or unlock dropped the focus (fields switched off while waiting), so the next Tab started at
+the page's top; the page's title was always *UwULock*; a feature switch, *Jetzt prüfen* and the
+last *Weiter* of the cards dropped the focus; the generator opened from a card left the focus
+behind the dialog; the section keys `1`–`5` dropped the focus with the list; seven *Öffnen* in
+the password report without saying what; Bitwarden's English "Username or password is incorrect"
+inside the German page; dots read one by one for hidden secrets and a bare number for the code's
+countdown; *Einrichten …* three times without its setting; feature switches without what they do;
+"1 neue Hinweise"; a missing space in "Passwort ändern(neues Fenster)"; the add buttons of own
+fields named only *Text*, *Versteckt*, *Ja/Nein*, and the focus staying on them after adding one.
+
+Before and after, as Orca said it (`|` between utterances):
+
+```
+Tab to the master password on registering
+  before: Master-Passwort Passwort zeigen Stärke: geht so Mindestens 12 Zeichen. password text
+  after:  Master-Passwort password text
+
+Enter with a wrong master password at unlock
+  before: Das Master-Passwort ist falsch.            (focus: the page's body)
+  after:  Das Master-Passwort ist falsch.            (focus: still the password field)
+
+Enter with the right one
+  before: (nothing; focus on the page's body)
+  after:  Alle Einträge region | List with 4 items | Bank nyu.bank.
+
+Weiter on the last card of the password check
+  before: 2 von 3                                    (focus: the page's body)
+  after:  3 von 3: Mailkonto                         (focus: still on Weiter)
+```
+
+**What Orca does on its own:** in browse mode it takes single letters and digits for its own
+navigation (`H`, `K`, `1`–`6`, …), so the single-key shortcuts reach the page only in focus mode
+(Orca+A switches) — or switch them off. It does not say `aria-current`, so the current entry of a
+sidebar is only seen, not heard, in Orca (NVDA and VoiceOver say it). Chromium gives tab panels
+the role *scroll pane*, which Orca reads as such.
+
 ## Known gaps
 
-- axe finds what can be found automatically — perhaps half of all problems. Nothing has been
-  tried yet with NVDA, JAWS, VoiceOver or TalkBack by people who use them daily; reports are
-  welcome.
+- axe finds what can be found automatically — perhaps half of all problems. Orca has been tried
+  (above), by script; NVDA, JAWS, VoiceOver and TalkBack not yet, and nothing by people who use a
+  screen reader daily; reports are welcome.
 - Form errors outside the login, unlock, registration and master-password forms (the item editor,
   many admin forms) are announced (`role="alert"`) but not yet tied to a field.
 - Results that appear under a setting ("Saved", test mails) are `role="status"` elements that
-  appear with their text; some screen readers do not read those out.
+  appear with their text; Orca reads them out, some other screen readers may not.
 - The charts of the admin overview are pictures with a summary as their name, not tables.
 - The branding page's previews show the chosen colours as they are, in high contrast too.
 - At 320 px (or 400 % zoom) the admin portal's sidebar and an area's tabs

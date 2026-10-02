@@ -24,6 +24,7 @@ import {
 import { revealSecret } from '../../lib/suite/sync';
 import { toast } from '../../lib/toast';
 import { Icon, type IconName } from '../Icon';
+import { Masked } from '../ui';
 import { save } from '../web/controls';
 import { kindIcon, kindLabel, workspaceLabel, authLabel } from './labels';
 
@@ -149,7 +150,7 @@ function SecretRow({
       }
     >
       {value === null ? (
-        '••••••••••••'
+        <Masked />
       ) : multiline ? (
         <pre className="suite-secret">{value}</pre>
       ) : (

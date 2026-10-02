@@ -331,7 +331,12 @@ export function HealthReview({ onBack, onOpen }: Props) {
     kind === 'breached' || kind === 'siteBreach' || kind === 'reused' || kind === 'weak';
 
   return (
-    <section className="report-pane" aria-label={t('Passwörter durchgehen')}>
+    <section
+      className="report-pane"
+      aria-label={t('Passwörter durchgehen')}
+      tabIndex={-1}
+      data-main-content
+    >
       <article className="detail review">
         <header className="detail-head">
           <span className="item-tile" data-size="large" data-hue="4">
@@ -341,10 +346,20 @@ export function HealthReview({ onBack, onOpen }: Props) {
             <h2>{t('Passwörter durchgehen')}</h2>
             <p className="chips">
               {total > 0 && (
-                <span className="chip" aria-live="polite" data-testid="review-progress">
+                <span className="chip" data-testid="review-progress">
                   {t('{n} von {total}', { n: Math.min(index + 1, total), total })}
                 </span>
               )}
+              {/* Said on every move: which card it is now, not only its number. */}
+              <span className="sr-only" aria-live="polite">
+                {card
+                  ? t('{n} von {total}: {name}', {
+                      n: Math.min(index + 1, total),
+                      total,
+                      name: card.finding.name || t('(ohne Namen)'),
+                    })
+                  : ''}
+              </span>
             </p>
           </div>
           <div className="detail-tools">
@@ -466,7 +481,7 @@ export function HealthReview({ onBack, onOpen }: Props) {
                     >
                       <Icon name="external" size={15} />
                       {t('Seite öffnen & Passwort ändern')}
-                      <span className="sr-only">{t('(neues Fenster)')}</span>
+                      <span className="sr-only"> {t('(neues Fenster)')}</span>
                     </a>
                   ) : null}
                   <button onClick={() => setGenerating(card.finding.id)}>
@@ -483,11 +498,21 @@ export function HealthReview({ onBack, onOpen }: Props) {
                 </div>
               </section>
             </div>
+            {/* aria-disabled, not disabled: the last "Weiter" keeps the focus instead of dropping
+                it on the page. */}
             <nav className="review-nav" aria-label={t('Karten')}>
-              <button className="quiet" disabled={index === 0} onClick={() => go(-1)}>
+              <button
+                className="quiet"
+                aria-disabled={index === 0 || undefined}
+                onClick={() => index > 0 && go(-1)}
+              >
                 <span aria-hidden>‹</span> {t('Zurück')}
               </button>
-              <button className="quiet" disabled={index + 1 >= total} onClick={() => go(1)}>
+              <button
+                className="quiet"
+                aria-disabled={index + 1 >= total || undefined}
+                onClick={() => index + 1 < total && go(1)}
+              >
                 {t('Weiter')} <span aria-hidden>›</span>
               </button>
             </nav>

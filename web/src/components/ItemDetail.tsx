@@ -39,6 +39,7 @@ import { WifiShare } from './web/WifiShare';
 import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
+import { Masked } from './ui';
 import { PasswordInput } from './PasswordInput';
 
 async function copy(id: string, field: string) {
@@ -70,7 +71,7 @@ function CopyButton({ id, field, label }: { id: string; field: string; label: st
       className="icon-button"
       onClick={() => void copy(id, field)}
       aria-label={t('{label} kopieren', { label })}
-      title={t('Kopieren')}
+      title={t('{label} kopieren', { label })}
     >
       <Icon name="copy" size={15} />
     </button>
@@ -143,11 +144,11 @@ function SecretRow({
           <button
             className="icon-button"
             onClick={() => void toggle()}
-            aria-label={
+            aria-label={t('{label} zeigen', { label })}
+            aria-pressed={value !== null}
+            title={
               value === null ? t('{label} zeigen', { label }) : t('{label} verbergen', { label })
             }
-            aria-pressed={value !== null}
-            title={value === null ? t('Zeigen') : t('Verbergen')}
           >
             <Icon name={value === null ? 'eye' : 'eyeOff'} size={15} />
           </button>
@@ -156,7 +157,7 @@ function SecretRow({
       }
     >
       {value === null ? (
-        <span className="masked">{masked}</span>
+        <Masked text={masked} />
       ) : multiline ? (
         <pre className="secret-block">{value}</pre>
       ) : colored ? (
@@ -219,7 +220,10 @@ function TotpRow({ id }: { id: string }) {
               transform="rotate(-90 12 12)"
             />
           </svg>
-          <span className="totp-seconds">{code.remaining}</span>
+          <span className="totp-seconds">
+            <span aria-hidden="true">{code.remaining}</span>
+            <span className="sr-only">{t('noch {n} Sekunden gültig', { n: code.remaining })}</span>
+          </span>
         </span>
       ) : (
         '…'
@@ -502,7 +506,7 @@ export function ItemDetail({
                 disabled={busy}
                 aria-pressed={summary.favorite}
                 title={summary.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
-                aria-label={summary.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
+                aria-label={t('Favorit')}
                 onClick={() =>
                   void act(
                     () => setFavorite(id, !summary.favorite),
@@ -521,7 +525,7 @@ export function ItemDetail({
                 disabled={busy}
                 aria-pressed={summary.archived}
                 title={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
-                aria-label={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
+                aria-label={t('Archiviert')}
                 onClick={() =>
                   void act(
                     () => archiveItem(id, !summary.archived),

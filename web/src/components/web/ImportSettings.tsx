@@ -192,7 +192,13 @@ function KeepassPrompt({
         </p>
         <label className="field">
           <span>{t('Passwort der Datei')}</span>
-          <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+          <PasswordInput
+            label={t('Passwort der Datei')}
+            value={password}
+            onChange={setPassword}
+            autoFocus
+            disabled={busy}
+          />
         </label>
         <div className="field">
           <span id="import-key-file">{t('Schlüsseldatei (wenn die Datei eine hat)')}</span>

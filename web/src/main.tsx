@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import { AdminApp } from './admin/AdminApp';
 import { App } from './App';
 import './components/nyu/nyu.css';
+import { keepFocusThroughBusy } from './lib/focus';
 import { applyAppearance } from './lib/settings';
 import { load } from './lib/web/core';
 import './styles/app.css';
@@ -17,6 +18,8 @@ import './styles/a11y.css';
 applyAppearance();
 // The crypto starts loading right away, while the page draws.
 void load();
+// A button switched off while it works gets the focus back afterwards (lib/focus.ts).
+keepFocusThroughBusy();
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing from index.html');

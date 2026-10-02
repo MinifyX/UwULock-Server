@@ -493,6 +493,14 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
     setNextKey((n) => n + 1);
     return nextKey;
   };
+  // A field of one's own just added: its name takes the focus, so the keyboard (and a screen
+  // reader) is where the new row is, not still on the button.
+  const [addedField, setAddedField] = useState<number | null>(null);
+  const added = () => {
+    const next = key();
+    setAddedField(next);
+    return next;
+  };
 
   const folders = [...(overview?.folders ?? [])].sort((a, b) => a.name.localeCompare(b.name));
 
@@ -963,12 +971,15 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                   key={fieldKind}
                   variant="quiet"
                   icon="plus"
+                  aria-label={t('Feld hinzufügen: {kind}', {
+                    kind: t(FIELD_KIND_LABEL[fieldKind]),
+                  })}
                   onClick={() =>
                     set({
                       fields: [
                         ...form.fields,
                         {
-                          key: key(),
+                          key: added(),
                           name: '',
                           kind: fieldKind,
                           value: {
@@ -992,6 +1003,7 @@ export function ItemEditor({ summary, kind, overview, onClose, onSaved }: Props)
                     value={field.name}
                     placeholder={t('Feldname')}
                     aria-label={t('Name von Feld {n}', { n: index + 1 })}
+                    autoFocus={field.key === addedField}
                     onChange={(e) =>
                       set({
                         fields: form.fields.map((row) =>

@@ -7,7 +7,7 @@ import { securityLabel } from '../../lib/items';
 import { wifiQr, type WifiView } from '../../lib/wifi';
 import { Icon } from '../Icon';
 import { Modal } from '../Modal';
-import { Button, Callout } from '../ui';
+import { Button, Callout, Masked } from '../ui';
 
 /**
  * A Wi-Fi network as a QR code, for a phone to join it with its camera. The code is made here,
@@ -105,14 +105,20 @@ export function WifiShare({
           <>
             <dt>{t('Passwort')}</dt>
             <dd className="mono wifi-share-password">
-              <span>{password === null ? '…' : shown ? password || '—' : '••••••••••••'}</span>
+              {password === null ? (
+                <span>…</span>
+              ) : shown ? (
+                <span>{password || '—'}</span>
+              ) : (
+                <Masked />
+              )}
               {password && (
                 <button
                   type="button"
                   className="icon-button"
                   aria-pressed={shown}
-                  aria-label={shown ? t('Passwort verbergen') : t('Passwort zeigen')}
-                  title={shown ? t('Verbergen') : t('Zeigen')}
+                  aria-label={t('Passwort zeigen')}
+                  title={shown ? t('Passwort verbergen') : t('Passwort zeigen')}
                   onClick={() => setShown(!shown)}
                 >
                   <Icon name={shown ? 'eyeOff' : 'eye'} size={15} />

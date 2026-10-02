@@ -29,6 +29,7 @@ export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -58,6 +59,7 @@ export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
         <label className="field">
           <span>{t('Master-Passwort')}</span>
           <PasswordInput
+            label={t('Master-Passwort')}
             value={password}
             onChange={setPassword}
             autoFocus

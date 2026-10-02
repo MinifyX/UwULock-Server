@@ -285,7 +285,12 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
             >
               {t(label)}
               {id === 'security' && unseen > 0 && (
-                <span className="badge" aria-label={t('{n} neue Hinweise', { n: unseen })}>
+                <span
+                  className="badge"
+                  aria-label={
+                    unseen === 1 ? t('1 neuer Hinweis') : t('{n} neue Hinweise', { n: unseen })
+                  }
+                >
                   {unseen}
                 </span>
               )}

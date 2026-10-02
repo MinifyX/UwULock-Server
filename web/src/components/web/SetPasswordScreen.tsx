@@ -88,6 +88,7 @@ export function SetPasswordScreen({ status, info, onDone }: Props) {
           <label className="field">
             <span>{t('Master-Passwort')}</span>
             <PasswordInput
+              label={t('Master-Passwort')}
               value={password}
               onChange={setPassword}
               autoFocus
@@ -98,6 +99,7 @@ export function SetPasswordScreen({ status, info, onDone }: Props) {
           <label className="field">
             <span>{t('Master-Passwort wiederholen')}</span>
             <PasswordInput
+              label={t('Master-Passwort wiederholen')}
               value={again}
               onChange={setAgain}
               disabled={busy}

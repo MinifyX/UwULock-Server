@@ -121,7 +121,13 @@ export function RequestPage({ accessId, secret }: { accessId: string; secret: st
             <p className="dialog-lead">{t('Dieser Link ist mit einem Passwort geschützt.')}</p>
             <label className="field">
               <span>{t('Passwort')}</span>
-              <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+              <PasswordInput
+                label={t('Passwort')}
+                value={password}
+                onChange={setPassword}
+                autoFocus
+                disabled={busy}
+              />
             </label>
             {error && (
               <p className="form-error" role="alert">

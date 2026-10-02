@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { t, useLanguage } from '../../lib/i18n';
 import { Icon, type IconName } from '../Icon';
 
 export type Tone = 'accent' | 'ok' | 'alarm' | 'neutral';
@@ -64,5 +65,19 @@ export function Callout({
         {actions && <div className="callout-actions">{actions}</div>}
       </div>
     </div>
+  );
+}
+
+/**
+ * A secret that is not shown: dots on the screen, "verborgen" for screen readers, which otherwise
+ * read every dot out ("Punkt Punkt Punkt …").
+ */
+export function Masked({ text = '••••••••••••' }: { text?: string }) {
+  useLanguage();
+  return (
+    <span className="masked">
+      <span aria-hidden="true">{text}</span>
+      <span className="sr-only">{t('verborgen')}</span>
+    </span>
   );
 }

@@ -31,7 +31,9 @@ button:hover:not(:disabled) {
   background: var(--uwu-elevated);
 }
 
-button:disabled {
+/* aria-disabled: off, but still in the Tab order, where taking the focus away would drop it. */
+button:disabled,
+button[aria-disabled='true'] {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -60,7 +62,7 @@ button.quiet {
   padding-inline: var(--uwu-space-3);
 }
 
-button.quiet:hover:not(:disabled) {
+button.quiet:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--uwu-elevated);
   color: var(--uwu-ink);
 }

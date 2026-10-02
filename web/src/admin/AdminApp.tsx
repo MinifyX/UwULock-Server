@@ -11,6 +11,7 @@ import { Button, Modal, TabPanel, Tabs, useTabsId } from '../components/ui';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
+import { focusContent, useScreen } from '../lib/focus';
 import { t, useLanguage } from '../lib/i18n';
 import { go, useRoute } from '../lib/route';
 import { useServerInfo } from '../lib/branding';
@@ -184,10 +185,33 @@ export function AdminApp() {
         go(areas[(index + (key === 'j' ? 1 : -1) + areas.length) % areas.length]!.tabs[0]!.path);
       else return;
       event.preventDefault();
+      // Focus inside the old area is gone with it: to the new area's page, which says its name.
+      if (key !== '?')
+        window.setTimeout(() => {
+          if (!document.activeElement || document.activeElement === document.body) focusContent();
+        });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [area, areas, portal]);
+
+  // The page's title, and the focus when the screen changes (logged in): see lib/focus.ts.
+  const screen: [string, string] | null =
+    status === null
+      ? null
+      : status.state === 'logged-out'
+        ? ['login', t('Anmelden')]
+        : info === null
+          ? null
+          : info === 'none' || !info.admin || (info.adminNeedsSso && !info.sso)
+            ? ['refused', t('Admin-Portal')]
+            : [
+                'portal',
+                area.tabs.length > 1
+                  ? `${t(tab.label)} – ${t(area.label)} – ${t('Admin-Portal')}`
+                  : `${t(area.label)} – ${t('Admin-Portal')}`,
+              ];
+  useScreen(screen?.[0] ?? null, screen?.[1] ?? '');
 
   let body;
   if (status === null) body = null;

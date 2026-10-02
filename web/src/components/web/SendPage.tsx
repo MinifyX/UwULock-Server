@@ -110,7 +110,13 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             <p className="dialog-lead">{t('Dieser Send ist mit einem Passwort geschützt.')}</p>
             <label className="field">
               <span>{t('Passwort')}</span>
-              <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+              <PasswordInput
+                label={t('Passwort')}
+                value={password}
+                onChange={setPassword}
+                autoFocus
+                disabled={busy}
+              />
             </label>
             {errorLine}
             <div className="form-actions">

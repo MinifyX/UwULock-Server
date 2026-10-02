@@ -24,9 +24,13 @@
   top: 6px;
 }
 
-/* The places Tab and the skip link jump to show no ring of their own: what is inside does. */
+/* The places Tab and the skip link jump to show no ring of their own: what is inside does. So
+   do the ones that hold the focus while a button works (lib/focus.ts), and a dialog itself. */
 #main:focus,
 [data-main-content]:focus,
+form[tabindex='-1']:focus,
+.modal:focus,
+h1[tabindex='-1']:focus,
 .shortcuts:focus,
 .detail-pane:focus:not(:focus-visible) {
   outline: none;

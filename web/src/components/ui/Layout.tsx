@@ -1,4 +1,5 @@
-import { useId, type ReactNode } from 'react';
+import { isValidElement, useId, type ReactNode } from 'react';
+import { SettingContext } from './setting';
 
 /**
  * A card: a framed block on the page (a channel, a check, a domain). An optional head with a
@@ -68,7 +69,13 @@ export function Section({
   );
 }
 
-/** One setting: its name and a line about it on the left, its control on the right. */
+/**
+ * One setting: its name and a line about it on the left, its control on the right.
+ *
+ * A switch, a select or a choice (anything with a `label` of its own) takes the line about it as
+ * its description. Other controls (buttons like "Einrichten …") are a group named after the
+ * setting, so a screen reader says which setting a button belongs to.
+ */
 export function SettingRow({
   label,
   description,
@@ -78,13 +85,34 @@ export function SettingRow({
   description?: ReactNode;
   children?: ReactNode;
 }) {
+  const id = useId();
+  const labelId = `${id}-label`;
+  const descriptionId = description ? `${id}-description` : undefined;
+  const named = isValidElement<{ label?: unknown }>(children) && children.props.label !== undefined;
   return (
     <div className="setting-row">
       <div className="setting-text">
-        <p className="setting-label">{label}</p>
-        {description && <p className="setting-description">{description}</p>}
+        <p className="setting-label" id={labelId}>
+          {label}
+        </p>
+        {description && (
+          <p className="setting-description" id={descriptionId}>
+            {description}
+          </p>
+        )}
       </div>
-      {children && <div className="setting-control">{children}</div>}
+      {children && (
+        <SettingContext.Provider value={{ labelId, descriptionId }}>
+          <div
+            className="setting-control"
+            role={named ? undefined : 'group'}
+            aria-labelledby={named ? undefined : labelId}
+            aria-describedby={named ? undefined : descriptionId}
+          >
+            {children}
+          </div>
+        </SettingContext.Provider>
+      )}
     </div>
   );
 }

@@ -254,7 +254,13 @@ function SetUpAuthenticator({
         {!key ? (
           <label className="field">
             <span>{t('Master-Passwort')}</span>
-            <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+            <PasswordInput
+              label={t('Master-Passwort')}
+              value={password}
+              onChange={setPassword}
+              autoFocus
+              disabled={busy}
+            />
           </label>
         ) : (
           <>
@@ -377,6 +383,7 @@ function SetUpEmail({
         <label className="field">
           <span>{t('Master-Passwort')}</span>
           <PasswordInput
+            label={t('Master-Passwort')}
             value={password}
             onChange={setPassword}
             autoFocus

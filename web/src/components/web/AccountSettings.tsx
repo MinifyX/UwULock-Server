@@ -453,11 +453,18 @@ function NewPassword({
       <div className="form">
         <label className="field">
           <span>{t('Aktuelles Master-Passwort')}</span>
-          <PasswordInput value={current} onChange={setCurrent} autoFocus disabled={busy} />
+          <PasswordInput
+            label={t('Aktuelles Master-Passwort')}
+            value={current}
+            onChange={setCurrent}
+            autoFocus
+            disabled={busy}
+          />
         </label>
         <label className="field">
           <span>{t('Neues Master-Passwort')}</span>
           <PasswordInput
+            label={t('Neues Master-Passwort')}
             value={next}
             onChange={setNext}
             autoComplete="new-password"
@@ -468,6 +475,7 @@ function NewPassword({
         <label className="field">
           <span>{t('Neues Master-Passwort wiederholen')}</span>
           <PasswordInput
+            label={t('Neues Master-Passwort wiederholen')}
             value={repeat}
             onChange={setRepeat}
             autoComplete="new-password"
@@ -672,7 +680,12 @@ function NewEmail({ onCancel, onDone }: { onCancel: () => void; onDone: () => vo
         </label>
         <label className="field">
           <span>{t('Master-Passwort')}</span>
-          <PasswordInput value={password} onChange={setPassword} disabled={busy || sent} />
+          <PasswordInput
+            label={t('Master-Passwort')}
+            value={password}
+            onChange={setPassword}
+            disabled={busy || sent}
+          />
         </label>
         {sent && (
           <label className="field">
@@ -750,32 +763,32 @@ function ApiKey({ onClose }: { onClose: () => void }) {
       }
     >
       <div className="form">
-        <label className="field">
+        <div className="field">
           <span>client_id</span>
           <div className="copy-field">
             <code className="mono">{key.clientId}</code>
             <button
               className="icon-button"
-              aria-label={t('Kopieren')}
+              aria-label={t('{label} kopieren', { label: 'client_id' })}
               onClick={() => copy(key.clientId)}
             >
               ⧉
             </button>
           </div>
-        </label>
-        <label className="field">
+        </div>
+        <div className="field">
           <span>client_secret</span>
           <div className="copy-field">
             <code className="mono">{key.clientSecret}</code>
             <button
               className="icon-button"
-              aria-label={t('Kopieren')}
+              aria-label={t('{label} kopieren', { label: 'client_secret' })}
               onClick={() => copy(key.clientSecret)}
             >
               ⧉
             </button>
           </div>
-        </label>
+        </div>
       </div>
     </Modal>
   );

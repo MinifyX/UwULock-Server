@@ -123,6 +123,8 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // The fields stay focusable while it works (read-only, not disabled): Enter again waits.
+    if (busy) return;
     setError(null);
     setBusy(t('Nyu leitet deinen Schlüssel ab …'));
     try {
@@ -202,12 +204,16 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
                 autoComplete="username"
                 spellCheck={false}
                 required
-                disabled={Boolean(busy)}
+                // A screen reader starts in the form, not on the page's first link.
+                autoFocus={!email}
+                readOnly={Boolean(busy)}
+                aria-disabled={Boolean(busy) || undefined}
               />
             </label>
             <label className="field">
               <span>{t('Master-Passwort')}</span>
               <PasswordInput
+                label={t('Master-Passwort')}
                 value={password}
                 onChange={setPassword}
                 autoFocus={Boolean(email)}
@@ -329,7 +335,7 @@ function TwoFactor({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (provider === null) return;
+    if (provider === null || busy) return;
     if (method?.kind === 'webauthn') {
       await withKey();
       return;
@@ -445,7 +451,8 @@ function TwoFactor({
             autoComplete="one-time-code"
             spellCheck={false}
             required
-            disabled={busy}
+            readOnly={busy}
+            aria-disabled={busy || undefined}
             aria-invalid={Boolean(error) || undefined}
             aria-describedby={error ? 'two-factor-error' : undefined}
           />

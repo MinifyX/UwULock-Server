@@ -7,6 +7,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
+import { useSettingRow } from './setting';
 
 type ControlProps = {
   id?: string;
@@ -147,15 +148,21 @@ export function Select<T extends string>({
   className,
   ...rest
 }: SelectProps<T> & ControlProps) {
+  // In a SettingRow, without a Field: named and described by the row.
+  const row = useSettingRow();
+  const described =
+    [rest['aria-describedby'], row?.descriptionId].filter(Boolean).join(' ') || undefined;
   return (
     <select
       id={id}
       className={['select', className].filter(Boolean).join(' ')}
       value={value}
       aria-label={label}
+      aria-labelledby={!label && row && !id ? row.labelId : undefined}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value as T)}
       {...rest}
+      aria-describedby={described}
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>

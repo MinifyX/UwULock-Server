@@ -64,7 +64,9 @@ export function TitleBar({ onSettings, settingsLabel, badge = 0, area, children 
       )}
       {onSettings && badge > 0 && (
         <span id="settings-badge" className="sr-only">
-          {t('{n} neue Sicherheitshinweise', { n: badge })}
+          {badge === 1
+            ? t('1 neuer Sicherheitshinweis')
+            : t('{n} neue Sicherheitshinweise', { n: badge })}
         </span>
       )}
     </header>

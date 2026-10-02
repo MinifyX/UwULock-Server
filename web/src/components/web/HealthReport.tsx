@@ -217,6 +217,7 @@ export function HealthReport({ onOpen, onReview }: Props) {
             <div className="detail-actions">
               <button className="quiet" onClick={() => onOpen(finding.id)}>
                 {t('Öffnen')}
+                <span className="sr-only">: {finding.name || t('(ohne Namen)')}</span>
               </button>
             </div>
           </div>
@@ -256,7 +257,12 @@ export function HealthReport({ onOpen, onReview }: Props) {
   const clean = report && !problems;
 
   return (
-    <section className="report-pane" aria-label={t('Passwortprüfung')}>
+    <section
+      className="report-pane"
+      aria-label={t('Passwortprüfung')}
+      tabIndex={-1}
+      data-main-content
+    >
       <article className="detail">
         <header className="detail-head">
           <span className="item-tile" data-size="large" data-hue="4">
@@ -344,6 +350,7 @@ export function HealthReport({ onOpen, onReview }: Props) {
                 <div className="detail-actions">
                   <button className="quiet" onClick={() => onOpen(finding.id)}>
                     {t('Öffnen')}
+                    <span className="sr-only">: {finding.name || t('(ohne Namen)')}</span>
                   </button>
                 </div>
               </div>
@@ -408,12 +415,14 @@ export function HealthReport({ onOpen, onReview }: Props) {
                       <Icon name="external" size={14} />
                       {t('Anleitung')}
                       <span className="sr-only">
+                        {' '}
                         {t('für {site} (neues Fenster)', { site: entry.name })}
                       </span>
                     </a>
                   )}
                   <button className="quiet" onClick={() => onOpen(item.id)}>
                     {t('Öffnen')}
+                    <span className="sr-only">: {item.name || t('(ohne Namen)')}</span>
                   </button>
                 </div>
               </div>

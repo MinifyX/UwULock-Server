@@ -70,12 +70,28 @@ export function Modal({
     // Otherwise the first field, or the first button not marked secondary.
     // Buttons that act on something risky carry data-secondary, so Enter can
     // never trigger them by accident.
+    // Only what can take the focus: a button that waits for its content (the generator's
+    // "Übernehmen" before the first password) is disabled, and focusing it left the focus outside
+    // the dialog, where a screen reader went on reading the page behind it.
     const first =
-      dialog.querySelector<HTMLElement>('[data-autofocus]') ??
-      dialog.querySelector<HTMLElement>('input, button:not([data-secondary]), textarea, select') ??
+      dialog.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)') ??
+      dialog.querySelector<HTMLElement>(
+        'input:not(:disabled), button:not([data-secondary]):not(:disabled), textarea:not(:disabled), select:not(:disabled)',
+      ) ??
       dialog;
-    first.focus();
+    // On the stack first: a dialog opened from another one takes the focus as the one on top, or
+    // the one below (see onFocusIn) would pull it back.
     stack.push(dialog);
+    first.focus();
+
+    // Whatever moves the focus behind the dialog (a click on the page, a screen reader's own
+    // cursor, an element of the page focusing itself), it comes back to the dialog on top.
+    const onFocusIn = (event: FocusEvent) => {
+      if (stack[stack.length - 1] !== dialog) return;
+      if (event.target instanceof Node && dialog.contains(event.target)) return;
+      dialog.focus();
+    };
+    document.addEventListener('focusin', onFocusIn);
 
     const onKey = (event: KeyboardEvent) => {
       if (stack[stack.length - 1] !== dialog) return;
@@ -115,6 +131,7 @@ export function Modal({
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
+      document.removeEventListener('focusin', onFocusIn);
       stack.splice(stack.indexOf(dialog), 1);
       // Back where it was. When that is gone (the row of a deleted item, the menu that opened
       // the dialog), to the dialog below, or to the page's content rather than to nowhere.

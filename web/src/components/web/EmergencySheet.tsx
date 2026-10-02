@@ -94,7 +94,13 @@ export function EmergencySheetDialog({ onClose }: { onClose: () => void }) {
         </div>
         <label className="field">
           <span>{t('Master-Passwort')}</span>
-          <PasswordInput value={password} onChange={setPassword} autoFocus disabled={busy} />
+          <PasswordInput
+            label={t('Master-Passwort')}
+            value={password}
+            onChange={setPassword}
+            autoFocus
+            disabled={busy}
+          />
           <small className="field-hint">
             {t(
               'Für den Wiederherstellungscode. Das Master-Passwort selbst kommt nicht aufs Blatt.',

@@ -10,6 +10,19 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   4 … 64 seconds, and a few of those in a row took the send-domain test past its two minutes.
   Pebble now runs with `PEBBLE_WFE_NONCEREJECT=0`; both tests take about 3 seconds.
 
+- Screen readers: the web vault and the admin portal were gone through with Orca 46 in Chromium
+  (German and English, keys as real key presses, the spoken text from Orca's log), and what it
+  found is fixed. Password fields are named by their label alone (they were read with the eye's
+  name and the strength line); toggle buttons keep one name and say only whether they are pressed;
+  the page's title names the screen; after logging in, unlocking, registering or a section key the
+  focus moves to the new content instead of nowhere; a wrong password leaves the focus in its
+  field, and switches and buttons that save get it back afterwards; dialogs keep the focus even
+  when the button meant to have it waits; hidden secrets read *verborgen*, the code's countdown
+  *noch 25 Sekunden gültig*; setting rows describe their switch or name their buttons' group; the
+  password check names each *Öffnen* and each card it moves to; Bitwarden's English login error
+  is said in the page's language. `docs/accessibility.md` ("Tested with Orca") has the setup, the
+  findings and before/after transcripts; the browser tests check the important ones.
+
 ## 0.7.0-beta.2
 
 **UwUSSH's and UwURDP's entries in the web vault.** The web vault has two new sections in the

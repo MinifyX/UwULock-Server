@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import { useSettingRow } from './setting';
 
 /**
  * The arrow keys in a group of radio buttons: they move to the next choice and pick it. Only the
@@ -39,11 +40,13 @@ export function Segmented<T extends string | number>({
   /** As wide as its container, the choices sharing the room. */
   wide?: boolean;
 }) {
+  const row = useSettingRow();
   return (
     <div
       className={wide ? 'segmented wide' : 'segmented'}
       role="radiogroup"
       aria-label={label}
+      aria-describedby={row?.descriptionId}
       onKeyDown={radioArrows}
     >
       {options.map((option, index) => (
@@ -78,6 +81,7 @@ export function Toggle({
   onChange: (checked: boolean) => void;
   disabled?: boolean;
 }) {
+  const row = useSettingRow();
   return (
     <button
       type="button"
@@ -85,6 +89,7 @@ export function Toggle({
       className="toggle"
       aria-checked={checked}
       aria-label={label}
+      aria-describedby={row?.descriptionId}
       disabled={disabled}
       onClick={() => onChange(!checked)}
     >

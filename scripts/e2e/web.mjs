@@ -79,10 +79,24 @@ try {
   const fields = page.locator('input[type=password]');
   await fields.nth(0).fill(password);
   await fields.nth(1).fill(password);
+  // What a screen reader hears (docs/accessibility.md): the field by its label alone, not with
+  // the eye's name and the strength line that sit inside that label too; the eye by one name,
+  // with its state in aria-pressed.
+  await page.getByRole('textbox', { name: 'Master-Passwort', exact: true }).waitFor();
+  const eye = page.getByRole('button', { name: 'Passwort zeigen', exact: true }).first();
+  await eye.click();
+  await page.getByRole('button', { name: 'Passwort zeigen', exact: true, pressed: true }).waitFor();
+  await eye.click();
   await snap('register');
   await checkA11y(page, 'register page');
   await page.getByRole('button', { name: 'Konto anlegen' }).click();
   await page.getByPlaceholder(/Tresor durchsuchen/).waitFor({ timeout: 30000 });
+  // In: the page's title says where, and the focus is on the vault, not left on nothing.
+  await page.waitForFunction(
+    () => document.title.startsWith('Tresor – ') && document.activeElement?.closest('[data-main-content]'),
+    null,
+    { timeout: 5000 },
+  );
   await snap('empty-vault');
 
   step('a login item');
@@ -95,6 +109,9 @@ try {
   await page.getByRole('button', { name: 'Speichern' }).click();
   await page.locator('.item-list').getByText('Router').first().waitFor();
   await snap('item-saved');
+  // A hidden password is "verborgen", not a row of dots read one by one; the star is one switch.
+  await page.locator('.detail .masked', { hasText: 'verborgen' }).first().waitFor();
+  await page.getByRole('button', { name: 'Favorit', exact: true, pressed: false }).waitFor();
   await checkA11y(page, 'vault with an item selected');
 
   step('the keyboard: shortcut overview, the new-item menu, the list');
@@ -116,8 +133,18 @@ try {
   await page.reload();
   await page.getByRole('heading', { name: /gesperrt/ }).waitFor();
   await snap('locked');
+  // A wrong password: said at once, and the focus stays in the field for the next try.
+  await page.locator('input[type=password]').first().fill('not the password');
+  await page.keyboard.press('Enter');
+  await page.getByRole('alert').filter({ hasText: 'Master-Passwort ist falsch' }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.matches('input[type=password]'), null, {
+    timeout: 2000,
+  });
   await unlockOrLogin();
   await page.locator('.item-list').getByText('Router').first().waitFor({ timeout: 30000 });
+  await page.waitForFunction(() => document.activeElement?.closest('[data-main-content]'), null, {
+    timeout: 5000,
+  });
 
   step('several items at once: archive and back');
   await page.getByRole('button', { name: 'Neu', exact: true }).click();
@@ -239,6 +266,13 @@ try {
   await page.keyboard.press('7');
   await page.getByRole('heading', { name: 'Aussehen', level: 1 }).waitFor();
   if (!page.url().endsWith('#/branding')) throw new Error(`7 led to ${page.url()}`);
+  // The tab that had the focus went with the old area: the focus is on the new one's page, and
+  // the title names it.
+  await page.waitForFunction(
+    () => document.title.startsWith('Aussehen – Admin-Portal') && document.activeElement?.closest('[data-main-content]'),
+    null,
+    { timeout: 2000 },
+  );
   await page.getByRole('button', { name: 'Darstellung' }).click();
   await page.getByRole('radio', { name: 'Hoch' }).click();
   await page.locator('html[data-contrast="high"]').waitFor({ state: 'attached' });

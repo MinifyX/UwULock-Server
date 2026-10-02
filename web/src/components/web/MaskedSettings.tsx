@@ -551,7 +551,7 @@ function Addresses({
                   {!gone && (
                     <button
                       className="icon-button"
-                      title={t('Kopieren')}
+                      title={t('{label} kopieren', { label: address.email })}
                       aria-label={t('{label} kopieren', { label: address.email })}
                       onClick={() => void copy(address.email)}
                     >

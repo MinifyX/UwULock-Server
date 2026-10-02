@@ -37,5 +37,12 @@
   "Bearbeiten (E)": "Edit (E)",
   "Eintrag": "Item",
   "Pfeiltasten wählen einen Eintrag, Eingabe öffnet ihn, Leertaste markiert ihn für mehrere auf einmal.": "Arrow keys pick an item, Enter opens it, Space ticks it to act on several at once.",
-  "Aus dem Eintrag zurück zur Liste": "From the item back to the list"
+  "Aus dem Eintrag zurück zur Liste": "From the item back to the list",
+  "noch {n} Sekunden gültig": "valid for {n} more seconds",
+  "Archiviert": "Archived",
+  "1 neuer Hinweis": "1 new notice",
+  "1 neuer Sicherheitshinweis": "1 new security notice",
+  "verborgen": "hidden",
+  "{n} von {total}: {name}": "{n} of {total}: {name}",
+  "Feld hinzufügen: {kind}": "Add field: {kind}"
 }

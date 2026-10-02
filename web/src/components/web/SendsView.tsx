@@ -636,7 +636,12 @@ export function SendAccess({
       {value === 1 && (
         <label className="field">
           <span>{hasPassword ? t('Neues Passwort (leer lässt das alte)') : t('Passwort')}</span>
-          <PasswordInput value={password} onChange={onPassword} autoComplete="new-password" />
+          <PasswordInput
+            label={hasPassword ? t('Neues Passwort (leer lässt das alte)') : t('Passwort')}
+            value={password}
+            onChange={onPassword}
+            autoComplete="new-password"
+          />
         </label>
       )}
       {value === 0 && (

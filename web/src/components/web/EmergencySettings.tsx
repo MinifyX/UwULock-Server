@@ -466,6 +466,7 @@ function Takeover({
         <label className="field">
           <span>{t('Neues Master-Passwort (mindestens 12 Zeichen)')}</span>
           <PasswordInput
+            label={t('Neues Master-Passwort (mindestens 12 Zeichen)')}
             value={password}
             onChange={setPassword}
             autoComplete="new-password"
@@ -474,7 +475,12 @@ function Takeover({
         </label>
         <label className="field">
           <span>{t('Noch einmal')}</span>
-          <PasswordInput value={again} onChange={setAgain} autoComplete="new-password" />
+          <PasswordInput
+            label={t('Noch einmal')}
+            value={again}
+            onChange={setAgain}
+            autoComplete="new-password"
+          />
         </label>
         {error && (
           <p className="form-error" role="alert">

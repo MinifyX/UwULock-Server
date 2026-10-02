@@ -678,7 +678,16 @@ function RequestEditor({
               ? t('Neues Passwort (leer lässt das alte)')
               : t('Passwort (freiwillig)')}
           </span>
-          <PasswordInput value={password} onChange={setPassword} autoComplete="new-password" />
+          <PasswordInput
+            label={
+              request?.passwordSet
+                ? t('Neues Passwort (leer lässt das alte)')
+                : t('Passwort (freiwillig)')
+            }
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+          />
         </label>
         {request?.passwordSet && (
           <label className="check">

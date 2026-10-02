@@ -48,6 +48,10 @@ export function errorText(error: unknown): string {
     case 'reprompt':
       return t('Dieser Eintrag fragt zuerst nach deinem Master-Passwort.');
     case 'server':
+      // Bitwarden's "Username or password is incorrect. Try again": in the page's language, not
+      // an English sentence inside a German one (which a screen reader reads with German rules).
+      if (/username or password is incorrect/i.test(m))
+        return t('E-Mail-Adresse oder Master-Passwort stimmt nicht.');
       return t('Der Server hat mit einem Fehler geantwortet: {reason}', { reason: m });
     case 'unsupported':
       return t('Das kann diese Beta noch nicht: {reason}', {
