@@ -3,6 +3,13 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## Unreleased
+
+- CI: the ACME tests against Pebble no longer run out of time now and then. Pebble turns away 5%
+  of good nonces by default, rustls-acme fails the whole order on a badNonce and backs off 1, 2,
+  4 … 64 seconds, and a few of those in a row took the send-domain test past its two minutes.
+  Pebble now runs with `PEBBLE_WFE_NONCEREJECT=0`; both tests take about 3 seconds.
+
 ## 0.7.0-beta.2
 
 **UwUSSH's and UwURDP's entries in the web vault.** The web vault has two new sections in the

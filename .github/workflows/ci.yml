@@ -50,6 +50,10 @@ jobs:
           PEBBLE_VA_ALWAYS_VALID: "1"
           # No random pause before each validation: it only makes the test slow and flaky.
           PEBBLE_VA_NOSLEEP: "1"
+          # Pebble turns away 5% of good nonces by default. rustls-acme does not retry a badNonce
+          # but fails the whole order (about ten signed requests) and backs off 1, 2, 4 … 64 s, so
+          # a run of bad luck took the send-domain test past its two minutes.
+          PEBBLE_WFE_NONCEREJECT: "0"
         ports:
           - 14000:14000
     steps:
