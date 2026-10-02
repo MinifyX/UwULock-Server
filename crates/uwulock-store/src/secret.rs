@@ -34,7 +34,14 @@ pub fn is_sealed(value: &str) -> bool {
 /// The server's secret for values at rest, read (or made) when first needed.
 pub struct ServerSecret {
     path: PathBuf,
-    key: Mutex<Option<Arc<LessSafeKey>>>,
+    key: Mutex<Option<Arc<Keys>>>,
+}
+
+/// The sealing key, and a MAC key derived from the same file for answers that must stay the
+/// same without being guessable (an unknown address's KDF, R1-6).
+struct Keys {
+    seal: LessSafeKey,
+    mac: ring::hmac::Key,
 }
 
 impl ServerSecret {
@@ -69,7 +76,18 @@ impl ServerSecret {
         *self.key.lock() = None;
     }
 
-    fn key(&self) -> Result<Arc<LessSafeKey>, String> {
+    /// HMAC-SHA256 of `data` for `purpose`, under a key derived from `secret.key`: the same for
+    /// the same input on this server, unguessable elsewhere.
+    pub fn mac(&self, purpose: &str, data: &[u8]) -> Result<[u8; 32], String> {
+        let keys = self.key()?;
+        let mut context = ring::hmac::Context::with_key(&keys.mac);
+        context.update(purpose.as_bytes());
+        context.update(&[0]);
+        context.update(data);
+        Ok(context.sign().as_ref().try_into().expect("SHA-256 is 32 bytes"))
+    }
+
+    fn key(&self) -> Result<Arc<Keys>, String> {
         let mut held = self.key.lock();
         if let Some(key) = held.as_ref() {
             return Ok(key.clone());
@@ -85,14 +103,18 @@ impl ServerSecret {
         };
         let key = UnboundKey::new(&AES_256_GCM, &bytes)
             .map_err(|_| format!("{} is damaged: it is not a key of 32 bytes", self.path.display()))?;
-        let key = Arc::new(LessSafeKey::new(key));
+        let mac_key = ring::digest::digest(&ring::digest::SHA256, &[b"uwulock mac key\0".as_slice(), &bytes].concat());
+        let key = Arc::new(Keys {
+            seal: LessSafeKey::new(key),
+            mac: ring::hmac::Key::new(ring::hmac::HMAC_SHA256, mac_key.as_ref()),
+        });
         *held = Some(key.clone());
         Ok(key)
     }
 
     /// `plain`, encrypted for `purpose`: `v1.` and base64 of nonce and ciphertext.
     pub fn seal(&self, plain: &str, purpose: &str) -> Result<String, String> {
-        let key = self.key()?;
+        let key = &self.key()?.seal;
         let nonce: [u8; NONCE_LEN] = random_bytes(NONCE_LEN).try_into().expect("12 bytes");
         let mut sealed = plain.as_bytes().to_vec();
         key.seal_in_place_append_tag(Nonce::assume_unique_for_key(nonce), Aad::from(purpose.as_bytes()), &mut sealed)
@@ -114,7 +136,7 @@ impl ServerSecret {
         let (nonce, sealed) = bytes.split_at(NONCE_LEN);
         let nonce = Nonce::try_assume_unique_for_key(nonce).map_err(|_| refused())?;
         let mut sealed = sealed.to_vec();
-        let key = self.key()?;
+        let key = &self.key()?.seal;
         let plain =
             key.open_in_place(nonce, Aad::from(purpose.as_bytes()), &mut sealed).map_err(|_| refused())?.to_vec();
         String::from_utf8(plain).map_err(|_| refused())

@@ -671,12 +671,10 @@ async fn prelogin(
     if !state.limits.anonymous.check(ip) {
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
     }
-    let kdf = state.store.user_by_email(&request.email).await?.map(|user| user.kdf).unwrap_or(Kdf {
-        kind: 0,
-        iterations: 600_000,
-        memory: None,
-        parallelism: None,
-    });
+    let kdf = match state.store.user_by_email(&request.email).await? {
+        Some(user) => user.kdf,
+        None => stand_in_kdf(&state, &request.email),
+    };
     Ok(Json(json!({
         "kdf": kdf.kind,
         "kdfIterations": kdf.iterations,
@@ -690,6 +688,24 @@ async fn prelogin(
         },
         "salt": null,
     })))
+}
+
+/// The KDF the prelogin answers for an address without an account: one of the defaults accounts
+/// use — the web vault's Argon2id (3 iterations, 64 MiB, 4 threads) three times in four, the
+/// apps' PBKDF2 with 600 000 iterations otherwise — chosen by a MAC of the address under the
+/// server's secret, so asking again gives the same answer and nobody else can tell it from a
+/// real one (R1-6).
+fn stand_in_kdf(state: &AppState, email: &str) -> Kdf {
+    let pbkdf2 = Kdf { kind: 0, iterations: 600_000, memory: None, parallelism: None };
+    let normalized = email.trim().to_lowercase();
+    match state.secret.mac("prelogin-kdf", normalized.as_bytes()) {
+        Ok(mac) if mac[0] < 192 => Kdf { kind: 1, iterations: 3, memory: Some(64), parallelism: Some(4) },
+        Ok(_) => pbkdf2,
+        Err(error) => {
+            tracing::warn!(%error, "the server secret could not be read for the prelogin");
+            pbkdf2
+        }
+    }
 }
 
 // ── Registering ───────────────────────────────────────────
@@ -1035,11 +1051,27 @@ mod tests {
     #[tokio::test]
     async fn a_prelogin_tells_nobody_who_has_an_account() {
         let server = TestServer::new().await;
-        let unknown =
-            json(server.call("POST", "/api/accounts/prelogin", None, json!({"email": "nobody@example.com"})).await)
-                .await;
-        assert_eq!(unknown["kdf"], 0);
-        assert_eq!(unknown["kdfIterations"], 600000);
+        let ask = |email: String| {
+            let server = &server;
+            async move { json(server.call("POST", "/api/accounts/prelogin", None, json!({ "email": email })).await).await }
+        };
+        // The same address, the same answer; the defaults accounts use, both of them (R1-6).
+        let unknown = ask("nobody@example.com".into()).await;
+        assert_eq!(ask(" NOBODY@example.com".into()).await, unknown);
+        let mut kinds = std::collections::BTreeSet::new();
+        for n in 0..40 {
+            let answer = ask(format!("nobody{n}@example.com")).await;
+            match answer["kdf"].as_i64().unwrap() {
+                0 => assert_eq!(answer["kdfIterations"], 600000),
+                1 => assert_eq!(
+                    (answer["kdfIterations"].clone(), answer["kdfMemory"].clone(), answer["kdfParallelism"].clone()),
+                    (json!(3), json!(64), json!(4))
+                ),
+                other => panic!("kdf {other}"),
+            }
+            kinds.insert(answer["kdf"].as_i64().unwrap());
+        }
+        assert_eq!(kinds.len(), 2);
     }
 
     #[tokio::test]
