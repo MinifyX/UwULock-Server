@@ -143,7 +143,21 @@ export function HealthReport({ onOpen, onReview }: Props) {
     try {
       const fresh = await passwordReport(
         { hibp: switches.hibp, xon: switches.xonPasswords },
-        (done, total) => setBusy(t('Fragt nach Datenlecks … {done} von {total}', { done, total })),
+        (progress) => {
+          // Per source: XposedOrNot takes one prefix a second and can run for minutes.
+          const sources = [
+            ['Have I Been Pwned', progress.hibp],
+            ['XposedOrNot', progress.xon],
+          ] as const;
+          const parts = sources
+            .filter(([, { total }]) => total > 0)
+            .map(([source, { done, total }]) =>
+              t('{source}: {done} von {total}', { source, done, total }),
+            );
+          setBusy(t('Fragt nach Datenlecks … {sources}', { sources: parts.join(' · ') }));
+        },
+        // Have I Been Pwned is through: its results are shown while XposedOrNot goes on.
+        (partial) => setReport(partial),
       );
       setReport(fresh);
       setSavedAt(new Date().toISOString());

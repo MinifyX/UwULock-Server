@@ -16,6 +16,10 @@ struct Asked {
     passwords: AtomicUsize,
     emails: AtomicUsize,
     pages: AtomicUsize,
+    /// 429s handed out for `4290000000`.
+    refused: AtomicUsize,
+    /// When XposedOrNot's passwords were asked.
+    times: Mutex<Vec<Instant>>,
 }
 
 const NAMES: [&str; 6] = [
@@ -67,6 +71,18 @@ async fn fake_internet() -> (Upstream, Arc<Asked>) {
                 }
                 ("pass.example.net", path) => {
                     asked.passwords.fetch_add(1, Ordering::SeqCst);
+                    asked.times.lock().push(Instant::now());
+                    if path.ends_with("/4290000000") {
+                        // Too many at first, then the answer.
+                        if asked.refused.fetch_add(1, Ordering::SeqCst) == 0 {
+                            return (StatusCode::TOO_MANY_REQUESTS, [("retry-after", "30")]).into_response();
+                        }
+                        return Json(json!({"SearchPassAnon": {"count": "7"}})).into_response();
+                    }
+                    if path.ends_with("/eeeeeeeeee") {
+                        // Never anything but "too many".
+                        return StatusCode::TOO_MANY_REQUESTS.into_response();
+                    }
                     if path.ends_with("/a6818b8188") {
                         Json(json!({"SearchPassAnon": {"anon": "a6818b8188", "char": "D:0;A:8;S:0;L:8", "count": "1590937"}}))
                             .into_response()
@@ -122,8 +138,17 @@ fn all_on() -> crate::Settings {
     }
 }
 
+/// XposedOrNot's queue in milliseconds: no test waits for real.
+const QUICK_XON: XonLimits = XonLimits {
+    spacing: Duration::from_millis(1),
+    retries: 2,
+    longest_pause: Duration::from_millis(5),
+    longest_wait: Duration::from_secs(30),
+};
+
 fn quick() -> Breaches {
     Breaches::with_limits(BudgetLimits { spacing: Duration::ZERO, per_hour: 3, per_day: 100, per_account_day: 100 })
+        .with_xon_limits(QUICK_XON)
 }
 
 async fn server() -> (TestServer, Arc<Asked>) {
@@ -146,6 +171,77 @@ async fn a_password_prefix_is_asked_at_xposedornot_once_per_account() {
     let mio = server.account("mio@example.com").await;
     server.get_as(&mio.token, "/uwu/v1/xon/a6818b8188").await;
     assert_eq!(asked.passwords.load(Ordering::SeqCst), 3, "nobody sees what others checked");
+}
+
+/// A 429 is waited out and asked again; the check does not fail because of it.
+#[tokio::test]
+async fn a_429_from_xposedornot_is_waited_out_and_asked_again() {
+    let (server, asked) = server().await;
+    let nyu = server.account("nyu@example.com").await;
+    let found = body(server.get_as(&nyu.token, "/uwu/v1/xon/4290000000").await).await;
+    assert_eq!(found, json!({ "object": "xonPassword", "count": 7 }));
+    assert_eq!(asked.refused.load(Ordering::SeqCst), 2, "refused once, then answered");
+    assert_eq!(asked.passwords.load(Ordering::SeqCst), 2);
+}
+
+/// Refused every time: asked a bounded number of times, then 502.
+#[tokio::test]
+async fn xposedornot_refusing_for_good_is_asked_only_a_few_times() {
+    let (server, asked) = server().await;
+    let nyu = server.account("nyu@example.com").await;
+    let answer = server.get_as(&nyu.token, "/uwu/v1/xon/eeeeeeeeee").await;
+    assert_eq!(answer.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(asked.passwords.load(Ordering::SeqCst), QUICK_XON.retries as usize + 1);
+}
+
+/// Many prefixes at once go out one after the other, with the spacing between them.
+#[tokio::test]
+async fn password_prefixes_take_turns_in_one_queue() {
+    let (upstream, asked) = fake_internet().await;
+    let spacing = Duration::from_millis(15);
+    let server = TestServer::with_settings(all_on())
+        .await
+        .with_upstream(upstream)
+        .with_breaches(quick().with_xon_limits(XonLimits { spacing, ..QUICK_XON }));
+    let nyu = server.account("nyu@example.com").await;
+    let prefixes = ["0000000001", "0000000002", "0000000003", "0000000004"];
+    let paths: Vec<String> = prefixes.iter().map(|prefix| format!("/uwu/v1/xon/{prefix}")).collect();
+    let answers = futures_util::future::join_all(paths.iter().map(|path| server.get_as(&nyu.token, path))).await;
+    assert!(answers.iter().all(|answer| answer.status() == StatusCode::OK));
+    let times = asked.times.lock().clone();
+    assert_eq!(times.len(), 4);
+    for pair in times.windows(2) {
+        assert!(pair[1].duration_since(pair[0]) >= spacing, "at least the spacing apart");
+    }
+}
+
+/// A queue that would keep a request too long tells the client to come back (429 `busy`).
+#[tokio::test]
+async fn a_long_queue_answers_busy_with_retry_after() {
+    let (upstream, _) = fake_internet().await;
+    let limits = XonLimits { longest_pause: Duration::from_secs(600), longest_wait: Duration::ZERO, ..QUICK_XON };
+    let server = TestServer::with_settings(all_on())
+        .await
+        .with_upstream(upstream)
+        .with_breaches(quick().with_xon_limits(limits));
+    let nyu = server.account("nyu@example.com").await;
+    // 429 with Retry-After 30: waiting that long is more than this queue lets a request wait.
+    let answer = server.get_as(&nyu.token, "/uwu/v1/xon/4290000000").await;
+    assert_eq!(answer.status(), StatusCode::TOO_MANY_REQUESTS);
+    let seconds: u64 = answer.headers()["retry-after"].to_str().unwrap().parse().unwrap();
+    assert!((29..=30).contains(&seconds), "{seconds}");
+    assert_eq!(body(answer).await["code"], "busy");
+}
+
+#[test]
+fn pauses_follow_retry_after_within_bounds() {
+    let limits = XonLimits::default();
+    assert_eq!(limits.pause(Some(30), 0), Duration::from_secs(30));
+    assert_eq!(limits.pause(Some(0), 0), Duration::from_secs(1), "at least the spacing");
+    assert_eq!(limits.pause(Some(86_400), 0), limits.longest_pause);
+    assert_eq!(limits.pause(None, 0), Duration::from_secs(2));
+    assert_eq!(limits.pause(None, 2), Duration::from_secs(8));
+    assert_eq!(limits.pause(None, 40), limits.longest_pause);
 }
 
 #[tokio::test]

@@ -7,6 +7,7 @@ import {
   ignore,
   isAddress,
   isIgnored,
+  retryingBusy,
   switchesOf,
   tidy,
   unignore,
@@ -14,6 +15,7 @@ import {
   type SiteBreach,
 } from './breaches';
 import type { Finding, Report } from './features';
+import { ApiError } from './web/http';
 
 const breach = (domain: string, date: string, passwords = true): SiteBreach => ({
   domain,
@@ -131,5 +133,42 @@ describe('the rest', () => {
     expect(isAddress('nyu')).toBe(false);
     expect(isAddress('nyu@localhost')).toBe(false);
     expect(isAddress(null)).toBe(false);
+  });
+});
+
+describe('a busy server', () => {
+  it('is asked again after 429, a bounded number of times, without real waiting', async () => {
+    const waits: number[] = [];
+    const wait = (ms: number) => {
+      waits.push(ms);
+      return Promise.resolve();
+    };
+    let calls = 0;
+    const answer = await retryingBusy(async () => {
+      if (++calls < 3) throw new ApiError(429, 'busy', null);
+      return 7;
+    }, wait);
+    expect(answer).toBe(7);
+    expect(waits).toEqual([5_000, 10_000]);
+
+    calls = 0;
+    const always = retryingBusy(
+      async () => {
+        calls++;
+        throw new ApiError(429, 'busy', null);
+      },
+      wait,
+      3,
+    );
+    await expect(always).rejects.toBeInstanceOf(ApiError);
+    expect(calls).toBe(3);
+
+    calls = 0;
+    const broken = retryingBusy(async () => {
+      calls++;
+      throw new ApiError(502, 'down', null);
+    }, wait);
+    await expect(broken).rejects.toMatchObject({ status: 502 });
+    expect(calls).toBe(1);
   });
 });

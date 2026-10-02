@@ -5,6 +5,7 @@
  */
 
 import { currentProfile, sync } from './api';
+import { retryingBusy } from './breaches';
 import { openExtras } from './requests';
 import { sendUrl, type SendDomain } from './links';
 import { call, callJson } from './web/core';
@@ -548,14 +549,19 @@ export type Report = {
 /** Which sources a check asks: Have I Been Pwned, XposedOrNot (both through the server). */
 export type ReportSources = { hibp: boolean; xon: boolean };
 
+/** How far a check is, per source. */
+export type ReportProgress = Record<BreachSource, { done: number; total: number }>;
+
 /**
  * Check every login's password; with the sources given, also against Have I Been Pwned (five
  * characters of a SHA-1) and XposedOrNot (ten characters of a Keccak-512), both asked through
- * the server.
+ * the server. The two run side by side: XposedOrNot is asked one prefix a second, so it can
+ * take minutes; `partial` gets the report as soon as Have I Been Pwned is through.
  */
 export async function passwordReport(
   sources: ReportSources,
-  progress?: (done: number, total: number) => void,
+  progress?: (progress: ReportProgress) => void,
+  partial?: (report: Report) => void,
 ): Promise<Report> {
   const report = await callJson<{
     findings: Omit<Finding, 'breached' | 'breachSources'>[];
@@ -572,11 +578,11 @@ export async function passwordReport(
     seenBy.set(item, set);
   };
   let incomplete = false;
-  const jobs: (() => Promise<void>)[] = [];
+  const jobs: Record<BreachSource, (() => Promise<void>)[]> = { hibp: [], xon: [] };
   if (sources.hibp) {
     for (const prefix of report.prefixes) {
-      jobs.push(async () => {
-        const range = await request<string>(`/uwu/v1/hibp/${prefix}`);
+      jobs.hibp.push(async () => {
+        const range = await retryingBusy(() => request<string>(`/uwu/v1/hibp/${prefix}`));
         const hits = await callJson<[string, number][]>((core) =>
           core.breaches(prefix, String(range)),
         );
@@ -586,8 +592,10 @@ export async function passwordReport(
   }
   if (sources.xon) {
     for (const prefix of report.xonPrefixes ?? []) {
-      jobs.push(async () => {
-        const answer = await request<{ count: number }>(`/uwu/v1/xon/${prefix}`);
+      jobs.xon.push(async () => {
+        const answer = await retryingBusy(() =>
+          request<{ count: number }>(`/uwu/v1/xon/${prefix}`),
+        );
         const hits = await callJson<[string, number][]>((core) =>
           core.xonBreaches(prefix, Number(answer.count) || 0),
         );
@@ -595,23 +603,8 @@ export async function passwordReport(
       });
     }
   }
-  const total = jobs.length;
-  let done = 0;
-  const worker = async () => {
-    for (let job = jobs.shift(); job; job = jobs.shift()) {
-      try {
-        await job();
-      } catch {
-        // The rest of the report still counts.
-        incomplete = true;
-      }
-      progress?.(++done, total);
-    }
-  };
-  if (total) progress?.(0, total);
-  await Promise.all([worker(), worker(), worker(), worker()]);
   const checked = sources.hibp || sources.xon;
-  return {
+  const result = (): Report => ({
     findings: report.findings.map((finding) => ({
       ...finding,
       breached: checked ? (counts.get(finding.id) ?? 0) : null,
@@ -620,7 +613,32 @@ export async function passwordReport(
     checked: report.checked,
     breachesChecked: checked,
     breachesIncomplete: incomplete,
+  });
+  const state: ReportProgress = {
+    hibp: { done: 0, total: jobs.hibp.length },
+    xon: { done: 0, total: jobs.xon.length },
   };
+  const tell = () => progress?.({ hibp: { ...state.hibp }, xon: { ...state.xon } });
+  const worker = async (source: BreachSource) => {
+    const list = jobs[source];
+    for (let job = list.shift(); job; job = list.shift()) {
+      try {
+        await job();
+      } catch {
+        // The rest of the report still counts.
+        incomplete = true;
+      }
+      state[source].done++;
+      tell();
+    }
+  };
+  if (state.hibp.total || state.xon.total) tell();
+  // Four at a time for Have I Been Pwned; XposedOrNot's queue is on the server, two keep it busy.
+  const hibp = Promise.all([1, 2, 3, 4].map(() => worker('hibp'))).then(() => {
+    if (state.xon.done < state.xon.total) partial?.(result());
+  });
+  await Promise.all([hibp, worker('xon'), worker('xon')]);
+  return result();
 }
 
 /** The last report, as this account's clients saved it on the server. */

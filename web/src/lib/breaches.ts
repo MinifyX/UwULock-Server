@@ -370,3 +370,23 @@ export function cardsOf(
     (a, b) => weight(b) - weight(a) || a.finding.name.localeCompare(b.finding.name),
   );
 }
+
+/**
+ * `job`, asked again while the server says "too many" or "busy" (429): XposedOrNot's queue on
+ * the server can be long, which is no failure. At most `tries` times, waiting longer each time;
+ * anything else fails at once.
+ */
+export async function retryingBusy<T>(
+  job: () => Promise<T>,
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((done) => setTimeout(done, ms)),
+  tries = 8,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await job();
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 429 || attempt >= tries) throw error;
+      await wait(Math.min(5_000 * attempt, 30_000));
+    }
+  }
+}

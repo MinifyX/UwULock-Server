@@ -2060,7 +2060,16 @@ answers only the count; XposedOrNot's character statistics (`char`) are dropped:
 
 `count` 0 = not known (XposedOrNot's 404). Like the HIBP proxy: kept 24 h per account and prefix
 in memory, never written to disk or a log, same per-account limit (429), 400 for anything but 10
-hex digits, 502 `upstream` when XposedOrNot does not answer. Ten hex digits are 40 bits: a hit
+hex digits, 502 `upstream` when XposedOrNot does not answer.
+
+XposedOrNot allows only about one such question a second for a whole server, so all accounts'
+questions wait in **one queue** on the server: one at a time, at least 1 s apart. A 429 (or 5xx)
+from XposedOrNot pauses the whole queue for as long as its `Retry-After` says (at most 120 s; without
+one 2 s, 4 s, 8 s …) and the prefix is asked again, up to 4 times; only then 502 `upstream`. A
+request that would wait more than 60 s in the queue answers **429 `busy`** with `Retry-After:
+<seconds>`: nothing failed, the client asks again later (the web vault: after 5 s, 10 s, … up to
+8 tries). Clients ask Have I Been Pwned and XposedOrNot side by side, show HIBP's results as soon as
+they are in, and count a check as incomplete only for answers other than 429. Ten hex digits are 40 bits: a hit
 means "a password with this hash prefix was seen", which a client counts as breached, like a
 HIBP hit. Clients show `max(hibp count, xon count)` and which sources saw it.
 
