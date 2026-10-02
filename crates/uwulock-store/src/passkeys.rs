@@ -145,12 +145,16 @@ impl Store {
 
     // ── The API key ────────────────────────────────────────
 
-    /// The user's API key, made with `fresh` if there is none yet.
+    /// The user's API key, made with `fresh` if there is none yet — or if the one there was made
+    /// under an earlier security stamp (R1-5).
     pub async fn api_key(&self, user_id: &str, fresh: String) -> Result<(String, String)> {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {
             tx.execute(
-                "INSERT INTO api_keys (user_id, secret, revision) VALUES (?1, ?2, ?3) ON CONFLICT (user_id) DO NOTHING",
+                "INSERT INTO api_keys (user_id, secret, revision, stamp) \
+                 SELECT ?1, ?2, ?3, security_stamp FROM users WHERE id = ?1 \
+                 ON CONFLICT (user_id) DO UPDATE SET secret = excluded.secret, revision = excluded.revision, \
+                 stamp = excluded.stamp WHERE api_keys.stamp <> excluded.stamp",
                 params![user_id, fresh, clock::now()],
             )?;
             tx.query_row("SELECT secret, revision FROM api_keys WHERE user_id = ?1", [&user_id], |row| {
@@ -166,8 +170,10 @@ impl Store {
         self.sqlite_write(move |tx| {
             let now = clock::now();
             tx.execute(
-                "INSERT INTO api_keys (user_id, secret, revision) VALUES (?1, ?2, ?3) \
-                 ON CONFLICT (user_id) DO UPDATE SET secret = excluded.secret, revision = excluded.revision",
+                "INSERT INTO api_keys (user_id, secret, revision, stamp) \
+                 SELECT ?1, ?2, ?3, security_stamp FROM users WHERE id = ?1 \
+                 ON CONFLICT (user_id) DO UPDATE SET secret = excluded.secret, revision = excluded.revision, \
+                 stamp = excluded.stamp",
                 params![user_id, secret, now],
             )?;
             Ok((secret, now))
@@ -175,11 +181,18 @@ impl Store {
         .await
     }
 
-    /// The API key of a user, to check a login with it.
+    /// The API key of a user, to check a login with it: only one made under the account's
+    /// current security stamp.
     pub async fn api_key_of(&self, user_id: &str) -> Result<Option<String>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {
-            conn.query_row("SELECT secret FROM api_keys WHERE user_id = ?1", [user_id], |row| row.get(0)).optional()
+            conn.query_row(
+                "SELECT k.secret FROM api_keys k JOIN users u ON u.id = k.user_id \
+                 WHERE k.user_id = ?1 AND k.stamp = u.security_stamp",
+                [user_id],
+                |row| row.get(0),
+            )
+            .optional()
         })
         .await
     }
@@ -231,5 +244,11 @@ mod tests {
         assert_eq!((first.as_str(), again.as_str()), ("one", "one"));
         store.rotate_api_key(&user.id, "three".into()).await.unwrap();
         assert_eq!(store.api_key_of(&user.id).await.unwrap().as_deref(), Some("three"));
+        // A new security stamp (password change, log out everywhere, …) ends the key (R1-5).
+        store.update_user(&user.id, |user| user.security_stamp = "new".into()).await.unwrap();
+        assert_eq!(store.api_key_of(&user.id).await.unwrap(), None);
+        let (fresh, _) = store.api_key(&user.id, "four".into()).await.unwrap();
+        assert_eq!(fresh, "four");
+        assert_eq!(store.api_key_of(&user.id).await.unwrap().as_deref(), Some("four"));
     }
 }

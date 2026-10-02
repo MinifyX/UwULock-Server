@@ -48,7 +48,9 @@ pub fn setting_in(backup: &Path, key: &str) -> Result<Option<String>, String> {
 /// login with them; a server restored from one makes a new key, and everybody logs in again.
 pub const SERVER_SECRETS: &[&str] = &["token_key"];
 
-/// Removes the server's own keys ([`SERVER_SECRETS`]) from the database copy at `path`, and
+/// Removes the server's own keys ([`SERVER_SECRETS`]) from the database copy at `path`, the
+/// accounts' API keys (stored as they are, since they are shown again: with one and the account
+/// id, the command line logs in without a second step — R1-4), and
 /// empties what is sealed with `secret.key` (which stays home too), with the deleted bytes
 /// overwritten and the file compacted, so nothing of them stays in free pages.
 pub fn forget_secrets_in(path: &Path) -> Result<(), String> {
@@ -58,6 +60,7 @@ pub fn forget_secrets_in(path: &Path) -> Result<(), String> {
     for key in SERVER_SECRETS {
         conn.execute("DELETE FROM server WHERE key = ?1", [key]).map_err(failed)?;
     }
+    conn.execute("DELETE FROM api_keys", []).map_err(failed)?;
     crate::admin::empty_sealed(&conn).map_err(failed)?;
     conn.execute_batch("VACUUM").map_err(failed)?;
     Ok(())
@@ -231,6 +234,19 @@ mod tests {
         assert!(after != stamp && !logged_in, "everybody logs in again");
         let kept = Store::open_sqlite(&aside, &Options { readers: 1 }).unwrap();
         assert_eq!(marker(&kept).await, "after");
+    }
+
+    #[tokio::test]
+    async fn a_copy_without_secrets_has_no_api_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_with(dir.path(), "x").await;
+        let user = store.create_user(crate::accounts::tests::new_user("nyu@example.com")).await.unwrap();
+        store.api_key(&user.id, "the api key".into()).await.unwrap();
+        let copy = dir.path().join("copy.db");
+        store.backup_to(&copy).await.unwrap();
+        forget_secrets_in(&copy).unwrap();
+        let bytes = std::fs::read(&copy).unwrap();
+        assert!(!bytes.windows(11).any(|window| window == b"the api key"), "R1-4");
     }
 
     #[tokio::test]
