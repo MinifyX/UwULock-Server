@@ -163,10 +163,13 @@ fn roots(extra: &[rustls::pki_types::CertificateDer<'static>]) -> rustls::Client
 
 /// A certificate from an ACME CA, end to end — against Pebble, Let's Encrypt's test CA, which
 /// CI starts with `PEBBLE_VA_ALWAYS_VALID=1` (it does not come knocking on the challenge, which
-/// needs port 443). Run by hand:
+/// needs port 443) and with `PEBBLE_WFE_NONCEREJECT=0`: Pebble's default of turning away 5% of
+/// nonces fails whole orders, as rustls-acme does not retry a badNonce, and their back-off took
+/// the tests past their two minutes now and then. Run by hand:
 ///
 /// ```sh
-/// docker run -d -p 14000:14000 -e PEBBLE_VA_ALWAYS_VALID=1 -e PEBBLE_VA_NOSLEEP=1 ghcr.io/letsencrypt/pebble
+/// docker run -d --rm -p 14000:14000 -e PEBBLE_VA_ALWAYS_VALID=1 -e PEBBLE_VA_NOSLEEP=1 \
+///   -e PEBBLE_WFE_NONCEREJECT=0 ghcr.io/letsencrypt/pebble
 /// curl -fsSLo /tmp/pebble.minica.pem https://raw.githubusercontent.com/letsencrypt/pebble/main/test/certs/pebble.minica.pem
 /// UWULOCK_TEST_PEBBLE=https://localhost:14000/dir UWULOCK_TEST_PEBBLE_CA=/tmp/pebble.minica.pem \
 ///   cargo test -p uwulock-server --test integration -- --ignored serve::
