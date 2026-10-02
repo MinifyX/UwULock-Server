@@ -401,6 +401,9 @@ async fn attach(
     let (_, owner, collections) = crate::attachments::changeable(&state, &session, &body.cipher_id)
         .await
         .map_err(|_| ApiError::not_found("There is no such item you may change.").code("not_found"))?;
+    // Into a family's item, the file counts for its owners from now on (R1-9); for an own item
+    // it counted for this account all along.
+    crate::files::check_owner_storage(&state, &owner, file.size, Some(&session.user.id)).await?;
     let attachment = crate::files::new_file_id();
     let from = file_path(&state, &id, &file.id)?;
     let to = crate::files::attachment_path(&state, &body.cipher_id, &attachment)?;
@@ -904,6 +907,42 @@ mod tests {
         let delete = server.call("DELETE", &format!("/uwu/v1/file-requests/{id}"), Some(&owner.token), json!({})).await;
         assert_eq!(delete.status(), StatusCode::OK);
         assert_eq!(json(server.get(&public).await).await["code"], "gone");
+    }
+
+    /// R1-9: a member's request file attached to a family's item counts for the family's owners.
+    #[tokio::test]
+    async fn into_a_family_item_the_owners_storage_is_checked() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let mio = server.account("mio@example.com").await;
+        let (org, collection) = family_with(&server, &nyu, &mio).await;
+        let made = request(&server, &mio.token, None).await;
+        let (id, access) = (made["id"].as_str().unwrap(), made["accessId"].as_str().unwrap());
+        let public = format!("/uwu/v1/public/file-requests/{access}");
+        let token = open(&server, access, None).await;
+        let submission =
+            json!({ "wrappedKey": type4(), "files": [ { "fileName": type2(), "key": type2(), "size": 300 } ] });
+        let started = server.call_from("192.0.2.7", "POST", &format!("{public}/submissions"), &token, submission).await;
+        let started = json(started).await;
+        let sid = started["id"].as_str().unwrap().to_string();
+        let url = started["files"][0]["url"].as_str().unwrap().to_string();
+        assert_eq!(server.send(put_file(&url, &token, encrypted(300))).await.status(), StatusCode::OK);
+        let complete = format!("{public}/submissions/{sid}/complete");
+        assert_eq!(server.call_from("192.0.2.7", "POST", &complete, &token, json!({})).await.status(), StatusCode::OK);
+        let fid = url.rsplit('/').next().unwrap().to_string();
+
+        let item = json!({"type": 2, "name": type2(), "secureNote": {"type": 0}, "organizationId": org});
+        let body = json!({ "cipher": item, "collectionIds": [collection] });
+        let family_item = json(server.call("POST", "/api/ciphers/create", Some(&mio.token), body).await).await;
+        let family_item = family_item["id"].as_str().unwrap().to_string();
+        // The owners have no room left.
+        server.state.apply_settings(crate::Settings { storage_per_user_mb: Some(0), ..server.state.settings() });
+        let attach = format!("/uwu/v1/file-requests/{id}/submissions/{sid}/files/{fid}/attach");
+        let body = json!({ "cipherId": family_item, "fileName": type2(), "key": type2() });
+        let refused = server.call("POST", &attach, Some(&mio.token), body).await;
+        assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json(refused).await["code"], "quota");
+        assert!(server.state.config.data.join("file-requests").join(id).join(&fid).exists(), "still where it was");
     }
 
     /// Review finding R3-19: one upload at a time per file, none over a file that arrived, and
