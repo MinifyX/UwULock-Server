@@ -873,7 +873,8 @@ mod tests {
         let summary = json(server.get_as(&owner.token, &format!("/uwu/v1/file-requests/{id}")).await).await;
         assert_eq!((summary["unseen"].as_i64(), summary["submissionCount"].as_i64()), (Some(1), Some(1)));
         let account = json(server.get_as(&owner.token, "/uwu/v1/account").await).await;
-        assert_eq!(account["storage"]["usedBytes"], 300);
+        let message = 2 * type2().len() as i64; // the sender and the text count too (R1-10)
+        assert_eq!(account["storage"]["usedBytes"], 300 + message);
 
         let fid = got["files"][0]["id"].as_str().unwrap();
         let file = format!("{listed}/{sid}/files/{fid}");
@@ -1092,6 +1093,13 @@ mod tests {
             server.call_from("192.0.2.9", "POST", &format!("{public}/submissions"), &token, file(400 * 1024)).await;
         assert_eq!(second.status(), StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(json(second).await["code"], "request_full");
+        // A message alone counts too (R1-10).
+        use base64::Engine as _;
+        let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+        let text = format!("2.{}|{}|{}", b64(&[1; 16]), b64(&vec![2; 300_000]), b64(&[3; 32]));
+        let message = json!({ "wrappedKey": type4(), "text": text });
+        let third = server.call_from("192.0.2.9", "POST", &format!("{public}/submissions"), &token, message).await;
+        assert_eq!(json(third).await["code"], "request_full");
     }
 
     #[tokio::test]

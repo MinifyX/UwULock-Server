@@ -118,7 +118,8 @@ fn request_from(row: &Row<'_>) -> rusqlite::Result<FileRequest> {
 }
 
 /// What counts against the account's storage limit: attachments of its own items, the files of
-/// its Sends, every file uploaded (or on its way) to its requests, versions, own icons, suite
+/// its Sends, every file uploaded (or on its way) to its requests and the messages that came with
+/// them (R1-10), versions, own icons, suite
 /// records, and everything of the families it owns (confirmed owner): their items' attachments,
 /// versions and own icons. A family with two owners counts fully for both.
 const USER_BYTES: &str = "SELECT \
@@ -128,6 +129,8 @@ const USER_BYTES: &str = "SELECT \
      + (SELECT coalesce(sum(f.size), 0) FROM file_request_files f \
         JOIN file_request_submissions s ON s.id = f.submission_id \
         JOIN file_requests r ON r.id = s.request_id WHERE r.user_id = ?1) \
+     + (SELECT coalesce(sum(coalesce(length(s.text), 0) + coalesce(length(s.sender), 0)), 0) \
+        FROM file_request_submissions s JOIN file_requests r ON r.id = s.request_id WHERE r.user_id = ?1) \
      + (SELECT coalesce(sum(size), 0) FROM cipher_versions WHERE user_id = ?1) \
      + (SELECT coalesce(sum(length(i.data)), 0) FROM own_icons i JOIN ciphers c ON c.id = i.cipher_id \
         WHERE c.user_id = ?1) \
@@ -623,7 +626,10 @@ impl Store {
                     return Ok(Err(Refusal::Gone));
                 }
             }
-            let adding: i64 = submission.files.iter().map(|file| file.size).sum();
+            // A message counts like a file (R1-10): message-only submissions must not grow the
+            // database past every limit.
+            let message = submission.text.as_ref().map_or(0, String::len) + submission.sender.as_ref().map_or(0, String::len);
+            let adding: i64 = submission.files.iter().map(|file| file.size).sum::<i64>() + message as i64;
             if let Some(limit) = limit {
                 let used: i64 = tx.query_row(USER_BYTES, [&request.user_id], |row| row.get(0))?;
                 if used + adding > limit {
@@ -632,8 +638,10 @@ impl Store {
             }
             if let Some(limit) = request_limit {
                 let held: i64 = tx.query_row(
-                    "SELECT coalesce(sum(f.size), 0) FROM file_request_files f \
-                     JOIN file_request_submissions s ON s.id = f.submission_id WHERE s.request_id = ?1",
+                    "SELECT (SELECT coalesce(sum(f.size), 0) FROM file_request_files f \
+                     JOIN file_request_submissions s ON s.id = f.submission_id WHERE s.request_id = ?1) \
+                     + (SELECT coalesce(sum(coalesce(length(text), 0) + coalesce(length(sender), 0)), 0) \
+                     FROM file_request_submissions WHERE request_id = ?1)",
                     [&request.id],
                     |row| row.get(0),
                 )?;
