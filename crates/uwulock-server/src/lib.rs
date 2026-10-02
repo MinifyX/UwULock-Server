@@ -35,6 +35,7 @@ pub async fn app_state(config: &Config, store: Store, logs: Arc<LogBuffer>) -> R
     let api = ApiConfig {
         public: config.base_url(),
         trust_forwarded: config.trust_forwarded,
+        trusted_proxies: config.trusted_proxies.clone(),
         hash_cost: HashCost::default(),
         backups: config.backups(),
         data: config.data_dir.clone(),

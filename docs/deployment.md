@@ -195,8 +195,12 @@ sudo bash install.sh --behind-proxy https://vault.example.com \
   --proxy-network dmz --proxy-ip 192.0.2.64 --yes
 ```
 
-and the proxy passes on to `http://192.0.2.64:8443`. Without the flags, install.sh asks for the
-network once you choose the proxy. What it writes is `compose.override.yaml` next to
+and the proxy passes on to `http://192.0.2.64:8443`. Every other container in that network can
+reach the server directly too, and with `UWULOCK_TRUST_FORWARDED=on` claim any client address in
+`X-Forwarded-For` — past the admin networks, IP blocks and per-address limits. So name the proxy:
+`--trusted-proxy 192.0.2.2` (its address in the network, or a CIDR network) writes
+`UWULOCK_TRUSTED_PROXIES`, and the server believes forwarding headers only from there. Without the
+flags, install.sh asks for the network once you choose the proxy, and for the proxy's address. What it writes is `compose.override.yaml` next to
 `compose.yaml`, which update.sh leaves alone; by hand it is:
 
 ```yaml
@@ -488,7 +492,8 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_ACME_EMAIL` | — | Where Let's Encrypt writes about certificates that did not renew. |
 | `UWULOCK_ACME_DIRECTORY` | `letsencrypt` | `letsencrypt`, `staging`, or the https address of another ACME directory. |
 | `UWULOCK_TLS_CERT`, `UWULOCK_TLS_KEY` | `/data/tls/cert.pem`, `/data/tls/key.pem` | The PEM files for `files`. |
-| `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For`. Only behind a proxy that sets it. |
+| `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For` (`X-Real-IP` only when there is no `X-Forwarded-For`). Only behind a proxy that sets it. |
+| `UWULOCK_TRUSTED_PROXIES` | — (every peer) | With `UWULOCK_TRUST_FORWARDED=on`: believe forwarding headers only from these peers, addresses or CIDR networks, comma separated. Set it when the server shares a Docker network with other containers. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
 | `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. Requests without an account (prelogin, SSO, Sends) get five times as many, at least 50. |
 | `UWULOCK_FEATURES` | — (only the vault and icons) | The extras a new server starts with: `all`, `none` or ids like `families,file-requests` ([features.md](features.md)). Start value; *Admin portal → Vault & features → Features* changes them. |

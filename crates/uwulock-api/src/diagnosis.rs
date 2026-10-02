@@ -433,7 +433,7 @@ fn client_ip_check(state: &AppState, parts: &Parts) -> Check {
     };
     let forwarded = parts.headers.contains_key("x-forwarded-for") || parts.headers.contains_key("x-real-ip");
     let trust = state.config.trust_forwarded;
-    let seen = client_ip(parts, trust);
+    let seen = client_ip(parts, &state.config);
     let sees = text(format!("Der Server sieht dich als {seen}"), format!("The server sees you as {seen}"));
     let fix_forward = |check: Check| {
         check.fix(

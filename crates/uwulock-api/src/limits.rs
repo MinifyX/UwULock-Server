@@ -108,6 +108,19 @@ impl Limiter<IpAddr> {
     pub fn check(&self, ip: IpAddr) -> bool {
         self.take(network(ip))
     }
+
+    /// Take one try for the IPv6 /48 `ip` is in; an IPv4 address always passes. A /48 is what
+    /// a tunnel broker hands out for free: 65 536 /64s, each with a bucket of its own (R1-2).
+    pub fn check_wide(&self, ip: IpAddr) -> bool {
+        match ip {
+            IpAddr::V4(_) => true,
+            IpAddr::V6(v6) => {
+                let mut octets = v6.octets();
+                octets[6..].fill(0);
+                self.take(IpAddr::from(octets))
+            }
+        }
+    }
 }
 
 /// The key of `ip`'s bucket, for a limiter that is asked before it is taken from.
@@ -131,6 +144,12 @@ fn network(ip: IpAddr) -> IpAddr {
 pub struct Limits {
     /// Logins, second steps of logins, and asking for a login code by mail.
     pub login: Limiter,
+    /// Logins per IPv6 /48: ten times one /64's, ten back a minute.
+    pub login_wide: Limiter,
+    /// Wrong master passwords at login, per address tried (whether it has an account or not):
+    /// thirty, one back every two minutes. When it is empty, only devices the account knows get
+    /// their password checked; nobody is locked out of a device they used before (R1-2).
+    pub login_account: Limiter<String>,
     /// What anybody can ask without logging in.
     pub anonymous: Limiter,
     /// Wrong second steps of a login, per account.
@@ -175,6 +194,8 @@ impl Default for Limits {
     fn default() -> Self {
         Limits {
             login: Limiter::new(10, Duration::from_secs(60)),
+            login_wide: Limiter::new(100, Duration::from_secs(6)),
+            login_account: Limiter::new(30, Duration::from_secs(120)),
             anonymous: Limiter::new(50, Duration::from_secs(60)),
             two_factor: Limiter::new(10, Duration::from_secs(60)),
             password: Limiter::new(10, Duration::from_secs(60)),
@@ -203,6 +224,7 @@ impl Limits {
     pub fn with_login_attempts(attempts: u32) -> Self {
         Limits {
             login: Limiter::new(attempts, Duration::from_secs(60)),
+            login_wide: Limiter::new(attempts.saturating_mul(10).max(100), Duration::from_secs(6)),
             anonymous: Limiter::new(attempts.saturating_mul(5).max(50), Duration::from_secs(60)),
             ..Limits::default()
         }
@@ -215,6 +237,8 @@ impl Limits {
         }
         Limits {
             login: generous(),
+            login_wide: generous(),
+            login_account: generous(),
             anonymous: generous(),
             two_factor: generous(),
             password: generous(),
@@ -260,6 +284,16 @@ mod tests {
         assert!(limiter.check("2001:db8:1:2::2".parse().unwrap()));
         assert!(!limiter.check("2001:db8:1:2:ffff::3".parse().unwrap()), "the same /64");
         assert!(limiter.check("2001:db8:1:3::1".parse().unwrap()), "another /64");
+    }
+
+    #[test]
+    fn an_ipv6_slash_48_shares_a_wide_bucket() {
+        let limiter = Limiter::new(2, Duration::from_secs(60));
+        assert!(limiter.check_wide("2001:db8:1:1::1".parse().unwrap()));
+        assert!(limiter.check_wide("2001:db8:1:2::1".parse().unwrap()));
+        assert!(!limiter.check_wide("2001:db8:1:ffff::1".parse().unwrap()), "another /64, the same /48");
+        assert!(limiter.check_wide("2001:db8:2::1".parse().unwrap()), "another /48");
+        assert!((0..10).all(|_| limiter.check_wide("192.0.2.1".parse().unwrap())), "IPv4 is not counted here");
     }
 
     #[test]

@@ -63,6 +63,9 @@ pub struct Config {
     /// Trust `X-Forwarded-For` for the address a request comes from. Only ever on behind a proxy
     /// that sets it, or anyone can pretend to be someone else.
     pub trust_forwarded: bool,
+    /// The proxies whose forwarding headers count (`UWULOCK_TRUSTED_PROXIES`: addresses or CIDR
+    /// networks, comma separated). Empty: every peer, while `trust_forwarded` is on.
+    pub trusted_proxies: Vec<uwulock_api::networks::IpNetwork>,
     /// Ask GitHub once a day whether there is a newer release, and say so in the log. The only
     /// connection the server opens on its own.
     pub update_check: bool,
@@ -97,6 +100,7 @@ impl Default for Config {
             public: None,
             tls: TlsMode::Off,
             trust_forwarded: false,
+            trusted_proxies: Vec::new(),
             update_check: true,
             login_attempts: 10,
             channel: None,
@@ -137,6 +141,11 @@ impl Config {
         if let Some(trust) = var("UWULOCK_TRUST_FORWARDED") {
             config.trust_forwarded =
                 switch(&trust).ok_or_else(|| format!("UWULOCK_TRUST_FORWARDED must be on or off: {trust}"))?;
+        }
+        if let Some(proxies) = var("UWULOCK_TRUSTED_PROXIES") {
+            let list: Vec<String> = proxies.split([',', ' ']).map(str::to_string).collect();
+            config.trusted_proxies = uwulock_api::networks::IpNetwork::parse_list(&list)
+                .map_err(|error| format!("UWULOCK_TRUSTED_PROXIES: {error}"))?;
         }
         if let Some(attempts) = var("UWULOCK_LOGIN_ATTEMPTS") {
             config.login_attempts = attempts
@@ -482,6 +491,9 @@ mod tests {
         assert!(config(&[("UWULOCK_LOGIN_ATTEMPTS", "0")]).is_err());
         assert_eq!(config(&[("UWULOCK_LOGIN_ATTEMPTS", "50")]).unwrap().login_attempts, 50);
         assert!(config(&[("UWULOCK_TRUST_FORWARDED", "sometimes")]).is_err());
+        assert!(config(&[("UWULOCK_TRUSTED_PROXIES", "proxy.example.com")]).is_err());
+        let proxies = config(&[("UWULOCK_TRUSTED_PROXIES", "172.20.0.2, 2001:db8::/48")]).unwrap().trusted_proxies;
+        assert_eq!(proxies.len(), 2);
     }
 
     #[test]

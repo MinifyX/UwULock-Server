@@ -387,12 +387,44 @@ impl HashCost {
 /// How many hashes run at once. Each takes its memory (19 MiB by default) for as long as it runs;
 /// without a bound, many logins at the same moment — from many addresses, which the rate limits
 /// do not stop — would take as much memory as they like. The rest wait their turn.
+static HASHING_SLOTS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
 fn hashing() -> &'static tokio::sync::Semaphore {
     static HASHING: std::sync::OnceLock<tokio::sync::Semaphore> = std::sync::OnceLock::new();
     HASHING.get_or_init(|| {
         let cores = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);
-        tokio::sync::Semaphore::new((cores * 2).clamp(2, 32))
+        let slots = (cores * 2).clamp(2, 32);
+        let _ = HASHING_SLOTS.set(slots);
+        tokio::sync::Semaphore::new(slots)
     })
+}
+
+/// How many hashes wait for a turn now.
+static WAITING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// A turn at hashing, counted while it is waited for.
+async fn hashing_turn() -> Result<tokio::sync::SemaphorePermit<'static>, tokio::sync::AcquireError> {
+    use std::sync::atomic::Ordering;
+    struct Waiting;
+    impl Drop for Waiting {
+        fn drop(&mut self) {
+            WAITING.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+    WAITING.fetch_add(1, Ordering::Relaxed);
+    let _waiting = Waiting;
+    hashing().acquire().await
+}
+
+/// Whether so many hashes wait already that a login should get "busy" at once rather than queue
+/// up until the request times out (R1-2): more than eight per slot, a fraction of a second.
+pub fn hashing_busy() -> bool {
+    let _ = hashing();
+    queue_full(WAITING.load(std::sync::atomic::Ordering::Relaxed), HASHING_SLOTS.get().copied().unwrap_or(2))
+}
+
+fn queue_full(waiting: usize, slots: usize) -> bool {
+    waiting >= 8 * slots
 }
 
 /// Hash what the client sent in place of the master password. Off the async threads: it takes
@@ -400,7 +432,7 @@ fn hashing() -> &'static tokio::sync::Semaphore {
 pub async fn hash_password(cost: HashCost, secret: &str) -> ApiResult<String> {
     use argon2::password_hash::{PasswordHasher, SaltString};
     let secret = secret.to_string();
-    let turn = hashing().acquire().await.map_err(ApiError::internal)?;
+    let turn = hashing_turn().await.map_err(ApiError::internal)?;
     tokio::task::spawn_blocking(move || {
         // Held until the hash is done, even when the request that wanted it is gone.
         let _turn = turn;
@@ -442,7 +474,7 @@ pub async fn verify_password(cost: HashCost, hash: Option<&str>, secret: &str) -
     use argon2::password_hash::{PasswordHash, PasswordVerifier};
     let hash = hash.map(str::to_string);
     let secret = secret.to_string();
-    let Ok(turn) = hashing().acquire().await else { return false };
+    let Ok(turn) = hashing_turn().await else { return false };
     tokio::task::spawn_blocking(move || {
         let _turn = turn;
         match hash {
@@ -472,7 +504,7 @@ pub async fn verify_login(cost: HashCost, hash: Option<&str>, secret: &str, lega
     use argon2::password_hash::{PasswordHasher, PasswordVerifier, SaltString};
     let hash = hash.map(str::to_string);
     let secret = secret.to_string();
-    let Ok(turn) = hashing().acquire().await else { return false };
+    let Ok(turn) = hashing_turn().await else { return false };
     tokio::task::spawn_blocking(move || {
         let _turn = turn;
         let dummy_pbkdf2 = || {
@@ -520,28 +552,52 @@ impl FromRequestParts<AppState> for ClientIp {
     type Rejection = std::convert::Infallible;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        Ok(ClientIp(client_ip(parts, state.config.trust_forwarded)))
+        Ok(ClientIp(client_ip(parts, &state.config)))
     }
 }
 
-pub(crate) fn client_ip(parts: &Parts, trust_forwarded: bool) -> IpAddr {
-    if trust_forwarded {
-        // Several headers of the same name count as one list, in order.
+/// The address a request comes from, as the server's configuration says to believe it.
+pub(crate) fn client_ip(parts: &Parts, config: &crate::ApiConfig) -> IpAddr {
+    client_ip_with(parts, config.trust_forwarded, &config.trusted_proxies)
+}
+
+/// The connection's own address: the proxy's, behind one.
+fn peer_ip(parts: &Parts) -> Option<IpAddr> {
+    parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|info| canonical(info.0.ip()))
+}
+
+/// Whether the forwarding headers of this request are believed: trust is on, and the peer is one
+/// of the trusted proxies (`UWULOCK_TRUSTED_PROXIES`; none listed means every peer, R1-13).
+pub(crate) fn trusts_forwarding(parts: &Parts, trust_forwarded: bool, proxies: &[crate::networks::IpNetwork]) -> bool {
+    trust_forwarded
+        && (proxies.is_empty() || peer_ip(parts).is_some_and(|peer| proxies.iter().any(|proxy| proxy.contains(peer))))
+}
+
+pub(crate) fn client_ip_with(parts: &Parts, trust_forwarded: bool, proxies: &[crate::networks::IpNetwork]) -> IpAddr {
+    if trusts_forwarding(parts, trust_forwarded, proxies) {
+        // Several headers of the same name count as one list, in order. Read as raw bytes: a
+        // value with a byte ≥ 0x80 is not `to_str()`-able, and must not let `X-Real-IP` (which
+        // the client can send itself) take over (R1-1).
         let forwarded_for = parts.headers.get_all("x-forwarded-for").into_iter().next_back();
-        let forwarded = forwarded_for
-            .and_then(|value| value.to_str().ok())
-            .and_then(|list| list.rsplit(',').next())
-            .or_else(|| parts.headers.get("x-real-ip").and_then(|value| value.to_str().ok()))
-            .and_then(|value| value.trim().parse::<IpAddr>().ok());
+        let forwarded = match forwarded_for {
+            Some(value) => value
+                .as_bytes()
+                .rsplit(|byte| *byte == b',')
+                .next()
+                .and_then(|last| std::str::from_utf8(last).ok())
+                .and_then(|last| last.trim().parse::<IpAddr>().ok()),
+            // `X-Real-IP` only when there is no `X-Forwarded-For` at all.
+            None => parts
+                .headers
+                .get("x-real-ip")
+                .and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
+                .and_then(|value| value.trim().parse::<IpAddr>().ok()),
+        };
         if let Some(ip) = forwarded {
             return canonical(ip);
         }
     }
-    parts
-        .extensions
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|info| canonical(info.0.ip()))
-        .unwrap_or(IpAddr::from([0, 0, 0, 0]))
+    peer_ip(parts).unwrap_or(IpAddr::from([0, 0, 0, 0]))
 }
 
 fn canonical(ip: IpAddr) -> IpAddr {
@@ -886,6 +942,7 @@ mod tests {
             parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
             parts
         };
+        let client_ip = |parts: &Parts, trust: bool| client_ip_with(parts, trust, &[]);
         // nginx appends what it sees to what the client sent.
         let spoofed = parts(&[("x-forwarded-for", "203.0.113.9, 198.51.100.7")]);
         assert_eq!(client_ip(&spoofed, true), IpAddr::from([198, 51, 100, 7]));
@@ -896,6 +953,56 @@ mod tests {
         assert_eq!(client_ip(&real, true), IpAddr::from([198, 51, 100, 8]));
         let garbage = parts(&[("x-forwarded-for", "not an address")]);
         assert_eq!(client_ip(&garbage, true), IpAddr::from([127, 0, 0, 1]));
+    }
+
+    #[test]
+    fn a_long_hashing_queue_is_busy() {
+        assert!(!queue_full(0, 4));
+        assert!(!queue_full(31, 4));
+        assert!(queue_full(32, 4));
+        assert!(!hashing_busy(), "nothing waits in a test");
+    }
+
+    #[test]
+    fn obs_text_in_forwarded_for_does_not_hand_over_to_x_real_ip() {
+        // R1-1: the client sends `X-Forwarded-For: \xff` and `X-Real-IP`, the proxy appends.
+        let mut request = axum::http::Request::get("/");
+        request =
+            request.header("x-forwarded-for", axum::http::HeaderValue::from_bytes(b"\xff, 198.51.100.7").unwrap());
+        request = request.header("x-real-ip", "192.0.2.10");
+        let mut parts = request.body(()).unwrap().into_parts().0;
+        parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+        assert_eq!(client_ip_with(&parts, true, &[]), IpAddr::from([198, 51, 100, 7]));
+        // Only the bad entry: the peer, never X-Real-IP.
+        let mut request = axum::http::Request::get("/");
+        request = request.header("x-forwarded-for", axum::http::HeaderValue::from_bytes(b"\xff").unwrap());
+        request = request.header("x-real-ip", "192.0.2.10");
+        let mut parts = request.body(()).unwrap().into_parts().0;
+        parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
+        assert_eq!(client_ip_with(&parts, true, &[]), IpAddr::from([127, 0, 0, 1]));
+    }
+
+    #[test]
+    fn forwarding_headers_count_only_from_trusted_proxies() {
+        use crate::networks::IpNetwork;
+        let from = |peer: [u8; 4]| {
+            let request = axum::http::Request::get("/").header("x-forwarded-for", "198.51.100.7");
+            let mut parts = request.body(()).unwrap().into_parts().0;
+            parts.extensions.insert(ConnectInfo(SocketAddr::from((peer, 5000))));
+            parts
+        };
+        let proxies = [IpNetwork::parse("172.20.0.2").unwrap()];
+        assert_eq!(client_ip_with(&from([172, 20, 0, 2]), true, &proxies), IpAddr::from([198, 51, 100, 7]));
+        assert_eq!(
+            client_ip_with(&from([172, 20, 0, 9]), true, &proxies),
+            IpAddr::from([172, 20, 0, 9]),
+            "another container on the proxy network is not believed (R1-13)"
+        );
+        assert_eq!(
+            client_ip_with(&from([172, 20, 0, 9]), true, &[]),
+            IpAddr::from([198, 51, 100, 7]),
+            "no list: every peer"
+        );
     }
 
     #[test]

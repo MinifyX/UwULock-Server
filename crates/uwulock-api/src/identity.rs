@@ -159,13 +159,38 @@ async fn password_login(
     if username.len() > MAX_EMAIL || device_name.len() > 256 || device_id.len() > 256 {
         return Err(ApiError::bad("Username or password is incorrect. Try again"));
     }
-    if !state.limits.login.check(ip) {
+    if !state.limits.login.check(ip) || !state.limits.login_wide.check_wide(ip) {
         return Err(ApiError::too_many("Too many login requests. Wait a minute and try again."));
     }
 
     let user = state.store.user_by_email(username).await?;
     // With the code of an approved "log in with a device" request instead of the password.
     let by_request = form.get("authrequest");
+    // Wrong passwords per address tried, from everywhere at once (R1-2): when they ran out, only
+    // a device the account knows gets its password checked. Keyed by the address as typed, so
+    // the answer is the same whether it has an account.
+    let account_key = username.trim().to_lowercase();
+    if by_request.is_none() && !state.limits.login_account.allows(&account_key) {
+        let known = match &user {
+            Some(user) => state.store.device(&user.id, device_id).await?.is_some(),
+            None => false,
+        };
+        if !known {
+            log(state, "login-failed", user.as_ref(), username, ip, device_type, "too many wrong passwords").await;
+            return Err(ApiError::too_many(
+                "Too many wrong passwords for this account lately. Log in on a device you used before, or try again in a few minutes.",
+            )
+            .code("account_limited"));
+        }
+    }
+    // Rather "busy" at once than a queue that ends in the request's timeout (R1-2).
+    if by_request.is_none() && auth::hashing_busy() {
+        let mut response = ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "The server is busy. Try again in a moment.")
+            .code("busy")
+            .into_response();
+        response.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(2));
+        return Ok(response);
+    }
     let passed = match (by_request, &user) {
         (Some(request), Some(found)) => state
             .store
@@ -181,6 +206,9 @@ async fn password_login(
         }
     };
     if !passed {
+        if by_request.is_none() {
+            state.limits.login_account.take(account_key);
+        }
         log(state, "login-failed", user.as_ref(), username, ip, device_type, "wrong email or password").await;
         // Beside the answer, not before it: the time a refused login takes must not tell whether
         // the address has an account.
@@ -1027,6 +1055,32 @@ mod tests {
         assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
         let events = server.state.store.events(Some("login-failed".into()), None, 10).await.unwrap();
         assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn too_many_wrong_passwords_leave_only_known_devices_in() {
+        let server = TestServer::new().await;
+        server.account("nyu@example.com").await; // device-1
+        let mut limits = crate::Limits::generous();
+        limits.login_account = crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600));
+        let server = server.with_limits(limits);
+        for _ in 0..2 {
+            let mut form = login_form("NYU@example.com", "elsewhere");
+            form[2].1 = "wrong";
+            assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::BAD_REQUEST);
+        }
+        // The right password from a new device now waits…
+        let refused = server.form("/identity/connect/token", &login_form("nyu@example.com", "elsewhere")).await;
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(json(refused).await["code"], "account_limited");
+        // …the owner's own device is not locked out.
+        server.login("nyu@example.com", "device-1").await;
+        // An address without an account answers the same way once its tries ran out.
+        for _ in 0..2 {
+            server.form("/identity/connect/token", &login_form("nobody@example.com", "x")).await;
+        }
+        let unknown = server.form("/identity/connect/token", &login_form("nobody@example.com", "x")).await;
+        assert_eq!(unknown.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

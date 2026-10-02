@@ -49,6 +49,7 @@ impl TestServer {
         let config = ApiConfig {
             public: "https://vault.example.com".into(),
             trust_forwarded: false,
+            trusted_proxies: Vec::new(),
             hash_cost: HashCost::cheap(),
             backups: dir.path().join("backups"),
             data: dir.path().to_path_buf(),
