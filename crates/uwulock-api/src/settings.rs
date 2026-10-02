@@ -35,9 +35,6 @@ pub struct Settings {
     /// passwords, the public lists of breached sites, the check of addresses, and whether a site
     /// has a page to change the password.
     pub breaches: BreachSettings,
-    /// Bitwarden's push relay, for waking the phone apps: installation id and key from
-    /// bitwarden.com/host. None: the apps sync when they are opened.
-    pub push: Option<uwulock_notify::relay::RelaySettings>,
     /// Whether every account may invite people, not only admins.
     pub users_may_invite: bool,
     /// How many accounts one user may bring in, counting invitations that still work.
@@ -315,7 +312,6 @@ impl Default for Settings {
             hibp: true,
             geoip: true,
             breaches: BreachSettings::default(),
-            push: None,
             users_may_invite: false,
             invitations_per_user: 5,
             security_notices: SecurityNoticeSettings::default(),
@@ -392,12 +388,6 @@ impl Settings {
             each(&mut smtp.password, "settings.smtp.password")?;
         }
         each(&mut self.loki.password, "settings.loki.password")?;
-        if let Some(push) = self.push.as_mut() {
-            let mut key = Some(std::mem::take(&mut push.installation_key));
-            let done = each(&mut key, "settings.push.installationKey");
-            push.installation_key = key.unwrap_or_default();
-            done?;
-        }
         Ok(())
     }
 
@@ -414,7 +404,6 @@ impl Settings {
             }
         };
         hide("smtp", "password", "passwordSet");
-        hide("push", "installationKey", "installationKeySet");
         hide("metrics", "tokenHash", "tokenSet");
         hide("loki", "password", "passwordSet");
         hide("sso", "clientSecret", "clientSecretSet");
@@ -462,11 +451,6 @@ impl Settings {
         }
         if !(1..=4096).contains(&self.max_file_mb) {
             return Err("Files can be from 1 MB to 4096 MB.".into());
-        }
-        if let Some(push) = &self.push
-            && (push.installation_id.trim().is_empty() || !matches!(push.region.as_str(), "us" | "eu"))
-        {
-            return Err("The push relay needs the installation id and the region it was made for (us or eu).".into());
         }
         if let Some(smtp) = &self.smtp
             && (smtp.host.trim().is_empty() || smtp.port == 0 || smtp.from.trim().is_empty())

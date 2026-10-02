@@ -249,8 +249,6 @@ fn event_text(event: &str, de: bool) -> &'static str {
         ("manyFailedLogins", false) => "Many failed logins",
         ("diskLow", true) => "Die Platte ist fast voll",
         ("diskLow", false) => "The disk is almost full",
-        ("pushRelayFailing", true) => "Das Push-Relay ist gestört",
-        ("pushRelayFailing", false) => "The push relay is failing",
         ("mailFailing", true) => "Der Mailversand ist gestört",
         ("mailFailing", false) => "Sending mail is failing",
         ("test", true) => "Test aus dem Admin-Portal",

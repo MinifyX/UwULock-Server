@@ -29,7 +29,6 @@ export type TabId =
   | 'send-domains'
   | 'mail-server'
   | 'user-mails'
-  | 'push'
   | 'alerts'
   | 'local-backups'
   | 'offsite'
@@ -128,7 +127,6 @@ export const AREAS: Area[] = [
     tabs: [
       { id: 'mail-server', path: '/mail', label: N_('Mailserver') },
       { id: 'user-mails', path: '/mail/users', label: N_('Mails an Nutzer') },
-      { id: 'push', path: '/mail/push', label: N_('Push für die Apps') },
       {
         id: 'alerts',
         path: '/mail/alerts',

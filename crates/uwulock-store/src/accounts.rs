@@ -159,7 +159,6 @@ pub struct Device {
     pub refresh_expires: Option<String>,
     pub remember_hash: Option<Vec<u8>>,
     pub remember_expires: Option<String>,
-    pub push_token: Option<String>,
     /// The device's login came through SSO.
     pub sso: bool,
     /// The client it logged in as: `uwussh`, `uwurdp`, … for a suite app (docs/uwu-api.md §6.5).
@@ -167,7 +166,7 @@ pub struct Device {
 }
 
 const DEVICE_COLUMNS: &str = "user_id, id, name, type, created, last_seen, last_ip, refresh_hash IS NOT NULL, \
-     refresh_expires, remember_hash, remember_expires, push_token, sso, client_id";
+     refresh_expires, remember_hash, remember_expires, sso, client_id";
 
 fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
     Ok(Device {
@@ -182,9 +181,8 @@ fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
         refresh_expires: row.get(8)?,
         remember_hash: row.get(9)?,
         remember_expires: row.get(10)?,
-        push_token: row.get(11)?,
-        sso: row.get(12)?,
-        client_id: row.get(13)?,
+        sso: row.get(11)?,
+        client_id: row.get(12)?,
     })
 }
 
@@ -617,55 +615,7 @@ impl Store {
         Ok(done)
     }
 
-    /// The push token a mobile app registers for itself.
-    pub async fn set_push_token(&self, user_id: &str, id: &str, token: Option<String>) -> Result<bool> {
-        let (user_id, id) = (user_id.to_string(), id.to_string());
-        self.sqlite_write(move |tx| {
-            Ok(tx.execute(
-                "UPDATE devices SET push_token = ?3 WHERE user_id = ?1 AND id = ?2",
-                params![user_id, id, token],
-            )? > 0)
-        })
-        .await
-    }
-
     /// Two-step login is no longer skipped on any device of the user.
-    /// The account's phones the push relay knows: device id and the relay's id for it.
-    pub async fn push_devices(&self, user_id: &str) -> Result<Vec<(String, String)>> {
-        let user_id = user_id.to_string();
-        self.sqlite_read(move |conn| {
-            conn.prepare_cached(
-                "SELECT id, push_id FROM devices WHERE user_id = ?1 AND push_id IS NOT NULL AND refresh_hash IS NOT NULL",
-            )?
-            .query_map([user_id], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect()
-        })
-        .await
-    }
-
-    /// The relay's id for a device, once it registered there; none after it was taken off.
-    pub async fn set_push_id(&self, user_id: &str, id: &str, push_id: Option<String>) -> Result<()> {
-        let (user_id, id) = (user_id.to_string(), id.to_string());
-        self.sqlite_write(move |tx| {
-            tx.execute("UPDATE devices SET push_id = ?3 WHERE user_id = ?1 AND id = ?2", params![user_id, id, push_id])
-                .map(drop)
-        })
-        .await
-    }
-
-    /// The relay's id of a device, to take it off there.
-    pub async fn push_id(&self, user_id: &str, id: &str) -> Result<Option<String>> {
-        let (user_id, id) = (user_id.to_string(), id.to_string());
-        self.sqlite_read(move |conn| {
-            conn.query_row("SELECT push_id FROM devices WHERE user_id = ?1 AND id = ?2", [user_id, id], |row| {
-                row.get(0)
-            })
-            .optional()
-            .map(Option::flatten)
-        })
-        .await
-    }
-
     pub async fn forget_remembered_devices(&self, user_id: &str) -> Result<()> {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {

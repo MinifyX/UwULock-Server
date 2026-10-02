@@ -675,7 +675,6 @@ async fn new_security_stamp(
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
     state.store.update_user(&session.user.id, |user| user.security_stamp = uuid::Uuid::new_v4().to_string()).await?;
     for device in state.store.devices(&session.user.id).await? {
-        crate::notify::forget_phone(&state, &session.user.id, &device.id).await;
         state.store.delete_device(&session.user.id, &device.id).await?;
     }
     crate::notify::logout(&state, &session.user.id, Some(&session), "securityStamp");
@@ -932,32 +931,15 @@ async fn known_device(
     Ok(Json(known))
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PushToken {
-    push_token: String,
+/// The phone apps register for push notifications. Bitwarden's push relay is not used (docs/plan.md,
+/// Planänderung 0.8): the token is taken and dropped, so the apps carry on and sync when opened.
+async fn push_token(_session: Session) -> StatusCode {
+    StatusCode::OK
 }
 
-/// The phone apps register for push notifications: the token goes to the device the request
-/// comes from, and to the push relay when an admin set that up.
-async fn push_token(
-    State(state): State<AppState>,
-    session: Session,
-    Json(data): Json<PushToken>,
-) -> ApiResult<StatusCode> {
-    if data.push_token.len() > 4096 {
-        return Err(ApiError::bad("That is not a push token."));
-    }
-    state.store.set_push_token(&session.user.id, &session.device, Some(data.push_token.clone())).await?;
-    crate::notify::register_phone(&state, &session, &data.push_token).await;
-    Ok(StatusCode::OK)
-}
-
-/// A phone that does not want pushes any more.
-async fn clear_push_token(State(state): State<AppState>, session: Session) -> ApiResult<StatusCode> {
-    crate::notify::forget_phone(&state, &session.user.id, &session.device).await;
-    state.store.set_push_token(&session.user.id, &session.device, None).await?;
-    Ok(StatusCode::OK)
+/// A phone that does not want pushes any more: there is nothing to forget.
+async fn clear_push_token(_session: Session) -> StatusCode {
+    StatusCode::OK
 }
 
 #[cfg(test)]

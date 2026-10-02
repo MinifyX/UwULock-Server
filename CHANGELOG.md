@@ -5,6 +5,15 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+- **Bitwarden's push relay is gone (plan change).** The server no longer wakes Bitwarden's phone
+  apps through Bitwarden's relay: it needed an installation id and key from bitwarden.com/host and
+  sent account and device ids to Bitwarden with every change. Bitwarden's apps for iOS and Android
+  sync when they are opened; everything else keeps its live updates (Bitwarden's notification hub,
+  UwULock's own `/uwu/v1/realtime`). Removed: the admin portal's tab *Push for the apps* and its
+  connection test, the `push` settings, the diagnosis check `pushRelay`, the admin notification
+  `pushRelayFailing` and the metric `uwulock_push_relay_errors_total`. The apps' push tokens are
+  answered 200 and dropped. Schema step 0023 removes the stored relay settings, the devices' push
+  tokens and relay ids, and `pushRelayFailing` from the channels' events.
 - **Password check: no more "incomplete" because XposedOrNot said 429.** The web vault asked
   XposedOrNot (through the server) four prefixes at a time, the server sent each on at once, and
   XposedOrNot answered many of them with 429. Now all accounts' questions wait in one queue on the

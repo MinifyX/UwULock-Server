@@ -5166,16 +5166,11 @@ dependencies = [
 name = "uwulock-notify"
 version = "0.7.0-beta.2"
 dependencies = [
- "axum",
  "parking_lot",
- "reqwest 0.13.5",
- "rustls",
  "serde",
  "serde_json",
  "time",
  "tokio",
- "tracing",
- "webpki-roots 1.0.9",
 ]
 
 [[package]]

@@ -321,12 +321,7 @@ pub fn read_vaultwarden(
     // ── Devices, two-step login ──────────────────────────
     for d in read(
         &conn,
-        &format!(
-            "SELECT uuid, user_uuid, name, atype, created_at, updated_at, refresh_token, twofactor_remember, {}, {} \
-             FROM devices",
-            column_or(&conn, "devices", "push_uuid", "NULL"),
-            column_or(&conn, "devices", "push_token", "NULL")
-        ),
+        "SELECT uuid, user_uuid, name, atype, created_at, updated_at, refresh_token, twofactor_remember FROM devices",
         |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -337,8 +332,6 @@ pub fn read_vaultwarden(
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, String>(6)?,
                 row.get::<_, Option<String>>(7)?,
-                row.get::<_, Option<String>>(8)?,
-                row.get::<_, Option<String>>(9)?,
             ))
         },
     )? {
@@ -356,8 +349,6 @@ pub fn read_vaultwarden(
                 .filter(|token| !token.is_empty())
                 .map(|token| uwulock_api::vaultwarden::moved_token_hash(&token)),
             remember_hash: d.7.filter(|token| !token.is_empty()).map(|token| sha256(token.as_bytes())),
-            push_token: d.9.filter(|token| !token.is_empty()),
-            push_id: d.8,
         });
     }
     summary.devices = migration.devices.len();

@@ -4,16 +4,15 @@
 //! `/notifications/hub` and speak SignalR over it, with MessagePack: when something of the account
 //! changes on another device, the server says what, and they sync it at once instead of on their
 //! next look. A device that is not logged in yet — one that asked another to let it in — listens
-//! on `/notifications/anonymous-hub` for the answer. The phone apps are asleep most of the time;
-//! they are woken through Bitwarden's push relay ([`relay`]).
+//! on `/notifications/anonymous-hub` for the answer. UwULock's own clients listen on their own
+//! WebSocket ([`realtime`]). Bitwarden's phone apps sync when they are opened: Bitwarden's push
+//! relay is not used (docs/plan.md, Planänderung 0.8).
 //!
-//! This crate is the part that knows no HTTP server: who listens, what the messages look like,
-//! and how the relay is asked. The API crate hands it the sockets and calls it where things
-//! change.
+//! This crate is the part that knows no HTTP server: who listens and what the messages look like.
+//! The API crate hands it the sockets and calls it where things change.
 
 pub mod msgpack;
 pub mod realtime;
-pub mod relay;
 
 use msgpack::Value;
 use parking_lot::Mutex;

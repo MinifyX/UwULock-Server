@@ -41,8 +41,9 @@ teams and SSO.
 
 - **The official Bitwarden clients work**: browser extension, mobile apps, desktop app and
   `bw` CLI log in (with two-step login, a security key, another device or the API key), sync,
-  and save, with live updates over Bitwarden's notification hub and push to the phone apps
-  through Bitwarden's relay — tested in CI with Bitwarden's own CLI.
+  and save, with live updates over Bitwarden's notification hub — tested in CI with Bitwarden's
+  own CLI. (Push to Bitwarden's phone apps through Bitwarden's relay was removed in 0.8: they sync
+  when opened.)
 - **Everything for one person**: attachments (500 MB each by default), Sends with a page of
   their own for whoever gets the link, emergency access with a waiting time, security keys and
   passkeys (with PRF, a passkey unlocks the web vault too), logging in with another device, and
@@ -157,7 +158,7 @@ version.
 | `crates/uwulock-backup` | Backups on another system: SFTP, S3 or a folder, deduplicated and encrypted |
 | `crates/uwulock-api`    | HTTP: Bitwarden's API, UwULock's own and the admin API under `/uwu/v1`      |
 | `crates/uwulock-mail`   | SMTP, and what the mails say, in German and English                        |
-| `crates/uwulock-notify` | Live updates: Bitwarden's notification hub, and push through its relay     |
+| `crates/uwulock-notify` | Live updates: Bitwarden's notification hub and UwULock's realtime channel  |
 | `crates/uwulock-web`    | The web vault's files, embedded into the binary                             |
 | `crates/uwulock-server` | The program: settings, TLS and Let's Encrypt, commands, backups, updates   |
 | `crates/uwulock-bench`  | The same load against any Bitwarden-compatible server, for comparisons     |

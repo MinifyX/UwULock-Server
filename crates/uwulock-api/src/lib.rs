@@ -189,8 +189,6 @@ pub struct AppState {
     pub hub: Arc<uwulock_notify::Hub>,
     /// Who listens on UwULock's own realtime channel.
     pub realtime: Arc<uwulock_notify::realtime::Realtime>,
-    /// Bitwarden's push relay, for the phone apps.
-    pub relay: uwulock_notify::relay::Relay,
     /// What `/metrics` counts.
     pub metrics: Arc<metrics::Metrics>,
     /// What the admins hear of: events going on, the channels' state.
@@ -283,7 +281,6 @@ impl AppState {
             legacy_rounds: Arc::new(std::sync::atomic::AtomicU32::new(legacy_rounds)),
             hub: Arc::default(),
             realtime: Arc::default(),
-            relay: uwulock_notify::relay::Relay::default(),
             metrics: Arc::default(),
             alerts,
             certificate: Arc::default(),

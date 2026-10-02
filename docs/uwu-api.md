@@ -133,8 +133,9 @@ IV 16 bytes, MAC 32 bytes, ciphertext a multiple of 16) and the length.
 ### 1.5 Live-update hooks
 
 "Notify" in this file means: tell the account's devices through **both** channels — Bitwarden's
-SignalR hub and push relay with the named `PushType` (so the official clients sync), and the
-realtime channel of §5 with the named area. The device that made the change is left out, as
+SignalR hub with the named `PushType` (so the official clients sync), and the realtime channel of
+§5 with the named area. Bitwarden's push relay is not used since 0.8: the phone apps' push
+tokens (`PUT /api/devices/identifier/{id}/token`, `…/clear-token`) are answered 200 and dropped. The device that made the change is left out, as
 today (`uwulock_notify::Update`).
 
 ---
@@ -2812,7 +2813,7 @@ app on the UwUAuth side is deleted there.
 - The client secret is sealed (AES-256-GCM) under `secret.key` in the data directory (§13.2);
   a value set on the command line unsealed is taken as it is.
 - Since 0.6.0-beta.2 the other secrets in the database are sealed the same way: the SMTP and Loki
-  passwords and the push relay's installation key in the settings, the tokens of notification
+  passwords in the settings, the tokens of notification
   channels, and the S3 secret key, SFTP password or key and recovery key of the off-site backups.
   A server seals what an older one kept in plain when it starts, and after a restore. It refuses
   to start when sealed values exist but `secret.key` is gone (`UWULOCK_NEW_SECRET_KEY=1` empties
@@ -2988,7 +2989,7 @@ again — and which would say which websites the accounts use — so it is left 
 ### 21.3 Notification channels
 
 - `GET /uwu/v1/admin/notifications` →
-  `{ "object": "notificationChannels", "channels": [channel…], "events": ["backupFailed", "backupStale", "certificateExpiring", "updateAvailable", "manyFailedLogins", "diskLow", "pushRelayFailing", "mailFailing"] }`.
+  `{ "object": "notificationChannels", "channels": [channel…], "events": ["backupFailed", "backupStale", "certificateExpiring", "updateAvailable", "manyFailedLogins", "diskLow", "mailFailing"] }`.
 - A channel: `{ "id", "kind": "mail" | "ntfy" | "gotify" | "matrix", "name", "enabled", "events": [], "config": {} }` with
   `mail` `{}` (all admins), `ntfy` `{ "url": "https://ntfy.example.com", "topic", "tokenSet", "priority": 3 }`,
   `gotify` `{ "url", "tokenSet", "priority": 5 }`,
@@ -3039,10 +3040,10 @@ would shut out the IP making it is 400 `would_lock_out`. Escape hatch:
   ```
 
   `status`: `ok`, `warning`, `error`, `skipped`. Check ids: `certificate` (and each send domain's, as `certificate.<host>`),
-  `clock` (offset from the `Date` of the push relay's and GitHub's answers — `UWULOCK_TIME_SOURCE`
+  `clock` (offset from the `Date` of GitHub's answers — `UWULOCK_TIME_SOURCE`
 names others or `off`, GitHub only while the update check is on; warning over 30 s, error over
 2 min; `skipped` when none answers),
-  `mail` (connect, EHLO, auth; nothing sent), `pushRelay`, `backup` (local and off-site age),
+  `mail` (connect, EHLO, auth; nothing sent), `backup` (local and off-site age),
   `disk`, `proxy.clientIp` (a proxy peer without `X-Forwarded-For`, or `trust_forwarded` off
   behind a private peer; shows the IP it sees), `proxy.publicUrl` (the request's `Host`/`Origin`
   vs the configured public address), `proxy.websocket`, `proxy.uploadLimit`.
@@ -3165,7 +3166,7 @@ addresses, names, hosts of icons, IPs or ids.
 | `uwulock_logins_total` | counter | `grant` (`password`, `refresh_token`, `client_credentials`, `webauthn`, `authorization_code`, `send_access`), `result` (`success`, `failure`, `two_factor`) |
 | `uwulock_sync_duration_seconds` | histogram | `kind` (`bitwarden`, `full`, `delta`) |
 | `uwulock_live_connections` | gauge | `channel` (`signalr`, `anonymous`, `realtime`) |
-| `uwulock_push_relay_errors_total`, `uwulock_mail_errors_total`, `uwulock_mail_sent_total` | counter | – |
+| `uwulock_mail_errors_total`, `uwulock_mail_sent_total` | counter | – |
 | `uwulock_database_bytes` | gauge | – |
 | `uwulock_files_bytes` | gauge | `kind` (`attachments`, `sends`, `file_requests`, `icons`) |
 | `uwulock_accounts`, `uwulock_items` | gauge | – |

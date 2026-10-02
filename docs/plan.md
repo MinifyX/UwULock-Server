@@ -56,7 +56,7 @@ UwUMail und UwUAuth für 0.6 gemeinsam umsetzen, stehen in [uwu-api.md](uwu-api.
 | `uwulock-web`    | Die Dateien von Web-Tresor und Admin-Portal, in die Binary eingebettet. |
 | `uwulock-e2e`    | UwULocks eigener Client (`uwulock-bitwarden`) gegen den echten Server. |
 | `web/`           | Eigener Web-Tresor und Admin-Portal (React, im Look der UwULock-App); `web/wasm` ist ihre Krypto: `uwulock-core` als WebAssembly. |
-| später `uwulock-notify`  | Echtzeit: SignalR-WebSocket für die offiziellen Clients, Bitwardens Push-Relay für die Handy-Apps, ein schlanker Kanal für UwULock. |
+| später `uwulock-notify`  | Echtzeit: SignalR-WebSocket für die offiziellen Clients und ein schlanker Kanal für UwULock (Bitwardens Push-Relay: entfernt in 0.8, siehe Planänderung). |
 | später `uwulock-migrate` | Übernahme eines Vaultwarden direkt aus dessen Datenbank. |
 
 Die Krypto kommt aus dem Client: `uwulock-core` (im Repository des Clients) enthält Bitwardens
@@ -131,8 +131,8 @@ Jede Stufe ist ein Release und für sich nutzbar.
       Stufe 5.
 - [x] Echtzeit: SignalR-Hub (`/notifications/hub`, MessagePack über WebSocket) und der anonyme
       Hub für „Mit Gerät anmelden"; der Web-Tresor hört ebenfalls zu.
-- [x] Push-Relay für die Handy-Apps (Bitwarden-Installation, US/EU), getestet gegen einen
-      lokalen Fake-Relay. Einrichten im Admin-Portal: Stufe 3.
+- [x] ~~Push-Relay für die Handy-Apps (Bitwarden-Installation, US/EU), getestet gegen einen
+      lokalen Fake-Relay. Einrichten im Admin-Portal: Stufe 3.~~ Entfernt in 0.8 (Planänderung).
 - Ab hier kann der eigene Tresor umziehen.
 
 ### Stufe 3 — Web-Tresor und Admin-Portal ausbauen (0.4, Beta)
@@ -143,7 +143,7 @@ abhängt oder erst mit mehr Nutzern wichtig wird:
 - [x] Web-Tresor: Anhänge und Sends (mit Stufe 4); eine Ansicht fürs Handy (unter 760 px eine
       Ebene nach der anderen — Liste, Eintrag, Menü — mit Leiste unten, Dialoge über den ganzen
       Bildschirm); das Admin-Portal ebenso. Der Browsertest läuft zusätzlich mit 390×844.
-- [x] Admin-Portal: Push-Relay einrichten und testen (Schlüssel bleibt auf dem Server), größte
+- [x] Admin-Portal: ~~Push-Relay einrichten und testen~~ (entfernt in 0.8), größte
       Datei, Passwortprüfung an/aus, Speicher pro Nutzer
 - [x] Einladungen über Admins hinaus: „Nutzer dürfen einladen“, mit Kontingent pro Nutzer (offene
       Einladungen zählen mit), nie als Admin; im Tresor unter Einstellungen → Einladen
@@ -550,6 +550,26 @@ Bitwardens „Families".
 - [x] Tests: vitest (Modell, Sync, Ansicht), wasm-Tests, uwulock-e2e (Web-Tresor legt Bereich und
   Einträge an, UwUSSH öffnet sie, Bearbeitung behält fremde Felder, Tombstone).
 - [ ] Von Hand: mit echten UwUSSH-/UwURDP-Daten gegen die Beta; Deep Links mit den App-Builds.
+
+### 0.8 — Planänderung: kein Push-Relay mehr; XposedOrNot ohne 429 (Server 0.8.0-beta.1)
+
+**Planänderung:** Die Kompatibilität mit Bitwardens und Vaultwardens Clients bleibt, aber
+Bitwardens Push-Relay fällt weg. Es brauchte eine Installations-ID und einen Schlüssel von
+bitwarden.com/host, schickte bei jeder Änderung Konto- und Geräte-IDs an Bitwarden und half nur
+Bitwardens Handy-Apps; die synchronisieren jetzt beim Öffnen. Echtzeit bleibt: SignalR-Hub für
+Bitwardens Erweiterung, Desktop-App und den Web-Tresor, `/uwu/v1/realtime` für UwULocks Apps.
+
+- [x] Relay-Code (`uwulock-notify::relay`), Einstellungen (`push`), Admin-Portal-Tab „Push für die
+  Apps" mit Verbindungstest, Diagnose-Prüfung `pushRelay`, Meldung `pushRelayFailing`, Metrik
+  `uwulock_push_relay_errors_total` und Doku entfernt. Push-Tokens der Apps
+  (`/api/devices/identifier/{id}/token`, `…/clear-token`) werden mit 200 angenommen und verworfen.
+- [x] Migration 0023: `push` aus den gespeicherten Einstellungen, Spalten `push_token`/`push_id`
+  der Geräte und `pushRelayFailing` aus den Ereignissen der Benachrichtigungskanäle entfernt.
+- [x] XposedOrNot-Passwörter: eine Warteschlange für den ganzen Server (eine Frage pro Sekunde),
+  429/5xx halten sie für `Retry-After` an (höchstens 120 s) und fragen bis zu viermal neu; zu
+  lange Wartezeit → 429 `busy` mit `Retry-After`, der Web-Tresor fragt später nach. HIBP und
+  XposedOrNot laufen nebeneinander, HIBP-Ergebnisse sofort, Fortschritt pro Quelle; „unvollständig"
+  nur bei echten Ausfällen. Vertrag: `docs/uwu-api.md` §15.2.
 
 ## Checkliste vor einem Release (Browsererweiterung und Apps)
 
