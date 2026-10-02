@@ -17,7 +17,7 @@ import { useServerInfo } from '../lib/branding';
 import { switchedOff } from '../lib/switches';
 import { ADMIN_SHORTCUTS, singleKey } from '../lib/shortcuts';
 import { locate, MOVED, visibleAreas, type TabId } from './areas';
-import { InvitationRules, MailServerTab, PushTab, StorageTab } from './AdminSettings';
+import { InvitationRules, MailServerTab, StorageTab } from './AdminSettings';
 import { Backups } from './Backups';
 import { Branding } from './Branding';
 import { ComfortSettings } from './ComfortSettings';
@@ -97,8 +97,6 @@ function content(tab: TabId, me: string, info: AccountInfo) {
       return <MailServerTab me={me} />;
     case 'user-mails':
       return <UserMailsTab />;
-    case 'push':
-      return <PushTab />;
     case 'alerts':
       return <Notifications />;
     case 'local-backups':

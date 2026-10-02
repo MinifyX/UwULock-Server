@@ -28,6 +28,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0018_review_lows.sql"),
     include_str!("../migrations/sqlite/0019_failed_logins.sql"),
     include_str!("../migrations/sqlite/0022_breach_sources.sql"),
+    include_str!("../migrations/sqlite/0023_drop_push_relay.sql"),
 ];
 
 /// The schema this build writes.
@@ -234,6 +235,43 @@ mod tests {
             count(&conn, "SELECT count(*) FROM reminders") + count(&conn, "SELECT count(*) FROM masked_links"),
             0
         );
+    }
+
+    /// The push relay's settings, the phones' tokens and the relay's event go; the rest stays.
+    #[test]
+    fn the_push_relay_is_dropped() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let step = STEPS.iter().position(|step| step.contains("Bitwarden's push relay is gone")).unwrap();
+        for step in &STEPS[..step] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.pragma_update(None, "user_version", step as i64).unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (id, email, password_hash, user_key, kdf_type, kdf_iterations, security_stamp, language, \
+             created, updated, revision) VALUES ('u', 'nyu@example.com', 'h', 'k', 0, 600000, 's', 'de', 't', 't', 't');
+             INSERT INTO devices (user_id, id, name, type, created, last_seen, push_token, push_id) VALUES \
+                 ('u', 'd', 'Phone', 0, 't', 't', 'fcm-1', 'p-1');
+             INSERT INTO server (key, value) VALUES ('settings',
+                 '{\"hibp\":true,\"push\":{\"installationId\":\"i\",\"installationKey\":\"k\",\"region\":\"eu\"}}');
+             UPDATE notification_channels SET events = '[\"backupFailed\",\"pushRelayFailing\",\"diskLow\"]';",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let settings: String =
+            conn.query_row("SELECT value FROM server WHERE key = 'settings'", [], |row| row.get(0)).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&settings).unwrap(), serde_json::json!({ "hibp": true }));
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('devices')")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(!columns.iter().any(|name| name.starts_with("push")), "{columns:?}");
+        let name: String = conn.query_row("SELECT name FROM devices WHERE id = 'd'", [], |row| row.get(0)).unwrap();
+        assert_eq!(name, "Phone");
+        let events: String = conn.query_row("SELECT events FROM notification_channels", [], |row| row.get(0)).unwrap();
+        assert_eq!(events, r#"["backupFailed","diskLow"]"#);
     }
 
     /// Extras keys from before `privateKeyWrapped`: the old RSA wrap goes; one that still has

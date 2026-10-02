@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import {
   Button,
-  ButtonRow,
   Callout,
   Field,
   FormRow,
@@ -14,14 +13,12 @@ import {
   Toggle,
 } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
-import { testMail, testPush, type Push, type Smtp } from '../lib/admin';
+import { testMail, type Smtp } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
 import { useSwitch } from '../lib/switches';
 import { SettingsTab } from './draft';
 import { Explain, NumberInput } from './fields';
-
-const EMPTY_PUSH: Push = { installationId: '', installationKey: '', region: 'eu' };
 
 const EMPTY_SMTP: Smtp = {
   host: '',
@@ -186,117 +183,6 @@ export function MailServerTab({ me }: { me: string }) {
               <ResultLine result={result} />
             </Section>
           </>
-        );
-      }}
-    </SettingsTab>
-  );
-}
-
-/** *E-Mail → Push für die Apps*: Bitwarden's relay, which wakes the phone apps. */
-export function PushTab() {
-  useLanguage();
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<Result>(null);
-  return (
-    <SettingsTab>
-      {({ draft, current, setDraft, dirty }) => {
-        const push = draft.push ?? EMPTY_PUSH;
-        const setPush = (change: Partial<Push>) =>
-          setDraft({ ...draft, push: { ...push, ...change } });
-        return (
-          <Section
-            heading={t('Push für die Handy-Apps')}
-            lead={
-              <>
-                {t(
-                  'Weckt die Bitwarden-Apps, wenn sich etwas ändert. Dafür braucht es eine Installations-ID und einen Schlüssel von bitwarden.com/host – kostenlos, und nur mit der Region, in der sie gemacht wurden. Ohne Push synchronisieren die Apps beim Öffnen.',
-                )}{' '}
-                <a href="https://bitwarden.com/host/" target="_blank" rel="noreferrer">
-                  bitwarden.com/host
-                </a>
-              </>
-            }
-          >
-            <SettingRow
-              label={t('Push über Bitwarden')}
-              description={t(
-                'Die Handy-Apps erfahren sofort von Änderungen, nicht erst beim Öffnen.',
-              )}
-            >
-              <Toggle
-                label={t('Push über Bitwarden')}
-                checked={draft.push !== null}
-                onChange={(on) =>
-                  setDraft({ ...draft, push: on ? (current.push ?? EMPTY_PUSH) : null })
-                }
-              />
-            </SettingRow>
-            {draft.push && (
-              <>
-                <SettingRow
-                  label={t('Region')}
-                  description={t('Die, in der ID und Schlüssel gemacht wurden.')}
-                >
-                  <Segmented
-                    label={t('Region')}
-                    value={push.region}
-                    onChange={(region) => setPush({ region })}
-                    options={[
-                      { value: 'eu', label: 'EU' },
-                      { value: 'us', label: 'US' },
-                    ]}
-                  />
-                </SettingRow>
-                <FormRow min="wide">
-                  <TextField
-                    label={t('Installations-ID')}
-                    value={push.installationId}
-                    onChange={(installationId) => setPush({ installationId })}
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <Field
-                    label={t('Installations-Schlüssel')}
-                    hint={
-                      push.installationKeySet && !push.installationKey
-                        ? t('Ein Schlüssel ist gespeichert. Leer lassen behält ihn.')
-                        : undefined
-                    }
-                  >
-                    <PasswordInput
-                      value={push.installationKey ?? ''}
-                      onChange={(installationKey) => setPush({ installationKey })}
-                      autoComplete="new-password"
-                    />
-                  </Field>
-                </FormRow>
-                <ButtonRow>
-                  <Button
-                    disabled={busy || dirty || !current.push}
-                    title={dirty ? t('Erst speichern') : undefined}
-                    onClick={async () => {
-                      setBusy(true);
-                      setResult(null);
-                      try {
-                        await testPush();
-                        setResult({
-                          tone: 'info',
-                          text: t('Der Relay nimmt ID und Schlüssel an ✧'),
-                        });
-                      } catch (e) {
-                        setResult({ tone: 'error', text: errorText(e) });
-                      } finally {
-                        setBusy(false);
-                      }
-                    }}
-                  >
-                    {t('Verbindung testen')}
-                  </Button>
-                </ButtonRow>
-                <ResultLine result={result} />
-              </>
-            )}
-          </Section>
         );
       }}
     </SettingsTab>

@@ -312,9 +312,6 @@ pub async fn render(state: &AppState) -> Result<String, uwulock_store::StoreErro
     out.sample("uwulock_live_connections", &[("channel", "anonymous")], anonymous);
     out.sample("uwulock_live_connections", &[("channel", "realtime")], state.realtime.connections());
 
-    let relay = state.relay.health();
-    out.head("uwulock_push_relay_errors_total", "counter", "Requests the push relay did not take.");
-    out.sample("uwulock_push_relay_errors_total", &[], relay.errors);
     let mail = state.mailer.health();
     out.head("uwulock_mail_errors_total", "counter", "Mails the mail server did not take.");
     out.sample("uwulock_mail_errors_total", &[], mail.errors);

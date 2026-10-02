@@ -43,13 +43,12 @@ The server looks at itself every minute and tells its admins when
 | `updateAvailable` | there is a newer release (only with the update check on) |
 | `manyFailedLogins` | 50 or more failed logins across all accounts within an hour |
 | `diskLow` | less than 5 % or 1 GB free on the data volume |
-| `pushRelayFailing` | Bitwarden's push relay did not take the last request within the hour |
 | `mailFailing` | the mail server did not take the last mail within the hour |
 
 An event goes to a channel when it starts, at most once an hour however often it comes and goes,
 and once more when it is over. The admin portal's overview lists what is going on right now.
 Messages name no account, only counts, dates and sizes. What another server said (the mail
-server's refusal, the push relay's or the backup storage's error) stays in the portal and the log;
+server's refusal or the backup storage's error) stays in the portal and the log;
 channels get a fixed text with the status code, like "Mails do not go out (SMTP 550)" or "The
 off-site backup did not work (the backup server answered 503)".
 

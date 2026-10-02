@@ -122,8 +122,6 @@
   "Proxy: öffentliche Adresse": "Proxy: public address",
   "Prüfen der Web-Tresor und die Apps beim Registrieren und Ändern; der Server sieht das Passwort nie.": "Checked by the web vault and the apps at registration and change; the server never sees the password.",
   "Prüft die Angaben hier, auch ungespeichert.": "Checks what is filled in here, even unsaved.",
-  "Push-Relay": "Push relay",
-  "Push-Relay geht nicht": "Push relay failing",
   "Raum-ID": "Room ID",
   "Schlüsselableitung geändert": "Key derivation changed",
   "Schlüsselableitung schwächer als verlangt": "Key derivation weaker than required",

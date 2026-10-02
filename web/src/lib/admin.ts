@@ -14,7 +14,6 @@ export type AlertKind =
   | 'updateAvailable'
   | 'manyFailedLogins'
   | 'diskLow'
-  | 'pushRelayFailing'
   | 'mailFailing';
 
 /** The names of the alerts, for the overview and the channels' check boxes. */
@@ -25,7 +24,6 @@ export const ALERT_TITLES: Record<string, string> = {
   updateAvailable: N_('Update verfügbar'),
   manyFailedLogins: N_('Viele fehlgeschlagene Anmeldungen'),
   diskLow: N_('Wenig Speicherplatz'),
-  pushRelayFailing: N_('Push-Relay geht nicht'),
   mailFailing: N_('Mailversand geht nicht'),
 };
 
@@ -134,14 +132,6 @@ export type Smtp = {
   fromName: string | null;
 };
 
-export type Push = {
-  installationId: string;
-  /** Only sent, never shown: `installationKeySet` says whether there is one. */
-  installationKey?: string;
-  installationKeySet?: boolean;
-  region: 'us' | 'eu';
-};
-
 /** Server-wide rules for every account (§20). */
 export type Policies = {
   requireTwoFactor: {
@@ -197,7 +187,6 @@ export type Settings = {
     emailCheck: boolean;
     changePassword: boolean;
   };
-  push: Push | null;
   usersMayInvite: boolean;
   invitationsPerUser: number;
   mailEnabled?: boolean;
@@ -523,7 +512,6 @@ export const refreshIconLibrary = () => request(`${base}/icons/library/refresh`,
 export const saveSettings = (next: Settings) =>
   request<Settings>(`${base}/settings`, { method: 'PUT', body: next });
 export const testMail = (to: string) => request(`${base}/settings/test-mail`, { body: { to } });
-export const testPush = () => request(`${base}/settings/test-push`, { body: {} });
 export const testLoki = (loki: Loki) => request(`${base}/settings/test-loki`, { body: loki });
 export const stats = (days: number) => request<Day[]>(`${base}/stats?days=${days}`);
 export const events = (kind: string | null, before: number | null) => {

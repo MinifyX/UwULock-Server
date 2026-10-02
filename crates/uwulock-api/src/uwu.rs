@@ -289,7 +289,6 @@ async fn forget_device(
     session: Session,
     Path(id): Path<String>,
 ) -> ApiResult<StatusCode> {
-    crate::notify::forget_phone(&state, &session.user.id, &id).await;
     if !state.store.delete_device(&session.user.id, &id).await? {
         return Err(ApiError::not_found("No such device."));
     }

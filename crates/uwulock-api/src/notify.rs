@@ -1,5 +1,6 @@
-//! Telling the clients what changed: every connection of the account on the hub at once, and
-//! its phones through the push relay when an admin set that up.
+//! Telling the clients what changed: every connection of the account on Bitwarden's hub and on
+//! UwULock's own realtime channel at once. Bitwarden's push relay is not used: its phone apps
+//! sync when they are opened.
 //!
 //! Called where things change, after they changed. It never fails a request: a client that
 //! misses a message syncs on its next look anyway.
@@ -10,7 +11,7 @@ use uwulock_notify::realtime::{Event, Live};
 use uwulock_notify::{Kind, Subject, Update};
 use uwulock_store::Cipher;
 
-/// Hand `update` to the hub, to the realtime channel, and to the relay in the background.
+/// Hand `update` to the hub and to the realtime channel.
 pub(crate) fn publish(state: &AppState, update: Update) {
     if let Some(live) = Live::from_update(&update) {
         state.realtime.publish(&update.user_id, Event::new(live, update.acting_device.clone()));
@@ -18,25 +19,9 @@ pub(crate) fn publish(state: &AppState, update: Update) {
     publish_bitwarden(state, update);
 }
 
-/// Only Bitwarden's side: the SignalR hub and the push relay.
+/// Only Bitwarden's side: the SignalR hub.
 fn publish_bitwarden(state: &AppState, update: Update) {
     state.hub.publish(&update);
-    let Some(settings) = state.settings().push.clone() else { return };
-    let state = state.clone();
-    tokio::spawn(async move {
-        let phones = state.store.push_devices(&update.user_id).await.unwrap_or_default();
-        if phones.is_empty() {
-            return;
-        }
-        let acting = update
-            .acting_device
-            .as_ref()
-            .and_then(|acting| phones.iter().find(|(device, _)| device == acting))
-            .map(|(_, push_id)| push_id.clone());
-        if let Err(error) = state.relay.send(&settings, &update, acting.as_deref()).await {
-            tracing::warn!(%error, "the push relay did not take an update");
-        }
-    });
 }
 
 fn acting(session: Option<&Session>) -> Option<String> {
@@ -146,37 +131,4 @@ pub(crate) fn auth_response(state: &AppState, session: &Session, id: &str) {
     };
     state.hub.publish_anonymous(id, &update);
     publish(state, update);
-}
-
-/// Register a phone's push token with the relay, when an admin set it up; the relay's id for the
-/// device is kept. Failures go to the log: the phone syncs when it is opened anyway.
-pub(crate) async fn register_phone(state: &AppState, session: &Session, token: &str) {
-    let Some(settings) = state.settings().push else { return };
-    let device = match state.store.device(&session.user.id, &session.device).await {
-        Ok(Some(device)) => device,
-        _ => return,
-    };
-    let push_id = match state.store.push_id(&session.user.id, &session.device).await {
-        Ok(Some(id)) => id,
-        _ => uuid::Uuid::new_v4().to_string(),
-    };
-    match state.relay.register(&settings, &push_id, token, &session.user.id, device.kind, &device.id).await {
-        Ok(()) => {
-            if let Err(error) = state.store.set_push_id(&session.user.id, &session.device, Some(push_id)).await {
-                tracing::warn!(%error, "could not keep the push relay's id of a device");
-            }
-        }
-        Err(error) => tracing::warn!(%error, "the push relay did not register a phone"),
-    }
-}
-
-/// Take a device off the relay, before it is forgotten or logged out for good.
-pub(crate) async fn forget_phone(state: &AppState, user_id: &str, device_id: &str) {
-    let Ok(Some(push_id)) = state.store.push_id(user_id, device_id).await else { return };
-    if let Some(settings) = state.settings().push
-        && let Err(error) = state.relay.unregister(&settings, &push_id).await
-    {
-        tracing::warn!(%error, "the push relay did not take a phone off");
-    }
-    let _ = state.store.set_push_id(user_id, device_id, None).await;
 }

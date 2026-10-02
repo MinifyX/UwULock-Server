@@ -5,6 +5,24 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 
 ## Unreleased
 
+- **Bitwarden's push relay is gone (plan change).** The server no longer wakes Bitwarden's phone
+  apps through Bitwarden's relay: it needed an installation id and key from bitwarden.com/host and
+  sent account and device ids to Bitwarden with every change. Bitwarden's apps for iOS and Android
+  sync when they are opened; everything else keeps its live updates (Bitwarden's notification hub,
+  UwULock's own `/uwu/v1/realtime`). Removed: the admin portal's tab *Push for the apps* and its
+  connection test, the `push` settings, the diagnosis check `pushRelay`, the admin notification
+  `pushRelayFailing` and the metric `uwulock_push_relay_errors_total`. The apps' push tokens are
+  answered 200 and dropped. Schema step 0023 removes the stored relay settings, the devices' push
+  tokens and relay ids, and `pushRelayFailing` from the channels' events.
+- **Password check: no more "incomplete" because XposedOrNot said 429.** The web vault asked
+  XposedOrNot (through the server) four prefixes at a time, the server sent each on at once, and
+  XposedOrNot answered many of them with 429. Now all accounts' questions wait in one queue on the
+  server, one a second; a 429 pauses the queue for as long as XposedOrNot's `Retry-After` says (at
+  most two minutes) and the prefix is asked again, up to four times. A queue that would keep a
+  request longer than a minute answers 429 `busy` and the web vault asks again later. The web
+  vault asks Have I Been Pwned and XposedOrNot side by side, shows HIBP's results as soon as they
+  are in, and shows the progress per source ("XposedOrNot: 120 von 363"); a check that takes a few
+  minutes is fine. The note that a source did not answer only comes for real failures.
 - CI: the ACME tests against Pebble no longer run out of time now and then. Pebble turns away 5%
   of good nonces by default, rustls-acme fails the whole order on a badNonce and backs off 1, 2,
   4 … 64 seconds, and a few of those in a row took the send-domain test past its two minutes.

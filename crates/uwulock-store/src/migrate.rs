@@ -48,9 +48,6 @@ pub struct MovedDevice {
     pub last_seen: String,
     pub refresh_hash: Option<Vec<u8>>,
     pub remember_hash: Option<Vec<u8>>,
-    pub push_token: Option<String>,
-    /// The push relay's id for the phone, when the old server registered it there.
-    pub push_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,8 +151,8 @@ impl Store {
                 for device in &migration.devices {
                     tx.execute(
                         "INSERT INTO devices (user_id, id, name, type, created, last_seen, refresh_hash, refresh_expires, \
-                         remember_hash, remember_expires, push_token, push_id) \
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                         remember_hash, remember_expires) \
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                         params![
                             device.user_id,
                             device.id,
@@ -167,8 +164,6 @@ impl Store {
                             device.refresh_hash.as_ref().map(|_| clock::in_seconds(30 * 86_400)),
                             device.remember_hash,
                             device.remember_hash.as_ref().map(|_| clock::in_seconds(30 * 86_400)),
-                            device.push_token,
-                            device.push_id,
                         ],
                     )?;
                 }

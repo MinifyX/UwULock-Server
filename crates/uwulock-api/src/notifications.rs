@@ -187,8 +187,7 @@ async fn serve(mut socket: WebSocket, mut listening: Listening, recheck: Option<
 
 #[cfg(test)]
 mod tests {
-    use crate::Settings;
-    use crate::test_support::{TestServer, fake_relay, json};
+    use crate::test_support::{TestServer, json};
     use axum::http::StatusCode;
     use futures_util::{SinkExt, StreamExt};
     use serde_json::json;
@@ -315,36 +314,20 @@ mod tests {
         {}
     }
 
+    /// Bitwarden's phone apps still register their push token: it is taken and dropped, since
+    /// there is no push relay (docs/plan.md, Planänderung 0.8).
     #[tokio::test]
-    async fn phones_are_woken_through_the_relay() {
-        let (url, mut told) = fake_relay().await;
-        let settings = Settings {
-            push: Some(uwulock_notify::relay::RelaySettings {
-                installation_id: "inst".into(),
-                installation_key: "key".into(),
-                region: url,
-            }),
-            ..Settings::default()
-        };
-        let server = TestServer::with_settings(settings).await;
-        let nyu = server.account("nyu@example.com").await;
+    async fn push_tokens_are_taken_and_dropped() {
+        let server = TestServer::new().await;
+        server.account("nyu@example.com").await;
         let phone = server.login("nyu@example.com", "a3c1e9d4-7b2f-4c5e-8d6a-1f0e2b3c4d5e").await;
         let path = format!("/api/devices/identifier/{}/token", phone.device);
         let response = server.call("PUT", &path, Some(&phone.token), json!({"pushToken": "fcm-1"})).await;
-        assert!(response.status().is_success());
-        let mut next = async || tokio::time::timeout(Duration::from_secs(5), told.recv()).await.unwrap().unwrap();
-        let (path, registered) = next().await;
-        assert_eq!(path, "/push/register");
-        assert_eq!(registered["pushToken"], "fcm-1");
-        assert_eq!(registered["userId"], nyu.id.as_str());
-
-        // A change on the laptop wakes the phone.
-        let folder = server.call("POST", "/api/folders", Some(&nyu.token), json!({"name": "2.f|f|f"})).await;
-        let folder = json(folder).await["id"].as_str().unwrap().to_string();
-        let (path, sent) = next().await;
-        assert_eq!(path, "/push/send");
-        assert_eq!(sent["userId"], nyu.id.as_str());
-        assert_eq!(sent["payload"]["id"], folder.as_str());
-        assert_eq!(sent["identifier"], nyu.device.as_str());
+        assert_eq!(response.status(), StatusCode::OK);
+        let path = format!("/api/devices/identifier/{}/clear-token", phone.device);
+        let response = server.call("PUT", &path, Some(&phone.token), json!({})).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = server.call("PUT", &path, None, json!({})).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 }

@@ -392,21 +392,13 @@ sudo docker compose up -d
 
 The backups on another system ([backups.md](backups.md)) carry all of this by themselves.
 
-## Push notifications for the phone apps
+## Live updates
 
-Bitwarden's apps for iOS and Android learn about changes through Bitwarden's push relay; without
-it they sync when they are opened. The browser extension, the desktop apps and the web vault do
-not need it: they keep a WebSocket to the server (`/notifications/hub`, which a proxy has to pass
-on, see above).
-
-1. Get an installation id and key at <https://bitwarden.com/host/> — free, and for the region
-   you pick there (US or EU).
-2. Admin portal → *Mail & notifications → Push for the apps*: switch it on, choose the region, enter
-   id and key, save, and *Test the connection*.
-3. The apps register when they next log in or start.
-
-The server then sends the relay the ids of the changed item, folder or Send and of the account —
-never anything of a vault's content.
+The browser extension, the desktop apps and the web vault keep a WebSocket to the server
+(`/notifications/hub`, UwULock's own apps `/uwu/v1/realtime`; a proxy has to pass both on, see
+above) and learn about changes at once. Bitwarden's apps for iOS and Android sync when they are
+opened: since 0.8 the server no longer uses Bitwarden's push relay (no installation id or key to
+set up, and nothing about the accounts goes to Bitwarden).
 
 ## Diagnosis
 
@@ -415,11 +407,11 @@ by itself after every update (the overview says when it found something):
 
 - the **certificate** clients see — the server's own, or the proxy's in front of it — and when it
   runs out;
-- the **clock**, against the `Date` of GitHub's answers (which the update check asks anyway) and
-  of Bitwarden's push relay — codes of two-step login fail when it is off by more than half a
-  minute. `UWULOCK_TIME_SOURCE` names other http(s) addresses to compare with, or `off`;
-- the **mail server** (connect, TLS, login — nothing is sent), the **push relay**, the age of the
-  newest **backup**, the free **disk**;
+- the **clock**, against the `Date` of GitHub's answers (which the update check asks anyway) —
+  codes of two-step login fail when it is off by more than half a minute. `UWULOCK_TIME_SOURCE`
+  names other http(s) addresses to compare with, or `off`;
+- the **mail server** (connect, TLS, login — nothing is sent), the age of the newest **backup**,
+  the free **disk**;
 - the **reverse proxy**: WebSockets, the upload limit (16 MB first; *Try the full size* sends as
   much as the largest allowed file), the client's address, the public address. These run from
   your browser against your own server; the browser talks to nobody else.

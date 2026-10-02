@@ -2,7 +2,7 @@
 
 For people who run a monitoring system anyway, the server answers `GET /metrics` in the
 [Prometheus text format](https://prometheus.io/docs/instrumenting/exposition_formats/): requests
-and how long they took, logins, syncs, live connections, mail and push relay errors, how large
+and how long they took, logins, syncs, live connections, mail errors, how large
 the database and the files are, when the last backup was written and when the certificate runs
 out. No label ever names a person, an address, a host or an id.
 
@@ -73,7 +73,6 @@ few minutes is plenty. Answers are never cached.
 | `uwulock_logins_total` | counter | `grant`: `password`, `refresh_token`, `client_credentials`, `webauthn`, `send_access`; `result`: `success`, `failure`, `two_factor` | Logins. `two_factor` is the answer that asks for the second step |
 | `uwulock_sync_duration_seconds` | histogram | `kind`: `bitwarden`, `full`, `delta` | How long a sync took: of the official clients (`/api/sync`), and of UwULock's own clients, whole or as a delta ([sync.md](sync.md)) |
 | `uwulock_live_connections` | gauge | `channel`: `signalr`, `anonymous`, `realtime` | Open live-update connections: of logged-in devices, of devices that wait for a "log in with a device" answer, and on UwULock's realtime channel |
-| `uwulock_push_relay_errors_total` | counter | | Requests Bitwarden's push relay did not take |
 | `uwulock_mail_sent_total`, `uwulock_mail_errors_total` | counter | | Mails that went out, and those the mail server did not take |
 | `uwulock_database_bytes` | gauge | | The database, with its write-ahead log |
 | `uwulock_files_bytes` | gauge | `kind`: `attachments`, `sends`, `file_requests` | Stored files |

@@ -5,7 +5,9 @@
 //! - **XposedOrNot's passwords** (`/uwu/v1/xon/{prefix}`): the browser hashes a password with
 //!   Keccak-512 and sends the first ten hex digits; this server asks XposedOrNot and hands back
 //!   only how often it was seen. Like the HIBP proxy (`hibp.rs`): kept a day per account, never
-//!   written anywhere, never next to an account.
+//!   written anywhere, never next to an account. XposedOrNot allows only a few such questions a
+//!   second for a whole server, so they wait in one queue for the server (one a second), and a
+//!   429 is waited out as long as XposedOrNot asks (`Retry-After`) and asked again, a few times.
 //! - **Breached sites** (`/uwu/v1/breaches/sites`): the public lists of Have I Been Pwned and
 //!   XposedOrNot, fetched by the server the first time somebody asks and then once a day,
 //!   merged by domain. The clients compare them with their logins themselves: the server never
@@ -102,6 +104,8 @@ pub struct Breaches {
     xon: crate::hibp::Cache,
     sites: SiteList,
     budget: Budget,
+    /// The queue for XposedOrNot's passwords.
+    xon_queue: XonQueue,
     /// Change-password pages: per account and host, whether there is one.
     pages: Mutex<HashMap<String, (Option<String>, Instant)>>,
     /// The salt of the addresses' hashes, opened.
@@ -121,15 +125,35 @@ impl Breaches {
             xon: crate::hibp::Cache::default(),
             sites: SiteList::default(),
             budget: Budget { limits, state: tokio::sync::Mutex::new(BudgetState::default()) },
+            xon_queue: XonQueue::new(XonLimits::default()),
             pages: Mutex::default(),
             salt: tokio::sync::OnceCell::new(),
         }
+    }
+
+    /// With other limits for the queue of XposedOrNot's passwords: tests wait milliseconds.
+    pub fn with_xon_limits(mut self, limits: XonLimits) -> Self {
+        self.xon_queue = XonQueue::new(limits);
+        self
     }
 }
 
 /// Fetch `url` through the icons' checked client: never an address of the local network, at
 /// most `limit` bytes, `seconds` in all. The status and the bytes.
 async fn fetch(state: &AppState, url: &str, limit: usize, seconds: u64) -> Result<(u16, Vec<u8>), String> {
+    fetch_answer(state, url, limit, seconds).await.map(|answer| (answer.status, answer.bytes))
+}
+
+/// What `fetch_answer` got back.
+struct Answer {
+    status: u16,
+    /// `Retry-After` in seconds, when there was one.
+    retry_after: Option<u64>,
+    bytes: Vec<u8>,
+}
+
+/// Like `fetch`, with the `Retry-After` of the answer.
+async fn fetch_answer(state: &AppState, url: &str, limit: usize, seconds: u64) -> Result<Answer, String> {
     let (client, upstream) = state.icons.fetcher().ok_or("no HTTP client")?;
     let url = url::Url::parse(url).map_err(|error| error.to_string())?;
     if !upstream.url_ok(&url) {
@@ -144,6 +168,11 @@ async fn fetch(state: &AppState, url: &str, limit: usize, seconds: u64) -> Resul
             .await
             .map_err(quiet)?;
         let status = response.status().as_u16();
+        let retry_after = response
+            .headers()
+            .get(header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse().ok());
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(quiet)? {
             if bytes.len() + chunk.len() > limit {
@@ -151,7 +180,7 @@ async fn fetch(state: &AppState, url: &str, limit: usize, seconds: u64) -> Resul
             }
             bytes.extend_from_slice(&chunk);
         }
-        Ok((status, bytes))
+        Ok(Answer { status, retry_after, bytes })
     };
     tokio::time::timeout(Duration::from_secs(seconds), work).await.map_err(|_| "it took too long".to_string())?
 }
@@ -184,14 +213,21 @@ async fn xon_password(
                 return Err(ApiError::too_many("Too many checks. Wait a minute and try again."));
             }
             let base = state.icons.fetcher().map(|(_, upstream)| upstream.xon_passwords.clone()).unwrap_or_default();
-            let count: Arc<str> = ask_xon_password(&state, &base, &prefix)
-                .await
-                .map_err(|error| {
+            let count: Arc<str> = match state.breaches.xon_queue.ask(&state, &base, &prefix).await {
+                Ok(count) => count.to_string().into(),
+                Err(XonError::Busy(wait)) => {
+                    // The queue is long: the client asks again later, nothing failed.
+                    let seconds = wait.as_secs().max(1);
+                    let mut response =
+                        ApiError::too_many("XposedOrNot is busy. Ask again in a moment.").code("busy").into_response();
+                    response.headers_mut().insert(header::RETRY_AFTER, HeaderValue::from(seconds));
+                    return Ok(response);
+                }
+                Err(XonError::Failed(error)) => {
                     tracing::warn!(%error, "XposedOrNot did not answer about a password");
-                    ApiError::upstream("XposedOrNot did not answer. Try again later.")
-                })?
-                .to_string()
-                .into();
+                    return Err(ApiError::upstream("XposedOrNot did not answer. Try again later."));
+                }
+            };
             state.breaches.xon.put(key, count.clone());
             count
         }
@@ -200,10 +236,106 @@ async fn xon_password(
     Ok(Json(json!({ "object": "xonPassword", "count": count })).into_response())
 }
 
-/// How often XposedOrNot saw passwords whose hash starts with `prefix`: 0 when never.
-async fn ask_xon_password(state: &AppState, base: &str, prefix: &str) -> Result<u64, String> {
-    let (status, bytes) = fetch(state, &format!("{}/{prefix}", base.trim_end_matches('/')), ANSWER_BYTES, 10).await?;
-    xon_count(status, &bytes)
+/// How XposedOrNot's passwords are asked: one question at a time for the whole server.
+#[derive(Debug, Clone, Copy)]
+pub struct XonLimits {
+    /// Between two questions at least.
+    pub spacing: Duration,
+    /// How often one prefix is asked again after a 429 or a 5xx.
+    pub retries: u32,
+    /// The longest pause after a 429, whatever `Retry-After` says.
+    pub longest_pause: Duration,
+    /// How long one request may wait in the queue before its client is told to come back
+    /// (429 `busy`).
+    pub longest_wait: Duration,
+}
+
+impl Default for XonLimits {
+    fn default() -> Self {
+        // XposedOrNot asks for one question a second; checks of a few hundred passwords answer
+        // within minutes then, never "too many".
+        XonLimits {
+            spacing: Duration::from_secs(1),
+            retries: 4,
+            longest_pause: Duration::from_secs(120),
+            longest_wait: Duration::from_secs(60),
+        }
+    }
+}
+
+impl XonLimits {
+    /// The pause before asking again after the `attempt`-th refusal (0 = the first): what
+    /// `Retry-After` says, else twice as long each time; at least the spacing, at most
+    /// `longest_pause`.
+    fn pause(&self, retry_after: Option<u64>, attempt: u32) -> Duration {
+        let pause = match retry_after {
+            Some(seconds) => Duration::from_secs(seconds),
+            None => self.spacing.max(Duration::from_secs(1)).saturating_mul(2u32.saturating_pow(attempt + 1)),
+        };
+        pause.max(self.spacing).min(self.longest_pause)
+    }
+}
+
+/// Why a password's prefix got no count.
+#[derive(Debug, PartialEq, Eq)]
+enum XonError {
+    /// The queue is too long right now: ask again after this.
+    Busy(Duration),
+    /// XposedOrNot did not answer, or kept refusing.
+    Failed(String),
+}
+
+struct XonQueue {
+    limits: XonLimits,
+    /// When the next question may go out. Held while a question is asked (and waited for), so
+    /// the requests take turns in the order they came (tokio's mutex is fair).
+    next: tokio::sync::Mutex<Instant>,
+}
+
+impl XonQueue {
+    fn new(limits: XonLimits) -> Self {
+        XonQueue { limits, next: tokio::sync::Mutex::new(Instant::now()) }
+    }
+
+    /// How often XposedOrNot saw passwords whose hash starts with `prefix`: 0 when never.
+    async fn ask(&self, state: &AppState, base: &str, prefix: &str) -> Result<u64, XonError> {
+        let limits = &self.limits;
+        let started = Instant::now();
+        let mut next = match tokio::time::timeout(limits.longest_wait, self.next.lock()).await {
+            Ok(next) => next,
+            Err(_) => return Err(XonError::Busy(limits.spacing.max(Duration::from_secs(1)))),
+        };
+        let url = format!("{}/{prefix}", base.trim_end_matches('/'));
+        let mut attempt = 0;
+        loop {
+            let now = Instant::now();
+            if *next > now {
+                if (*next - started) > limits.longest_wait {
+                    return Err(XonError::Busy(*next - now));
+                }
+                tokio::time::sleep_until((*next).into()).await;
+            }
+            let answer = fetch_answer(state, &url, ANSWER_BYTES, 10).await;
+            let now = Instant::now();
+            *next = now + limits.spacing;
+            let answer = answer.map_err(XonError::Failed)?;
+            let again = answer.status == 429 || (500..600).contains(&answer.status);
+            if !again {
+                return xon_count(answer.status, &answer.bytes).map_err(XonError::Failed);
+            }
+            if attempt >= limits.retries {
+                return Err(XonError::Failed(format!("XposedOrNot answered {} {} times", answer.status, attempt + 1)));
+            }
+            let pause = limits.pause(answer.retry_after, attempt);
+            tracing::info!(
+                status = answer.status,
+                pause = pause.as_secs(),
+                "XposedOrNot asks to wait; the queue waits"
+            );
+            *next = now + pause;
+            attempt += 1;
+        }
+    }
 }
 
 /// XposedOrNot's answer about a password: `{"SearchPassAnon":{"count":"12", "char": …}}`, or 404

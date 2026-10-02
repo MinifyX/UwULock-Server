@@ -2,7 +2,7 @@
 //! server well set up? On demand, and by itself after every start with a new version.
 //!
 //! The server checks what it can see: the certificate clients get, its clock, the mail server,
-//! the push relay, the backups, the disk, and what the admin's own request says about the proxy
+//! the backups, the disk, and what the admin's own request says about the proxy
 //! in front. What only a browser can see — whether WebSockets get through the proxy, and whether
 //! the proxy takes an upload as large as the largest allowed file — the portal tries from the
 //! admin's browser against this server and hands in. Nothing here asks a third party from the
@@ -227,10 +227,7 @@ fn http_date(value: &str) -> Option<i64> {
 }
 
 async fn clock_check(state: &AppState) -> Check {
-    let mut sources = state.config.time_sources.clone();
-    if let Some(push) = state.settings().push {
-        sources.push(push.endpoints().0);
-    }
+    let sources = state.config.time_sources.clone();
     let fix = |check: Check| {
         check.fix(
             text(
@@ -306,30 +303,6 @@ async fn mail(state: &AppState) -> Check {
                 None,
             )
         }
-    }
-}
-
-async fn push_relay(state: &AppState) -> Check {
-    let Some(push) = state.settings().push else {
-        return check(
-            "pushRelay",
-            "skipped",
-            text(
-                "Kein Push-Relay eingerichtet: Die Handy-Apps synchronisieren beim Öffnen.",
-                "No push relay set up: the phone apps sync when opened.",
-            ),
-        );
-    };
-    match state.relay.check(&push).await {
-        Ok(()) => check("pushRelay", "ok", text("Das Relay nimmt Installations-ID und Schlüssel an", "The relay takes the installation id and key")),
-        Err(error) => check("pushRelay", "error", text(format!("Das Relay: {error}"), format!("The relay: {error}"))).fix(
-            text(
-                "Installations-ID, Schlüssel und Region von bitwarden.com/host unter Einstellungen → Push-Relay prüfen.",
-                "Check the installation id, key and region from bitwarden.com/host under Settings → Push relay.",
-            ),
-            None,
-            None,
-        ),
     }
 }
 
@@ -635,11 +608,10 @@ async fn within<T>(check: impl std::future::Future<Output = T>) -> Option<T> {
 
 /// Everything the server checks itself; the proxy checks from `parts`, the admin's request.
 async fn run(state: &AppState, parts: Option<&Parts>) -> Stored {
-    let (certificate, clock, mail, relay, backup, domains) = tokio::join!(
+    let (certificate, clock, mail, backup, domains) = tokio::join!(
         within(certificate(state)),
         within(clock_check(state)),
         within(mail(state)),
-        within(push_relay(state)),
         within(backup(state)),
         within(send_domains(state)),
     );
@@ -649,7 +621,6 @@ async fn run(state: &AppState, parts: Option<&Parts>) -> Stored {
         certificate.unwrap_or_else(|| late("certificate")),
         clock.unwrap_or_else(|| late("clock")),
         mail.unwrap_or_else(|| late("mail")),
-        relay.unwrap_or_else(|| late("pushRelay")),
         backup.unwrap_or_else(|| late("backup")),
         disk(state),
     ];
@@ -991,7 +962,7 @@ mod tests {
         };
         assert_eq!(find(&ran, "certificate")["status"], "skipped", "no probe in tests");
         assert_eq!(find(&ran, "mail")["status"], "ok", "the test mailer takes everything");
-        assert_eq!(find(&ran, "pushRelay")["status"], "skipped");
+        assert!(ran["checks"].as_array().unwrap().iter().all(|check| check["id"] != "pushRelay"));
         assert_eq!(find(&ran, "backup")["status"], "warning");
         let public = find(&ran, "proxy.publicUrl");
         assert_eq!(public["status"], "warning");

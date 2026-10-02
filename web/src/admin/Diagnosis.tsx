@@ -21,7 +21,6 @@ const TITLES: Record<string, string> = {
   certificate: N_('Zertifikat'),
   clock: N_('Uhrzeit'),
   mail: N_('Mailserver'),
-  pushRelay: N_('Push-Relay'),
   backup: N_('Backups'),
   disk: N_('Speicherplatz'),
   'proxy.clientIp': N_('Proxy: Client-IP'),
@@ -47,7 +46,7 @@ const STATUS: Record<CheckStatus, { label: string; icon: IconName; tone: Tone }>
 };
 
 /**
- * Whether the server is set up well: certificate, clock, mail, push relay, backups, disk, and
+ * Whether the server is set up well: certificate, clock, mail, backups, disk, and
  * the proxy in front — the last two of those only a browser can see, so this page tries them.
  */
 export function Diagnosis() {
@@ -95,7 +94,7 @@ export function Diagnosis() {
       <Section
         heading={t('Ist alles richtig eingerichtet?')}
         lead={t(
-          'Prüft Zertifikat, Uhrzeit, Mail, Push-Relay, Backups, Speicherplatz und den Proxy davor. WebSockets und große Uploads prüft dieser Browser gegen den eigenen Server. Nach jedem Update läuft die Diagnose von selbst; das Ergebnis steht dann hier.',
+          'Prüft Zertifikat, Uhrzeit, Mail, Backups, Speicherplatz und den Proxy davor. WebSockets und große Uploads prüft dieser Browser gegen den eigenen Server. Nach jedem Update läuft die Diagnose von selbst; das Ergebnis steht dann hier.',
         )}
       >
         <ButtonRow>

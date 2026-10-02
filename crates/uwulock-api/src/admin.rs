@@ -29,7 +29,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/admin/invitations/{email}", delete(delete_invitation))
         .route("/uwu/v1/admin/settings", get(get_settings).put(put_settings))
         .route("/uwu/v1/admin/settings/test-mail", post(test_mail))
-        .route("/uwu/v1/admin/settings/test-push", post(test_push))
         .route("/uwu/v1/admin/settings/test-loki", post(test_loki))
         .route("/uwu/v1/admin/stats", get(daily_stats))
         .route("/uwu/v1/admin/events", get(events))
@@ -463,28 +462,10 @@ async fn put_settings(
     {
         new.smtp = None;
     }
-    // The relay's key, the same way: kept for the same installation only.
-    if let Some(push) = new.push.as_mut()
-        && push.installation_key.is_empty()
-    {
-        match current.push.as_ref() {
-            Some(old) if old.installation_id == push.installation_id.trim() && old.region == push.region => {
-                push.installation_key = old.installation_key.clone();
-            }
-            _ => return Err(ApiError::bad("The push relay needs the installation key.")),
-        }
-    }
-    if let Some(push) = new.push.as_mut() {
-        push.installation_id = push.installation_id.trim().to_string();
-        push.installation_key = push.installation_key.trim().to_string();
-    }
     new.masked.normalize().map_err(ApiError::bad)?;
     new.check().map_err(ApiError::bad)?;
     state.mailer.configure(new.smtp.as_ref()).map_err(|error| ApiError::bad(error.to_string()))?;
     new.save(&state.store, &state.secret).await.map_err(ApiError::internal)?;
-    if new.push != current.push {
-        state.relay.reset();
-    }
     state.apply_settings(new.clone());
     // GeoIP switched on: the databases come now rather than with the next daily run.
     if new.geoip && !current.geoip && !state.geoip.ready() {
@@ -528,15 +509,6 @@ async fn test_mail(State(state): State<AppState>, admin: Admin, Json(data): Json
     }
     let language = Language::from_code(&admin.0.user.language);
     state.mailer.send(data.to.trim(), &Mail::Test, language).await.map_err(|error| ApiError::bad(error.to_string()))?;
-    Ok(StatusCode::OK)
-}
-
-/// Whether the relay takes the saved installation id and key: it is asked for a token.
-async fn test_push(State(state): State<AppState>, _admin: Admin) -> ApiResult<StatusCode> {
-    let Some(push) = state.settings().push else {
-        return Err(ApiError::bad("There is no push relay set up yet. Save the settings first."));
-    };
-    state.relay.check(&push).await.map_err(|error| ApiError::bad(format!("The relay did not take it: {error}")))?;
     Ok(StatusCode::OK)
 }
 
@@ -804,7 +776,6 @@ pub(crate) async fn after_restore(state: &AppState) -> ApiResult<()> {
     if let Err(error) = state.mailer.configure(settings.smtp.as_ref()) {
         tracing::warn!(%error, "the mail server of the restored settings");
     }
-    state.relay.reset();
     state.oidc.forget();
     state.apply_features(features);
     state.apply_settings(settings);
@@ -1008,36 +979,22 @@ mod tests {
         assert!(server.state.store.invitation("later@example.com").await.unwrap().is_some(), "nothing changed");
     }
 
+    /// Bitwarden's push relay is gone: a portal that still sends its settings saves the rest,
+    /// and nothing of the relay is shown or kept.
     #[tokio::test]
-    async fn the_relay_s_key_stays_on_the_server() {
-        let (url, _told) = fake_relay().await;
-        let push = uwulock_notify::relay::RelaySettings {
-            installation_id: "inst".into(),
-            installation_key: "secret".into(),
-            region: url,
-        };
-        let server = TestServer::with_settings(Settings { push: Some(push), ..Settings::default() }).await;
+    async fn push_relay_settings_are_neither_shown_nor_kept() {
+        let server = TestServer::new().await;
         let admin = admin(&server).await;
-        let shown = json(server.get_as(&admin.token, "/uwu/v1/admin/settings").await).await;
-        assert!(shown["push"].get("installationKey").is_none());
-        assert_eq!(shown["push"]["installationKeySet"], true);
-        let tested = server.call("POST", "/uwu/v1/admin/settings/test-push", Some(&admin.token), json!({})).await;
-        assert_eq!(tested.status(), StatusCode::OK);
-
-        let mut changed = shown.clone();
-        changed["push"] = json!({"installationId": "inst", "installationKey": "", "region": "eu"});
-        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed.clone()).await;
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "another region, so the key again");
-        changed["push"]["installationKey"] = json!("key-2");
-        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed.clone()).await;
+        let mut shown = json(server.get_as(&admin.token, "/uwu/v1/admin/settings").await).await;
+        assert!(shown.get("push").is_none());
+        shown["push"] = json!({"installationId": "inst", "installationKey": "secret", "region": "eu"});
+        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), shown).await;
         assert_eq!(response.status(), StatusCode::OK);
-        changed["push"]["installationKey"] = json!("");
-        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed.clone()).await;
-        assert_eq!(response.status(), StatusCode::OK, "left empty, it is kept");
-        assert_eq!(server.state.settings().push.unwrap().installation_key, "key-2");
-        changed["push"]["installationId"] = json!("somebody-else");
-        let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&admin.token), changed).await;
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "never for another installation");
+        assert!(json(response).await.get("push").is_none());
+        let stored = server.state.store.setting("settings").await.unwrap().unwrap();
+        assert!(!stored.contains("installation"), "{stored}");
+        let tested = server.call("POST", "/uwu/v1/admin/settings/test-push", Some(&admin.token), json!({})).await;
+        assert_eq!(tested.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

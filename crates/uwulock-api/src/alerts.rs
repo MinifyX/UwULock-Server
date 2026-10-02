@@ -27,14 +27,13 @@ use uwulock_mail::{Language, Mail};
 use uwulock_store::{Channel, clock};
 
 /// Every event a channel can ask for.
-pub const EVENTS: [&str; 8] = [
+pub const EVENTS: [&str; 7] = [
     "backupFailed",
     "backupStale",
     "certificateExpiring",
     "updateAvailable",
     "manyFailedLogins",
     "diskLow",
-    "pushRelayFailing",
     "mailFailing",
 ];
 
@@ -276,20 +275,8 @@ pub async fn evaluate(state: &AppState) -> BTreeMap<String, (&'static str, Detai
     let failing = |success: Option<u64>, error: &Option<(u64, String)>| {
         error.as_ref().filter(|(at, _)| now.saturating_sub(*at) < 3600 && success.is_none_or(|ok| ok < *at)).cloned()
     };
-    // Their own words (with addresses, or the relay's address with push ids) only in the portal
-    // and the log; the channels get a fixed text with the status.
-    let relay = state.relay.health();
-    if state.settings().push.is_some()
-        && let Some((_, error)) = failing(relay.last_success, &relay.last_error)
-    {
-        let status = status_code(&error).map(|code| format!(" (HTTP {code})")).unwrap_or_default();
-        let detail = Detail::new(format!("Das Push-Relay sagt: {error}"), format!("The push relay says: {error}"))
-            .for_channels(
-                format!("Das Push-Relay nimmt nichts an{status}. Mehr im Admin-Portal."),
-                format!("The push relay takes nothing{status}. More in the admin portal."),
-            );
-        found.insert("pushRelayFailing".into(), ("warning", detail));
-    }
+    // Their own words (with addresses) only in the portal and the log; the channels get a fixed
+    // text with the status.
     let mail = state.mailer.health();
     if let Some((_, error)) = failing(mail.last_success, &mail.last_error) {
         let status = status_code(&error).map(|code| format!(" (SMTP {code})")).unwrap_or_default();
@@ -981,7 +968,7 @@ mod tests {
     #[test]
     fn status_codes_are_found_alone() {
         assert_eq!(status_code("550 5.1.1 <someone@example.com>: no such user"), Some(550));
-        assert_eq!(status_code("relay answered: HTTP 503 Service Unavailable"), Some(503));
+        assert_eq!(status_code("Loki answered: HTTP 503 Service Unavailable"), Some(503));
         assert_eq!(status_code("connection refused"), None);
         assert_eq!(status_code("5.1.1 id 12345 at 192.0.2.1"), None);
     }
