@@ -496,8 +496,18 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
     setError(null);
     try {
       const draft = draftOf(form, kind);
+      // Only the reminder changed: the item itself stays as it is (no new revision, no version).
+      const onlyReminder =
+        Boolean(id) &&
+        JSON.stringify(form.reminder) !== JSON.stringify((JSON.parse(initial) as Form).reminder) &&
+        JSON.stringify({ ...form, reminder: null }) ===
+          JSON.stringify({ ...(JSON.parse(initial) as Form), reminder: null });
       const saved =
-        clone && sourceId ? await saveClone(sourceId, draft) : await saveItem(id, draft);
+        clone && sourceId
+          ? await saveClone(sourceId, draft)
+          : onlyReminder && id
+            ? id
+            : await saveItem(id, draft);
       if (reminders) {
         // The item is saved either way; a reminder that didn't take is said.
         await saveReminder(saved, savedReminder, form.reminder).catch((e) =>
