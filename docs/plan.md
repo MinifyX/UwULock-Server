@@ -259,7 +259,7 @@ den Tests auf echten Geräten.
       für die Anmeldung per UwUAuth (mit ihr). Tresor, Sends und Kommandozeile sind davon nicht
       betroffen; `uwulock-server settings set adminNetworks '[]'` ist der Weg zurück.
 
-### Stufe 4c — Tresor-Komfort (vor Stufe 5; fertig bis auf den Umzug von Bitwarden im Client, kommt mit 0.6)
+### Stufe 4c — Tresor-Komfort (vor Stufe 5; fertig, kommt mit 0.6)
 
 Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach Stufe 4b.
 
