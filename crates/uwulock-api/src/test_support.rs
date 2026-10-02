@@ -57,7 +57,7 @@ impl TestServer {
             login_attempts: 10,
             start_settings: settings,
             // The tests of each feature need it on; tests of the switches turn them off.
-            start_features: crate::Features::all(),
+            start_features: Some(crate::Features::all()),
             certificate_probe: None,
             time_sources: Vec::new(),
         };

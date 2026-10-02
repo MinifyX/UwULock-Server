@@ -149,7 +149,7 @@ async fn the_admin_switches_them_with_an_event_and_nothing_is_lost() {
     assert_eq!((own["on"].as_bool(), own["works"].as_bool()), (Some(true), Some(false)), "it needs own icons");
     assert!(!server.state.feature(Feature::Reminders));
     assert_eq!(
-        Features::load(&server.state.store, &Features::all()).await.unwrap(),
+        Features::load(&server.state.store, Some(&Features::all())).await.unwrap(),
         server.state.features(),
         "kept in the database"
     );
@@ -278,11 +278,39 @@ async fn a_new_server_starts_with_the_start_features() {
     let server = TestServer::new().await;
     // No switches in the database: what the configuration starts with (all, for the tests).
     assert_eq!(server.state.store.setting(KEY).await.unwrap(), None);
-    assert_eq!(Features::load(&server.state.store, &Features::none()).await.unwrap(), Features::none());
+    assert_eq!(Features::load(&server.state.store, Some(&Features::none())).await.unwrap(), Features::none());
     Features::none().with(Feature::Suite, true).save(&server.state.store).await.unwrap();
     assert_eq!(
-        Features::load(&server.state.store, &Features::all()).await.unwrap().names(),
+        Features::load(&server.state.store, Some(&Features::all())).await.unwrap().names(),
         ["suite"],
         "the database wins"
     );
+}
+
+/// `UWULOCK_FEATURES` is not in a backup: what it said is kept in the database, so a server
+/// restored on a machine without it keeps its switches, and an admin's switch still wins.
+#[tokio::test]
+async fn what_the_environment_said_goes_along_into_the_backup() {
+    let server = TestServer::new().await;
+    let store = &server.state.store;
+    let kept = store.setting(START_KEY).await.unwrap().expect("kept at the start");
+    assert_eq!(Features::from_json(&serde_json::from_str(&kept).unwrap()), Features::all());
+    assert_eq!(Features::load(store, None).await.unwrap(), Features::all(), "restored, without the environment");
+
+    // It counts as long as nobody switched: a changed environment is taken over, and kept.
+    let some = Features::parse_list("families,offsite-backups").unwrap();
+    assert_eq!(Features::load(store, Some(&some)).await.unwrap(), some);
+    Features::remember_start(store, Some(&some)).await.unwrap();
+    assert_eq!(Features::load(store, None).await.unwrap(), some);
+    Features::remember_start(store, None).await.unwrap();
+    assert_eq!(Features::load(store, None).await.unwrap(), some, "no environment changes nothing");
+
+    // Switched once, the switches are the admin's, whatever the environment says.
+    let switched = some.clone().with(Feature::Families, false);
+    switched.save(store).await.unwrap();
+    Features::remember_start(store, Some(&Features::all())).await.unwrap();
+    assert_eq!(Features::load(store, Some(&Features::all())).await.unwrap(), switched);
+    assert_eq!(Features::load(store, None).await.unwrap(), switched);
+    let kept = store.setting(START_KEY).await.unwrap().unwrap();
+    assert_eq!(Features::from_json(&serde_json::from_str(&kept).unwrap()), some, "left alone once switched");
 }

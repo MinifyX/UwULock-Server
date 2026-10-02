@@ -15,8 +15,11 @@ use std::time::Duration;
 
 pub(crate) struct Sqlite {
     path: PathBuf,
-    writer: Mutex<Connection>,
+    // Fields drop in this order: the readers first, so the writer is the last connection to
+    // close. Only that one can fold the log into the database and remove `-wal` and `-shm`; a
+    // read-only one leaves them behind (in a restored data directory, say).
     readers: Vec<Mutex<Connection>>,
+    writer: Mutex<Connection>,
     /// Where the next reader search starts, so the load spreads.
     next: AtomicUsize,
 }
@@ -51,7 +54,7 @@ impl Sqlite {
             })
             .collect::<Result<Vec<_>, StoreError>>()?;
 
-        Ok(Self { path: path.to_path_buf(), writer: Mutex::new(writer), readers, next: AtomicUsize::new(0) })
+        Ok(Self { path: path.to_path_buf(), readers, writer: Mutex::new(writer), next: AtomicUsize::new(0) })
     }
 
     pub(crate) fn path(&self) -> &Path {

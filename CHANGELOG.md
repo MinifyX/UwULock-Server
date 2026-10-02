@@ -9,6 +9,28 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   of good nonces by default, rustls-acme fails the whole order on a badNonce and backs off 1, 2,
   4 … 64 seconds, and a few of those in a row took the send-domain test past its two minutes.
   Pebble now runs with `PEBBLE_WFE_NONCEREJECT=0`; both tests take about 3 seconds.
+- Feature switches that came only from `UWULOCK_FEATURES` now go along in backups. While the
+  line counts (nobody switched in the portal or on the command line), the server keeps what it
+  says in the database (`features.start`), at every start and after a restore in the portal; a
+  server restored on a new machine without that line keeps the extras it had, instead of losing
+  `offsite-backups`, `families` and the rest. A switch by an admin still wins, and a changed
+  `UWULOCK_FEATURES` still counts until somebody switches (docs/features.md).
+- `backup restore` without a terminal and without `UWULOCK_BACKUP_KEY` says that no recovery key
+  was given and how to give one, instead of "the recovery key does not fit this backup".
+- A wrong `--host-key` for `backup restore` names the key the SFTP server showed and says to pass
+  it with `--host-key` once checked; "forget the old key" was the portal's advice.
+- A restore from the command line leaves nothing behind in the data directory: `backup-tmp/` goes,
+  and so do `uwulock.db-wal` and `-shm`. The database now closes its write connection last, so
+  SQLite folds the log in and removes both, for every command that opens it.
+- `install.sh --no-start` sets everything up and fetches the image, but does not start the server:
+  a restore can go into the empty data directory first.
+- Docs: off-site backups have to be switched on first (`offsite-backups`); the order of a restore
+  on a new machine (`install.sh --no-start`, restore, `docker compose up -d`); an SFTP login for
+  the restore (password or a fresh key, `chown 10001`), the host key, S3 in your own network with
+  `--path-style`, every option including `--port`; keeping the snapshot restored from when the
+  new machine backs up the same day; feature switches after a restore; and what besides
+  `/data/backups` a move by hand needs (`secret.key`, the files, `acme`), into a volume owned by
+  uid 10001.
 
 ## 0.7.0-beta.2
 

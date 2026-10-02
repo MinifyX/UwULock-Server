@@ -14,7 +14,18 @@ The design is UwUMail Server's: the same repository format, the same targets, th
 
 ## Setting them up
 
-*Admin portal → Backups → Off-site.* Choose where they go, save, **write down the
+Backups on another system are an extra ([features.md](features.md)), **off by default** on a new
+server: until the switch `offsite-backups` is on, the page is not in the portal and its endpoints
+answer 404 `feature_off`. Switch it on under *Admin portal → Vault & features → Features*, or on
+the command line:
+
+```bash
+cd /opt/uwulock
+sudo docker compose exec uwulock uwulock-server features on offsite-backups
+sudo docker compose restart uwulock   # the command line's switches count from the next start
+```
+
+Then *Admin portal → Backups → Off-site.* Choose where they go, save, **write down the
 recovery key** the portal shows once, test the connection, and back up once by hand to see it
 work. From then on the server backs up every night at the time you set (UTC).
 
@@ -36,7 +47,8 @@ day of use usually means a few megabytes.
 
 Every snapshot is complete on its own. The retention rules keep the newest snapshot of each of
 the last **7 days, 4 weeks and 6 months** (changeable), and remove what no remaining snapshot
-needs.
+needs. The day is the UTC day of the snapshot: a second backup on the same day takes the place of
+the first one, which goes at the end of that run.
 
 A backup server that is not ours cannot have this one read without end: files, manifests and
 listings have ceilings (a directory listing at most 2 million names), and a run stops after 12
@@ -141,36 +153,110 @@ settings stay as they are now.
 ### On a new machine, from the command line
 
 When the old machine is gone, restore into an empty data directory **before** the new server
-starts the first time. Nothing from the old server is needed but the recovery key and the way to
-the backups.
+starts the first time. Of the old server you need only the **recovery key** and a way into the
+backups: the folder, the S3 keys, or for SFTP a login of your own (below) and the backup server's
+host key. The old server's SSH key is not needed, and nobody has it anyway: the portal only ever
+shows its public half.
+
+The order on the new machine:
+
+1. **Set up without starting**: `sudo bash install.sh --no-start` with the answers of the old
+   server (the same address, `--domain` or `--behind-proxy`). It writes `/opt/uwulock`, fetches
+   the image and stops there, the data directory still empty. A server that started once has a
+   database already, and the restore refuses to write over it; then remove the volume first
+   (`sudo docker compose down -v`, which deletes everything in it).
+2. **Restore** the snapshot, with one of the commands below.
+3. **Start**: `sudo docker compose up -d`.
 
 ```bash
 cd /opt/uwulock
 # A folder (mounted into the container):
 sudo docker compose run --rm -v /mnt/nas/uwulock:/backup uwulock \
   backup restore --folder /backup
-# An SFTP server, with the old server's key (or UWULOCK_BACKUP_SFTP_PASSWORD) and its host key:
+# An SFTP server, with a key made for the restore (below) and the host key:
 sudo docker compose run --rm -v "$PWD/backup_key:/key:ro" uwulock \
   backup restore --sftp backup@nas.example.com:/volume1/backups/uwulock --ssh-key /key \
   --host-key SHA256:…
+# The same with the backup user's password instead of a key:
+sudo UWULOCK_BACKUP_SFTP_PASSWORD='…' docker compose run --rm -e UWULOCK_BACKUP_SFTP_PASSWORD uwulock \
+  backup restore --sftp backup@nas.example.com:/volume1/backups/uwulock --host-key SHA256:…
 # An S3 bucket; the keys come from the environment, never from the command line:
 sudo docker compose run --rm -e UWULOCK_BACKUP_S3_ACCESS_KEY=… -e UWULOCK_BACKUP_S3_SECRET_KEY=… uwulock \
   backup restore --s3 s3://my-bucket/uwulock --endpoint https://s3.eu-central-1.amazonaws.com \
   --region eu-central-1
+# An S3 server in your own network (MinIO, Garage …): its address, and the bucket in the path:
+sudo docker compose run --rm -e UWULOCK_BACKUP_S3_ACCESS_KEY=… -e UWULOCK_BACKUP_S3_SECRET_KEY=… uwulock \
+  backup restore --s3 s3://uwulock-backups/uwulock --endpoint http://minio.example.com:9000 --path-style
 sudo docker compose up -d
 ```
 
-The command asks for the recovery key without showing it, or reads `UWULOCK_BACKUP_KEY`; leave it
-empty for unencrypted backups. Without `--snapshot` it shows the newest snapshot with its date and
-asks before putting it back — if a newer one should be there, answer no: whoever keeps the storage
-could have hidden it. `--list` shows the snapshots there instead, `--snapshot <name>` takes
-another one, `--host-key SHA256:…` is needed for SFTP (without it the command shows the server's
-key and stops before logging in), `--path-style` is for
-MinIO, `--into <dir>` restores somewhere else than the server's data directory.
+`--path-style` is needed almost always for a bucket in your own network: such servers answer at
+`http://server/bucket/…`, while without it the bucket is asked for at `http://bucket.server/…`, a
+name that usually does not exist.
+
+**An SFTP login for the restore.** Either the backup user's password, through
+`UWULOCK_BACKUP_SFTP_PASSWORD` as above, or a fresh key, made on the new machine:
+
+```bash
+cd /opt/uwulock
+ssh-keygen -t ed25519 -N '' -f backup_key   # backup_key and backup_key.pub
+sudo chown 10001 backup_key                 # the container's user has to read it
+cat backup_key.pub                          # this line goes into the backup user's
+                                            # ~/.ssh/authorized_keys on the NAS
+```
+
+The key file is readable only by its owner, and the container runs as uid 10001, not as you:
+without the `chown` the restore cannot read it. After the restore the server logs in with the old
+server's key again, which came along in the snapshot (encrypted, with `secret.key`); the restore
+key can then go from `authorized_keys`, and `backup_key` from the disk.
+
+**The host key** (`--host-key SHA256:…`) is the backup server's, as `ssh-keygen -lf
+/etc/ssh/ssh_host_ed25519_key.pub` shows it there. Without `--host-key` the command shows the key
+the server presents and stops before logging in; with a different one it stops as well and names
+the key it saw, to pass with `--host-key` once you have checked it.
+
+**The recovery key.** The command reads `UWULOCK_BACKUP_KEY`, or else asks for it without
+showing it; leave it empty for unencrypted backups. Asking needs a terminal: with
+`docker compose run -T` or in a script, pass the variable, for example
+`sudo UWULOCK_BACKUP_KEY='…' docker compose run --rm -e UWULOCK_BACKUP_KEY uwulock backup restore …`.
+An encrypted backup without a key is refused with that advice.
+
+The options of `backup restore`:
+
+- `--folder <path>`, `--sftp user@host:path` or `--s3 s3://bucket/folder`: where the backups are.
+- `--port <port>`: the SFTP server's port, 22 without it.
+- `--ssh-key <file>`: the SSH key to log in with (OpenSSH format); without it, the password from
+  `UWULOCK_BACKUP_SFTP_PASSWORD`.
+- `--host-key SHA256:…`: the SFTP server's host key, needed for SFTP.
+- `--endpoint <url>`: the S3 address without the bucket; `--region <name>`, `us-east-1` without
+  it; `--path-style` for the bucket in the path (MinIO and most servers in your own network).
+- `--list`: only show the snapshots there.
+- `--snapshot <name>`: put back this one. Without it the command shows the newest snapshot with
+  its date and asks before putting it back — if a newer one should be there, answer no: whoever
+  keeps the storage could have hidden it.
+- `--into <dir>`: restore somewhere else than the server's data directory.
 
 Afterwards everybody logs in again, and **the off-site backups are switched off** on the new
 machine: the snapshot carries the old server's target, and the new one should not write over its
 history until you say so. Check the target in the admin portal and switch them on again.
+
+**Keep the snapshot you restored from.** The retention rules keep the newest snapshot of a day.
+Switched on again for the same target, the new machine's first backup on the same day (UTC) is the
+day's newest, and the snapshot just restored from goes at the end of that run. To keep it, point
+the new machine at another folder or prefix first (`…/uwulock-new`, another S3 folder) until you
+no longer need it, or switch the backups on again only on the next day.
+
+**Feature switches** come along: they are in the database, and so is what `UWULOCK_FEATURES`
+switched on while it counted ([features.md](features.md)). The new machine needs no
+`UWULOCK_FEATURES` for them. Check them after the restore:
+
+```bash
+sudo docker compose run --rm uwulock features      # before the start, or with exec once it runs
+```
+
+A snapshot made by UwULock Server 0.7.0-beta.2 or older does not carry what only
+`UWULOCK_FEATURES` switched on: set the same `UWULOCK_FEATURES` in `.env` of the new machine, or
+switch the extras on as above.
 
 Restore with the version the snapshot came from, or a newer one: the database migrations only run
 forwards.

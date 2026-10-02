@@ -130,8 +130,8 @@ pub struct ApiConfig {
     /// The settings a new server starts with, until an admin saves others.
     pub start_settings: Settings,
     /// The feature switches a new server starts with (`UWULOCK_FEATURES`), until an admin
-    /// switches one.
-    pub start_features: Features,
+    /// switches one; `None` when it is not set.
+    pub start_features: Option<Features>,
     /// Where the diagnosis and the metrics look at the certificate clients get; none for a
     /// server at an http address.
     pub certificate_probe: Option<certificate::Probe>,
@@ -245,7 +245,8 @@ impl AppState {
         alerts::seal_stored(&store, &secret).await?;
         offsite.seal_stored().await.map_err(|error| format!("the off-site backup settings: {error}"))?;
         let settings = Settings::load(&store, &config.start_settings, &secret).await?;
-        let features = Features::load(&store, &config.start_features).await?;
+        Features::remember_start(&store, config.start_features.as_ref()).await?;
+        let features = Features::load(&store, config.start_features.as_ref()).await?;
         let mailer = Mailer::new(settings.smtp.as_ref()).map_err(|error| format!("mail: {error}"))?;
         let tokens = Tokens::load(&store, &config.public).await?;
         let party = webauthn::Party::from_public(&config.public);

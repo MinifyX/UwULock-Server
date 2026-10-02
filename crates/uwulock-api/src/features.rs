@@ -13,6 +13,10 @@
 //! A server that never had them (a new one) starts with `UWULOCK_FEATURES`, by default none of
 //! them; migration 0017 wrote them for a server that was running before they existed, on for
 //! every feature that was in use.
+//!
+//! While `UWULOCK_FEATURES` counts, what it says is kept too, under `features.start`: the
+//! environment is not in a backup, the database is, and a server restored on a machine without
+//! that line keeps the switches it had (docs/features.md, "New and updated servers").
 
 use crate::AppState;
 use crate::admin::record;
@@ -28,6 +32,8 @@ use std::collections::BTreeSet;
 use uwulock_store::Store;
 
 const KEY: &str = "features";
+/// What `UWULOCK_FEATURES` said when this server last ran with it, until somebody switches.
+const START_KEY: &str = "features.start";
 
 /// One extra that can be switched off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -243,13 +249,40 @@ impl Features {
         features
     }
 
-    /// What the database holds, or `start` for a server that never had any.
-    pub async fn load(store: &Store, start: &Features) -> Result<Features, String> {
-        match store.setting(KEY).await.map_err(|error| error.to_string())? {
+    /// What the switches are: those an admin switched (in the database); else what
+    /// `UWULOCK_FEATURES` says (`start`); else what it said when this server, or the one it was
+    /// restored from, last ran with it; else none, a new server.
+    pub async fn load(store: &Store, start: Option<&Features>) -> Result<Features, String> {
+        if let Some(switched) = Features::read(store, KEY).await? {
+            return Ok(switched);
+        }
+        if let Some(start) = start {
+            return Ok(start.clone());
+        }
+        Ok(Features::read(store, START_KEY).await?.unwrap_or_default())
+    }
+
+    /// Keeps what `UWULOCK_FEATURES` says in the database while it counts (nobody switched), so
+    /// a backup carries the switches as they are. Without it, or once switched, nothing changes.
+    pub async fn remember_start(store: &Store, start: Option<&Features>) -> Result<(), String> {
+        let Some(start) = start else {
+            return Ok(());
+        };
+        if store.setting(KEY).await.map_err(|error| error.to_string())?.is_some() {
+            return Ok(());
+        }
+        if Features::read(store, START_KEY).await?.as_ref() != Some(start) {
+            store.set_setting(START_KEY, &start.to_json().to_string()).await.map_err(|error| error.to_string())?;
+        }
+        Ok(())
+    }
+
+    async fn read(store: &Store, key: &str) -> Result<Option<Features>, String> {
+        match store.setting(key).await.map_err(|error| error.to_string())? {
             Some(json) => serde_json::from_str::<Value>(&json)
-                .map(|value| Features::from_json(&value))
+                .map(|value| Some(Features::from_json(&value)))
                 .map_err(|error| format!("the feature switches in the database: {error}")),
-            None => Ok(start.clone()),
+            None => Ok(None),
         }
     }
 
