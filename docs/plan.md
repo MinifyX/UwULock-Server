@@ -25,6 +25,9 @@ dessen Funde alle behoben sind; passend dazu UwULock 0.4.0-beta.1 mit Android- u
 nach einem Sicherheitsreview (ebenfalls [docs/security-review-0.7.md](security-review-0.7.md)),
 dessen Funde alle behoben sind; passend dazu UwUSSH 0.3.0-beta.2, UwURDP 0.1.0-beta.11 und
 UwULock 0.4.0-beta.2.
+0.7.0-beta.3 behebt, was eine Wiederherstellungsprobe (SFTP, S3, Ordner, lokales Backup auf einen
+leeren Server) gefunden hat: Feature-Schalter gehen mit ins Backup, `install.sh --no-start`,
+bessere Meldungen und Doku; dazu ein stabiler ACME-Test in CI.
 Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
