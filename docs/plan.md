@@ -350,11 +350,9 @@ Was Einzelnen und Familien im Alltag fehlt, bevor Firmen dazukommen. Kommt nach 
   (Fertig: Bitwardens `authType`/`emails`, Code 5 Minuten und einmal, 5 falsche beenden ihn,
   höchstens eine Mail pro Minute und 5 pro Stunde je Send und Adresse; dieselbe Antwort für
   Adressen auf und nicht auf der Liste. Im Browser getestet mit einem Mailserver im Testskript.)
-- [ ] Umzug von Bitwarden (Cloud und selbst gehostet): Bitwardens Export lässt Anhänge und
-  Organisationen weg. Der UwULock-Client meldet sich an beiden Servern an und überträgt Einträge,
-  Ordner, Anhänge und Sends (entschlüsselt nur im Client, neu verschlüsselt für UwULock);
-  Organisationen, sobald sie hier angelegt werden können (Stufe 4d bzw. 5). Braucht ein
-  Client-Release.
+- [x] Umzug von Bitwarden (Cloud und selbst gehostet): über Bitwardens Export und den Import im
+  Web-Tresor (`docs/import.md`). Anhänge und Organisationen enthält Bitwardens Export nicht; ein
+  eigener Umzug über den UwULock-Client entfällt (Entscheidung von Lorin).
 - [x] Barrierefreiheit im Web-Tresor und Admin-Portal: vollständig mit Tastatur bedienbar (mit
   Kürzeln und einer Übersicht dazu), mit Screenreader nutzbar, ein Modus mit hohem Kontrast; Ziel
   WCAG 2.2 AA, geprüft mit axe im bestehenden Browsertest, ohne ihn spürbar langsamer zu machen.
@@ -568,7 +566,6 @@ Was CI nicht kann, von Hand gegen die Beta, mit dem Server als „selbst gehoste
 
 - In CI: die offizielle `bw`-CLI gegen den Server (Anmeldung, 2FA, Sync, Einträge, Anhänge, Sends)
   und die Flow-Tests aus `uwulock-bitwarden` gegen den echten Server
-- Wöchentlich die neuesten Bitwarden-Clients dagegen; bricht etwas, entsteht ein Issue
 - Vor jedem Release eine Checkliste für Browsererweiterung und Apps (Autofill, Passkeys, Push)
 
 ## Release
