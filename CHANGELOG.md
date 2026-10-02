@@ -3,7 +3,10 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.7.0-beta.3
+
+**Restores that work on a new machine.** A disaster-recovery drill restored a filled server from
+SFTP, S3, a folder and a local backup onto a clean one; this release fixes what it found.
 
 - CI: the ACME tests against Pebble no longer run out of time now and then. Pebble turns away 5%
   of good nonces by default, rustls-acme fails the whole order on a badNonce and backs off 1, 2,
