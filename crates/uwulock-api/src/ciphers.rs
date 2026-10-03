@@ -223,6 +223,30 @@ fn new_cipher(user_id: &str) -> Cipher {
     }
 }
 
+/// The most ids one bulk request may name (R1-11): far more than anybody selects at once.
+pub(crate) const MOST_IDS: usize = 5_000;
+/// The most items of their own one account may have (R1-11), so that repeated imports or creates
+/// cannot grow the database without end.
+pub(crate) const MOST_ITEMS: i64 = 100_000;
+
+pub(crate) fn check_ids(ids: &[String]) -> ApiResult<()> {
+    if ids.len() > MOST_IDS {
+        return Err(ApiError::bad(format!("At most {MOST_IDS} items at once.")).code("too_many_ids"));
+    }
+    Ok(())
+}
+
+/// Refused when `adding` more items would take the account past [`MOST_ITEMS`].
+pub(crate) async fn check_item_count(state: &AppState, user_id: &str, adding: usize) -> ApiResult<()> {
+    let have = state.store.cipher_count(user_id).await?;
+    if have.saturating_add(adding as i64) > MOST_ITEMS {
+        return Err(
+            ApiError::bad(format!("A vault holds at most {MOST_ITEMS} items of its own.")).code("too_many_items")
+        );
+    }
+    Ok(())
+}
+
 async fn save(state: &AppState, cipher: Cipher) -> ApiResult<Cipher> {
     state.store.save_cipher(cipher).await?.ok_or_else(|| ApiError::bad("Invalid folder"))
 }
@@ -504,6 +528,7 @@ async fn create(State(state): State<AppState>, session: Session, Json(data): Jso
     if data.organization_id.is_some() {
         return Err(ApiError::bad("An item of an organisation needs its collections: use /ciphers/create."));
     }
+    check_item_count(&state, &session.user.id, 1).await?;
     let cipher = save(&state, apply(data, new_cipher(&session.user.id), None)?).await?;
     notify::cipher(&state, &session, Kind::CipherCreate, &cipher);
     Ok(json_text(cipher_json(&state, &cipher).await?))
@@ -655,6 +680,7 @@ struct Import {
 async fn import(State(state): State<AppState>, session: Session, Json(data): Json<Import>) -> ApiResult<StatusCode> {
     validate_batch(&data.ciphers)?;
     let user = &session.user;
+    check_item_count(&state, &user.id, data.ciphers.len()).await?;
     let existing: Vec<String> = state.store.folders(&user.id).await?.into_iter().map(|folder| folder.id).collect();
     let now = clock::now();
     let mut new_folders = Vec::new();
@@ -708,6 +734,7 @@ fn kind_of(what: Bulk) -> Kind {
 /// Do `what` to those of `ids` the user may: their own, and organisations' they may change.
 /// The ids it was done to.
 async fn apply_bulk(state: &AppState, session: &Session, ids: Vec<String>, what: Bulk) -> ApiResult<Vec<String>> {
+    check_ids(&ids)?;
     let mut done = state.store.bulk(&session.user.id, ids.clone(), what).await?;
     if !done.is_empty() {
         notify::user(state, &session.user.id, Some(session), Kind::Ciphers);
@@ -819,17 +846,20 @@ async fn move_ciphers(
     session: Session,
     Json(data): Json<Move>,
 ) -> ApiResult<StatusCode> {
+    check_ids(&data.ids)?;
     let wanted = data.ids.len();
     let own: Vec<String> = {
-        let mine = state.store.ciphers(&session.user.id).await?;
-        data.ids.iter().filter(|id| mine.iter().any(|cipher| &cipher.id == *id)).cloned().collect()
+        let mine: std::collections::HashSet<String> =
+            state.store.ciphers(&session.user.id).await?.into_iter().map(|cipher| cipher.id).collect();
+        data.ids.iter().filter(|id| mine.contains(*id)).cloned().collect()
     };
+    let own_set: std::collections::HashSet<&String> = own.iter().collect();
     let mut moved = state
         .store
         .move_ciphers(&session.user.id, own.clone(), data.folder_id.clone())
         .await?
         .ok_or_else(|| ApiError::bad("Invalid folder"))?;
-    for id in data.ids.iter().filter(|id| !own.contains(id)) {
+    for id in data.ids.iter().filter(|id| !own_set.contains(id)) {
         if let Some(item) = state.store.org_cipher(&session.user.id, id).await? {
             state.store.set_org_preference(&session.user.id, id, data.folder_id.clone(), item.cipher.favorite).await?;
             moved += 1;
@@ -875,6 +905,7 @@ async fn purge(
 
 #[cfg(test)]
 mod tests {
+    use super::{MOST_IDS, MOST_ITEMS, check_item_count};
     use crate::test_support::*;
     use axum::http::StatusCode;
     use serde_json::{Value, json};
@@ -903,6 +934,23 @@ mod tests {
         let response = server.send(request).await;
         assert_eq!(response.status(), StatusCode::OK);
         json(response).await
+    }
+
+    #[tokio::test]
+    async fn bulk_lists_and_vaults_have_a_ceiling() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let ids: Vec<String> = (0..=MOST_IDS).map(|n| format!("id-{n}")).collect();
+        for (method, path) in
+            [("PUT", "/api/ciphers/move"), ("PUT", "/api/ciphers/delete"), ("POST", "/api/ciphers/delete")]
+        {
+            let response = server.call(method, path, Some(&account.token), json!({ "ids": ids })).await;
+            assert_eq!(json(response).await["code"], "too_many_ids", "{method} {path} (R1-11)");
+        }
+        // Past the most items an account may have, nothing more goes in.
+        let have = server.state.store.cipher_count(&account.id).await.unwrap();
+        assert!(check_item_count(&server.state, &account.id, (MOST_ITEMS - have) as usize).await.is_ok());
+        assert!(check_item_count(&server.state, &account.id, (MOST_ITEMS - have + 1) as usize).await.is_err());
     }
 
     #[tokio::test]

@@ -219,6 +219,9 @@ async fn share_many(
     Json(data): Json<ShareMany>,
 ) -> ApiResult<Json<Value>> {
     crate::ciphers::validate_batch(&data.ciphers)?;
+    if data.ciphers.len() > crate::ciphers::MOST_IDS {
+        return Err(ApiError::bad("Too many items at once.").code("too_many_ids"));
+    }
     let mut shared = Vec::new();
     for cipher in data.ciphers {
         let id = cipher.id.clone().ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
