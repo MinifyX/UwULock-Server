@@ -187,7 +187,7 @@ certificate, backups, logs, every setting. Settings new in 0.8, all in `.env`:
 | --- | --- | --- |
 | `UWULOCK_TRUSTED_PROXIES` | — (every peer) | With `UWULOCK_TRUST_FORWARDED=on`: believe `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` only from these addresses or CIDR networks, comma separated. Set it when other containers share the proxy's network. |
 | `UWULOCK_CLIENT_IP_HEADER` | `x-forwarded-for` | `x-real-ip` for a proxy that sets only `X-Real-IP`. Leave it alone behind Caddy. |
-| `UWULOCK_CONNECTIONS_PER_NETWORK` | `256` | With TLS of its own: the most connections from one IPv4 address or IPv6 /64; `0` for no cap but the total of 8 192. |
+| `UWULOCK_CONNECTIONS_PER_NETWORK` | `256` | With TLS of its own: the most connections from one IPv4 address or IPv6 /64; `0` for no cap but the total of 8 192. Private peers (Docker's gateway) share 7/8 of the total. |
 
 `UWULOCK_LOG_FORMAT=json` (one JSON object a line, for Grafana Alloy, Promtail or Vector) has been
 there before; *Admin portal → System & diagnosis → Monitoring* sends the same lines straight to

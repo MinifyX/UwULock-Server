@@ -92,6 +92,10 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
     `UWULOCK_CLIENT_IP_HEADER=x-real-ip` for a proxy that sets only `X-Real-IP`.
   - Migration 0026: an index that makes delta syncs after a large reorganisation fast again.
   - Docs: local backups (`backups/`) hold API keys and need the same care as `data/`.
+- **Final check of the fixes** (docs/security-review-0.8.md, R8): with TLS of its own, private,
+  loopback and link-local peers (Docker's gateway) share at most 7/8 of the 8 192 connections, so
+  one client behind the gateway can't shut out clients with their own address; changing who may
+  sign up through SSO (sign-ups, user group) asks for the master password too.
 
 ## 0.7.0-beta.3
 

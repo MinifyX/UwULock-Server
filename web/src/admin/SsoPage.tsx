@@ -25,6 +25,7 @@ import {
   saveScimOnDelete,
   saveSso,
   ssoNeedsPassword,
+  ssoAdminRulesChanged,
   ssoProviderChanged,
   ssoSettings,
   testSso,
@@ -184,7 +185,9 @@ function SsoActions({ test }: { test?: boolean }) {
           title={
             ssoProviderChanged(current, draft, secret)
               ? t('SSO-Anbieter ändern?')
-              : t('Admin-Regeln für SSO ändern?')
+              : ssoAdminRulesChanged(current, draft)
+                ? t('Admin-Regeln für SSO ändern?')
+                : t('Regeln für neue Konten ändern?')
           }
           tone="warning"
           lead={
@@ -192,9 +195,13 @@ function SsoActions({ test }: { test?: boolean }) {
               ? t(
                   'Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.',
                 )
-              : t(
-                  'Gruppe und Claims entscheiden, wer über SSO Admin wird. Deshalb fragt der Server hier nach deinem Master-Passwort.',
-                )
+              : ssoAdminRulesChanged(current, draft)
+                ? t(
+                    'Gruppe und Claims entscheiden, wer über SSO Admin wird. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+                  )
+                : t(
+                    'Diese Regeln und die Nutzergruppe entscheiden, wer sich über SSO einen Tresor anlegen darf. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+                  )
           }
           confirm={t('Speichern')}
           onCancel={() => setAsking(false)}

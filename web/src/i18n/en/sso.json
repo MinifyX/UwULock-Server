@@ -76,5 +76,7 @@
   "Gruppe und Claims entscheiden, wer über SSO Admin wird. Deshalb fragt der Server hier nach deinem Master-Passwort.": "The group and the claims decide who becomes an admin through SSO. That is why the server asks for your master password here.",
   "Neues SCIM-Token?": "New SCIM token?",
   "Ändern, was SCIM beim Löschen tut?": "Change what SCIM does when it deletes?",
-  "Damit sperrt oder löscht der Anbieter Konten, auch wenn du längst abgemeldet bist. Deshalb fragt der Server hier nach deinem Master-Passwort.": "With it, the provider disables or deletes accounts, even long after you logged out. That is why the server asks for your master password here."
+  "Damit sperrt oder löscht der Anbieter Konten, auch wenn du längst abgemeldet bist. Deshalb fragt der Server hier nach deinem Master-Passwort.": "With it, the provider disables or deletes accounts, even long after you logged out. That is why the server asks for your master password here.",
+  "Regeln für neue Konten ändern?": "Change the rules for new accounts?",
+  "Diese Regeln und die Nutzergruppe entscheiden, wer sich über SSO einen Tresor anlegen darf. Deshalb fragt der Server hier nach deinem Master-Passwort.": "These rules and the user group decide who may make a vault through SSO. That is why the server asks for your master password here."
 }

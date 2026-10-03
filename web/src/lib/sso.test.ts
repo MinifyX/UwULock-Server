@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { ssoAdminRulesChanged, ssoNeedsPassword, type SsoSettings } from './sso';
+import {
+  ssoAdminRulesChanged,
+  ssoNeedsPassword,
+  ssoSignupRulesChanged,
+  type SsoSettings,
+} from './sso';
 
 const current: SsoSettings = {
   enabled: true,
@@ -32,6 +37,19 @@ describe('the SSO settings that take the master password', () => {
       expect(ssoAdminRulesChanged(current, { ...current, ...change })).toBe(true);
       expect(ssoNeedsPassword(current, { ...current, ...change }, '')).toBe(true);
     }
+  });
+
+  it('include who may make an account (R8 I-D)', () => {
+    for (const change of [
+      { signups: 'invitation' },
+      { signups: 'off' },
+      { userGroup: 'staff' },
+    ] satisfies Partial<SsoSettings>[]) {
+      expect(ssoSignupRulesChanged(current, { ...current, ...change })).toBe(true);
+      expect(ssoAdminRulesChanged(current, { ...current, ...change })).toBe(false);
+      expect(ssoNeedsPassword(current, { ...current, ...change }, '')).toBe(true);
+    }
+    expect(ssoNeedsPassword(current, { ...current, userGroup: ' ' }, '')).toBe(false);
   });
 
   it('leave out the label and spaces the server trims', () => {

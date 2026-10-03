@@ -609,6 +609,8 @@ Kern aus UwULock-Client PR #26 (`2a8a708`, in `web/wasm` und `uwulock-e2e` gepin
   Familien; Hub einmal pro Stapel; Verbindungs-Cap ohne private Peers
   (`UWULOCK_CONNECTIONS_PER_NETWORK`); `X-Forwarded-Host` nur von vertrauten Proxys,
   `UWULOCK_CLIENT_IP_HEADER`; Migration 0026.
+- [x] Schlussprüfung R8 (docs/security-review-0.8.md): private Peers (Docker-Gateway) teilen sich
+  höchstens 7/8 der Verbindungen; Master-Passwort auch für SSO-Anmeldungen und Nutzergruppe.
 - [x] Design: Schriftwahl wie UwUMail (UwU Sans Standard, Manrope, Rubik, DM Sans, System; Lizenzen
   in THIRD-PARTY-NOTICES.txt), Ligaturen aus; Checkboxen und Schalter im UwUMail-Stil; mehr Nyu
   (leere Listen, Laden, Entsperren, Passwortprüfung, Toasts), alles mit reduzierter Bewegung.
