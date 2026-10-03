@@ -53,6 +53,12 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/public/file-requests/{access_id}/submissions/{id}/complete", post(complete))
 }
 
+/// How long an anonymous upload of `size` bytes may take in all: two minutes, and one more
+/// second for every 16 KiB — slower than any real line, faster than a trickle (R1-14).
+fn upload_deadline(size: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(120 + size / (16 * 1024))
+}
+
 /// The uploads themselves: no body limit but the one each file announced.
 pub(crate) fn upload_routes() -> Router<AppState> {
     Router::new().route("/uwu/v1/public/file-requests/{access_id}/submissions/{id}/files/{fid}", put(upload))
@@ -663,10 +669,15 @@ async fn upload(
         let mut stream = body.into_data_stream();
         let mut written: u64 = 0;
         let stalled = std::time::Duration::from_secs(60);
-        while let Some(chunk) = tokio::time::timeout(stalled, stream.next())
-            .await
-            .map_err(|_| ApiError::bad("The upload stalled.").code("incomplete"))?
-        {
+        // A whole deadline beside the one per chunk: a byte now and then must not keep the
+        // upload (and its socket) open for ever (R1-14).
+        let deadline = tokio::time::Instant::now() + upload_deadline(size);
+        loop {
+            let until = (tokio::time::Instant::now() + stalled).min(deadline);
+            let next = tokio::time::timeout_at(until, stream.next())
+                .await
+                .map_err(|_| ApiError::bad("The upload stalled or was too slow.").code("incomplete"))?;
+            let Some(chunk) = next else { break };
             let chunk = chunk.map_err(|_| ApiError::bad("The upload broke off.").code("incomplete"))?;
             if written == 0 && chunk.first().is_some_and(|byte| *byte != 2) {
                 return Err(ApiError::bad("That is not an encrypted file.").code("invalid"));
@@ -908,6 +919,12 @@ mod tests {
         let delete = server.call("DELETE", &format!("/uwu/v1/file-requests/{id}"), Some(&owner.token), json!({})).await;
         assert_eq!(delete.status(), StatusCode::OK);
         assert_eq!(json(server.get(&public).await).await["code"], "gone");
+    }
+
+    #[test]
+    fn an_upload_has_a_whole_deadline() {
+        assert_eq!(super::upload_deadline(0).as_secs(), 120);
+        assert_eq!(super::upload_deadline(100 * 1024 * 1024).as_secs(), 120 + 6400);
     }
 
     /// R1-9: a member's request file attached to a family's item counts for the family's owners.
