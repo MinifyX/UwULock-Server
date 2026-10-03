@@ -1140,9 +1140,7 @@ mod tests {
     fn vaultwarden_refresh_token(device_token: &str) -> String {
         let pem = std::fs::read(fixture_dir().join("rsa_key.pem")).unwrap();
         use rustls::pki_types::{PrivateKeyDer, pem::PemObject};
-        let PrivateKeyDer::Pkcs1(der) = PrivateKeyDer::from_pem_slice(&pem).unwrap() else {
-            panic!("a PKCS#1 key")
-        };
+        let PrivateKeyDer::Pkcs1(der) = PrivateKeyDer::from_pem_slice(&pem).unwrap() else { panic!("a PKCS#1 key") };
         let pair = ring::rsa::KeyPair::from_der(der.secret_pkcs1_der()).unwrap();
         let now = time::OffsetDateTime::now_utc().unix_timestamp();
         let header = URL_SAFE_NO_PAD.encode(br#"{"typ":"JWT","alg":"RS256"}"#);
