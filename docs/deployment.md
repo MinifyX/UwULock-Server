@@ -115,6 +115,20 @@ The container counts as healthy once it has its certificate, which takes a few s
 minute on the first start. If it does not come: `docker compose logs uwulock | grep certificate`
 says what Let's Encrypt said.
 
+### Who a connection comes from, with TLS of its own
+
+With its own TLS (`acme` or `files`) the server holds at most 8 192 connections, and 256 from one
+IPv4 address or IPv6 /64, so that a few clients that keep connections open without using them
+can't take every slot (`UWULOCK_CONNECTIONS_PER_NETWORK`, `0` for no cap per address). On Docker's
+default bridge network the server doesn't always see the client's address: IPv6 clients (the
+network has no IPv6) and, under rootless Docker, every client arrive through Docker's proxy with
+the gateway's address, like `172.18.0.1`. Loopback, private (RFC 1918, `fd00::/8`) and link-local
+peers therefore only count towards the total, never per address — otherwise one client would fill
+the slots of everybody behind the same gateway. The rate limits are shared the same way there (the
+diagnosis says so). For a server on the internet with IPv6 or rootless Docker, put a proxy in
+front (next section) or run the container with `network_mode: host`, so the server sees every
+client's own address.
+
 ## Behind a reverse proxy
 
 `UWULOCK_TLS=off`: the server speaks plain HTTP and listens on this machine only
@@ -170,6 +184,15 @@ server {
 
 (`$connection_upgrade` is the usual `map $http_upgrade $connection_upgrade { default upgrade; '' close; }`
 in the `http` block.)
+
+Which header says who is asking: by default the last entry of `X-Forwarded-For`, the one the proxy
+added (Caddy does that by itself, nginx with the line above); `X-Real-IP` only when there is no
+`X-Forwarded-For` at all. A proxy that only sets `X-Real-IP` (`proxy_set_header X-Real-IP
+$remote_addr;` and nothing about `X-Forwarded-For`) passes on whatever `X-Forwarded-For` the
+client sent, and the client picks its own address. Either add the `X-Forwarded-For` line, or set
+`UWULOCK_CLIENT_IP_HEADER=x-real-ip`: then `X-Real-IP` alone counts, from every proxy that is
+believed, and `X-Forwarded-For` never. Don't set it for Caddy, which passes a client's
+`X-Real-IP` on unchanged.
 
 The clients' live connection (`/notifications/hub?access_token=…`) carries their access token in
 its address, as with Bitwarden. It works for an hour; still, keep it out of access logs — in
@@ -336,6 +359,13 @@ sudo docker compose run --rm uwulock restore uwulock-2026-09-25-031000.db
 sudo docker compose up -d
 ```
 
+**Keep `backups/` as safe as `data/`.** The local backups are whole copies of the database, with
+what the off-site copies leave out: the CLI's API keys and the key the server's tokens are sealed
+with. Whoever reads a backup can log in with an API key of that day (until its owner gets a new
+one, or logs out everywhere) — so don't put `backups/` on a share others read, and copy them
+somewhere else only encrypted (the off-site backups are). [backups.md](backups.md) says what goes
+where.
+
 The database that was there is kept next to it as `uwulock.db.before-restore-<time>`. A restore
 ends every session — on every device, apps included, everybody logs in again: a backup carries
 the tokens of its day, and among them ones that were taken back since.
@@ -469,7 +499,9 @@ running server takes `adminNetworks` over at once and the rest when it starts ag
   (`X-Scope-OrgID`), a user and password for basic authentication, and labels (`job=uwulock` to
   start with; the server adds `level`). The lines are the same JSON as with
   `UWULOCK_LOG_FORMAT=json`, so the same queries work either way:
-  `{job="uwulock", level="warn"} | json | fields_message=~"login refused.*"`. They go out every
+  `{job="uwulock", level="warn"} | json | fields_message=~"login refused.*"` (among them, once an
+  hour per address, `login refused: too many wrong passwords for this account from everywhere`:
+  new devices of that account wait, and its owner got a security notice). They go out every
   second or every megabyte; while Loki is away, up to 10,000 lines wait, and after that the
   oldest are dropped and counted (the overview shows it). A request never waits for Loki. Log
   lines hold addresses and IP addresses — what a Loki gets, it keeps.
@@ -492,8 +524,10 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_ACME_EMAIL` | — | Where Let's Encrypt writes about certificates that did not renew. |
 | `UWULOCK_ACME_DIRECTORY` | `letsencrypt` | `letsencrypt`, `staging`, or the https address of another ACME directory. |
 | `UWULOCK_TLS_CERT`, `UWULOCK_TLS_KEY` | `/data/tls/cert.pem`, `/data/tls/key.pem` | The PEM files for `files`. |
-| `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For` (`X-Real-IP` only when there is no `X-Forwarded-For`). Only behind a proxy that sets it. |
-| `UWULOCK_TRUSTED_PROXIES` | — (every peer) | With `UWULOCK_TRUST_FORWARDED=on`: believe forwarding headers only from these peers, addresses or CIDR networks, comma separated. Set it when the server shares a Docker network with other containers. |
+| `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For` (`X-Real-IP` only when there is no `X-Forwarded-For`), and `X-Forwarded-Host`. Only behind a proxy that sets it. |
+| `UWULOCK_TRUSTED_PROXIES` | — (every peer) | With `UWULOCK_TRUST_FORWARDED=on`: believe forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Host`) only from these peers, addresses or CIDR networks, comma separated. Set it when the server shares a Docker network with other containers. |
+| `UWULOCK_CLIENT_IP_HEADER` | `x-forwarded-for` | `x-real-ip` for a proxy that sets `X-Real-IP` but leaves `X-Forwarded-For` as the client sent it: then only `X-Real-IP` says who is asking (see [Behind a reverse proxy](#behind-a-reverse-proxy)). |
+| `UWULOCK_CONNECTIONS_PER_NETWORK` | `256` | With TLS of its own: the most connections from one IPv4 address or IPv6 /64; `0` for no cap but the total of 8 192. Private, loopback and link-local peers (Docker's gateway) only count in the total. |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
 | `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. Requests without an account (prelogin, SSO, Sends) get five times as many, at least 50. |
 | `UWULOCK_FEATURES` | — (only the vault and icons) | The extras a new server starts with: `all`, `none` or ids like `families,file-requests` ([features.md](features.md)). Start value; *Admin portal → Vault & features → Features* changes them. |

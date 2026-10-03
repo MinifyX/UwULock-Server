@@ -338,6 +338,7 @@ running_image=$(docker inspect "$service" --format '{{.Image}}' 2>/dev/null)
 # move into .env; anything else somebody changed stops the update.
 lifted="UWULOCK_PUBLIC UWULOCK_TLS UWULOCK_ACME_EMAIL UWULOCK_ACME_DIRECTORY"
 lifted="$lifted UWULOCK_TRUST_FORWARDED UWULOCK_TRUSTED_PROXIES UWULOCK_UPDATE_CHECK UWULOCK_LOG_FORMAT UWULOCK_TIME_SOURCE"
+lifted="$lifted UWULOCK_CLIENT_IP_HEADER UWULOCK_CONNECTIONS_PER_NETWORK"
 
 # shellcheck disable=SC2016  # the ${...} here are strings to compare against, not expansions
 lift_into_env() {

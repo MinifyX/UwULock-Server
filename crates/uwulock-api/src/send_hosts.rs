@@ -25,6 +25,15 @@ pub(crate) async fn guard(State(state): State<AppState>, mut request: Request, n
     {
         request.headers_mut().insert(header::HOST, value);
     }
+    // `X-Forwarded-Host` counts only from a proxy whose other forwarding headers count too
+    // (R5 I-1): taken away here, before the branding and the links read it.
+    if !crate::auth::trusts_forwarding(
+        request.extensions(),
+        state.config.trust_forwarded,
+        &state.config.trusted_proxies,
+    ) {
+        request.headers_mut().remove("x-forwarded-host");
+    }
     let host = crate::branding::request_host(&state, request.headers());
     if let Some(domain) = host.and_then(|host| state.send_domains.by_host(&host)) {
         if !allowed(request.method(), request.uri().path()) {

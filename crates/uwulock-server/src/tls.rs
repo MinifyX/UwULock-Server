@@ -89,7 +89,7 @@ pub async fn serve(
     };
     tokio::spawn(own.run());
     server
-        .acceptor(Deadline(SniAcceptor::new(sni)?, Connections::new(TOTAL, Some(PER_NETWORK))))
+        .acceptor(Deadline(SniAcceptor::new(sni)?, Connections::new(TOTAL, config.connections_per_network())))
         .serve(service)
         .await
         .map_err(|error| error.to_string())
@@ -267,8 +267,9 @@ const IDLE: Duration = Duration::from_secs(90);
 
 /// The most connections the server holds at once (R1-14)…
 const TOTAL: usize = 8_192;
-/// …and from one IPv4 address or IPv6 /64, with TLS of its own (no proxy in front).
-const PER_NETWORK: usize = 256;
+/// …and from one IPv4 address or IPv6 /64, with TLS of its own (no proxy in front), unless
+/// `UWULOCK_CONNECTIONS_PER_NETWORK` says otherwise (`0`: no cap per network).
+pub const PER_NETWORK: usize = 256;
 
 /// Counts open connections, overall and per address (IPv6 by its /64), and refuses new ones past
 /// the caps: a few clients that trickle bytes or answer pings must not take every file
@@ -318,7 +319,7 @@ impl Connections {
 
     /// A slot for a connection from `peer`, or none past a cap.
     fn take(&self, peer: Option<std::net::IpAddr>) -> Option<Counted> {
-        let network = self.inner.per_network.and(peer).map(network_of);
+        let network = self.inner.per_network.and(peer).map(network_of).filter(|network| is_client(*network));
         let mut open = self.inner.open.lock();
         if open.0 >= self.inner.total {
             return None;
@@ -347,6 +348,20 @@ fn network_of(ip: std::net::IpAddr) -> std::net::IpAddr {
             }
         },
         v4 => v4,
+    }
+}
+
+/// Whether `network` can be one client's own: not loopback, a private (RFC 1918, ULA) or
+/// link-local address. Those are a proxy, Docker's gateway (its userland proxy hands every IPv6
+/// client and, under rootless Docker, every client over with that address) or a NAT: counting
+/// them per network would let one client fill the slots of everybody behind it (R5-5). The
+/// total still counts them.
+fn is_client(network: std::net::IpAddr) -> bool {
+    match network {
+        std::net::IpAddr::V4(v4) => !(v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()),
+        std::net::IpAddr::V6(v6) => {
+            !(v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local() || v6.is_unspecified())
+        }
     }
 }
 
@@ -590,6 +605,21 @@ mod tests {
         let behind_proxy = Connections::new(2, None);
         let (_one, _two) = (behind_proxy.take(Some(a)).unwrap(), behind_proxy.take(Some(a)).unwrap());
         assert!(behind_proxy.take(Some(a)).is_none());
+    }
+
+    /// R5-5: Docker's gateway, a NAT or a proxy in front is everybody behind it, not one client.
+    #[test]
+    fn addresses_of_proxies_and_nat_count_only_in_the_total() {
+        let connections = Connections::new(10, Some(1));
+        for peer in
+            ["172.18.0.1", "10.0.0.1", "192.168.1.1", "127.0.0.1", "::1", "fd00::1", "fe80::1", "::ffff:172.18.0.1"]
+        {
+            let peer: std::net::IpAddr = peer.parse().unwrap();
+            let (_one, _two) = (connections.take(Some(peer)).unwrap(), connections.take(Some(peer)).unwrap());
+        }
+        let public: std::net::IpAddr = "2001:db8::1".parse().unwrap();
+        let _one = connections.take(Some(public)).unwrap();
+        assert!(connections.take(Some(public)).is_none(), "a client's own address still counts");
     }
 
     #[tokio::test]
