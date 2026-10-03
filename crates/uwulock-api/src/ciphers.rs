@@ -226,7 +226,8 @@ fn new_cipher(user_id: &str) -> Cipher {
 /// The most ids one bulk request may name (R1-11): far more than anybody selects at once.
 pub(crate) const MOST_IDS: usize = 5_000;
 /// The most items of their own one account may have (R1-11), so that repeated imports or creates
-/// cannot grow the database without end.
+/// cannot grow the database without end. An organisation (a family) may have as many (R5-4):
+/// its members share it, and a vault that size is far past what any family keeps.
 pub(crate) const MOST_ITEMS: i64 = 100_000;
 
 pub(crate) fn check_ids(ids: &[String]) -> ApiResult<()> {
@@ -236,13 +237,22 @@ pub(crate) fn check_ids(ids: &[String]) -> ApiResult<()> {
     Ok(())
 }
 
-/// Refused when `adding` more items would take the account past [`MOST_ITEMS`].
+/// Refused when `adding` more items would take the account past [`MOST_ITEMS`] (`Limits::items`).
 pub(crate) async fn check_item_count(state: &AppState, user_id: &str, adding: usize) -> ApiResult<()> {
     let have = state.store.cipher_count(user_id).await?;
-    if have.saturating_add(adding as i64) > MOST_ITEMS {
-        return Err(
-            ApiError::bad(format!("A vault holds at most {MOST_ITEMS} items of its own.")).code("too_many_items")
-        );
+    let most = state.limits.items;
+    if have.saturating_add(adding as i64) > most {
+        return Err(ApiError::bad(format!("A vault holds at most {most} items of its own.")).code("too_many_items"));
+    }
+    Ok(())
+}
+
+/// Refused when `adding` more items would take the organisation past [`MOST_ITEMS`] (R5-4).
+pub(crate) async fn check_org_item_count(state: &AppState, org_id: &str, adding: usize) -> ApiResult<()> {
+    let have = state.store.org_cipher_count(org_id).await?;
+    let most = state.limits.items;
+    if have.saturating_add(adding as i64) > most {
+        return Err(ApiError::bad(format!("An organisation holds at most {most} items.")).code("too_many_items"));
     }
     Ok(())
 }
@@ -554,11 +564,13 @@ async fn create_wrapped(
         if !data.collection_ids.is_empty() {
             return Err(ApiError::bad("Collections are for an organisation's items."));
         }
+        check_item_count(&state, &session.user.id, 1).await?;
         let cipher = save(&state, apply(data.cipher, new_cipher(&session.user.id), None)?).await?;
         notify::cipher(&state, &session, Kind::CipherCreate, &cipher);
         return Ok(json_text(cipher_json(&state, &cipher).await?));
     };
     crate::organizations::check_collections(&state, &session, &org, &data.collection_ids).await?;
+    check_org_item_count(&state, &org, 1).await?;
     let mut cipher = apply(data.cipher, new_cipher(""), Some(&org))?;
     cipher.organization_id = Some(org);
     let (saved, users) =
@@ -740,6 +752,7 @@ async fn apply_bulk(state: &AppState, session: &Session, ids: Vec<String>, what:
         notify::user(state, &session.user.id, Some(session), Kind::Ciphers);
     }
     let rest: Vec<String> = ids.into_iter().filter(|id| !done.contains(id)).collect();
+    let mut reach = crate::organizations::Reach::default();
     for id in rest {
         let Some(item) = state.store.org_cipher(&session.user.id, &id).await? else { continue };
         if item.access.read_only {
@@ -748,8 +761,8 @@ async fn apply_bulk(state: &AppState, session: &Session, ids: Vec<String>, what:
         let org = item.cipher.organization_id.clone().unwrap_or_default();
         let users = state.store.org_bulk(&org, &id, what).await?;
         if !users.is_empty() {
-            crate::organizations::notify(state, session, kind_of(what), &item.cipher, &item.collection_ids, &users)
-                .await;
+            let (kind, collections) = (kind_of(what), &item.collection_ids);
+            crate::organizations::notify_in(&mut reach, state, session, kind, &item.cipher, collections, &users).await;
             done.push(id);
         }
     }
@@ -951,6 +964,44 @@ mod tests {
         let have = server.state.store.cipher_count(&account.id).await.unwrap();
         assert!(check_item_count(&server.state, &account.id, (MOST_ITEMS - have) as usize).await.is_ok());
         assert!(check_item_count(&server.state, &account.id, (MOST_ITEMS - have + 1) as usize).await.is_err());
+    }
+
+    /// R5-4: `/api/ciphers/create` counts too, and so do an organisation's items.
+    #[tokio::test]
+    async fn every_way_in_counts_against_the_ceiling() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let mio = server.account("mio@example.com").await;
+        let (org, collection) = family_with(&server, &nyu, &mio).await;
+        let server = server.with_limits(crate::Limits { items: 2, ..crate::Limits::generous() });
+        let own = json!({ "cipher": login_item("2.own|a|b"), "collectionIds": [] });
+        for n in 0..3 {
+            let response = server.call("POST", "/api/ciphers/create", Some(&mio.token), own.clone()).await;
+            if n < 2 {
+                assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+            } else {
+                assert_eq!(json(response).await["code"], "too_many_items", "own items through /create");
+            }
+        }
+        let item = || json!({"type": 2, "name": "2.n|n|n", "secureNote": {"type": 0}, "organizationId": org});
+        let body = json!({ "cipher": item(), "collectionIds": [collection] });
+        for who in [&nyu, &mio] {
+            let response = server.call("POST", "/api/ciphers/create", Some(&who.token), body.clone()).await;
+            assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+        }
+        let full = server.call("POST", "/api/ciphers/create", Some(&mio.token), body).await;
+        assert_eq!(json(full).await["code"], "too_many_items", "the family's items, whoever made them");
+        // Moving one of their own in counts as well, one or many.
+        let created = json(server.call("POST", "/api/ciphers", Some(&nyu.token), login_item("2.mine|a|b")).await).await;
+        let mut shared = created.clone();
+        shared["organizationId"] = org.clone().into();
+        let id = created["id"].as_str().unwrap();
+        let body = json!({ "cipher": shared, "collectionIds": [collection] });
+        let refused = server.call("PUT", &format!("/api/ciphers/{id}/share"), Some(&nyu.token), body).await;
+        assert_eq!(json(refused).await["code"], "too_many_items");
+        let body = json!({ "ciphers": [shared], "collectionIds": [collection] });
+        let refused = server.call("PUT", "/api/ciphers/share", Some(&nyu.token), body).await;
+        assert_eq!(json(refused).await["code"], "too_many_items");
     }
 
     #[tokio::test]

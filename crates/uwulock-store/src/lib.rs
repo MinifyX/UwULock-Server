@@ -57,7 +57,7 @@ pub use migrate::{Migration, MovedDevice, MovedTwoFactor, MovedUser};
 pub use migrations::SCHEMA_VERSION;
 pub use notices::{Channel, NOTICE_DAYS, Notice};
 pub use org_management::{MemberAccess, MemberDetails, NewOrganization, OrgRefusal, OrgSummary};
-pub use organizations::{Access, OrgCipher, OrgVault};
+pub use organizations::{Access, OrgCipher, OrgReach, OrgVault};
 pub use passkeys::{MAX_PASSKEYS, Passkey};
 pub use reminders::Reminder;
 pub use sso::{ScimGroup, ScimUser, SsoCode, SsoIdentity, SsoState};
