@@ -144,6 +144,7 @@ const QUICK_XON: XonLimits = XonLimits {
     retries: 2,
     longest_pause: Duration::from_millis(5),
     longest_wait: Duration::from_secs(30),
+    per_account: 4,
 };
 
 fn quick() -> Breaches {
@@ -231,6 +232,28 @@ async fn a_long_queue_answers_busy_with_retry_after() {
     let seconds: u64 = answer.headers()["retry-after"].to_str().unwrap().parse().unwrap();
     assert!((29..=30).contains(&seconds), "{seconds}");
     assert_eq!(body(answer).await["code"], "busy");
+}
+
+/// One account keeps at most `per_account` requests in the queue; the next is busy at once, and
+/// another account still gets its turn (R1-15).
+#[tokio::test]
+async fn one_account_cannot_fill_the_queue_for_everybody() {
+    let (upstream, _) = fake_internet().await;
+    let spacing = Duration::from_millis(40);
+    let limits = XonLimits { spacing, per_account: 2, ..QUICK_XON };
+    let server = TestServer::with_settings(all_on())
+        .await
+        .with_upstream(upstream)
+        .with_breaches(quick().with_xon_limits(limits));
+    let nyu = server.account("nyu@example.com").await;
+    let mio = server.account("mio@example.com").await;
+    let paths: Vec<String> = (1..=4).map(|n| format!("/uwu/v1/xon/000000010{n}")).collect();
+    let nyus = futures_util::future::join_all(paths.iter().map(|path| server.get_as(&nyu.token, path)));
+    let mios = server.get_as(&mio.token, "/uwu/v1/xon/0000000200");
+    let (nyus, mios) = tokio::join!(nyus, mios);
+    let busy = nyus.iter().filter(|answer| answer.status() == StatusCode::TOO_MANY_REQUESTS).count();
+    assert_eq!(busy, 2, "two wait, two are told to come back");
+    assert_eq!(mios.status(), StatusCode::OK);
 }
 
 #[test]
