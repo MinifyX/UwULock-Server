@@ -46,6 +46,8 @@ export function GeneratorDialog({
   useLanguage();
   const [options, setOptions] = useState<GeneratorOptions>(loadGenerator);
   const [result, setResult] = useState<Generated | null>(null);
+  /** How often it rolled: so the announcement changes, and is heard again, with each roll. */
+  const [rolls, setRolls] = useState(0);
   // Masked addresses, when UwUMail is connected — not from the editor's password field.
   const masked = useUsableMasked(useFeature('masked-addresses') && !onUse);
   const [mode, setMode] = useState<'password' | 'masked'>('password');
@@ -54,6 +56,7 @@ export function GeneratorDialog({
   const roll = useCallback(async (next: GeneratorOptions) => {
     try {
       setResult(await generatePassword(next));
+      setRolls((n) => n + 1);
     } catch (e) {
       toast(errorText(e), 'error');
     }
@@ -171,9 +174,14 @@ export function GeneratorDialog({
     >
       <div className="generator">
         {masked && <ModeSwitch mode={mode} onChange={setMode} />}
-        <output className="generated" aria-live="polite">
+        {/* The password itself stays out of the live region: a screen reader would read it out
+            loud with every roll. It only hears that there is a new one (R1-24). */}
+        <output className="generated" aria-live="off">
           {result ? <Colored text={result.password} /> : '…'}
         </output>
+        <span className="sr-only" role="status">
+          {result ? t('Neues Passwort erzeugt') + (rolls % 2 ? '\u00a0' : '') : ''}
+        </span>
         {meter && (
           <div className="meter" data-level={meter.level}>
             <span className="meter-bar">

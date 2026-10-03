@@ -32,6 +32,7 @@ const passkey: PasskeyInfo = {
   index: 0,
   readable: true,
   credentialId: 'cred-1',
+  fingerprint: 'fp-1',
   rpId: 'shop.example.com',
   rpName: 'Shop',
   userName: 'nyu@example.com',
@@ -225,7 +226,7 @@ describe('sharing an item as a Send', () => {
       fields: [{ name: 'PIN', value: '1234', hidden: true }],
       totp: 'JBSWY3DPEHPK3PXP',
     };
-    const { container, root } = await mount(<SharedEntryView entry={entry} />);
+    const { container, root } = await mount(<SharedEntryView entry={entry} openable={[true]} />);
     await vi.waitFor(() => expect(container.textContent).toContain('123 456'));
     expect(container.textContent).toContain('nyu');
     expect(container.textContent).toContain('https://shop.example.com');

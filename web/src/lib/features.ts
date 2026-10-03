@@ -78,6 +78,10 @@ export type Send = {
   expirationDate: string | null;
   deletionDate: string | null;
   urlKey: string;
+  /** An entry Send (its marker tagged with this Send's key): its text is not edited (R1-16). */
+  entry: boolean;
+  /** The text without an entry Send's marker line; the text itself for a plain one. */
+  readable: string | null;
 };
 
 export type SendDraft = {

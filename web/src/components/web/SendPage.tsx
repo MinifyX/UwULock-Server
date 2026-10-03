@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { decodeEntrySend, type SharedEntry } from '../../lib/entrySend';
+import { copyGenerated } from '../../lib/api';
+import { decodeEntrySend, mayBeEntrySend, type DecodedEntry } from '../../lib/entrySend';
 import { errorText } from '../../lib/errors';
 import {
   downloadSendFile,
@@ -38,22 +39,42 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
   const [busy, setBusy] = useState(false);
   const [shown, setShown] = useState(false);
   /** An entry Send's entry, once its text was read; `null` for a plain text. */
-  const [entry, setEntry] = useState<SharedEntry | null>(null);
+  const [decoded, setDecoded] = useState<DecodedEntry | null>(null);
+  /**
+   * Whether a text with an entry marker is still being read. Until then the raw text isn't
+   * shown, so the page doesn't flash the marker line before the entry appears.
+   */
+  const [decoding, setDecoding] = useState(false);
+  /** The Send's text as it is, instead of the entry. */
+  const [raw, setRaw] = useState(false);
 
   useEffect(() => {
     let stopped = false;
-    setEntry(null);
-    if (send?.kind === 0 && send.text) {
-      // A text that doesn't decode is shown as the text it is.
-      decodeEntrySend(send.text).then(
-        (found) => !stopped && setEntry(found?.entry ?? null),
-        () => undefined,
-      );
+    setDecoded(null);
+    setRaw(false);
+    const text = send?.kind === 0 ? send.text : null;
+    if (text && mayBeEntrySend(text)) {
+      setDecoding(true);
+      // A text that doesn't decode — or whose tag isn't this Send's — is shown as the text it is.
+      decodeEntrySend(text, urlKey)
+        .then(
+          (found) => !stopped && setDecoded(found),
+          () => undefined,
+        )
+        .finally(() => !stopped && setDecoding(false));
+    } else {
+      setDecoding(false);
     }
     return () => {
       stopped = true;
     };
-  }, [send]);
+  }, [send, urlKey]);
+
+  const copyText = (text: string) =>
+    void copyGenerated(text).then(
+      () => toast(t('Kopiert ✧')),
+      (e) => toast(errorText(e), 'error'),
+    );
 
   const load = async (proof: SendProof = {}) => {
     setBusy(true);
@@ -214,31 +235,40 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             <h1 className="card-title">{send.name || t('Send')}</h1>
             {send.creator && <p className="field-hint">{t('Von {who}', { who: send.creator })}</p>}
             {send.kind === 0 ? (
-              shown && entry ? (
-                <SharedEntryView entry={entry} />
-              ) : shown ? (
+              !shown ? (
+                <button className="primary" onClick={() => setShown(true)}>
+                  <Icon name="eye" size={15} />
+                  {mayBeEntrySend(send.text) ? t('Eintrag zeigen') : t('Text zeigen')}
+                </button>
+              ) : decoding ? (
+                <p className="field-hint" role="status">
+                  {t('Liest …')}
+                </p>
+              ) : decoded && !raw ? (
                 <>
-                  <pre className="send-text">{send.text}</pre>
+                  <SharedEntryView entry={decoded.entry} openable={decoded.openable} />
                   <div className="form-actions">
+                    <span className="spacer" />
+                    <button onClick={() => setRaw(true)}>{t('Originaltext anzeigen')}</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <pre className="send-text">{decoded ? decoded.readable : send.text}</pre>
+                  <div className="form-actions">
+                    {decoded && (
+                      <button onClick={() => setRaw(false)}>{t('Als Eintrag zeigen')}</button>
+                    )}
                     <span className="spacer" />
                     <button
                       className="primary"
-                      onClick={() =>
-                        void navigator.clipboard
-                          .writeText(send.text ?? '')
-                          .then(() => toast(t('Kopiert ✧')))
-                      }
+                      onClick={() => copyText(decoded ? decoded.readable : (send.text ?? ''))}
                     >
                       <Icon name="copy" size={15} />
                       {t('Kopieren')}
                     </button>
                   </div>
                 </>
-              ) : (
-                <button className="primary" onClick={() => setShown(true)}>
-                  <Icon name="eye" size={15} />
-                  {entry ? t('Eintrag zeigen') : t('Text zeigen')}
-                </button>
               )
             ) : (
               <div className="form-actions">

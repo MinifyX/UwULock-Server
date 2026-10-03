@@ -1,5 +1,4 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { isEntrySend, readableOf } from '../../lib/entrySend';
 import { listen } from '../../lib/events';
 import { errorText } from '../../lib/errors';
 import {
@@ -185,9 +184,11 @@ export function SendsView() {
                 <div className="detail-row">
                   <div className="detail-text">
                     <span className="detail-label">
-                      {isEntrySend(current.text) ? t('Text · als Eintrag geteilt') : t('Text')}
+                      {current.entry ? t('Text · als Eintrag geteilt') : t('Text')}
                     </span>
-                    <span className="detail-value multiline">{readableOf(current.text ?? '')}</span>
+                    <span className="detail-value multiline">
+                      {current.readable ?? current.text ?? ''}
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -441,7 +442,27 @@ function SendEditor({
           <span>{t('Name')}</span>
           <input value={name} maxLength={200} autoFocus onChange={(e) => setName(e.target.value)} />
         </label>
-        {kind === 0 ? (
+        {kind === 0 && send?.entry ? (
+          <>
+            <div className="field">
+              <span>{t('Text · als Eintrag geteilt')}</span>
+              <p className="send-text readonly">{send.readable ?? ''}</p>
+              <p className="field-hint">
+                {t(
+                  'Ein geteilter Eintrag lässt sich nicht ändern: Sein Inhalt steckt noch ein zweites Mal im Send, für die Send-Seite. Um etwas zurückzunehmen, lösch diesen Send und teil den Eintrag neu.',
+                )}
+              </p>
+            </div>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={hidden}
+                onChange={(e) => setHidden(e.target.checked)}
+              />
+              <span>{t('Text erst auf Klick zeigen')}</span>
+            </label>
+          </>
+        ) : kind === 0 ? (
           <>
             <label className="field">
               <span>{t('Text')}</span>

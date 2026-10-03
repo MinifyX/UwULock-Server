@@ -149,14 +149,11 @@ function CodesRow({ secret }: { secret: string }) {
   );
 }
 
-/** Only web addresses become links; anything else is text to copy. */
-const openable = (uri: string) => /^https?:\/\//i.test(uri.trim());
-
 /**
  * An entry Send on the Send page: the shared item laid out like an item in the vault — its
  * values with copy buttons, secrets behind the eye, live one-time codes.
  */
-export function SharedEntryView({ entry }: { entry: SharedEntry }) {
+export function SharedEntryView({ entry, openable }: { entry: SharedEntry; openable: boolean[] }) {
   useLanguage();
   const login = entry.username || entry.password || entry.totp;
   return (
@@ -186,7 +183,8 @@ export function SharedEntryView({ entry }: { entry: SharedEntry }) {
               label={t('Adresse')}
               actions={
                 <>
-                  {openable(uri) && (
+                  {/* Only web addresses become links (core `entry_send::openable`); anything else is text to copy. */}
+                  {openable[index] === true && (
                     <a
                       className="icon-button"
                       href={uri.trim()}

@@ -21,13 +21,14 @@ pub fn list(unlocked: &Unlocked, id: &str) -> Result<Vec<PasskeyInfo>> {
     Ok(passkey::list(item, key))
 }
 
-/// The item without the passkey at `index`, sealed for the server. With `credential_id`, only if
-/// that index still is that passkey: else a `conflict`, and the page looks again.
-pub fn delete(unlocked: &Unlocked, id: &str, index: usize, credential_id: Option<&str>) -> Result<CipherRequest> {
+/// The item without the passkey at `index`, sealed for the server — only if that index still is
+/// the passkey `name` (its credential id, or its fingerprint for one that can't be read): else a
+/// `conflict`, and the page looks again.
+pub fn delete(unlocked: &Unlocked, id: &str, index: usize, name: &str) -> Result<CipherRequest> {
     unprompted(unlocked, id)?;
     let mut item = find(unlocked, id)?.clone();
     let key = unlocked.vault.item_key(&item, &unlocked.user_key)?.clone();
-    passkey::remove(&mut item, &key, index, credential_id).map_err(|error| match error {
+    passkey::remove(&mut item, &key, index, Some(name)).map_err(|error| match error {
         uwulock_core::Error::Conflict => Failure::new("conflict", "This passkey changed in the meantime. Look again."),
         uwulock_core::Error::Refused(_) => Failure::new("not-found", "This item has no such passkey."),
         other => other.into(),
@@ -105,9 +106,13 @@ mod tests {
         assert_eq!(detail["login"]["passkeyList"][1]["rpId"], "example.org");
 
         // A passkey that moved in the meantime is not deleted.
-        assert_eq!(delete(&unlocked, "site", 0, Some(&ids[1])).unwrap_err().kind, "conflict");
-        assert_eq!(delete(&unlocked, "site", 5, None).unwrap_err().kind, "not-found");
-        let sealed = serde_json::to_value(delete(&unlocked, "site", 0, Some(&ids[0])).unwrap()).unwrap();
+        assert_eq!(delete(&unlocked, "site", 0, &ids[1]).unwrap_err().kind, "conflict");
+        assert_eq!(delete(&unlocked, "site", 5, &ids[0]).unwrap_err().kind, "not-found");
+        // The fingerprint names one too: what an unreadable passkey is deleted by.
+        let by_fingerprint = delete(&unlocked, "site", 1, &listed[1].fingerprint).unwrap();
+        let rest = serde_json::to_value(by_fingerprint).unwrap();
+        assert_eq!(rest["login"]["fido2Credentials"].as_array().unwrap().len(), 1);
+        let sealed = serde_json::to_value(delete(&unlocked, "site", 0, &ids[0]).unwrap()).unwrap();
         let left = sealed["login"]["fido2Credentials"].as_array().unwrap();
         assert_eq!(left.len(), 1);
 

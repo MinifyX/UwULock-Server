@@ -298,7 +298,9 @@ pub fn value_of(unlocked: &Unlocked, id: &str, field: &str, now: u64) -> Result<
         }
         "totp-next" => {
             let secret = clone(login.and_then(|l| l.totp.as_ref()))?;
-            Ok(Totp::parse(&secret)?.next_code_at(now))
+            // Only while the page shows it (the last seconds of a period, and a moment after):
+            // a click copies what was on the screen.
+            Totp::parse(&secret)?.shown_next_at(now).ok_or_else(missing)
         }
         "notes" => clone(item.notes.as_ref()),
         "card-number" => clone(card.and_then(|c| c.number.as_ref())),

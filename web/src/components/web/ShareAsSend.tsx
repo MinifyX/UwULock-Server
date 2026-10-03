@@ -45,7 +45,7 @@ function labelOf(field: ShareableField): string {
 /** What the choice shows: a website with its address, so several can be told apart. */
 function choiceOf(field: ShareableField): string {
   if (field.uri) return `${t('Website')} · ${field.uri}`;
-  if (field.name === 'totp') return t('Einmal-Codes (nur die Codes, nie der Schlüssel)');
+  if (field.name === 'totp') return t('Einmal-Codes (mit ihrem Schlüssel)');
   return labelOf(field);
 }
 
@@ -82,6 +82,8 @@ export function ShareAsSend({
   useLanguage();
   const [fields, setFields] = useState<ShareableField[] | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set());
+  /** Ticking the one-time codes asks once more: their key travels in the Send (R1-17). */
+  const [askTotp, setAskTotp] = useState(false);
   const [name, setName] = useState(itemName);
   const [days, setDays] = useState(1);
   const [maxAccess, setMaxAccess] = useState('1');
@@ -224,6 +226,10 @@ export function ShareAsSend({
                     type="checkbox"
                     checked={chosen.has(field.name)}
                     onChange={(e) => {
+                      if (field.name === 'totp' && e.target.checked) {
+                        setAskTotp(true);
+                        return;
+                      }
                       const next = new Set(chosen);
                       if (e.target.checked) next.add(field.name);
                       else next.delete(field.name);
@@ -237,10 +243,39 @@ export function ShareAsSend({
               ))}
             </div>
           )}
-          {chosen.has('totp') && (
+          {askTotp && (
+            <div className="field-hint share-totp-confirm" role="alert" data-totp-confirm>
+              <p>
+                {t(
+                  'Der Schlüssel des Einmal-Codes reist verschlüsselt im Send mit. Die Send-Seite zeigt nur die laufenden Codes – wer den Link hat, kann den Schlüssel aber auslesen und damit auch nach dem Löschen des Sends weiter Codes erzeugen.',
+                )}{' '}
+                {t('Teile ihn nur, wenn das okay ist.')}
+              </p>
+              <div className="form-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChosen(new Set(chosen).add('totp'));
+                    setAskTotp(false);
+                  }}
+                >
+                  {t('Schlüssel mitgeben')}
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  autoFocus
+                  onClick={() => setAskTotp(false)}
+                >
+                  {t('Lieber nicht')}
+                </button>
+              </div>
+            </div>
+          )}
+          {!askTotp && chosen.has('totp') && (
             <p className="field-hint" data-totp-hint>
               {t(
-                'Die Send-Seite zeigt nur die aktuellen Codes. Der Schlüssel dafür steckt aber verschlüsselt im Send: Teile ihn nur mit jemandem, dem du die Zwei-Schritt-Anmeldung auch so anvertrauen würdest.',
+                'Der Schlüssel des Einmal-Codes reist verschlüsselt im Send mit. Die Send-Seite zeigt nur die laufenden Codes – wer den Link hat, kann den Schlüssel aber auslesen und damit auch nach dem Löschen des Sends weiter Codes erzeugen.',
               )}
             </p>
           )}

@@ -955,6 +955,15 @@ a {
   user-select: all;
 }
 
+/* What the Send's creator wrote stays in its own direction: bidi characters in a name or a
+   website can't reorder what is around them (R1-25). */
+.shared-entry .detail-value,
+.shared-entry .uri,
+.shared-entry .detail-label,
+.send-text {
+  unicode-bidi: isolate;
+}
+
 .send-text {
   margin: 0;
   padding: var(--uwu-space-3) var(--uwu-space-4);
@@ -1979,4 +1988,23 @@ fieldset.send-access > legend {
 .suite-file {
   justify-self: start;
   cursor: pointer;
+}
+
+/* An entry Send's readable lines in the Send editor: shown, not edited (R1-16). */
+.send-text.readonly {
+  max-height: 30vh;
+  color: var(--uwu-muted);
+}
+
+/* Ticking the one-time codes asks once more: their key travels in the Send (R1-17). */
+.share-totp-confirm {
+  margin-top: var(--uwu-space-3);
+  padding: var(--uwu-space-3) var(--uwu-space-4);
+  border-radius: var(--uwu-radius-control);
+  border: 1px solid var(--uwu-pink);
+  background: var(--uwu-pink-tint);
+}
+
+.share-totp-confirm p {
+  margin: 0 0 var(--uwu-space-2);
 }

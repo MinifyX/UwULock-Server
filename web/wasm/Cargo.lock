@@ -1276,7 +1276,7 @@ dependencies = [
 [[package]]
 name = "uwulock-core"
 version = "0.4.0-beta.3"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=2a8a70877f04a31d5c80780b9e36dfd6342c13f5#2a8a70877f04a31d5c80780b9e36dfd6342c13f5"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=b9580a202f8d8e6fa4ade28ff6cf495cdfef8339#b9580a202f8d8e6fa4ade28ff6cf495cdfef8339"
 dependencies = [
  "aes",
  "argon2",
@@ -1456,6 +1456,7 @@ version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 dependencies = [
+ "serde",
  "zeroize_derive",
 ]
 

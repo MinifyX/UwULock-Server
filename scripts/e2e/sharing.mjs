@@ -225,6 +225,10 @@ try {
   const codes = share.getByRole('checkbox', { name: /Einmal-Codes/ });
   if (await codes.isChecked()) throw new Error('the one-time codes are ticked from the start');
   await codes.check();
+  // Their key travels in the Send: ticking them asks once more.
+  await share.locator('[data-totp-confirm]').waitFor();
+  if (await codes.isChecked()) throw new Error('the one-time codes are ticked before the confirm');
+  await share.getByRole('button', { name: 'Schlüssel mitgeben' }).click();
   await share.locator('[data-totp-hint]').waitFor();
   await share.getByRole('radio', { name: 'Nur bestimmte Adressen' }).click();
   await share.getByLabel('E-Mail-Adressen').fill('friend@example.com');

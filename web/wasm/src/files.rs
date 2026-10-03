@@ -145,6 +145,11 @@ pub struct SendView {
     deletion_date: Option<String>,
     /// What goes after the access id in the link: the seed, base64url.
     url_key: String,
+    /// A text Send that is an entry Send (`uwulock_core::entry_send`, its marker tagged with this
+    /// Send's seed): the Send page shows it as an entry, and its text can't be edited (R1-16).
+    entry: bool,
+    /// The text without an entry Send's marker line; the text itself for a plain one.
+    readable: Option<String>,
 }
 
 fn view(send: &wire::Send, auth: Option<&SendAuth>, user_key: &SymmetricKey) -> Result<SendView> {
@@ -157,16 +162,19 @@ fn view(send: &wire::Send, auth: Option<&SendAuth>, user_key: &SymmetricKey) -> 
         None => 2,
     };
     let key = crypto::send_key(&seed)?;
+    let text = match &send.text {
+        Some(text) => text_of(&text.text, &key)?,
+        None => None,
+    };
+    let entry = text.as_deref().is_some_and(|text| entry_send::decode(text, &seed).is_some());
+    let readable = text.as_deref().map(|text| entry_send::readable_part(text, &seed).to_string());
     Ok(SendView {
         id: send.id.clone(),
         access_id: send.access_id.clone().unwrap_or_default(),
         kind: send.kind,
         name: text_of(&send.name, &key)?.unwrap_or_default(),
         notes: text_of(&send.notes, &key)?,
-        text: match &send.text {
-            Some(text) => text_of(&text.text, &key)?,
-            None => None,
-        },
+        text,
         hidden: send.text.as_ref().and_then(|text| text.hidden).unwrap_or(false),
         file_name: match &send.file {
             Some(file) => text_of(&file.file_name, &key)?,
@@ -184,6 +192,8 @@ fn view(send: &wire::Send, auth: Option<&SendAuth>, user_key: &SymmetricKey) -> 
         expiration_date: send.expiration_date.clone(),
         deletion_date: send.deletion_date.clone(),
         url_key: URL_SAFE_NO_PAD.encode(seed.as_slice()),
+        entry,
+        readable,
     })
 }
 
@@ -412,8 +422,8 @@ pub struct ShareDraft {
     #[serde(default)]
     hide_email: bool,
     /// An entry Send (`uwulock_core::entry_send`): the readable lines plus the
-    /// `uwulock-entry:v1:` line UwULock's Send page shows as an entry. Only then may `fields`
-    /// name `totp`.
+    /// `uwulock-entry:v2:` line, tagged with the Send's seed, that UwULock's Send page shows as
+    /// an entry. Only then may `fields` name `totp`.
     #[serde(default)]
     entry: bool,
 }
@@ -433,7 +443,14 @@ pub fn share_item(unlocked: &Unlocked, draft: ShareDraft) -> Result<Value> {
     if chosen == 0 {
         return Err(Failure::new("invalid", "Choose at least one field that has a value."));
     }
-    let text = if draft.entry { entry_send::share_entry_text(item, &fields) } else { send::share_text(item, &fields) };
+    // The seed first: an entry Send's marker is tagged with it, so only this Send's link opens
+    // it as an entry (a marker line copied into some text does not).
+    let seed = send::generate_send_seed();
+    let text = if draft.entry {
+        entry_send::share_entry_text(item, &fields, seed.as_ref())
+    } else {
+        send::share_text(item, &fields)
+    };
     let sealed = send::TextSend {
         name: draft.name,
         notes: None,
@@ -446,7 +463,7 @@ pub fn share_item(unlocked: &Unlocked, draft: ShareDraft) -> Result<Value> {
         emails: draft.emails,
         hide_email: draft.hide_email,
     }
-    .seal(&unlocked.user_key)
+    .seal_with_seed(&unlocked.user_key, seed)
     .map_err(|error| match error {
         uwulock_core::Error::Crypto(message) => Failure::new("invalid", message),
         other => Failure::from(other),
@@ -489,15 +506,26 @@ pub fn open_access(access: &str, url_key: &str) -> Result<Value> {
     }))
 }
 
-/// The entry in a Send's text (`uwulock_core::entry_send`) as JSON `{entry, readable}`, or
-/// `null` when the text is plain (no marker, another version, garbled): then the page shows the
-/// text as it is.
-pub fn decode_entry_send(text: &str) -> Result<String> {
-    Ok(match entry_send::decode(text) {
-        Some(entry) => serde_json::to_string(&json!({
-            "entry": entry,
-            "readable": entry_send::readable_part(text),
-        }))?,
+/// The entry in a Send's text (`uwulock_core::entry_send`) as JSON `{entry, readable,
+/// openable}`, or `null` when the text is plain (no marker, another version, a tag that isn't
+/// this Send's, garbled): then the page shows the text as it is. `url_key` is the link's part
+/// after `#`, the seed the marker is tagged with; `openable[i]` says whether website `i` may be
+/// a link.
+pub fn decode_entry_send(text: &str, url_key: &str) -> Result<String> {
+    let seed = zeroize::Zeroizing::new(
+        URL_SAFE_NO_PAD
+            .decode(url_key.trim().trim_end_matches('='))
+            .map_err(|_| Failure::new("invalid", "The link is not complete."))?,
+    );
+    Ok(match entry_send::decode(text, &seed) {
+        Some(entry) => {
+            let openable: Vec<bool> = entry.websites.iter().map(|website| entry_send::openable(website)).collect();
+            serde_json::to_string(&json!({
+                "entry": entry,
+                "readable": entry_send::readable_part(text, &seed),
+                "openable": openable,
+            }))?
+        }
         None => "null".into(),
     })
 }
@@ -618,13 +646,17 @@ mod tests {
 
     /// The text a recipient gets, opened with the link's key.
     fn opened(unlocked: &Unlocked, draft: ShareDraft) -> String {
+        opened_with_key(unlocked, draft).0
+    }
+
+    /// The text of a new Send as its link opens it, and the link's key.
+    fn opened_with_key(unlocked: &Unlocked, draft: ShareDraft) -> (String, String) {
         let made = share_item(unlocked, draft).unwrap();
         let request = &made["request"];
         let access = json!({ "id": "s1", "type": 0, "name": request["name"], "text": request["text"] });
-        open_access(&access.to_string(), made["urlKey"].as_str().unwrap()).unwrap()["text"]
-            .as_str()
-            .unwrap()
-            .to_string()
+        let url_key = made["urlKey"].as_str().unwrap().to_string();
+        let text = open_access(&access.to_string(), &url_key).unwrap()["text"].as_str().unwrap().to_string();
+        (text, url_key)
     }
 
     #[test]
@@ -634,8 +666,8 @@ mod tests {
         // A plain Send can't take the authenticator key alone.
         assert_eq!(share_item(&unlocked, shop_draft(false, &["totp"])).unwrap_err().kind, "invalid");
 
-        let text = opened(&unlocked, shop_draft(true, &["username", "totp", "uri:1"]));
-        let decoded: Value = serde_json::from_str(&decode_entry_send(&text).unwrap()).unwrap();
+        let (text, url_key) = opened_with_key(&unlocked, shop_draft(true, &["username", "totp", "uri:1"]));
+        let decoded: Value = serde_json::from_str(&decode_entry_send(&text, &url_key).unwrap()).unwrap();
         let entry = &decoded["entry"];
         assert_eq!(entry["name"], "Shop");
         assert_eq!(entry["username"], "nyu");
@@ -647,8 +679,13 @@ mod tests {
         assert!(!readable.contains("JBSWY3DPEHPK3PXP"), "the readable lines never hold the key");
         assert!(!readable.contains(entry_send::MARKER));
 
+        assert_eq!(decoded["openable"], json!([true]));
+        // Another Send's link does not open it as an entry: the tag is this Send's (R2-6).
+        let (_, other_key) = opened_with_key(&unlocked, shop_draft(true, &["username"]));
+        assert_eq!(decode_entry_send(&text, &other_key).unwrap(), "null");
+
         // A plain Send stays plain text.
         let plain = opened(&unlocked, shop_draft(false, &["username"]));
-        assert_eq!(decode_entry_send(&plain).unwrap(), "null");
+        assert_eq!(decode_entry_send(&plain, &url_key).unwrap(), "null");
     }
 }
