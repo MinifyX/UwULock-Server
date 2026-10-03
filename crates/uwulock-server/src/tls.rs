@@ -282,28 +282,60 @@ struct Connections {
 struct ConnectionCounts {
     total: usize,
     per_network: Option<usize>,
-    open: parking_lot::Mutex<(usize, HashMap<std::net::IpAddr, usize>)>,
+    /// The most connections all private, loopback and link-local peers hold together, when there
+    /// is a cap per network: [`shared_cap`] of the total, so that one client behind Docker's
+    /// gateway can't take the slots public clients need (R8 S-1).
+    shared: Option<usize>,
+    open: parking_lot::Mutex<Open>,
+}
+
+#[derive(Default)]
+struct Open {
+    total: usize,
+    shared: usize,
+    per_network: HashMap<std::net::IpAddr, usize>,
+}
+
+/// Where a connection is counted besides the total.
+#[derive(Clone, Copy)]
+enum Slot {
+    /// Only in the total (no cap per network: behind a proxy or `UWULOCK_CONNECTIONS_PER_NETWORK=0`).
+    Total,
+    /// Per client network.
+    Network(std::net::IpAddr),
+    /// Among the private, loopback and link-local peers.
+    Shared,
 }
 
 /// One counted connection; the count goes down when it is dropped with its stream.
 struct Counted {
     counts: Arc<ConnectionCounts>,
-    network: Option<std::net::IpAddr>,
+    slot: Slot,
 }
 
 impl Drop for Counted {
     fn drop(&mut self) {
         let mut open = self.counts.open.lock();
-        open.0 = open.0.saturating_sub(1);
-        if let Some(network) = self.network
-            && let Some(count) = open.1.get_mut(&network)
-        {
-            *count -= 1;
-            if *count == 0 {
-                open.1.remove(&network);
+        open.total = open.total.saturating_sub(1);
+        match self.slot {
+            Slot::Total => {}
+            Slot::Shared => open.shared = open.shared.saturating_sub(1),
+            Slot::Network(network) => {
+                if let Some(count) = open.per_network.get_mut(&network) {
+                    *count -= 1;
+                    if *count == 0 {
+                        open.per_network.remove(&network);
+                    }
+                }
             }
         }
     }
+}
+
+/// The share of the total that private, loopback and link-local peers get together: all but an
+/// eighth (1 024 of 8 192), which stays for clients with an address of their own.
+fn shared_cap(total: usize) -> usize {
+    total - total / 8
 }
 
 impl Connections {
@@ -312,27 +344,42 @@ impl Connections {
             inner: Arc::new(ConnectionCounts {
                 total,
                 per_network,
-                open: parking_lot::Mutex::new((0, HashMap::new())),
+                shared: per_network.map(|_| shared_cap(total)),
+                open: parking_lot::Mutex::new(Open::default()),
             }),
         }
     }
 
     /// A slot for a connection from `peer`, or none past a cap.
     fn take(&self, peer: Option<std::net::IpAddr>) -> Option<Counted> {
-        let network = self.inner.per_network.and(peer).map(network_of).filter(|network| is_client(*network));
+        let slot = match (self.inner.per_network, peer.map(network_of)) {
+            (Some(_), Some(network)) if is_client(network) => Slot::Network(network),
+            (Some(_), Some(_)) => Slot::Shared,
+            _ => Slot::Total,
+        };
         let mut open = self.inner.open.lock();
-        if open.0 >= self.inner.total {
+        if open.total >= self.inner.total {
             return None;
         }
-        if let (Some(most), Some(network)) = (self.inner.per_network, network) {
-            let count = open.1.entry(network).or_insert(0);
-            if *count >= most {
-                return None;
+        match slot {
+            Slot::Total => {}
+            Slot::Shared => {
+                if self.inner.shared.is_some_and(|most| open.shared >= most) {
+                    return None;
+                }
+                open.shared += 1;
             }
-            *count += 1;
+            Slot::Network(network) => {
+                let most = self.inner.per_network.unwrap_or(usize::MAX);
+                let count = open.per_network.entry(network).or_insert(0);
+                if *count >= most {
+                    return None;
+                }
+                *count += 1;
+            }
         }
-        open.0 += 1;
-        Some(Counted { counts: self.inner.clone(), network })
+        open.total += 1;
+        Some(Counted { counts: self.inner.clone(), slot })
     }
 }
 
@@ -354,8 +401,8 @@ fn network_of(ip: std::net::IpAddr) -> std::net::IpAddr {
 /// Whether `network` can be one client's own: not loopback, a private (RFC 1918, ULA) or
 /// link-local address. Those are a proxy, Docker's gateway (its userland proxy hands every IPv6
 /// client and, under rootless Docker, every client over with that address) or a NAT: counting
-/// them per network would let one client fill the slots of everybody behind it (R5-5). The
-/// total still counts them.
+/// them per network would let one client fill the slots of everybody behind it (R5-5). They
+/// count together, below the total ([`shared_cap`]), and in the total.
 fn is_client(network: std::net::IpAddr) -> bool {
     match network {
         std::net::IpAddr::V4(v4) => !(v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()),
@@ -620,6 +667,29 @@ mod tests {
         let public: std::net::IpAddr = "2001:db8::1".parse().unwrap();
         let _one = connections.take(Some(public)).unwrap();
         assert!(connections.take(Some(public)).is_none(), "a client's own address still counts");
+    }
+
+    /// R8 S-1: one client behind Docker's gateway can't take the slots public clients need.
+    #[test]
+    fn private_peers_share_a_cap_below_the_total() {
+        let connections = Connections::new(16, Some(4));
+        assert_eq!(shared_cap(16), 14);
+        let gateway: std::net::IpAddr = "172.18.0.1".parse().unwrap();
+        let mut held: Vec<_> = (0..14).map(|_| connections.take(Some(gateway)).unwrap()).collect();
+        assert!(connections.take(Some(gateway)).is_none(), "the shared cap is full");
+        assert!(connections.take(Some("::1".parse().unwrap())).is_none(), "for every private peer");
+        let public: std::net::IpAddr = "198.51.100.7".parse().unwrap();
+        let _a = connections.take(Some(public)).unwrap();
+        let _b = connections.take(Some("2001:db8::1".parse().unwrap())).unwrap();
+        assert!(connections.take(Some(public)).is_none(), "the total is full");
+        held.pop();
+        held.pop();
+        let _c = connections.take(Some(public)).expect("a closed private connection frees a slot");
+        let _d = connections.take(Some(gateway)).unwrap();
+        assert!(connections.take(Some(gateway)).is_none(), "the total is full again");
+        assert_eq!(shared_cap(8_192), 7_168);
+        let no_cap = Connections::new(2, None);
+        let (_one, _two) = (no_cap.take(Some(gateway)).unwrap(), no_cap.take(Some(gateway)).unwrap());
     }
 
     #[tokio::test]

@@ -156,12 +156,24 @@ export function ssoAdminRulesChanged(current: SsoSettings, draft: SsoSettings) {
   );
 }
 
+/** Whether saving `draft` changes who may make an account through SSO: sign-ups and the user group. */
+export function ssoSignupRulesChanged(current: SsoSettings, draft: SsoSettings) {
+  return (
+    current.signups !== draft.signups ||
+    (current.userGroup ?? '').trim() !== (draft.userGroup ?? '').trim()
+  );
+}
+
 /**
  * Whether the server asks for the admin's master password to save `draft` over `current`:
- * when it changes who may log in as whom, or who becomes an admin.
+ * when it changes who may log in as whom, who becomes an admin, or who may make an account.
  */
 export function ssoNeedsPassword(current: SsoSettings, draft: SsoSettings, secret: string) {
-  return ssoProviderChanged(current, draft, secret) || ssoAdminRulesChanged(current, draft);
+  return (
+    ssoProviderChanged(current, draft, secret) ||
+    ssoAdminRulesChanged(current, draft) ||
+    ssoSignupRulesChanged(current, draft)
+  );
 }
 
 export async function saveSso(settings: SsoSettings, password?: string) {

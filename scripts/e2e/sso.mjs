@@ -192,7 +192,9 @@ try {
     await admin.getByText("Gespeichert ✧").waitFor({ timeout: 30000 });
     await snap(admin, "settings");
 
-    step("who becomes an admin, and SCIM, want the master password too (R5-3)");
+    step(
+        "who becomes an admin, who signs up, and SCIM want the master password too (R5-3, R8 I-D)",
+    );
     // A roles claim, and back: with one, only the role "user" signs up, which the
     // provider here doesn't send.
     for (const roles of ["roles", ""]) {
@@ -205,6 +207,25 @@ try {
         const rules = admin.getByRole("dialog");
         await rules
             .getByText("Admin-Regeln für SSO ändern?")
+            .waitFor({ timeout: 30000 });
+        await rules.locator("input[type=password]").fill(password);
+        await rules
+            .getByRole("button", { name: "Speichern", exact: true })
+            .click();
+        await rules.waitFor({ state: "detached", timeout: 30000 });
+        await admin.getByText("Gespeichert ✧").waitFor({ timeout: 30000 });
+    }
+    // Who may sign up, too (R8 I-D): only invitations, and back to the group.
+    for (const signups of ["invitation", "group"]) {
+        await admin
+            .getByLabel("Wer sich ohne Einladung einen Tresor anlegen darf")
+            .selectOption(signups);
+        await admin
+            .getByRole("button", { name: "Speichern", exact: true })
+            .click();
+        const rules = admin.getByRole("dialog");
+        await rules
+            .getByText("Regeln für neue Konten ändern?")
             .waitFor({ timeout: 30000 });
         await rules.locator("input[type=password]").fill(password);
         await rules

@@ -85,3 +85,12 @@ info items that cost little are done.
 | I-4 | Info | Local backups keep API keys and the token key | Documented in docs/deployment.md (Backups): `backups/` is as sensitive as `data/` | `e33840d` |
 | I-5 | Info | With the hashing queue full every password login is `busy` | No change: the intended trade-off | – |
 
+## Final check (R8)
+
+Round R8 read the R5 fixes (PR #44) once more: Critical 0, High 0, Medium 0; one Low and one info
+item on the server, both fixed in branch `r8-server`, each with a test.
+
+| Id | Severity | Finding | Fix | Commit |
+| --- | --- | --- | --- | --- |
+| S-1 | Low | Since R5-5, private, loopback and link-local peers had no cap but the total: with the server's own TLS on Docker's default bridge (IPv6 clients) or rootless Docker, one client behind the gateway could hold all 8 192 connections and shut out IPv4 clients with their own address too | Those peers share a cap of 7/8 of the total (7 168), derived from the total (`shared_cap`), only while there is a cap per network (`UWULOCK_CONNECTIONS_PER_NETWORK` ≠ `0`); the last eighth stays for public clients. In-process test `private_peers_share_a_cap_below_the_total`; docs/deployment.md | `52dfb2d` |
+| I-D | Info | Changing SSO `signups` or `userGroup` needed no master password: a stolen admin session could set sign-ups to *group* without a user group, so anyone at the provider could make an account | Both are in `needs_password` (user group compared after trimming); the portal asks with its own title (*Regeln für neue Konten ändern?*). Server test cases per field, vitest `ssoSignupRulesChanged`, e2e `sso.mjs` switches sign-ups through the prompt | `52dfb2d` |

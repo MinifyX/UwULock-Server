@@ -1159,9 +1159,11 @@ struct PutSettings {
 
 /// Whether going from `current` to `new` changes who may log in as whom, or who becomes an
 /// admin: another provider or client, a new secret, trusting unverified addresses, other
-/// extensions, SSO on or off (R1-3), or which claim and group make an admin (R5-3) — a claim
-/// the user can set themselves would make anybody at the provider one. A session that got away
-/// must not do that without the master password.
+/// extensions, SSO on or off (R1-3), which claim and group make an admin (R5-3) — a claim
+/// the user can set themselves would make anybody at the provider one — or who may make an
+/// account through SSO, the sign-ups and the user group (R8 I-D): `group` without a user group
+/// lets everybody at the provider in. A session that got away must not do that without the
+/// master password.
 fn needs_password(current: &SsoSettings, new: &SsoSettings, new_secret: bool) -> bool {
     new_secret
         || current.issuer != new.issuer
@@ -1172,6 +1174,8 @@ fn needs_password(current: &SsoSettings, new: &SsoSettings, new_secret: bool) ->
         || current.admin_group != new.admin_group
         || current.groups_claim != new.groups_claim
         || current.roles_claim != new.roles_claim
+        || current.signups != new.signups
+        || current.user_group != new.user_group
 }
 
 async fn put_settings(

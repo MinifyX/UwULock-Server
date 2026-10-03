@@ -123,8 +123,11 @@ can't take every slot (`UWULOCK_CONNECTIONS_PER_NETWORK`, `0` for no cap per add
 default bridge network the server doesn't always see the client's address: IPv6 clients (the
 network has no IPv6) and, under rootless Docker, every client arrive through Docker's proxy with
 the gateway's address, like `172.18.0.1`. Loopback, private (RFC 1918, `fd00::/8`) and link-local
-peers therefore only count towards the total, never per address — otherwise one client would fill
-the slots of everybody behind the same gateway. The rate limits are shared the same way there (the
+peers therefore never count per address — otherwise one client would fill the slots of everybody
+behind the same gateway. Together they get at most seven eighths of the total (7 168 of 8 192), so
+that one client behind the gateway can't take the slots of the clients with their own address
+either; the last eighth stays for those. With `UWULOCK_CONNECTIONS_PER_NETWORK=0` that shared cap
+is off too. The rate limits are shared the same way there (the
 diagnosis says so). For a server on the internet with IPv6 or rootless Docker, put a proxy in
 front (next section) or run the container with `network_mode: host`, so the server sees every
 client's own address.
@@ -527,7 +530,7 @@ instead; `.env` only gives where a new server starts.
 | `UWULOCK_TRUST_FORWARDED` | `off` | Believe the address the proxy added last to `X-Forwarded-For` (`X-Real-IP` only when there is no `X-Forwarded-For`), and `X-Forwarded-Host`. Only behind a proxy that sets it. |
 | `UWULOCK_TRUSTED_PROXIES` | — (every peer) | With `UWULOCK_TRUST_FORWARDED=on`: believe forwarding headers (`X-Forwarded-For`, `X-Real-IP`, `X-Forwarded-Host`) only from these peers, addresses or CIDR networks, comma separated. Set it when the server shares a Docker network with other containers. |
 | `UWULOCK_CLIENT_IP_HEADER` | `x-forwarded-for` | `x-real-ip` for a proxy that sets `X-Real-IP` but leaves `X-Forwarded-For` as the client sent it: then only `X-Real-IP` says who is asking (see [Behind a reverse proxy](#behind-a-reverse-proxy)). |
-| `UWULOCK_CONNECTIONS_PER_NETWORK` | `256` | With TLS of its own: the most connections from one IPv4 address or IPv6 /64; `0` for no cap but the total of 8 192. Private, loopback and link-local peers (Docker's gateway) only count in the total. |
+| `UWULOCK_CONNECTIONS_PER_NETWORK` | `256` | With TLS of its own: the most connections from one IPv4 address or IPv6 /64; `0` for no cap but the total of 8 192. Private, loopback and link-local peers (Docker's gateway) share 7/8 of the total instead (off with `0`). |
 | `UWULOCK_UPDATE_CHECK` | `on` | Ask GitHub once a day whether there is a newer release. |
 | `UWULOCK_LOGIN_ATTEMPTS` | `10` | Logins one address may try at once; after that one more a minute. More for many people behind one address. Requests without an account (prelogin, SSO, Sends) get five times as many, at least 50. |
 | `UWULOCK_FEATURES` | — (only the vault and icons) | The extras a new server starts with: `all`, `none` or ids like `families,file-requests` ([features.md](features.md)). Start value; *Admin portal → Vault & features → Features* changes them. |

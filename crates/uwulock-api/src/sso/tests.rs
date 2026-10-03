@@ -684,6 +684,10 @@ async fn the_portal_sets_sso_up_by_hand_and_keeps_the_secret_to_itself() {
         ("adminGroup", Value::Null),
         ("groupsClaim", json!("email")),
         ("rolesClaim", json!("given_name")),
+        // Nor who may make an account: `group` without a user group is everybody (R8 I-D).
+        ("signups", json!("invitation")),
+        ("signups", json!("off")),
+        ("userGroup", json!("staff")),
     ] {
         let mut changed = base.clone();
         changed[field] = value.clone();
@@ -694,6 +698,11 @@ async fn the_portal_sets_sso_up_by_hand_and_keeps_the_secret_to_itself() {
         assert_eq!(json(refused).await["code"], "password_required", "{field} with a wrong password");
     }
     assert_eq!(server.state.settings().sso.admin_group.as_deref(), Some("vault-admins"));
+    assert_eq!((server.state.settings().sso.signups, server.state.settings().sso.user_group), (Signups::Group, None));
+    let mut spaces = base.clone();
+    spaces["userGroup"] = " ".into();
+    let response = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), spaces).await;
+    assert_eq!(response.status(), StatusCode::OK, "an empty user group is no change: {}", text(response).await);
     let mut roles = base.clone();
     roles["rolesClaim"] = "roles".into();
     roles["masterPasswordHash"] = password_hash("admin@example.com").into();
