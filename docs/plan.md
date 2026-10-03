@@ -595,8 +595,14 @@ Kern aus UwULock-Client PR #26 (`2a8a708`, in `web/wasm` und `uwulock-e2e` gepin
   die Credential-ID); „Duplizieren" legt eine Kopie mit den Passkeys an (eigene Einträge; Anhänge
   nicht); Export behielt sie schon.
 - [x] Als Send teilen: Websites mit Adresse in der Auswahl, Einmal-Codes wählbar (nie vorab),
-  immer als Eintrags-Send (`uwulock-entry:v1:`, docs/sharing.md); die Send-Seite zeigt den
-  Eintrag mit Kopierknöpfen und Live-Codes, nie den Schlüssel; einfache Sends wie bisher.
+  immer als Eintrags-Send (`uwulock-entry:v2:` mit Tag aus dem Link-Schlüssel, docs/sharing.md);
+  die Send-Seite zeigt den Eintrag mit Kopierknöpfen und Live-Codes, nie den Schlüssel; einfache
+  Sends wie bisher. Einmal-Codes nur nach Rückfrage (der Schlüssel reist im Send mit).
+- [x] Sicherheitsprüfung 0.8 (docs/security-review-0.8.md): alle Medium/Low-Funde R1-1 bis R1-18
+  behoben (Proxy-Adresse + `UWULOCK_TRUSTED_PROXIES`, Login-Limits /48 + pro Konto + `busy`,
+  Master-Passwort für SSO/Admin-Aktionen, API-Schlüssel am Security-Stamp, Prelogin-Ersatz-KDF,
+  Delta-Sync/Hub nur Sichtbares, Speicher- und Mengenlimits, Verbindungs-Caps, XON fair pro Konto,
+  Eintrags-Sends v2 im Web-Tresor); Migrationen 0024 und 0025.
 - [x] Design: Schriftwahl wie UwUMail (UwU Sans Standard, Manrope, Rubik, DM Sans, System; Lizenzen
   in THIRD-PARTY-NOTICES.txt), Ligaturen aus; Checkboxen und Schalter im UwUMail-Stil; mehr Nyu
   (leere Listen, Laden, Entsperren, Passwortprüfung, Toasts), alles mit reduzierter Bewegung.

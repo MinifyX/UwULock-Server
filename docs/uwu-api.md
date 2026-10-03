@@ -103,10 +103,24 @@ this file are part of the contract; messages are not (they are English, readable
 | 422 | would exceed a quota | `quota` |
 | 429 | rate limit; `Retry-After: <seconds>` header | `rate_limited` |
 | 502 | an upstream (UwUMail, IdP, icon site) failed | `upstream` |
+| 503 | the server is too busy right now; `Retry-After: <seconds>` | `busy` |
 
 A message without a named code carries the one of its status in the table above (`error` for
 any other status); the Bitwarden-shaped bodies of `/identity` (`invalid_grant` and friends) carry
 none. Named so far: `would_lock_out` (§21.4), `kdf_too_weak` (§20), `upstream`.
+
+**Password logins** (`grant_type=password`) are limited per IPv4 address or IPv6 /64
+(`UWULOCK_LOGIN_ATTEMPTS`, then one a minute), per IPv6 /48 (100, then one every 6 s) and, for
+devices the account hasn't logged in from, per account: 30 wrong passwords, one back every
+2 minutes; then 429 with `"code": "account_limited"` until one is back. Devices the account knows
+still log in, so nobody is locked out. When too many logins already wait for the password hashing,
+the answer is 503 `busy` with `Retry-After: 2` at once. Behind a proxy the address is the last
+`X-Forwarded-For` entry (`X-Real-IP` only without any `X-Forwarded-For`), and only from the
+peers in `UWULOCK_TRUSTED_PROXIES` when that is set (docs/deployment.md).
+
+**Bulk requests** (`/api/ciphers/move`, `…/delete`, `…/restore`, `…/share` and the other id
+lists) take at most 5 000 ids (400 `too_many_ids`), and an account holds at most 100 000 own
+items: creating, importing or sharing past that is 400 `too_many_items`.
 
 "Not yours" is always 404, never 403, so ids cannot be probed. A switched-off feature (feature
 switch, [features.md](features.md)) answers 404 `feature_off` on all its endpoints, for everybody,
@@ -136,7 +150,9 @@ IV 16 bytes, MAC 32 bytes, ciphertext a multiple of 16) and the length.
 SignalR hub with the named `PushType` (so the official clients sync), and the realtime channel of
 §5 with the named area. Bitwarden's push relay is not used since 0.8: the phone apps' push
 tokens (`PUT /api/devices/identifier/{id}/token`, `…/clear-token`) are answered 200 and dropped. The device that made the change is left out, as
-today (`uwulock_notify::Update`).
+today (`uwulock_notify::Update`). An organization item's change names the item (`Id`,
+`OrganizationId`, `CollectionIds`) only to members who see it; the other members get a plain
+vault sync (`SyncVault`) without ids.
 
 ---
 
@@ -486,7 +502,10 @@ Answer (full sync: every list complete, `deleted` lists empty, `reset: true`):
   (§9). In a delta, `profile`, `policies`, `domains` and `userDecryption` are `null` unless they
   changed since the cursor; then they are complete.
 - `vault.deleted`: ids that are gone for this account since the cursor (hard delete, moved out of
-  reach without an epoch bump, or a collection deleted).
+  reach without an epoch bump, or a collection deleted). Only ids the account could see: an
+  organization item changed or deleted in a collection the member doesn't reach is not named; one
+  that left a collection the member does see is (a `cipher-left` tombstone, migration 0025).
+  Collection ids are only named to members who see every collection, or when they were reachable.
 - `suite.records`: envelopes of §6.3 with `seq` greater than the cursor's, of the spaces this
   token sees; deleted records are envelopes with `deleted: true` (they are the tombstones).
   `suite.spaces`: the §6.2 space objects that changed (new, or their key changed).
@@ -725,7 +744,10 @@ Every accepted push notifies realtime area `suite` with the space (§5); no Bitw
 UwUSSH and UwURDP log in to UwULock like a Bitwarden client, as a device of the account, and get
 a token that can do nothing but their space:
 
-1. `POST /identity/accounts/prelogin` **[BW]** `{ "email" }` → KDF.
+1. `POST /identity/accounts/prelogin` **[BW]** `{ "email" }` → KDF. An unknown address gets a
+   stand-in KDF that stays the same for it (chosen by a MAC of the address under the server's
+   secret, between Argon2id 3/64/4 and PBKDF2 600 000 like real accounts), so the answer tells
+   nobody which accounts exist.
 2. The app derives the master key and master password hash as Bitwarden does
    (`uwulock_core::crypto::master_key`, `master_password_hash`; the apps depend on `uwulock-core`).
 3. `POST /identity/connect/token` **[BW]** form, as the password grant today, with:
@@ -1330,8 +1352,8 @@ full requests are the same 404 `gone`, so a link cannot be probed.
 
   Checks: at least a text or a file; `text` only if `textAllowed`; at most `maxFiles` files; each
   `size` at most `maxFileBytes + 65` (the EncArrayBuffer's header and padding); submissions left;
-  the owner's storage (422 `quota`); the request's own cap, all its submissions' files together
-  (`fileRequests.maxRequestMb`, default 2048, 0 for none; 422 `request_full`); per IP 10
+  the owner's storage (422 `quota`; the message and sender count too); the request's own cap, all
+  its submissions' files and messages together (`fileRequests.maxRequestMb`, default 2048, 0 for none; 422 `request_full`); per IP 10
   submissions an hour (429). Uploads and `complete` answer 404 `gone` once the request is
   disabled or has run out, also for a submission begun before. Answer:
 
@@ -1344,7 +1366,8 @@ full requests are the same 404 `gone`, so a link cannot be probed.
   ```
 - `PUT <file url>` — `Authorization: Bearer <upload token>`, body `application/octet-stream`,
   exactly `size` bytes, first byte `0x02` (checked while streaming: more is 413 `too_large`, less
-  400 `incomplete`). No body limit but this one (upload router). May be repeated until the
+  400 `incomplete`). No body limit but this one (upload router); the whole upload must be done
+  within 120 s plus 1 s per 16 KiB, else it is dropped and may be repeated. May be repeated until the
   file arrived (a failed upload leaves nothing); once it is there, 404 `gone` — a file is never
   written again. One upload at a time per file (409 `conflict` for a second), four per request
   (429), counted by the anonymous per-address limit like `complete`; the free-space check counts
@@ -2068,7 +2091,9 @@ questions wait in **one queue** on the server: one at a time, at least 1 s apart
 from XposedOrNot pauses the whole queue for as long as its `Retry-After` says (at most 120 s; without
 one 2 s, 4 s, 8 s …) and the prefix is asked again, up to 4 times; only then 502 `upstream`. A
 request that would wait more than 60 s in the queue answers **429 `busy`** with `Retry-After:
-<seconds>`: nothing failed, the client asks again later (the web vault: after 5 s, 10 s, … up to
+<seconds>`: nothing failed, the client asks again later. So does a request from an account that
+already has 4 questions waiting, at once: one account can't fill the queue for everybody else, and
+a `busy` answer gives its try of the per-account HIBP/XposedOrNot budget back (the web vault: after 5 s, 10 s, … up to
 8 tries). Clients ask Have I Been Pwned and XposedOrNot side by side, show HIBP's results as soon as
 they are in, and count a check as incomplete only for answers other than 429. Ten hex digits are 40 bits: a hit
 means "a password with this hash prefix was seen", which a client counts as breached, like a
@@ -2767,8 +2792,8 @@ protocol both sides implement; UwUAuth builds its half from this section.
 
 **UwULock side:** admin portal *Security & login → SSO provider → Pair with UwUAuth*, address and code:
 
-1. `POST /uwu/v1/admin/sso/pair` — auth `admin` — `{ "url": "https://auth.example.com", "code": "7KQ4-M2XD-9HFT" }`
-   (or the QR string). `https` only (a loopback address for tests).
+1. `POST /uwu/v1/admin/sso/pair` — auth `admin` — `{ "url": "https://auth.example.com", "code": "7KQ4-M2XD-9HFT", "masterPasswordHash": "…" }`
+   (or the QR string; the admin's master password is required, 400 `password_required`). `https` only (a loopback address for tests).
 2. The server calls `GET <url>/uwu/v1/server`: `product` must be `UwUAuth` and `pairing` ≥ 1, else
    400 `not_uwuauth`.
 3. It calls `POST <url>/uwu/v1/pair` with the body above; no redirects followed; the answer's
@@ -3087,10 +3112,16 @@ saved one — → 200 or 502.
 
 ### 21.9 SSO
 
-`GET|PUT /uwu/v1/admin/sso` — §19.1 (`clientSecret` write-only), `POST /uwu/v1/admin/sso/test`
+`GET|PUT /uwu/v1/admin/sso` — §19.1 (`clientSecret` write-only; a `PUT` that changes `issuer`,
+`clientId`, `trustUnverifiedEmail`, `extensionIds` or `enabled`, or sets a new `clientSecret`, needs
+`"masterPasswordHash"` of the admin, else 400 `password_required`, and a wrong one 400 `invalid`), `POST /uwu/v1/admin/sso/test`
 (reads the discovery document and JWKS) → `{ "ok", "error" }`, `POST /uwu/v1/admin/sso/pair` and
 `DELETE /uwu/v1/admin/sso/pairing` (§19.5), `POST /uwu/v1/admin/scim/token` → `{ "token" }` once
-(for providers other than UwUAuth; replaces the old one).
+(for providers other than UwUAuth; replaces the old one). The SCIM token acts with admin rights
+over every account but the last admin (docs/sso.md).
+
+`POST /uwu/v1/admin/users/{id}/make-admin` and `…/reset-two-factor` need
+`{ "masterPasswordHash": "…" }` of the admin making the change (400 `password_required`).
 
 ### 21.10 Icons
 

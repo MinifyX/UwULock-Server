@@ -6,7 +6,7 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
 ## Unreleased
 
 - **Web vault: items, entry Sends, passkeys and a new look.** Needs UwULock-Client's core at
-  `2a8a708` (pinned in `web/wasm` and `uwulock-e2e`).
+  `b9580a2` (pinned in `web/wasm` and `uwulock-e2e`).
   - Password generator: a minimum per kind of character (A–Z, a–z, 0–9, symbols); the length grows
     to fit them and says so. Remembered in the browser with the other options.
   - One-time codes: in the last 10 seconds of a code the next one shows below it, small, with a copy
@@ -15,13 +15,18 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   - Editor: the favourite is a star in the name field instead of a checkbox; the reminder to renew
     is a switch in the editor, and the item's page shows the reminder only while it is on.
   - Passkeys: an item's page lists its passkeys — site, user, created — and deletes one after
-    asking, instead of "Has a passkey – UwULock can't use it yet". *Duplicate* (own items) makes a
+    asking (named by its credential id, or its fingerprint when UwULock can't read it — never by
+    its place alone), instead of "Has a passkey – UwULock can't use it yet". *Duplicate* (own items) makes a
     copy with the passkeys; attachments stay behind.
   - Share as Send: the choice lists each website with its address; the one-time codes can be shared
-    (never ticked at the start). It is now an entry Send: readable lines for the Bitwarden apps (never
-    the authenticator key), and a last line `uwulock-entry:v1:…` from which UwULock's Send page shows
-    the item with copy buttons, secrets behind the eye and live codes — never the key or a QR code.
-    Plain Sends look as before (docs/sharing.md).
+    (never ticked at the start, and ticking them asks once more: their key travels in the Send, and
+    whoever has the link can read it). It is now an entry Send: readable lines for the Bitwarden apps
+    (never the authenticator key), and a last line `uwulock-entry:v2:….<tag>` from which UwULock's
+    Send page shows the item with copy buttons, secrets behind the eye and live codes — never the
+    key or a QR code — and the original text on request. The tag is keyed from the link's secret
+    part, so a marker line in an item's notes can't make a plain Send look like an entry; only
+    http(s) websites become links. An entry Send's text can't be edited (delete it and share
+    again). Plain Sends look as before (docs/sharing.md).
   - Font choice like UwUMail (*Appearance → Font*, per device): UwU Sans (the new default), Manrope,
     Rubik, DM Sans or the system's; only the chosen one is loaded, all from the server. UwU Sans'
     `:3`/`<3` ligatures are off everywhere, so values always look as they are. Licences (SIL OFL 1.1)
@@ -31,6 +36,43 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   - More Nyu: empty trash, Sends and file requests, loading, unlocking, the password check, toasts and
     empty lists in the admin portal. Every animation follows *Appearance → Animations* and the
     system's wish for less motion.
+
+- **Security check 0.8** (docs/security-review-0.8.md). Fixes every Medium and Low finding of the
+  server review:
+  - **Client address behind a proxy:** the last `X-Forwarded-For` entry is read from the raw bytes,
+    `X-Real-IP` only counts without any `X-Forwarded-For`, and forwarding headers only count from
+    `UWULOCK_TRUSTED_PROXIES` (addresses or CIDR ranges, comma separated) when it is set.
+    `install.sh --trusted-proxy ADDRESS` sets it and asks for it with `--proxy-network`; without it
+    the server trusts every peer as before and the installer warns. Set it if other containers share
+    the proxy network.
+  - **Logins:** a second bucket per IPv6 /48 (100, then one every 6 s); at most 30 wrong passwords
+    per account and 2 hours from unknown devices (`429 account_limited`; known devices still get
+    in, nobody is locked out); `503 busy` with `Retry-After: 2` at once when the password hashing
+    queue is long, instead of a 408 after a minute.
+  - **Admin portal:** changing the SSO provider (issuer, client id or secret, unverified addresses,
+    extension ids, on/off), pairing SSO, *make admin* and *reset second step* ask for the master
+    password.
+  - **API keys:** bound to the security stamp (migration 0024): a password change, *log out
+    everywhere*, key rotation or emergency takeover ends the old key. Unencrypted backups no longer
+    hold API keys.
+  - **Prelogin:** an unknown address gets a stand-in KDF that stays the same for it, chosen like
+    real accounts' defaults, so the answer tells nobody which accounts exist.
+  - **Organisations:** the delta sync tells a member only of items and collections they could see
+    (an item moved out of their collections still disappears; migration 0025); Bitwarden clients'
+    realtime messages name an item only to members who see it; attachment links stop once the member
+    no longer sees the item; attaching file-request files into a family item counts against its
+    owners' storage.
+  - **Limits:** file-request messages count against the owner's storage and the request's cap; bulk
+    lists take at most 5 000 ids and an account at most 100 000 items; connections are capped (8 192
+    overall, 256 per /64 when the server does TLS itself); a public file-request upload has a whole
+    deadline; an account waits with at most 4 XposedOrNot questions at a time.
+  - Dependencies: `rustls-pemfile` (unmaintained) replaced by `rustls-pki-types`' PEM parsing;
+    `yoke-derive` updated (the old one was yanked).
+  - **Upgrade note:** backups made before 0.8 may still hold the Bitwarden push relay's
+    installation key (sealed with `secret.key`). If you had push set up, regenerate or delete the
+    installation id at bitwarden.com/host.
+  - The SCIM token acts with admin rights over every account (it can disable or delete any but the
+    last admin): keep it like an admin password (docs/sso.md).
 
 ## 0.7.0-beta.3
 

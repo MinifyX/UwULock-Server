@@ -104,6 +104,8 @@ selects, switches and check boxes 3:1 (their own token, `--uwu-control`).
   the password rules on registering.
 - Notes at the bottom ("Copied", "Saved") are read out politely, errors at once: the live regions
   are always on the page, so readers notice what appears in them.
+- The password generator says "New password generated" with each roll, not the password: it is
+  never read out on its own, so nobody in the room hears it. Move to it to hear it.
 - The page's language (`<html lang>`) follows the chosen language.
 - Single-key shortcuts can be switched off (see above) if they get in the way of the reader's own
   keys.
