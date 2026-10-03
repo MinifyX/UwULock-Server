@@ -9,6 +9,8 @@ use axum::Router;
 use axum_server::Handle;
 use parking_lot::RwLock;
 use rustls::ServerConfig;
+use rustls::pki_types::pem::{self, PemObject};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::crypto::ring;
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
@@ -478,15 +480,16 @@ pub fn from_files(cert: &Path, key: &Path) -> Result<Arc<ServerConfig>, String> 
 /// A certificate chain and its key from PEM files, checked to go together.
 fn certified_from_files(cert: &Path, key: &Path) -> Result<Arc<CertifiedKey>, String> {
     let read = |path: &Path| std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()));
-    let chain = rustls_pemfile::certs(&mut read(cert)?.as_slice())
+    let chain = CertificateDer::pem_slice_iter(&read(cert)?)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("{}: {error}", cert.display()))?;
     if chain.is_empty() {
         return Err(format!("{} holds no certificate", cert.display()));
     }
-    let key_der = rustls_pemfile::private_key(&mut read(key)?.as_slice())
-        .map_err(|error| format!("{}: {error}", key.display()))?
-        .ok_or_else(|| format!("{} holds no private key", key.display()))?;
+    let key_der = PrivateKeyDer::from_pem_slice(&read(key)?).map_err(|error| match error {
+        pem::Error::NoItemsFound => format!("{} holds no private key", key.display()),
+        error => format!("{}: {error}", key.display()),
+    })?;
     let certified = CertifiedKey::from_der(chain, key_der, &provider())
         .map_err(|error| format!("{} and {} do not go together: {error}", cert.display(), key.display()))?;
     Ok(Arc::new(certified))
@@ -555,7 +558,7 @@ fn acme_resolver(acme: &Acme, cache: &Path) -> Result<Arc<dyn ResolvesServerCert
 fn client_trusting(ca: &Path) -> Result<Arc<rustls::ClientConfig>, String> {
     let pem = std::fs::read(ca).map_err(|error| format!("{}: {error}", ca.display()))?;
     let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
-    for cert in rustls_pemfile::certs(&mut pem.as_slice()) {
+    for cert in CertificateDer::pem_slice_iter(&pem) {
         let cert = cert.map_err(|error| format!("{}: {error}", ca.display()))?;
         roots.add(cert).map_err(|error| format!("{}: {error}", ca.display()))?;
     }

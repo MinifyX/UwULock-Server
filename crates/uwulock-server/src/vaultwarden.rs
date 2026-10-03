@@ -174,13 +174,14 @@ fn security_keys(data: &str) -> Vec<Value> {
 
 /// The public half of Vaultwarden's `rsa_key.pem`, as DER, for the refresh tokens it signed.
 fn public_key(pem: &[u8]) -> Result<Vec<u8>, String> {
-    let item = rustls_pemfile::read_one_from_slice(pem)
-        .map_err(|_| "rsa_key.pem is not PEM".to_string())?
-        .ok_or("rsa_key.pem holds no key")?
-        .0;
-    let pair = match item {
-        rustls_pemfile::Item::Pkcs1Key(der) => ring::rsa::KeyPair::from_der(der.secret_pkcs1_der()),
-        rustls_pemfile::Item::Pkcs8Key(der) => ring::rsa::KeyPair::from_pkcs8(der.secret_pkcs8_der()),
+    use rustls::pki_types::{PrivateKeyDer, pem::PemObject};
+    let item = PrivateKeyDer::from_pem_slice(pem).map_err(|error| match error {
+        rustls::pki_types::pem::Error::NoItemsFound => "rsa_key.pem holds no key".to_string(),
+        _ => "rsa_key.pem is not PEM".to_string(),
+    })?;
+    let pair = match &item {
+        PrivateKeyDer::Pkcs1(der) => ring::rsa::KeyPair::from_der(der.secret_pkcs1_der()),
+        PrivateKeyDer::Pkcs8(der) => ring::rsa::KeyPair::from_pkcs8(der.secret_pkcs8_der()),
         _ => return Err("rsa_key.pem holds no RSA key".into()),
     }
     .map_err(|error| format!("rsa_key.pem: {error}"))?;
@@ -1138,7 +1139,8 @@ mod tests {
     /// A refresh token as Vaultwarden signs them, with its key, for `device_token`.
     fn vaultwarden_refresh_token(device_token: &str) -> String {
         let pem = std::fs::read(fixture_dir().join("rsa_key.pem")).unwrap();
-        let rustls_pemfile::Item::Pkcs1Key(der) = rustls_pemfile::read_one_from_slice(&pem).unwrap().unwrap().0 else {
+        use rustls::pki_types::{PrivateKeyDer, pem::PemObject};
+        let PrivateKeyDer::Pkcs1(der) = PrivateKeyDer::from_pem_slice(&pem).unwrap() else {
             panic!("a PKCS#1 key")
         };
         let pair = ring::rsa::KeyPair::from_der(der.secret_pkcs1_der()).unwrap();
