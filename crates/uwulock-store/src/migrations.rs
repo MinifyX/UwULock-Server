@@ -31,6 +31,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0023_drop_push_relay.sql"),
     include_str!("../migrations/sqlite/0024_api_key_stamp.sql"),
     include_str!("../migrations/sqlite/0025_cipher_left_collection.sql"),
+    include_str!("../migrations/sqlite/0026_tombstones_left_index.sql"),
 ];
 
 /// The schema this build writes.
