@@ -47,6 +47,7 @@ export function reportExport(format: 'json' | 'encrypted_json' | 'csv') {
 export const MAILABLE_KINDS: { kind: string; label: string }[] = [
   { kind: 'failedLogins', label: N_('Falsche Master-Passwörter') },
   { kind: 'failedTwoFactor', label: N_('Falsche Codes im zweiten Schritt') },
+  { kind: 'loginsLimited', label: N_('Neue Geräte warten nach zu vielen falschen Passwörtern') },
   { kind: 'newDevice', label: N_('Anmeldung auf einem neuen Gerät') },
   { kind: 'passwordChanged', label: N_('Master-Passwort geändert') },
   { kind: 'emailChanged', label: N_('E-Mail-Adresse geändert') },
@@ -115,6 +116,10 @@ export function noticeText(notice: Pick<Notice, 'kind' | 'detail'>): string {
         n: count,
         provider: provider(detail.provider),
       });
+    case 'loginsLimited':
+      return t(
+        'Von überall kamen so viele falsche Master-Passwörter, dass Anmeldungen auf neuen Geräten gerade warten müssen. Deine bekannten Geräte kommen weiter rein.',
+      );
     case 'newDevice':
       return t('Ein neues Gerät hat sich angemeldet.');
     case 'passwordChanged':

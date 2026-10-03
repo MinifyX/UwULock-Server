@@ -180,5 +180,7 @@
   "Über diesen Kanal kommen dann keine Meldungen mehr.": "No more messages come through this channel then.",
   "übersprungen": "skipped",
   "„Mail bei neuem Gerät“ ist oben aus: neue Geräte kommen trotzdem nicht per Mail.": "“Mail on a new device” is off above: new devices are not mailed anyway.",
-  "Geht an jedes Admin-Konto, über den Mailserver im Reiter „Mailserver“.": "Goes to every admin account, through the mail server in the “Mail server” tab."
+  "Geht an jedes Admin-Konto, über den Mailserver im Reiter „Mailserver“.": "Goes to every admin account, through the mail server in the “Mail server” tab.",
+  "Neue Geräte warten nach zu vielen falschen Passwörtern": "New devices wait after too many wrong passwords",
+  "Von überall kamen so viele falsche Master-Passwörter, dass Anmeldungen auf neuen Geräten gerade warten müssen. Deine bekannten Geräte kommen weiter rein.": "So many wrong master passwords came in from everywhere that logins on new devices have to wait for now. Your known devices still get in."
 }

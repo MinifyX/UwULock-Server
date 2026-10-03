@@ -23,9 +23,10 @@ use uwulock_store::notices::{MAIL_NONE, MAIL_SENT, MAIL_WAITING};
 use uwulock_store::{Notice, User, clock};
 
 /// Every kind of notice there is (§12.1); the later stages write some of them.
-pub const KINDS: [&str; 31] = [
+pub const KINDS: [&str; 32] = [
     "failedLogins",
     "failedTwoFactor",
+    "loginsLimited",
     "newDevice",
     "passwordChanged",
     "emailChanged",

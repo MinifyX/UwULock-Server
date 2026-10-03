@@ -166,24 +166,8 @@ async fn password_login(
     let user = state.store.user_by_email(username).await?;
     // With the code of an approved "log in with a device" request instead of the password.
     let by_request = form.get("authrequest");
-    // Wrong passwords per address tried, from everywhere at once (R1-2): when they ran out, only
-    // a device the account knows gets its password checked. Keyed by the address as typed, so
-    // the answer is the same whether it has an account.
-    let account_key = username.trim().to_lowercase();
-    if by_request.is_none() && !state.limits.login_account.allows(&account_key) {
-        let known = match &user {
-            Some(user) => state.store.device(&user.id, device_id).await?.is_some(),
-            None => false,
-        };
-        if !known {
-            log(state, "login-failed", user.as_ref(), username, ip, device_type, "too many wrong passwords").await;
-            return Err(ApiError::too_many(
-                "Too many wrong passwords for this account lately. Log in on a device you used before, or try again in a few minutes.",
-            )
-            .code("account_limited"));
-        }
-    }
-    // Rather "busy" at once than a queue that ends in the request's timeout (R1-2).
+    // Rather "busy" at once than a queue that ends in the request's timeout (R1-2). Before a try
+    // is taken: a login that never got hashed costs the account nothing.
     if by_request.is_none() && auth::hashing_busy() {
         let mut response = ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "The server is busy. Try again in a moment.")
             .code("busy")
@@ -191,6 +175,12 @@ async fn password_login(
         response.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(2));
         return Ok(response);
     }
+    // Every password checked takes a try for the address tried, before it is hashed, and gets it
+    // back when it was right (R1-2, R5-1, R5-2).
+    let tries = match by_request {
+        Some(_) => None,
+        None => Some(account_tries(state, user.as_ref(), username, device_id, ip, device_type).await?),
+    };
     let passed = match (by_request, &user) {
         (Some(request), Some(found)) => state
             .store
@@ -205,10 +195,10 @@ async fn password_login(
             auth::verify_login(state.config.hash_cost, known, password, legacy_rounds).await
         }
     };
+    if let (true, Some(tries)) = (passed, &tries) {
+        tries.give_back(state);
+    }
     if !passed {
-        if by_request.is_none() {
-            state.limits.login_account.take(account_key);
-        }
         log(state, "login-failed", user.as_ref(), username, ip, device_type, "wrong email or password").await;
         // Beside the answer, not before it: the time a refused login takes must not tell whether
         // the address has an account.
@@ -265,6 +255,82 @@ async fn password_login(
     };
     let body = finish_login(state, &user, ip, form, login).await?;
     Ok(Json(body).into_response())
+}
+
+/// The tries a password login took for the address it is for (R1-2, R5-1, R5-2): one from the
+/// strict bucket of that address and the network the login comes from, and one from the wide
+/// bucket of the address from everywhere — or, once that is empty, from the small one for
+/// devices the account knows. Taken before the password is hashed, so logins at the same time
+/// cannot all slip through on one try that is left.
+struct AccountTries {
+    network: String,
+    wide: Wide,
+}
+
+enum Wide {
+    All(String),
+    Known(String),
+}
+
+impl AccountTries {
+    /// The password was right: the tries were not guesses.
+    fn give_back(&self, state: &AppState) {
+        state.limits.login_account_network.give_back(&self.network);
+        match &self.wide {
+            Wide::All(key) => state.limits.login_account.give_back(key),
+            Wide::Known(key) => state.limits.login_account_known.give_back(key),
+        }
+    }
+}
+
+async fn account_tries(
+    state: &AppState,
+    user: Option<&User>,
+    username: &str,
+    device_id: &str,
+    ip: std::net::IpAddr,
+    device_type: i64,
+) -> ApiResult<AccountTries> {
+    // Keyed by the address as typed, so the answer is the same whether it has an account.
+    let account = username.trim().to_lowercase();
+    let network = format!("{account} {}", crate::limits::wide_network(ip));
+    let limits = &state.limits;
+    if !limits.login_account_network.take(network.clone()) {
+        log(state, "login-failed", user, username, ip, device_type, "too many wrong passwords from this network").await;
+        return Err(ApiError::too_many(
+            "Too many wrong passwords for this account from here lately. Try again in a few minutes.",
+        )
+        .code("account_limited"));
+    }
+    if limits.login_account.take(account.clone()) {
+        return Ok(AccountTries { network, wide: Wide::All(account) });
+    }
+    // From everywhere at once, the address had all it gets: a device the account knows still
+    // gets a few, everything else waits. The owner hears of it, once an hour.
+    let known = match user {
+        Some(user) => state.store.device(&user.id, device_id).await?.is_some(),
+        None => false,
+    };
+    if known && limits.login_account_known.take(account.clone()) {
+        return Ok(AccountTries { network, wide: Wide::Known(account) });
+    }
+    limits.login_account_network.give_back(&network);
+    log(state, "login-failed", user, username, ip, device_type, "too many wrong passwords").await;
+    if limits.login_account_notice.take(account.clone()) {
+        // The line the "login refused" panel of the Grafana dashboard counts (docs/deployment.md).
+        tracing::warn!(%ip, email = ?normalize_email(username), "login refused: too many wrong passwords for this account from everywhere");
+        if let Some(user) = user {
+            let (state, user) = (state.clone(), user.clone());
+            let context = notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) };
+            tokio::spawn(async move {
+                notices::record(&state, &user, "loginsLimited", &context, serde_json::json!({})).await;
+            });
+        }
+    }
+    Err(ApiError::too_many(
+        "Too many wrong passwords for this account lately. Log in on a device you used before, or try again in a few minutes.",
+    )
+    .code("account_limited"))
 }
 
 /// Whether a login may ask for `scope` as `client_id`: Bitwarden's `api offline_access` for
@@ -1089,30 +1155,141 @@ mod tests {
         assert_eq!(events.len(), 2);
     }
 
+    fn wrong(email: &str, device: &str) -> Vec<(&'static str, String)> {
+        let mut form: Vec<(&'static str, String)> =
+            login_form(email, device).into_iter().map(|(key, value)| (key, value.to_string())).collect();
+        form[2].1 = "wrong".into();
+        form
+    }
+
+    fn fields<'a>(form: &'a [(&'static str, String)]) -> Vec<(&'static str, &'a str)> {
+        form.iter().map(|(key, value)| (*key, value.as_str())).collect()
+    }
+
+    fn limits(change: impl FnOnce(&mut crate::Limits)) -> crate::Limits {
+        let mut limits = crate::Limits::generous();
+        change(&mut limits);
+        limits
+    }
+
     #[tokio::test]
     async fn too_many_wrong_passwords_leave_only_known_devices_in() {
         let server = TestServer::new().await;
         server.account("nyu@example.com").await; // device-1
-        let mut limits = crate::Limits::generous();
-        limits.login_account = crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600));
-        let server = server.with_limits(limits);
+        let server = server.with_limits(limits(|limits| {
+            limits.login_account = crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600));
+            limits.login_account_known = crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600));
+        }));
         for _ in 0..2 {
-            let mut form = login_form("NYU@example.com", "elsewhere");
-            form[2].1 = "wrong";
-            assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::BAD_REQUEST);
+            let form = wrong("NYU@example.com", "elsewhere");
+            assert_eq!(server.form("/identity/connect/token", &fields(&form)).await.status(), StatusCode::BAD_REQUEST);
         }
         // The right password from a new device now waits…
         let refused = server.form("/identity/connect/token", &login_form("nyu@example.com", "elsewhere")).await;
         assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(json(refused).await["code"], "account_limited");
-        // …the owner's own device is not locked out.
-        server.login("nyu@example.com", "device-1").await;
+        // …the owner's own device is not locked out, and the right password costs it nothing…
+        for _ in 0..3 {
+            server.login("nyu@example.com", "device-1").await;
+        }
+        // …but a device id is no way around the limit: wrong passwords from it count (R5-1).
+        for _ in 0..2 {
+            let form = wrong("nyu@example.com", "device-1");
+            assert_eq!(server.form("/identity/connect/token", &fields(&form)).await.status(), StatusCode::BAD_REQUEST);
+        }
+        let refused = server.form("/identity/connect/token", &login_form("nyu@example.com", "device-1")).await;
+        assert_eq!(json(refused).await["code"], "account_limited");
         // An address without an account answers the same way once its tries ran out.
         for _ in 0..2 {
             server.form("/identity/connect/token", &login_form("nobody@example.com", "x")).await;
         }
         let unknown = server.form("/identity/connect/token", &login_form("nobody@example.com", "x")).await;
         assert_eq!(unknown.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    /// R5-1: the try is taken before the password is hashed, so logins at the same time cannot
+    /// all get through on the last one that is left.
+    #[tokio::test]
+    async fn wrong_passwords_at_the_same_time_get_no_more_than_the_burst() {
+        let server = TestServer::new().await;
+        server.account("nyu@example.com").await;
+        let server = server.with_limits(limits(|limits| {
+            limits.login_account = crate::limits::Limiter::new(3, std::time::Duration::from_secs(3600));
+        }));
+        // All of them on the way before the first is answered.
+        let mut running = tokio::task::JoinSet::new();
+        for n in 0..40 {
+            let body = fields(&wrong("nyu@example.com", &format!("device-{}", n + 10)))
+                .iter()
+                .map(|(key, value)| format!("{key}={}", urlencode(value)))
+                .collect::<Vec<_>>()
+                .join("&");
+            let request = axum::http::Request::post("/identity/connect/token")
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(axum::body::Body::from(body))
+                .unwrap();
+            running.spawn(tower::ServiceExt::oneshot(server.router.clone(), request));
+        }
+        let answers: Vec<StatusCode> =
+            running.join_all().await.into_iter().map(|answer| answer.unwrap().status()).collect();
+        let checked = answers.iter().filter(|status| **status == StatusCode::BAD_REQUEST).count();
+        let refused = answers.iter().filter(|status| **status == StatusCode::TOO_MANY_REQUESTS).count();
+        assert!(checked <= 3, "{checked} passwords were checked");
+        assert_eq!(checked + refused, 40, "nothing else, not even busy");
+    }
+
+    /// R5-2: a guesser from one network uses up that network's tries for the account, not the
+    /// owner's elsewhere; once the account's tries from everywhere run out, the owner hears of it.
+    #[tokio::test]
+    async fn a_guesser_does_not_lock_the_owner_out_and_the_owner_hears_of_it() {
+        let server = TestServer::new().await.behind_proxy();
+        let nyu = server.account("nyu@example.com").await;
+        let server = server.with_limits(limits(|limits| {
+            limits.login_account_network = crate::limits::Limiter::new(3, std::time::Duration::from_secs(3600));
+            limits.login_account = crate::limits::Limiter::new(5, std::time::Duration::from_secs(3600));
+            limits.login_account_notice = crate::limits::Limiter::new(1, std::time::Duration::from_secs(3600));
+        }));
+        let token = "/identity/connect/token";
+        for _ in 0..3 {
+            let answer = server.form_from("2001:db8:1:1::1", token, &fields(&wrong("nyu@example.com", "x"))).await;
+            assert_eq!(answer.status(), StatusCode::BAD_REQUEST);
+        }
+        // Another /64 of the same /48 is the same network…
+        let answer = server.form_from("2001:db8:1:2::1", token, &login_form("nyu@example.com", "x")).await;
+        assert_eq!(json(answer).await["code"], "account_limited");
+        // …the owner on a new phone somewhere else is not.
+        let answer = server.form_from("192.0.2.10", token, &login_form("nyu@example.com", "phone")).await;
+        assert_eq!(answer.status(), StatusCode::OK, "{}", text(answer).await);
+        // From many networks, the account's own tries run out: new devices wait, and the owner
+        // gets one notice for it, however often it is refused.
+        for n in 0..2 {
+            let answer =
+                server.form_from(&format!("198.51.100.{n}"), token, &fields(&wrong("nyu@example.com", "x"))).await;
+            assert_eq!(answer.status(), StatusCode::BAD_REQUEST);
+        }
+        for n in 0..3 {
+            let answer =
+                server.form_from(&format!("203.0.113.{n}"), token, &login_form("nyu@example.com", "new")).await;
+            assert_eq!(json(answer).await["code"], "account_limited");
+        }
+        let mut limited = 0;
+        for _ in 0..1000 {
+            let notices = server.state.store.notices(&nyu.id, None, 50).await.unwrap();
+            limited = notices.iter().filter(|notice| notice.kind == "loginsLimited").count();
+            if limited > 0 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(limited, 1);
+        // After the mail about the new phone, the next bundle waits its quarter of an hour.
+        crate::notices::deliver_due(
+            &server.state,
+            &uwulock_store::clock::in_seconds(crate::notices::SPACING_SECONDS + 1),
+        )
+        .await;
+        let mail = server.wait_for_mail(|mail| mail.to == "nyu@example.com" && mail.text.contains("neue Geräte")).await;
+        assert!(mail.subject.contains("Fehlgeschlagene Anmeldungen"), "{}", mail.subject);
     }
 
     #[tokio::test]

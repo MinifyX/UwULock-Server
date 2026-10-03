@@ -123,6 +123,22 @@ impl Limiter<IpAddr> {
     }
 }
 
+/// The network a login is counted by per account: an IPv4 address as it is, an IPv6 address
+/// by its /48 — what one person can have without trying hard.
+pub fn wide_network(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V4(_) => ip,
+        IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => IpAddr::V4(v4),
+            None => {
+                let mut octets = v6.octets();
+                octets[6..].fill(0);
+                IpAddr::from(octets)
+            }
+        },
+    }
+}
+
 /// The key of `ip`'s bucket, for a limiter that is asked before it is taken from.
 pub fn network_of(ip: IpAddr) -> IpAddr {
     network(ip)
@@ -146,10 +162,22 @@ pub struct Limits {
     pub login: Limiter,
     /// Logins per IPv6 /48: ten times one /64's, ten back a minute.
     pub login_wide: Limiter,
-    /// Wrong master passwords at login, per address tried (whether it has an account or not):
-    /// thirty, one back every two minutes. When it is empty, only devices the account knows get
-    /// their password checked; nobody is locked out of a device they used before (R1-2).
+    /// Master passwords tried at login, per address tried and network the tries come from (an
+    /// IPv4 address or an IPv6 /48): ten, one back every six minutes. The strict one: it stops a
+    /// guesser without touching the owner logging in from anywhere else (R5-2). A try is taken
+    /// before the password is hashed and given back when it was right (R5-1).
+    pub login_account_network: Limiter<String>,
+    /// The same per address tried, from everywhere at once (whether it has an account or not):
+    /// three hundred, one back every twelve seconds — what many networks at once can guess
+    /// (R1-2). When it is empty, only devices the account knows get their password checked, and
+    /// those take from [`Limits::login_account_known`].
     pub login_account: Limiter<String>,
+    /// Devices the account knows, once [`Limits::login_account`] ran out: ten, one back every
+    /// six minutes. A device id leaks more easily than a password, so it buys a few guesses, not
+    /// an end to the account's limit (R5-1).
+    pub login_account_known: Limiter<String>,
+    /// The owner hears that the account's tries ran out at most once an hour (R5-2).
+    pub login_account_notice: Limiter<String>,
     /// What anybody can ask without logging in.
     pub anonymous: Limiter,
     /// Wrong second steps of a login, per account.
@@ -188,6 +216,9 @@ pub struct Limits {
     pub masked_minute: Limiter<String>,
     /// …and five hundred a day.
     pub masked_day: Limiter<String>,
+    /// The most items one account may have of its own, and one organisation (R1-11, R5-4):
+    /// [`crate::ciphers::MOST_ITEMS`].
+    pub items: i64,
 }
 
 impl Default for Limits {
@@ -195,7 +226,10 @@ impl Default for Limits {
         Limits {
             login: Limiter::new(10, Duration::from_secs(60)),
             login_wide: Limiter::new(100, Duration::from_secs(6)),
-            login_account: Limiter::new(30, Duration::from_secs(120)),
+            login_account_network: Limiter::new(10, Duration::from_secs(6 * 60)),
+            login_account: Limiter::new(300, Duration::from_secs(12)),
+            login_account_known: Limiter::new(10, Duration::from_secs(6 * 60)),
+            login_account_notice: Limiter::new(1, Duration::from_secs(60 * 60)),
             anonymous: Limiter::new(50, Duration::from_secs(60)),
             two_factor: Limiter::new(10, Duration::from_secs(60)),
             password: Limiter::new(10, Duration::from_secs(60)),
@@ -213,6 +247,7 @@ impl Default for Limits {
             masked_codes_server: Limiter::new(10, Duration::from_secs(90)),
             masked_minute: Limiter::new(30, Duration::from_secs(2)),
             masked_day: Limiter::new(500, Duration::from_millis(172_800)),
+            items: crate::ciphers::MOST_ITEMS,
         }
     }
 }
@@ -238,7 +273,10 @@ impl Limits {
         Limits {
             login: generous(),
             login_wide: generous(),
+            login_account_network: generous(),
             login_account: generous(),
+            login_account_known: generous(),
+            login_account_notice: generous(),
             anonymous: generous(),
             two_factor: generous(),
             password: generous(),
@@ -256,6 +294,7 @@ impl Limits {
             masked_codes_server: generous(),
             masked_minute: generous(),
             masked_day: generous(),
+            items: crate::ciphers::MOST_ITEMS,
         }
     }
 }

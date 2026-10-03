@@ -147,6 +147,12 @@ impl NoticeLine {
             ("failedTwoFactor", false) => format!("{count} wrong two-step login codes"),
             ("newDevice", true) => "Anmeldung auf einem neuen Gerät".into(),
             ("newDevice", false) => "Login on a new device".into(),
+            ("loginsLimited", true) => {
+                "So viele falsche Master-Passwörter von überall, dass neue Geräte gerade warten müssen (deine bekannten Geräte kommen weiter rein)".into()
+            }
+            ("loginsLimited", false) => {
+                "So many wrong master passwords from everywhere that new devices have to wait for now (your known devices still get in)".into()
+            }
             ("passwordChanged", true) => "Master-Passwort geändert".into(),
             ("passwordChanged", false) => "Master password changed".into(),
             ("emailChanged", true) => "E-Mail-Adresse geändert".into(),
@@ -683,7 +689,9 @@ impl Mail {
                 .to_string()];
                 lines.extend(notices.iter().map(|notice| notice.render(de)));
                 lines.push(not_you(de));
-                let failed = notices.iter().any(|notice| notice.kind.starts_with("failed"));
+                let failed = notices
+                    .iter()
+                    .any(|notice| notice.kind.starts_with("failed") || notice.kind == "loginsLimited");
                 Text {
                     subject: match (failed, de) {
                         (true, true) => "Fehlgeschlagene Anmeldungen bei UwULock".into(),
