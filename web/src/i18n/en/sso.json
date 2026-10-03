@@ -71,5 +71,10 @@
   "Willkommen ✧": "Welcome ✧",
   "Weitere Browser-Erweiterungen (IDs, eine pro Zeile; nur für selbst gebaute)": "More browser extensions (ids, one per line; only for self-built ones)",
   "SSO-Anbieter ändern?": "Change the SSO provider?",
-  "Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.": "The provider decides who logs in as whom. That is why the server asks for your master password here."
+  "Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.": "The provider decides who logs in as whom. That is why the server asks for your master password here.",
+  "Admin-Regeln für SSO ändern?": "Change the SSO admin rules?",
+  "Gruppe und Claims entscheiden, wer über SSO Admin wird. Deshalb fragt der Server hier nach deinem Master-Passwort.": "The group and the claims decide who becomes an admin through SSO. That is why the server asks for your master password here.",
+  "Neues SCIM-Token?": "New SCIM token?",
+  "Ändern, was SCIM beim Löschen tut?": "Change what SCIM does when it deletes?",
+  "Damit sperrt oder löscht der Anbieter Konten, auch wenn du längst abgemeldet bist. Deshalb fragt der Server hier nach deinem Master-Passwort.": "With it, the provider disables or deletes accounts, even long after you logged out. That is why the server asks for your master password here."
 }

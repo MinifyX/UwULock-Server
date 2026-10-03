@@ -192,6 +192,34 @@ try {
     await admin.getByText("Gespeichert ✧").waitFor({ timeout: 30000 });
     await snap(admin, "settings");
 
+    step("who becomes an admin, and SCIM, want the master password too (R5-3)");
+    await admin
+        .getByLabel("Claim mit den Rollen (statt der Gruppen)")
+        .fill("roles");
+    await admin.getByRole("button", { name: "Speichern", exact: true }).click();
+    const rules = admin.getByRole("dialog");
+    await rules
+        .getByText("Admin-Regeln für SSO ändern?")
+        .waitFor({ timeout: 30000 });
+    await rules.locator("input[type=password]").fill(password);
+    await rules.getByRole("button", { name: "Speichern", exact: true }).click();
+    await rules.waitFor({ state: "detached", timeout: 30000 });
+    await admin.getByText("Gespeichert ✧").waitFor({ timeout: 30000 });
+    await admin.getByRole("tab", { name: "SCIM", exact: true }).click();
+    await admin
+        .getByRole("button", { name: "Token erzeugen", exact: true })
+        .click();
+    const scim = admin.getByRole("dialog");
+    await scim.getByText("Neues SCIM-Token?").waitFor({ timeout: 30000 });
+    await scim.locator("input[type=password]").fill(password);
+    await scim
+        .getByRole("button", { name: "Token erzeugen", exact: true })
+        .click();
+    await admin
+        .getByText("Das Token – nur jetzt zu sehen:")
+        .waitFor({ timeout: 30000 });
+    await snap(admin, "scim-token");
+
     step("somebody new signs up through SSO and sets the master password");
     person = { sub: "e2e-mia", email: "mia@example.com", name: "Mia" };
     const mia = await open("mia");

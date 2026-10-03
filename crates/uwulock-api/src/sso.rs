@@ -1157,9 +1157,11 @@ struct PutSettings {
     master_password_hash: Option<String>,
 }
 
-/// Whether going from `current` to `new` changes who may log in as whom: another provider or
-/// client, a new secret, trusting unverified addresses, other extensions, or SSO on or off. A
-/// session that got away must not do that without the master password (R1-3).
+/// Whether going from `current` to `new` changes who may log in as whom, or who becomes an
+/// admin: another provider or client, a new secret, trusting unverified addresses, other
+/// extensions, SSO on or off (R1-3), or which claim and group make an admin (R5-3) — a claim
+/// the user can set themselves would make anybody at the provider one. A session that got away
+/// must not do that without the master password.
 fn needs_password(current: &SsoSettings, new: &SsoSettings, new_secret: bool) -> bool {
     new_secret
         || current.issuer != new.issuer
@@ -1167,6 +1169,9 @@ fn needs_password(current: &SsoSettings, new: &SsoSettings, new_secret: bool) ->
         || current.trust_unverified_email != new.trust_unverified_email
         || current.extension_ids != new.extension_ids
         || current.enabled != new.enabled
+        || current.admin_group != new.admin_group
+        || current.groups_claim != new.groups_claim
+        || current.roles_claim != new.roles_claim
 }
 
 async fn put_settings(
@@ -1256,7 +1261,24 @@ async fn test(State(state): State<AppState>, _admin: Admin, body: Option<Json<Te
     }
 }
 
-async fn scim_token(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+/// The admin's master password hash, for what keeps power after the session is gone (R5-3).
+#[derive(Deserialize, Default)]
+struct Confirmed {
+    #[serde(default, rename = "masterPasswordHash")]
+    master_password_hash: Option<String>,
+}
+
+/// A new SCIM token: whoever has one disables and deletes accounts, also after the admin
+/// session that made it is gone — so it takes the master password (R5-3).
+async fn scim_token(
+    State(state): State<AppState>,
+    admin: Admin,
+    body: Option<Json<Confirmed>>,
+) -> ApiResult<Json<Value>> {
+    let hash = body.as_ref().and_then(|Json(body)| body.master_password_hash.as_deref());
+    crate::accounts::check_password(&state, &admin.0.user, hash)
+        .await
+        .map_err(|error| error.code("password_required"))?;
     let token = auth::random_token(32);
     let mut all = state.settings();
     all.scim.token_hash = Some(crate::metrics::hex(&auth::sha256(token.as_bytes())));
