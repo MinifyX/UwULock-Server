@@ -118,6 +118,11 @@ pub struct ApiConfig {
     /// The proxies whose forwarding headers are believed (`UWULOCK_TRUSTED_PROXIES`); empty:
     /// every peer, as long as `trust_forwarded` is on.
     pub trusted_proxies: Vec<networks::IpNetwork>,
+    /// Which header says where a request comes from, behind a proxy that is believed
+    /// (`UWULOCK_CLIENT_IP_HEADER`): the last `X-Forwarded-For` entry (the default; `X-Real-IP`
+    /// only when there is none), or `X-Real-IP` alone, for a proxy that sets that and passes the
+    /// client's own `X-Forwarded-For` on (R5 I-2).
+    pub real_ip_header: bool,
     /// How hard the server's own hash of the master password hash works.
     pub hash_cost: HashCost,
     /// Where backups are kept, for the admin portal.

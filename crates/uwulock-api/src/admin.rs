@@ -430,13 +430,31 @@ async fn get_settings(State(state): State<AppState>, _admin: Admin) -> Json<Valu
     Json(settings_json(&state.settings()))
 }
 
+/// The general settings as the portal saves them, with the admin's master password hash when
+/// the change needs it.
+#[derive(Deserialize)]
+struct PutSettings {
+    #[serde(flatten)]
+    settings: Settings,
+    #[serde(default, rename = "masterPasswordHash")]
+    master_password_hash: Option<String>,
+}
+
 async fn put_settings(
     State(state): State<AppState>,
     admin: Admin,
     ClientIp(ip): ClientIp,
-    Json(mut new): Json<Settings>,
+    Json(body): Json<PutSettings>,
 ) -> ApiResult<Json<Value>> {
+    let mut new = body.settings;
     let current = state.settings();
+    // What SCIM does to a person the provider deletes: with a SCIM token, `delete` keeps the
+    // power to delete accounts after the session is gone (R5-3).
+    if new.scim.on_delete != current.scim.on_delete {
+        crate::accounts::check_password(&state, &admin.0.user, body.master_password_hash.as_deref())
+            .await
+            .map_err(|error| error.code("password_required"))?;
+    }
     // SSO and the SCIM token have endpoints of their own, for their secrets.
     new.sso = current.sso.clone();
     new.scim.token_hash = current.scim.token_hash.clone();

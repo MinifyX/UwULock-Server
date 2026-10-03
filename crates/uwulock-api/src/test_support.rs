@@ -50,6 +50,7 @@ impl TestServer {
             public: "https://vault.example.com".into(),
             trust_forwarded: false,
             trusted_proxies: Vec::new(),
+            real_ip_header: false,
             hash_cost: HashCost::cheap(),
             backups: dir.path().join("backups"),
             data: dir.path().to_path_buf(),
@@ -125,6 +126,16 @@ impl TestServer {
         self
     }
 
+    /// Believing forwarding headers only from `proxies` (`UWULOCK_TRUSTED_PROXIES`).
+    pub(crate) fn with_trusted_proxies(mut self, proxies: &[&str]) -> Self {
+        let mut config = (*self.state.config).clone();
+        let list: Vec<String> = proxies.iter().map(|proxy| proxy.to_string()).collect();
+        config.trusted_proxies = crate::networks::IpNetwork::parse_list(&list).unwrap();
+        self.state.config = Arc::new(config);
+        self.router = router(self.state.clone());
+        self
+    }
+
     /// `method` with a JSON body and a token, from `ip` (behind a proxy it trusts).
     pub(crate) async fn call_from(
         &self,
@@ -168,16 +179,13 @@ impl TestServer {
     }
 
     pub(crate) async fn form(&self, path: &str, fields: &[(&str, &str)]) -> Response<Body> {
-        let body =
-            fields.iter().map(|(key, value)| format!("{key}={}", urlencode(value))).collect::<Vec<_>>().join("&");
-        self.send(
-            Request::post(path)
-                .header("content-type", "application/x-www-form-urlencoded")
-                .header("bitwarden-client-version", "2026.9.0")
-                .body(Body::from(body))
-                .unwrap(),
-        )
-        .await
+        self.send(form_request(path).body(Body::from(form_body(fields))).unwrap()).await
+    }
+
+    /// [`TestServer::form`] from `ip` (behind a proxy it trusts).
+    pub(crate) async fn form_from(&self, ip: &str, path: &str, fields: &[(&str, &str)]) -> Response<Body> {
+        let request = form_request(path).header("x-forwarded-for", ip);
+        self.send(request.body(Body::from(form_body(fields))).unwrap()).await
     }
 
     /// Invite `email`, register it with the invitation, and log in on a new device.
@@ -233,6 +241,16 @@ impl TestServer {
     pub(crate) fn mails(&self) -> Vec<uwulock_mail::Sent> {
         self.state.mailer.sent()
     }
+}
+
+fn form_request(path: &str) -> axum::http::request::Builder {
+    Request::post(path)
+        .header("content-type", "application/x-www-form-urlencoded")
+        .header("bitwarden-client-version", "2026.9.0")
+}
+
+fn form_body(fields: &[(&str, &str)]) -> String {
+    fields.iter().map(|(key, value)| format!("{key}={}", urlencode(value))).collect::<Vec<_>>().join("&")
 }
 
 /// What a client sends in place of the master password: here just a fixed string per address.

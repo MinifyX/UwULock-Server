@@ -124,8 +124,11 @@ other providers *Anmeldung → SCIM → Token erzeugen* shows one once.
   the secret again (or pair again).
 - Changing who may log in asks for the admin's master password: the issuer, the client id or
   secret, *trust unverified addresses*, the extension ids, switching SSO on or off, and pairing.
-  So do *make admin* and *reset second step* on the users page. A stolen admin session alone
-  can't point SSO at another provider.
+  So does changing who becomes an admin — the admin group and the claims with the groups or the
+  roles (a claim people set themselves, like their name, would make anybody an admin) — and a new
+  SCIM token, and what SCIM does when it deletes somebody. So do *make admin* and *reset second
+  step* on the users page. A stolen admin session alone can't point SSO at another provider, or
+  keep power over accounts after it is gone.
 - **The SCIM token acts with admin rights:** it finds every account by its address and can disable
   it, or delete it with its vault when *Konto und Tresor löschen* is chosen — every account but the
   last admin, not only those SCIM made. Keep it like an admin password, and make a new one if it

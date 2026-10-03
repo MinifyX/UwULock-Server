@@ -66,6 +66,10 @@ pub struct Config {
     /// The proxies whose forwarding headers count (`UWULOCK_TRUSTED_PROXIES`: addresses or CIDR
     /// networks, comma separated). Empty: every peer, while `trust_forwarded` is on.
     pub trusted_proxies: Vec<uwulock_api::networks::IpNetwork>,
+    /// `UWULOCK_CLIENT_IP_HEADER=x-real-ip`: the proxy sets `X-Real-IP`, and that alone says
+    /// where a request comes from; `x-forwarded-for` (the default) reads the last entry of
+    /// `X-Forwarded-For`.
+    pub real_ip_header: bool,
     /// Ask GitHub once a day whether there is a newer release, and say so in the log. The only
     /// connection the server opens on its own.
     pub update_check: bool,
@@ -87,6 +91,11 @@ pub struct Config {
     /// update check asks anyway, unless the update check is off or `UWULOCK_TIME_SOURCE` says
     /// otherwise (`off` for none).
     pub time_sources: Vec<String>,
+    /// The most connections one IPv4 address or IPv6 /64 may hold with TLS of its own
+    /// (`UWULOCK_CONNECTIONS_PER_NETWORK`, R1-14); `0`: no cap per network, only the total.
+    /// Private, loopback and link-local peers (Docker's gateway, a NAT) never count per
+    /// network (R5-5).
+    pub connections_per_network: usize,
     /// The ACME CA and contact for send domains' certificates (docs/uwu-api.md §14.1), without a
     /// name: each domain brings its own.
     pub send_domain_acme: Acme,
@@ -101,12 +110,14 @@ impl Default for Config {
             tls: TlsMode::Off,
             trust_forwarded: false,
             trusted_proxies: Vec::new(),
+            real_ip_header: false,
             update_check: true,
             login_attempts: 10,
             channel: None,
             start_settings: Settings::default(),
             start_features: None,
             time_sources: Vec::new(),
+            connections_per_network: crate::tls::PER_NETWORK,
             send_domain_acme: Acme {
                 domain: String::new(),
                 email: None,
@@ -118,6 +129,11 @@ impl Default for Config {
 }
 
 impl Config {
+    /// The cap per network for the acceptor; none when it is off.
+    pub fn connections_per_network(&self) -> Option<usize> {
+        (self.connections_per_network > 0).then_some(self.connections_per_network)
+    }
+
     /// Read the environment. A variable that is set but unusable is an error rather than a
     /// default quietly taking over — a server that listens somewhere else than asked, or without
     /// the TLS it was told to use, is worse than one that refuses to start.
@@ -147,6 +163,13 @@ impl Config {
             config.trusted_proxies = uwulock_api::networks::IpNetwork::parse_list(&list)
                 .map_err(|error| format!("UWULOCK_TRUSTED_PROXIES: {error}"))?;
         }
+        if let Some(header) = var("UWULOCK_CLIENT_IP_HEADER") {
+            config.real_ip_header = match header.to_ascii_lowercase().as_str() {
+                "x-forwarded-for" => false,
+                "x-real-ip" => true,
+                _ => return Err(format!("UWULOCK_CLIENT_IP_HEADER must be x-forwarded-for or x-real-ip: {header}")),
+            };
+        }
         if let Some(attempts) = var("UWULOCK_LOGIN_ATTEMPTS") {
             config.login_attempts = attempts
                 .trim()
@@ -154,6 +177,11 @@ impl Config {
                 .ok()
                 .filter(|attempts| (1..=10_000).contains(attempts))
                 .ok_or_else(|| format!("UWULOCK_LOGIN_ATTEMPTS must be a number from 1 to 10000: {attempts}"))?;
+        }
+        if let Some(most) = var("UWULOCK_CONNECTIONS_PER_NETWORK") {
+            config.connections_per_network = most.parse().ok().filter(|most| *most <= 100_000).ok_or_else(|| {
+                format!("UWULOCK_CONNECTIONS_PER_NETWORK must be a number from 0 (no cap) to 100000: {most}")
+            })?;
         }
         if let Some(check) = var("UWULOCK_UPDATE_CHECK") {
             config.update_check =
@@ -494,6 +522,16 @@ mod tests {
         assert!(config(&[("UWULOCK_TRUSTED_PROXIES", "proxy.example.com")]).is_err());
         let proxies = config(&[("UWULOCK_TRUSTED_PROXIES", "172.20.0.2, 2001:db8::/48")]).unwrap().trusted_proxies;
         assert_eq!(proxies.len(), 2);
+        assert!(!config(&[]).unwrap().real_ip_header);
+        assert!(config(&[("UWULOCK_CLIENT_IP_HEADER", "X-Real-IP")]).unwrap().real_ip_header);
+        assert!(config(&[("UWULOCK_CLIENT_IP_HEADER", "forwarded")]).is_err());
+        assert_eq!(config(&[]).unwrap().connections_per_network(), Some(crate::tls::PER_NETWORK));
+        assert_eq!(config(&[("UWULOCK_CONNECTIONS_PER_NETWORK", "0")]).unwrap().connections_per_network(), None);
+        assert_eq!(
+            config(&[("UWULOCK_CONNECTIONS_PER_NETWORK", "1000")]).unwrap().connections_per_network(),
+            Some(1000)
+        );
+        assert!(config(&[("UWULOCK_CONNECTIONS_PER_NETWORK", "lots")]).is_err());
     }
 
     #[test]

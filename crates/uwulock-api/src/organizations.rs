@@ -105,8 +105,45 @@ pub(crate) async fn notify(
     collections: &[String],
     users: &[String],
 ) {
+    notify_in(&mut Reach::default(), state, session, kind, cipher, collections, users).await;
+}
+
+/// What the members of the organisations in one request reach, worked out once per organisation
+/// and kept for the request: a bulk change of 5 000 items asks for it once, not 5 000 times
+/// (R5-6). Nothing a bulk change does (trash, restore, delete, archive, share into collections
+/// the user may write to) changes who reaches which collection, so it holds for the whole batch.
+#[derive(Default)]
+pub(crate) struct Reach {
+    orgs: std::collections::HashMap<String, uwulock_store::OrgReach>,
+}
+
+impl Reach {
+    async fn seeing(
+        &mut self,
+        state: &AppState,
+        org: &str,
+        collections: &[String],
+    ) -> std::collections::HashSet<String> {
+        if !self.orgs.contains_key(org) {
+            let reach = state.store.org_reach(org).await.unwrap_or_default();
+            self.orgs.insert(org.to_string(), reach);
+        }
+        self.orgs.get(org).map(|reach| reach.seeing(collections)).unwrap_or_default()
+    }
+}
+
+/// [`notify`] within a batch, with what the members reach from `reach`.
+pub(crate) async fn notify_in(
+    reach: &mut Reach,
+    state: &AppState,
+    session: &Session,
+    kind: Kind,
+    cipher: &Cipher,
+    collections: &[String],
+    users: &[String],
+) {
     let seeing = match cipher.organization_id.as_deref() {
-        Some(org) => state.store.org_members_seeing(org, collections).await.unwrap_or_default(),
+        Some(org) => reach.seeing(state, org, collections).await,
         None => users.iter().cloned().collect(),
     };
     for user in users {
@@ -168,7 +205,7 @@ struct Share {
 
 /// Move one of the user's items into an organisation: the client encrypted it again under the
 /// organisation's key.
-async fn share_one(state: &AppState, session: &Session, id: &str, data: Share) -> ApiResult<Cipher> {
+async fn share_one(reach: &mut Reach, state: &AppState, session: &Session, id: &str, data: Share) -> ApiResult<Cipher> {
     let current =
         state.store.cipher(&session.user.id, id).await?.ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
     let org = data.cipher.organization_id().ok_or_else(|| ApiError::bad("Organization id not provided"))?;
@@ -187,7 +224,7 @@ async fn share_one(state: &AppState, session: &Session, id: &str, data: Share) -
         .share_cipher(&session.user.id, moved, data.collection_ids.clone(), keys)
         .await?
         .ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
-    notify(state, session, Kind::CipherUpdate, &saved, &data.collection_ids, &users).await;
+    notify_in(reach, state, session, Kind::CipherUpdate, &saved, &data.collection_ids, &users).await;
     Ok(saved)
 }
 
@@ -197,7 +234,10 @@ async fn share(
     Path(id): Path<String>,
     Json(data): Json<Share>,
 ) -> ApiResult<Response> {
-    let saved = share_one(&state, &session, &id, data).await?;
+    if let Some(org) = data.cipher.organization_id() {
+        crate::ciphers::check_org_item_count(&state, &org, 1).await?;
+    }
+    let saved = share_one(&mut Reach::default(), &state, &session, &id, data).await?;
     let item = state
         .store
         .org_cipher(&session.user.id, &saved.id)
@@ -222,11 +262,20 @@ async fn share_many(
     if data.ciphers.len() > crate::ciphers::MOST_IDS {
         return Err(ApiError::bad("Too many items at once.").code("too_many_ids"));
     }
+    // The organisations' ceilings, for all of them at once (R5-4).
+    let mut adding: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for org in data.ciphers.iter().filter_map(CipherData::organization_id) {
+        *adding.entry(org).or_default() += 1;
+    }
+    for (org, count) in &adding {
+        crate::ciphers::check_org_item_count(&state, org, *count).await?;
+    }
     let mut shared = Vec::new();
+    let mut reach = Reach::default();
     for cipher in data.ciphers {
         let id = cipher.id.clone().ok_or_else(|| ApiError::bad("Cipher doesn't exist"))?;
-        let saved =
-            share_one(&state, &session, &id, Share { cipher, collection_ids: data.collection_ids.clone() }).await?;
+        let share = Share { cipher, collection_ids: data.collection_ids.clone() };
+        let saved = share_one(&mut reach, &state, &session, &id, share).await?;
         shared.push(saved.id);
     }
     let mut data = Vec::new();

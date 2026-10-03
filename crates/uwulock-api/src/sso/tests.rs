@@ -675,6 +675,31 @@ async fn the_portal_sets_sso_up_by_hand_and_keeps_the_secret_to_itself() {
     label["trustUnverifiedEmail"] = true.into();
     let refused = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), label).await;
     assert_eq!(json(refused).await["code"], "password_required");
+    // Nor who becomes an admin through SSO: a claim a user sets themselves would do (R5-3).
+    let mut base = settings.clone();
+    base.as_object_mut().unwrap().remove("clientSecret");
+    base.as_object_mut().unwrap().remove("masterPasswordHash");
+    for (field, value) in [
+        ("adminGroup", json!("someone@example.com")),
+        ("adminGroup", Value::Null),
+        ("groupsClaim", json!("email")),
+        ("rolesClaim", json!("given_name")),
+    ] {
+        let mut changed = base.clone();
+        changed[field] = value.clone();
+        let refused = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), changed.clone()).await;
+        assert_eq!(json(refused).await["code"], "password_required", "{field} = {value}");
+        changed["masterPasswordHash"] = "wrong".into();
+        let refused = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), changed).await;
+        assert_eq!(json(refused).await["code"], "password_required", "{field} with a wrong password");
+    }
+    assert_eq!(server.state.settings().sso.admin_group.as_deref(), Some("vault-admins"));
+    let mut roles = base.clone();
+    roles["rolesClaim"] = "roles".into();
+    roles["masterPasswordHash"] = password_hash("admin@example.com").into();
+    let response = server.call("PUT", "/uwu/v1/admin/sso", Some(&token), roles).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+    assert_eq!(server.state.settings().sso.roles_claim.as_deref(), Some("roles"));
 
     // Left out: kept for the same provider and client, gone for another.
     let mut again = settings.clone();
@@ -791,4 +816,36 @@ fn pairing_input_takes_the_qr_text_or_both_fields() {
     );
     assert!(pairing_input(Some("http://auth.example.com"), "x").is_err(), "https");
     assert!(pairing_input(None, "7KQ4").is_err(), "an address");
+}
+
+/// R5-3: a SCIM token, and SCIM deleting rather than disabling, keep power over every account
+/// after the admin session is gone: both take the master password.
+#[tokio::test]
+async fn the_scim_token_and_what_scim_deletes_take_the_master_password() {
+    let server = TestServer::new().await;
+    let token = admin(&server).await;
+    let refused = server.call("POST", "/uwu/v1/admin/scim/token", Some(&token), json!({})).await;
+    assert_eq!(json(refused).await["code"], "password_required");
+    let wrong = json!({ "masterPasswordHash": "wrong" });
+    let refused = server.call("POST", "/uwu/v1/admin/scim/token", Some(&token), wrong).await;
+    assert_eq!(json(refused).await["code"], "password_required");
+    assert!(server.state.settings().scim.token_hash.is_none());
+    let confirmed = json!({ "masterPasswordHash": password_hash("admin@example.com") });
+    let made = json(server.call("POST", "/uwu/v1/admin/scim/token", Some(&token), confirmed).await).await;
+    assert!(made["token"].as_str().is_some_and(|token| !token.is_empty()), "{made}");
+
+    let mut general = json(server.get_as(&token, "/uwu/v1/admin/settings").await).await;
+    general["scim"]["onDelete"] = "delete".into();
+    let refused = server.call("PUT", "/uwu/v1/admin/settings", Some(&token), general.clone()).await;
+    assert_eq!(json(refused).await["code"], "password_required");
+    assert_eq!(server.state.settings().scim.on_delete, crate::scim::OnDelete::Disable);
+    general["masterPasswordHash"] = password_hash("admin@example.com").into();
+    let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&token), general).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+    assert_eq!(server.state.settings().scim.on_delete, crate::scim::OnDelete::Delete);
+    // Everything else in the general settings still saves without it.
+    let mut general = json(server.get_as(&token, "/uwu/v1/admin/settings").await).await;
+    general["geoip"] = false.into();
+    let response = server.call("PUT", "/uwu/v1/admin/settings", Some(&token), general).await;
+    assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
 }

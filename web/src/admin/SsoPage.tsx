@@ -25,6 +25,7 @@ import {
   saveScimOnDelete,
   saveSso,
   ssoNeedsPassword,
+  ssoProviderChanged,
   ssoSettings,
   testSso,
   unpairSso,
@@ -180,11 +181,21 @@ function SsoActions({ test }: { test?: boolean }) {
       </ButtonRow>
       {asking && (
         <PasswordPrompt
-          title={t('SSO-Anbieter ändern?')}
+          title={
+            ssoProviderChanged(current, draft, secret)
+              ? t('SSO-Anbieter ändern?')
+              : t('Admin-Regeln für SSO ändern?')
+          }
           tone="warning"
-          lead={t(
-            'Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.',
-          )}
+          lead={
+            ssoProviderChanged(current, draft, secret)
+              ? t(
+                  'Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+                )
+              : t(
+                  'Gruppe und Claims entscheiden, wer über SSO Admin wird. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+                )
+          }
           confirm={t('Speichern')}
           onCancel={() => setAsking(false)}
           action={async (password) => {
@@ -536,7 +547,28 @@ export function ScimTab() {
   useLanguage();
   const { current, setCurrent, run, busy, result } = useSso();
   const [scimToken, setScimToken] = useState<string | null>(null);
+  // What waits for the master password: a new token, or what SCIM does when it deletes.
+  const [asking, setAsking] = useState<
+    { kind: 'token' } | { kind: 'onDelete'; value: 'disable' | 'delete' } | null
+  >(null);
   if (!current) return <ResultLine result={result} />;
+  const confirmed = (password: string) => {
+    const ask = asking;
+    setAsking(null);
+    if (!ask) return Promise.resolve();
+    if (ask.kind === 'token')
+      return run(async () => {
+        const made = await newScimToken(password);
+        setScimToken(made.token);
+        setCurrent({ ...current, scimTokenSet: true });
+        return null;
+      });
+    return run(async () => {
+      await saveScimOnDelete(ask.value, password);
+      setCurrent({ ...current, scimOnDelete: ask.value });
+      return t('Gespeichert ✧');
+    });
+  };
   return (
     <Section
       heading={t('Konten vom Anbieter verwalten lassen (SCIM)')}
@@ -558,13 +590,7 @@ export function ScimTab() {
         <Select
           label={t('Wenn der Anbieter jemanden löscht')}
           value={current.scimOnDelete ?? 'disable'}
-          onChange={(value: 'disable' | 'delete') =>
-            void run(async () => {
-              await saveScimOnDelete(value);
-              setCurrent({ ...current, scimOnDelete: value });
-              return t('Gespeichert ✧');
-            })
-          }
+          onChange={(value: 'disable' | 'delete') => setAsking({ kind: 'onDelete', value })}
           disabled={busy}
           options={[
             { value: 'disable', label: t('Konto sperren') },
@@ -580,17 +606,7 @@ export function ScimTab() {
             : t('Noch keines. Beim Koppeln mit UwUAuth kommt es von selbst.')
         }
       >
-        <Button
-          onClick={() =>
-            void run(async () => {
-              const made = await newScimToken();
-              setScimToken(made.token);
-              setCurrent({ ...current, scimTokenSet: true });
-              return null;
-            })
-          }
-          disabled={busy}
-        >
+        <Button onClick={() => setAsking({ kind: 'token' })} disabled={busy}>
           {current.scimTokenSet ? t('Neues Token') : t('Token erzeugen')}
         </Button>
       </SettingRow>
@@ -606,6 +622,28 @@ export function ScimTab() {
         >
           <code className="send-link">{scimToken}</code>
         </Callout>
+      )}
+      {asking && (
+        <PasswordPrompt
+          title={
+            asking.kind === 'token'
+              ? t('Neues SCIM-Token?')
+              : t('Ändern, was SCIM beim Löschen tut?')
+          }
+          tone="warning"
+          lead={t(
+            'Damit sperrt oder löscht der Anbieter Konten, auch wenn du längst abgemeldet bist. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+          )}
+          confirm={
+            asking.kind === 'token'
+              ? current.scimTokenSet
+                ? t('Neues Token')
+                : t('Token erzeugen')
+              : t('Speichern')
+          }
+          onCancel={() => setAsking(null)}
+          action={confirmed}
+        />
       )}
       <ResultLine result={result} />
     </Section>

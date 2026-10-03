@@ -357,3 +357,24 @@ async fn choices_come_with_the_delta_sync_and_changes_on_the_realtime_channel() 
     let next = json(server.get_as(&account.token, &path).await).await;
     assert_eq!(next["uwu"]["sendDomains"], json!({ send_id: null }));
 }
+
+/// R5 I-1: `X-Forwarded-Host` counts only from a proxy in `UWULOCK_TRUSTED_PROXIES`, like the
+/// other forwarding headers.
+#[tokio::test]
+async fn a_forwarded_host_counts_only_from_a_trusted_proxy() {
+    let server = TestServer::new().await;
+    let admin = admin(&server).await;
+    add(&server, &admin, "send.example.com", "proxy").await;
+    let server = server.behind_proxy().with_trusted_proxies(&["192.0.2.1"]);
+    let from = |peer: [u8; 4]| {
+        let mut request = Request::get("/api/sync")
+            .header("host", "vault.example.com")
+            .header("x-forwarded-host", "send.example.com")
+            .body(Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((peer, 5000))));
+        request
+    };
+    assert_eq!(server.send(from([192, 0, 2, 1])).await.status(), StatusCode::NOT_FOUND, "the send domain");
+    assert_eq!(server.send(from([192, 0, 2, 9])).await.status(), StatusCode::UNAUTHORIZED, "the vault, as Host says");
+}

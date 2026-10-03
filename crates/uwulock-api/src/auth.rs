@@ -558,46 +558,63 @@ impl FromRequestParts<AppState> for ClientIp {
 
 /// The address a request comes from, as the server's configuration says to believe it.
 pub(crate) fn client_ip(parts: &Parts, config: &crate::ApiConfig) -> IpAddr {
-    client_ip_with(parts, config.trust_forwarded, &config.trusted_proxies)
+    client_ip_with(parts, config.trust_forwarded, &config.trusted_proxies, config.real_ip_header)
 }
 
 /// The connection's own address: the proxy's, behind one.
-fn peer_ip(parts: &Parts) -> Option<IpAddr> {
-    parts.extensions.get::<ConnectInfo<SocketAddr>>().map(|info| canonical(info.0.ip()))
+fn peer_ip(extensions: &axum::http::Extensions) -> Option<IpAddr> {
+    extensions.get::<ConnectInfo<SocketAddr>>().map(|info| canonical(info.0.ip()))
 }
 
 /// Whether the forwarding headers of this request are believed: trust is on, and the peer is one
 /// of the trusted proxies (`UWULOCK_TRUSTED_PROXIES`; none listed means every peer, R1-13).
-pub(crate) fn trusts_forwarding(parts: &Parts, trust_forwarded: bool, proxies: &[crate::networks::IpNetwork]) -> bool {
+pub(crate) fn trusts_forwarding(
+    extensions: &axum::http::Extensions,
+    trust_forwarded: bool,
+    proxies: &[crate::networks::IpNetwork],
+) -> bool {
     trust_forwarded
-        && (proxies.is_empty() || peer_ip(parts).is_some_and(|peer| proxies.iter().any(|proxy| proxy.contains(peer))))
+        && (proxies.is_empty()
+            || peer_ip(extensions).is_some_and(|peer| proxies.iter().any(|proxy| proxy.contains(peer))))
 }
 
-pub(crate) fn client_ip_with(parts: &Parts, trust_forwarded: bool, proxies: &[crate::networks::IpNetwork]) -> IpAddr {
-    if trusts_forwarding(parts, trust_forwarded, proxies) {
+/// Where a request comes from. Behind a proxy that is believed, the header it sets: the last
+/// entry of `X-Forwarded-For` (`X-Real-IP` only when there is no `X-Forwarded-For` at all), or
+/// with `real_ip` (`UWULOCK_CLIENT_IP_HEADER=x-real-ip`) `X-Real-IP` and nothing else — for a
+/// proxy that sets it and passes the client's own `X-Forwarded-For` on unchanged (R5 I-2).
+/// Otherwise, and when the header is not an address, the peer.
+pub(crate) fn client_ip_with(
+    parts: &Parts,
+    trust_forwarded: bool,
+    proxies: &[crate::networks::IpNetwork],
+    real_ip: bool,
+) -> IpAddr {
+    if trusts_forwarding(&parts.extensions, trust_forwarded, proxies) {
+        let real_ip_header = || {
+            parts
+                .headers
+                .get("x-real-ip")
+                .and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
+                .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        };
         // Several headers of the same name count as one list, in order. Read as raw bytes: a
         // value with a byte ≥ 0x80 is not `to_str()`-able, and must not let `X-Real-IP` (which
         // the client can send itself) take over (R1-1).
         let forwarded_for = parts.headers.get_all("x-forwarded-for").into_iter().next_back();
         let forwarded = match forwarded_for {
-            Some(value) => value
+            Some(value) if !real_ip => value
                 .as_bytes()
                 .rsplit(|byte| *byte == b',')
                 .next()
                 .and_then(|last| std::str::from_utf8(last).ok())
                 .and_then(|last| last.trim().parse::<IpAddr>().ok()),
-            // `X-Real-IP` only when there is no `X-Forwarded-For` at all.
-            None => parts
-                .headers
-                .get("x-real-ip")
-                .and_then(|value| std::str::from_utf8(value.as_bytes()).ok())
-                .and_then(|value| value.trim().parse::<IpAddr>().ok()),
+            _ => real_ip_header(),
         };
         if let Some(ip) = forwarded {
             return canonical(ip);
         }
     }
-    peer_ip(parts).unwrap_or(IpAddr::from([0, 0, 0, 0]))
+    peer_ip(&parts.extensions).unwrap_or(IpAddr::from([0, 0, 0, 0]))
 }
 
 fn canonical(ip: IpAddr) -> IpAddr {
@@ -942,7 +959,7 @@ mod tests {
             parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
             parts
         };
-        let client_ip = |parts: &Parts, trust: bool| client_ip_with(parts, trust, &[]);
+        let client_ip = |parts: &Parts, trust: bool| client_ip_with(parts, trust, &[], false);
         // nginx appends what it sees to what the client sent.
         let spoofed = parts(&[("x-forwarded-for", "203.0.113.9, 198.51.100.7")]);
         assert_eq!(client_ip(&spoofed, true), IpAddr::from([198, 51, 100, 7]));
@@ -972,14 +989,29 @@ mod tests {
         request = request.header("x-real-ip", "192.0.2.10");
         let mut parts = request.body(()).unwrap().into_parts().0;
         parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
-        assert_eq!(client_ip_with(&parts, true, &[]), IpAddr::from([198, 51, 100, 7]));
+        assert_eq!(client_ip_with(&parts, true, &[], false), IpAddr::from([198, 51, 100, 7]));
         // Only the bad entry: the peer, never X-Real-IP.
         let mut request = axum::http::Request::get("/");
         request = request.header("x-forwarded-for", axum::http::HeaderValue::from_bytes(b"\xff").unwrap());
         request = request.header("x-real-ip", "192.0.2.10");
         let mut parts = request.body(()).unwrap().into_parts().0;
         parts.extensions.insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 5000))));
-        assert_eq!(client_ip_with(&parts, true, &[]), IpAddr::from([127, 0, 0, 1]));
+        assert_eq!(client_ip_with(&parts, true, &[], false), IpAddr::from([127, 0, 0, 1]));
+    }
+
+    /// R5 I-2: behind a proxy that sets `X-Real-IP` and passes the client's `X-Forwarded-For`
+    /// on, `UWULOCK_CLIENT_IP_HEADER=x-real-ip` reads only `X-Real-IP`.
+    #[test]
+    fn x_real_ip_alone_when_the_proxy_sets_that() {
+        let mut request = axum::http::Request::get("/");
+        request = request.header("x-forwarded-for", "192.0.2.66").header("x-real-ip", "198.51.100.7");
+        let mut parts = request.body(()).unwrap().into_parts().0;
+        parts.extensions.insert(ConnectInfo(SocketAddr::from(([172, 20, 0, 2], 5000))));
+        assert_eq!(client_ip_with(&parts, true, &[], true), IpAddr::from([198, 51, 100, 7]));
+        assert_eq!(client_ip_with(&parts, true, &[], false), IpAddr::from([192, 0, 2, 66]), "the default");
+        assert_eq!(client_ip_with(&parts, false, &[], true), IpAddr::from([172, 20, 0, 2]), "only behind a proxy");
+        parts.headers.remove("x-real-ip");
+        assert_eq!(client_ip_with(&parts, true, &[], true), IpAddr::from([172, 20, 0, 2]), "never X-Forwarded-For");
     }
 
     #[test]
@@ -992,14 +1024,14 @@ mod tests {
             parts
         };
         let proxies = [IpNetwork::parse("172.20.0.2").unwrap()];
-        assert_eq!(client_ip_with(&from([172, 20, 0, 2]), true, &proxies), IpAddr::from([198, 51, 100, 7]));
+        assert_eq!(client_ip_with(&from([172, 20, 0, 2]), true, &proxies, false), IpAddr::from([198, 51, 100, 7]));
         assert_eq!(
-            client_ip_with(&from([172, 20, 0, 9]), true, &proxies),
+            client_ip_with(&from([172, 20, 0, 9]), true, &proxies, false),
             IpAddr::from([172, 20, 0, 9]),
             "another container on the proxy network is not believed (R1-13)"
         );
         assert_eq!(
-            client_ip_with(&from([172, 20, 0, 9]), true, &[]),
+            client_ip_with(&from([172, 20, 0, 9]), true, &[], false),
             IpAddr::from([198, 51, 100, 7]),
             "no list: every peer"
         );

@@ -604,6 +604,11 @@ fn tombstones_between(
     Ok(())
 }
 
+/// An item's `cipher-left` tombstones in a window: found by the index `tombstones_left`
+/// (migration 0026), not by reading every tombstone of the organisation (R5 I-3).
+const LEFT_VISIBLE: &str =
+    "SELECT collections FROM tombstones WHERE owner = ?1 AND kind = 'cipher-left' AND object_id = ?2 AND seq > ?3";
+
 /// Whether the item `id` left a collection the member sees since `since`: then it was theirs,
 /// and is gone for them now.
 fn left_visible(
@@ -614,9 +619,7 @@ fn left_visible(
     member: &crate::organizations::Member,
     reach: &HashMap<String, Access>,
 ) -> rusqlite::Result<bool> {
-    let mut statement = conn.prepare_cached(
-        "SELECT collections FROM tombstones WHERE owner = ?1 AND kind = 'cipher-left' AND object_id = ?2 AND seq > ?3",
-    )?;
+    let mut statement = conn.prepare_cached(LEFT_VISIBLE)?;
     for collections in statement.query_map(params![org_id, id, since], |row| row.get::<_, Option<String>>(0))? {
         let collections: Vec<String> =
             collections?.and_then(|list| serde_json::from_str(&list).ok()).unwrap_or_default();
@@ -696,5 +699,20 @@ mod tests {
         assert_eq!(cut(vec![5, 5, 6], 1, 7), (5, true, 1), "one number is one object");
         assert_eq!(cut(vec![7], 0, 9), (6, true, 0), "no room: nothing, and more to come");
         assert_eq!(cut(vec![], 0, 9), (9, false, 0));
+    }
+
+    #[tokio::test]
+    async fn left_tombstones_are_found_by_their_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = crate::Store::open_sqlite(&dir.path().join("uwulock.db"), &crate::Options { readers: 1 }).unwrap();
+        let plan: Vec<String> = store
+            .sqlite_read(|conn| {
+                conn.prepare(&format!("EXPLAIN QUERY PLAN {LEFT_VISIBLE}"))?
+                    .query_map(params!["org", "item", 0], |row| row.get::<_, String>(3))?
+                    .collect()
+            })
+            .await
+            .unwrap();
+        assert!(plan.iter().any(|step| step.contains("tombstones_left")), "{plan:?}");
     }
 }

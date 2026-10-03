@@ -63,3 +63,25 @@ down for later.
   HMAC tag keyed from the Send's link secret, so a marker line in an item's notes or from another
   Send is plain text; only `http`/`https` websites become links. Passkeys are deleted by credential
   id or fingerprint, never by their place alone, and the list is read again afterwards.
+
+## Re-check (R5)
+
+After the fixes were merged (PR #43), round R5 read them again and the 0.8 feature changes they sit
+on. The R1 fixes hold, with three gaps (R1-2 twice, R1-3) and three smaller new findings; nothing
+critical or high. All of them are fixed in branch `recheck-0.8-server`, each with a test, and the
+info items that cost little are done.
+
+| Id | Severity | Finding | Fix | Commit |
+| --- | --- | --- | --- | --- |
+| R5-1 | Medium | The per-account login bucket was only peeked at before hashing, so logins at the same moment all passed on one try; a device id the account knows skipped the limit altogether | The try is taken before the hash and given back after a right password; known devices take from a small reserve (10, one back every 6 min) once the account's tries are out. Test: 40 wrong logins at once check at most the burst | `b5a3469` |
+| R5-2 | Medium | 30 wrong passwords from anywhere kept every new device of an account out, silently, for as long as somebody kept going | A strict bucket per address and network (IPv4 address or IPv6 /48: 10, one back every 6 min) and a wide one from everywhere (300, one back every 12 s). When the wide one runs out, the owner gets the security notice `loginsLimited` by mail (at most once an hour), and the log a `warn` line `login refused: too many wrong passwords for this account from everywhere` for the Grafana panel | `b5a3469` |
+| R5-3 | Medium | The SSO admin mapping (`adminGroup`, `groupsClaim`, `rolesClaim`), a new SCIM token and `scim.onDelete` needed no master password | All of them ask for it (`password_required`); the portal prompts for the rules, the token and the on-delete choice. Server tests per field, vitest, e2e `sso.mjs` | `0004050` |
+| R5-4 | Low | `POST /api/ciphers/create` and organisation items skipped the item ceiling | Own items through `/create` count; an organisation holds at most as many items as an account (100 000), checked on create, share and share-many | `76a2bc1` |
+| R5-5 | Low | Behind Docker's userland proxy (IPv6, rootless) every client has the gateway's address, so 256 connections from one shut out the rest | Loopback, private and link-local peers count only in the total; `UWULOCK_CONNECTIONS_PER_NETWORK` (default 256, `0` off); docs/deployment.md: a proxy or host networking for direct TLS under Docker | `e33840d` |
+| R5-6 | Low | The hub notice for a bulk change of organisation items worked out every member's reach once per item | Once per organisation and request (`Store::org_reach`, `organizations::Reach`) for bulk changes and share-many | `76a2bc1` |
+| I-1 | Info | `X-Forwarded-Host` was believed from every peer while trust was on | Only from `UWULOCK_TRUSTED_PROXIES` (removed in the send-host guard otherwise) | `e33840d` |
+| I-2 | Info | A proxy that sets only `X-Real-IP` let the client choose its address through `X-Forwarded-For` | `UWULOCK_CLIENT_IP_HEADER=x-real-ip` makes `X-Real-IP` the only header that counts (still only from trusted proxies); the default stays the last `X-Forwarded-For` entry. Documented, with why Caddy keeps the default | `e33840d` |
+| I-3 | Info | `cipher-left` lookups scanned the organisation's tombstones | Migration 0026: partial index `tombstones_left`; a test checks the query plan | `90ccede` |
+| I-4 | Info | Local backups keep API keys and the token key | Documented in docs/deployment.md (Backups): `backups/` is as sensitive as `data/` | `e33840d` |
+| I-5 | Info | With the hashing queue full every password login is `busy` | No change: the intended trade-off | – |
+

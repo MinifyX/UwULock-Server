@@ -9,6 +9,7 @@ import { ResultLine, type Result } from './controls';
 const WARNINGS = new Set([
   'failedLogins',
   'failedTwoFactor',
+  'loginsLimited',
   'emergencyAccessTakenOver',
   'travelDisableFailed',
   'kdfBelowMinimum',

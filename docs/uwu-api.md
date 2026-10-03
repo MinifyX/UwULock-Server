@@ -110,17 +110,30 @@ any other status); the Bitwarden-shaped bodies of `/identity` (`invalid_grant` a
 none. Named so far: `would_lock_out` (§21.4), `kdf_too_weak` (§20), `upstream`.
 
 **Password logins** (`grant_type=password`) are limited per IPv4 address or IPv6 /64
-(`UWULOCK_LOGIN_ATTEMPTS`, then one a minute), per IPv6 /48 (100, then one every 6 s) and, for
-devices the account hasn't logged in from, per account: 30 wrong passwords, one back every
-2 minutes; then 429 with `"code": "account_limited"` until one is back. Devices the account knows
-still log in, so nobody is locked out. When too many logins already wait for the password hashing,
-the answer is 503 `busy` with `Retry-After: 2` at once. Behind a proxy the address is the last
-`X-Forwarded-For` entry (`X-Real-IP` only without any `X-Forwarded-For`), and only from the
-peers in `UWULOCK_TRUSTED_PROXIES` when that is set (docs/deployment.md).
+(`UWULOCK_LOGIN_ATTEMPTS`, then one a minute) and per IPv6 /48 (100, then one every 6 s). Per
+address tried (as typed, whether it has an account or not), every password checked takes a try
+before it is hashed and gets it back when it was right, so only wrong ones count, and logins at
+the same moment can't share the last try:
+
+- per address tried **and network** (IPv4 address or IPv6 /48): 10, one back every 6 minutes —
+  a guesser from one place stops there, without touching the owner logging in from elsewhere;
+- per address tried **from everywhere**: 300, one back every 12 s. Once that is empty, only
+  devices the account knows get their password checked, and they share 10 more (one back every
+  6 minutes): a device id is no way around the limit. The owner gets the security notice
+  `loginsLimited` (§12.1), at most once an hour, and the log a `warn` line starting with
+  `login refused`.
+
+Past either: 429 with `"code": "account_limited"` until a try is back. When too many logins
+already wait for the password hashing, the answer is 503 `busy` with `Retry-After: 2` at once,
+before any try is taken. Behind a proxy the address is the last `X-Forwarded-For` entry
+(`X-Real-IP` only without any `X-Forwarded-For`; only `X-Real-IP` with
+`UWULOCK_CLIENT_IP_HEADER=x-real-ip`), and only from the peers in `UWULOCK_TRUSTED_PROXIES` when
+that is set — `X-Forwarded-Host` too (docs/deployment.md).
 
 **Bulk requests** (`/api/ciphers/move`, `…/delete`, `…/restore`, `…/share` and the other id
 lists) take at most 5 000 ids (400 `too_many_ids`), and an account holds at most 100 000 own
-items: creating, importing or sharing past that is 400 `too_many_items`.
+items, an organisation (a family) as many: creating (`/api/ciphers`, `/api/ciphers/create`),
+importing or sharing past that is 400 `too_many_items`.
 
 "Not yours" is always 404, never 403, so ids cannot be probed. A switched-off feature (feature
 switch, [features.md](features.md)) answers 404 `feature_off` on all its endpoints, for everybody,
@@ -1486,6 +1499,7 @@ account's language. The Stufe 5 event log builds on the same table.
 | --- | --- | --- |
 | `failedLogins` | 3 or more wrong master passwords for the account within 15 minutes | `{ "count": 5 }` |
 | `failedTwoFactor` | 3 or more wrong second-step codes within 15 minutes | `{ "count": 3, "provider": 0 }` |
+| `loginsLimited` | the account's wrong passwords from everywhere ran out: new devices wait (§1); at most once an hour | `{}` |
 | `newDevice` | a device logs in for the first time (today's mail, now also listed) | `{ "app": null }` |
 | `passwordChanged`, `emailChanged`, `kdfChanged`, `keysRotated` | the account's credentials changed | `{}` |
 | `twoFactorEnabled`, `twoFactorDisabled` | a provider switched | `{ "provider": 0 }` |
@@ -3113,12 +3127,15 @@ saved one — → 200 or 502.
 ### 21.9 SSO
 
 `GET|PUT /uwu/v1/admin/sso` — §19.1 (`clientSecret` write-only; a `PUT` that changes `issuer`,
-`clientId`, `trustUnverifiedEmail`, `extensionIds` or `enabled`, or sets a new `clientSecret`, needs
-`"masterPasswordHash"` of the admin, else 400 `password_required`, and a wrong one 400 `invalid`), `POST /uwu/v1/admin/sso/test`
+`clientId`, `trustUnverifiedEmail`, `extensionIds`, `enabled`, `adminGroup`, `groupsClaim` or
+`rolesClaim`, or sets a new `clientSecret`, needs `"masterPasswordHash"` of the admin, else — and
+with a wrong one — 400 `password_required`), `POST /uwu/v1/admin/sso/test`
 (reads the discovery document and JWKS) → `{ "ok", "error" }`, `POST /uwu/v1/admin/sso/pair` and
-`DELETE /uwu/v1/admin/sso/pairing` (§19.5), `POST /uwu/v1/admin/scim/token` → `{ "token" }` once
-(for providers other than UwUAuth; replaces the old one). The SCIM token acts with admin rights
-over every account but the last admin (docs/sso.md).
+`DELETE /uwu/v1/admin/sso/pairing` (§19.5), `POST /uwu/v1/admin/scim/token` with
+`{ "masterPasswordHash" }` → `{ "token" }` once (for providers other than UwUAuth; replaces the old
+one). The SCIM token acts with admin rights over every account but the last admin (docs/sso.md);
+so a change of `scim.onDelete` in `PUT /uwu/v1/admin/settings` needs `"masterPasswordHash"` beside
+the settings too.
 
 `POST /uwu/v1/admin/users/{id}/make-admin` and `…/reset-two-factor` need
 `{ "masterPasswordHash": "…" }` of the admin making the change (400 `password_required`).

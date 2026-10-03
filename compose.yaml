@@ -27,6 +27,10 @@ services:
       UWULOCK_TRUST_FORWARDED: ${UWULOCK_TRUST_FORWARDED:-off}
       # Only these proxies' X-Forwarded-For counts (addresses or CIDR, comma separated); empty: any peer.
       UWULOCK_TRUSTED_PROXIES: ${UWULOCK_TRUSTED_PROXIES:-}
+      # `x-real-ip` for a proxy that sets only X-Real-IP; empty: the last X-Forwarded-For entry.
+      UWULOCK_CLIENT_IP_HEADER: ${UWULOCK_CLIENT_IP_HEADER:-}
+      # With TLS of its own: connections per client address (0: only the total of 8192).
+      UWULOCK_CONNECTIONS_PER_NETWORK: ${UWULOCK_CONNECTIONS_PER_NETWORK:-}
       UWULOCK_UPDATE_CHECK: ${UWULOCK_UPDATE_CHECK:-on}
       # `json` for one JSON object a line, the same the server sends to Grafana Loki.
       UWULOCK_LOG_FORMAT: ${UWULOCK_LOG_FORMAT:-text}

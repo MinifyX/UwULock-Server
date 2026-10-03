@@ -129,10 +129,9 @@ const base = '/uwu/v1/admin';
 export const ssoSettings = () => request<SsoSettings>(`${base}/sso`);
 /**
  * Whether saving `draft` over `current` changes who may log in as whom — another provider or
- * client, a new secret, unverified addresses, extensions, SSO on or off: then the server asks
- * for the admin's master password.
+ * client, a new secret, unverified addresses, extensions, SSO on or off.
  */
-export function ssoNeedsPassword(current: SsoSettings, draft: SsoSettings, secret: string) {
+export function ssoProviderChanged(current: SsoSettings, draft: SsoSettings, secret: string) {
   return (
     secret !== '' ||
     current.issuer.trim().replace(/\/+$/, '') !== draft.issuer.trim().replace(/\/+$/, '') ||
@@ -144,6 +143,25 @@ export function ssoNeedsPassword(current: SsoSettings, draft: SsoSettings, secre
       ) ||
     current.enabled !== draft.enabled
   );
+}
+
+/** Whether saving `draft` changes who becomes an admin through SSO: the claims and the group. */
+export function ssoAdminRulesChanged(current: SsoSettings, draft: SsoSettings) {
+  const same = (a: string | null | undefined, b: string | null | undefined) =>
+    (a ?? '').trim() === (b ?? '').trim();
+  return (
+    !same(current.adminGroup, draft.adminGroup) ||
+    !same(current.groupsClaim, draft.groupsClaim) ||
+    !same(current.rolesClaim, draft.rolesClaim)
+  );
+}
+
+/**
+ * Whether the server asks for the admin's master password to save `draft` over `current`:
+ * when it changes who may log in as whom, or who becomes an admin.
+ */
+export function ssoNeedsPassword(current: SsoSettings, draft: SsoSettings, secret: string) {
+  return ssoProviderChanged(current, draft, secret) || ssoAdminRulesChanged(current, draft);
 }
 
 export async function saveSso(settings: SsoSettings, password?: string) {
@@ -160,14 +178,25 @@ export async function pairSso(url: string, code: string, password: string) {
   return request<SsoSettings>(`${base}/sso/pair`, { body: { url, code, masterPasswordHash } });
 }
 export const unpairSso = () => request<SsoSettings>(`${base}/sso/pairing`, { method: 'DELETE' });
-export const newScimToken = () => request<{ token: string }>(`${base}/scim/token`, { body: {} });
+/** A new SCIM token; it takes the admin's master password. */
+export async function newScimToken(password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<{ token: string }>(`${base}/scim/token`, { body: { masterPasswordHash } });
+}
 
-/** What a person removed over SCIM means: kept in the general settings (§21.1). */
-export async function saveScimOnDelete(onDelete: 'disable' | 'delete'): Promise<void> {
+/**
+ * What a person removed over SCIM means: kept in the general settings (§21.1). A change takes
+ * the admin's master password.
+ */
+export async function saveScimOnDelete(
+  onDelete: 'disable' | 'delete',
+  password: string,
+): Promise<void> {
+  const masterPasswordHash = await passwordHash(password);
   const all = await request<Record<string, unknown>>(`${base}/settings`);
   const scim = (all.scim as Record<string, unknown> | undefined) ?? {};
   await request(`${base}/settings`, {
     method: 'PUT',
-    body: { ...all, scim: { ...scim, onDelete } },
+    body: { ...all, scim: { ...scim, onDelete }, masterPasswordHash },
   });
 }

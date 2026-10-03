@@ -64,6 +64,24 @@ pub struct Member {
     pub revision: String,
 }
 
+/// The confirmed members of an organisation with the collections each reaches, from
+/// [`Store::org_reach`].
+#[derive(Debug, Clone, Default)]
+pub struct OrgReach {
+    members: Vec<(Member, HashMap<String, Access>)>,
+}
+
+impl OrgReach {
+    /// The user ids of the members who see an item in `collections`.
+    pub fn seeing(&self, collections: &[String]) -> HashSet<String> {
+        self.members
+            .iter()
+            .filter(|(member, reach)| access_to(member, reach, collections).is_some())
+            .filter_map(|(member, _)| member.user_id.clone())
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Collection {
     pub id: String,
@@ -682,7 +700,13 @@ impl Store {
     /// Of the organisation's confirmed members, the user ids of those who see an item in
     /// `collections` (R1-8: only they hear its id).
     pub async fn org_members_seeing(&self, org_id: &str, collections: &[String]) -> Result<HashSet<String>> {
-        let (org_id, collections) = (org_id.to_string(), collections.to_vec());
+        Ok(self.org_reach(org_id).await?.seeing(collections))
+    }
+
+    /// What each confirmed member of the organisation reaches, worked out once: a batch of
+    /// changed items asks [`OrgReach::seeing`] for every item without reading it all again (R5-6).
+    pub async fn org_reach(&self, org_id: &str) -> Result<OrgReach> {
+        let org_id = org_id.to_string();
         self.sqlite_read(move |conn| {
             let members: Vec<Member> = conn
                 .prepare_cached(&format!(
@@ -690,14 +714,12 @@ impl Store {
                 ))?
                 .query_map([&org_id], |row| member_from(row, 0))?
                 .collect::<rusqlite::Result<_>>()?;
-            let mut seeing = HashSet::new();
+            let mut reach = Vec::with_capacity(members.len());
             for member in members {
-                let reach = reachable(conn, &member)?;
-                if access_to(&member, &reach, &collections).is_some() {
-                    seeing.extend(member.user_id.clone());
-                }
+                let collections = reachable(conn, &member)?;
+                reach.push((member, collections));
             }
-            Ok(seeing)
+            Ok(OrgReach { members: reach })
         })
         .await
     }

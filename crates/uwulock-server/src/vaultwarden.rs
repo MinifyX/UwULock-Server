@@ -1177,6 +1177,7 @@ mod tests {
             public: "https://vault.example.com".into(),
             trust_forwarded: false,
             trusted_proxies: Vec::new(),
+            real_ip_header: false,
             hash_cost: uwulock_api::HashCost::cheap(),
             backups: target.path().join("backups"),
             data: target.path().to_path_buf(),
