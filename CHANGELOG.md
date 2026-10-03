@@ -45,8 +45,8 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
     `install.sh --trusted-proxy ADDRESS` sets it and asks for it with `--proxy-network`; without it
     the server trusts every peer as before and the installer warns. Set it if other containers share
     the proxy network.
-  - **Logins:** a second bucket per IPv6 /48 (100, then one every 6 s); at most 30 wrong passwords
-    per account and 2 hours from unknown devices (`429 account_limited`; known devices still get
+  - **Logins:** a second bucket per IPv6 /48 (100, then one every 6 s); per account 30 wrong passwords
+    from unknown devices, then one every 2 minutes (`429 account_limited`; known devices still get
     in, nobody is locked out); `503 busy` with `Retry-After: 2` at once when the password hashing
     queue is long, instead of a 408 after a minute.
   - **Admin portal:** changing the SSO provider (issuer, client id or secret, unverified addresses,
