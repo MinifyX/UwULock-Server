@@ -24,6 +24,9 @@
 #                          reaches it at http://uwulock:8443
 #   --proxy-ip ADDRESS     a fixed IPv4 address for the server in NET, needed in ipvlan and
 #                          macvlan networks; the proxy then reaches it at http://ADDRESS:8443
+#   --trusted-proxy ADDRESS  the proxy container's address (or a CIDR network) in NET: only its
+#                          X-Forwarded-For counts, not that of other containers in NET
+#                          (UWULOCK_TRUSTED_PROXIES)
 #   --admin ADDRESS        invite ADDRESS as the first admin: the link to register with is shown at
 #                          the end (and mailed, once the server can send mail)
 #   --bind X               where it listens here: a port, or address:port (default 443 with
@@ -54,6 +57,7 @@ acme_directory=letsencrypt
 proxy=""
 proxy_network=""
 proxy_ip=""
+trusted_proxy=""
 admin=""
 bind=""
 version=latest
@@ -80,6 +84,7 @@ while [ $# -gt 0 ]; do
     --behind-proxy) proxy="${2:?--behind-proxy needs the address the proxy answers on}"; shift 2 ;;
     --proxy-network) proxy_network="${2:?--proxy-network needs the name of a Docker network}"; shift 2 ;;
     --proxy-ip) proxy_ip="${2:?--proxy-ip needs an address}"; shift 2 ;;
+    --trusted-proxy) trusted_proxy="${2:?--trusted-proxy needs an address}"; shift 2 ;;
     --admin) admin="${2:?--admin needs an e-mail address}"; shift 2 ;;
     --bind) bind="${2:?--bind needs a port}"; shift 2 ;;
     --version) version="${2:?--version needs a tag}"; shift 2 ;;
@@ -534,6 +539,20 @@ if [ -n "$proxy_network" ]; then
     taken=$(docker network inspect --format '{{range .Containers}}{{.IPv4Address}} {{end}}' "$proxy_network" </dev/null 2>/dev/null)
     case " $taken" in *" $proxy_ip/"*) die "$proxy_ip is taken in $proxy_network already" ;; esac
   fi
+  # Every container in a shared network can reach the server directly: only the proxy's own
+  # X-Forwarded-For may count (R1-13).
+  if [ -z "$trusted_proxy" ] && $ask && have_tty; then
+    printf '\n  Containers in %s:\n' "$proxy_network"
+    docker network inspect --format '{{range .Containers}}    {{.Name}} {{.IPv4Address}}{{"\n"}}{{end}}' "$proxy_network" </dev/null 2>/dev/null
+    trusted_proxy=$(askfor "The proxy container's address in $proxy_network (Enter: believe every container in it)")
+  fi
+  if [ -n "$trusted_proxy" ]; then
+    case "$trusted_proxy" in
+      *[!0-9a-fA-F:./]*) die "--trusted-proxy wants one address or network like 192.0.2.10 or 192.0.2.0/28, not $trusted_proxy" ;;
+    esac
+  else
+    warn "every container in $proxy_network may claim any client address. --trusted-proxy ADDRESS (or UWULOCK_TRUSTED_PROXIES in .env) limits that to the proxy"
+  fi
   # The override takes compose.yaml's port away with !reset, which Compose knows since 2.24.
   compose_version=$(docker compose version --short </dev/null 2>/dev/null)
   compose_version="${compose_version#v}"
@@ -609,6 +628,7 @@ if [ -n "$domain" ]; then
 else
   set_env UWULOCK_TLS off
   set_env UWULOCK_TRUST_FORWARDED on
+  [ -n "$trusted_proxy" ] && set_env UWULOCK_TRUSTED_PROXIES "$trusted_proxy"
 fi
 step "wrote $dir/.env"
 

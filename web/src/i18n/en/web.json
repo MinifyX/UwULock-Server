@@ -310,5 +310,6 @@
   "Deine Vertrauenspersonen bekommen den neuen Schlüssel auch. Vergleiche ihre Sätze mit denen in ihren Einstellungen unter Konto → Fingerabdruck. Stimmt einer nicht, brich ab.": "Your trusted contacts get the new key too. Compare their phrases with the ones in their settings under Account → Fingerprint. If one doesn't match, cancel.",
   "Alles kommt auf den Stand von {when}: Konten, Tresore, Einstellungen. Was seitdem dazukam, ist dann weg – außer im Backup, das jetzt vorher geschrieben wird. Danach melden sich alle neu an, auf jedem Gerät, du auch.": "Everything goes back to how it was on {when}: accounts, vaults, settings. Whatever came since is gone — except in the backup written first. Afterwards everybody logs in again, on every device, you too.",
   "Zurückgespielt ✧ Der Stand davor ist jetzt {name}. Melde dich neu an.": "Restored ✧ What was there before is now {name}. Log in again.",
-  "Die Einladung an {email} ist per Mail unterwegs.": "The invitation to {email} is on its way by mail."
+  "Die Einladung an {email} ist per Mail unterwegs.": "The invitation to {email} is on its way by mail.",
+  "Neues Passwort erzeugt": "New password generated"
 }

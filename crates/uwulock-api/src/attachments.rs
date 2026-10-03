@@ -104,7 +104,7 @@ pub(crate) async fn changed(
         }
         Some(org) => {
             let users = state.store.org_members_users(org).await?;
-            crate::organizations::notify(state, session, Kind::CipherUpdate, cipher, collections, &users);
+            crate::organizations::notify(state, session, Kind::CipherUpdate, cipher, collections, &users).await;
             let item = state
                 .store
                 .org_cipher(&session.user.id, &cipher.id)
@@ -323,9 +323,10 @@ async fn download(
     };
     let found = state.store.attachment(&id, &attachment).await?.filter(|found| found.uploaded);
     // A link from before travel mode was switched on does not open a hidden item's files: the
-    // owner's, or (an organisation's item) the member's the link was made for.
+    // owner's, or (an organisation's item) the member's the link was made for — nor one for a
+    // member who does not see the item any more (R1-12).
     let hidden = match &viewer {
-        Some(viewer) => state.store.hidden_from(viewer, &id).await?,
+        Some(viewer) => state.store.closed_for(viewer, &id).await?,
         None => state.store.hidden_from_owner(&id).await?,
     };
     if found.is_none() || hidden {
@@ -418,6 +419,43 @@ mod tests {
         assert_eq!(deleted["cipher"]["id"], id.as_str());
         let vault = json(server.get_as(&account.token, "/api/sync").await).await;
         assert_eq!(vault["ciphers"][0]["attachments"], json!(null));
+    }
+
+    #[tokio::test]
+    async fn a_link_stops_once_the_member_no_longer_sees_the_item() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let mio = server.account("mio@example.com").await;
+        let (org, collection) = family_with(&server, &nyu, &mio).await;
+        let item = json!({"type": 2, "name": "2.n|n|n", "secureNote": {"type": 0}, "organizationId": org});
+        let body = json!({ "cipher": item, "collectionIds": [collection] });
+        let id = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), body).await).await["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let announce = json!({"key": "2.k|k|k", "fileName": "2.f|f|f", "fileSize": 5});
+        let answer =
+            json(server.call("POST", &format!("/api/ciphers/{id}/attachment/v2"), Some(&nyu.token), announce).await)
+                .await;
+        let url = answer["url"].as_str().unwrap();
+        let upload = multipart(&format!("/api{url}"), &nyu.token, &[], "2.f|f|f", b"hello");
+        assert_eq!(server.send(upload).await.status(), StatusCode::OK);
+        let vault = json(server.get_as(&mio.token, "/api/sync").await).await;
+        let link = vault["ciphers"][0]["attachments"][0]["url"].as_str().unwrap().to_string();
+        assert_eq!(download(&server, &link).await.0, StatusCode::OK);
+
+        // Into a collection Mio does not reach: her link from before opens nothing (R1-12).
+        let other = json!({ "name": type2(), "users": [] });
+        let other =
+            json(server.call("POST", &format!("/api/organizations/{org}/collections"), Some(&nyu.token), other).await)
+                .await["id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+        let moved = json!({ "collectionIds": [other] });
+        let response = server.call("PUT", &format!("/api/ciphers/{id}/collections"), Some(&nyu.token), moved).await;
+        assert!(response.status().is_success());
+        assert_eq!(download(&server, &link).await.0, StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

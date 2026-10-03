@@ -53,6 +53,12 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/uwu/v1/public/file-requests/{access_id}/submissions/{id}/complete", post(complete))
 }
 
+/// How long an anonymous upload of `size` bytes may take in all: two minutes, and one more
+/// second for every 16 KiB — slower than any real line, faster than a trickle (R1-14).
+fn upload_deadline(size: u64) -> std::time::Duration {
+    std::time::Duration::from_secs(120 + size / (16 * 1024))
+}
+
 /// The uploads themselves: no body limit but the one each file announced.
 pub(crate) fn upload_routes() -> Router<AppState> {
     Router::new().route("/uwu/v1/public/file-requests/{access_id}/submissions/{id}/files/{fid}", put(upload))
@@ -401,6 +407,9 @@ async fn attach(
     let (_, owner, collections) = crate::attachments::changeable(&state, &session, &body.cipher_id)
         .await
         .map_err(|_| ApiError::not_found("There is no such item you may change.").code("not_found"))?;
+    // Into a family's item, the file counts for its owners from now on (R1-9); for an own item
+    // it counted for this account all along.
+    crate::files::check_owner_storage(&state, &owner, file.size, Some(&session.user.id)).await?;
     let attachment = crate::files::new_file_id();
     let from = file_path(&state, &id, &file.id)?;
     let to = crate::files::attachment_path(&state, &body.cipher_id, &attachment)?;
@@ -660,10 +669,15 @@ async fn upload(
         let mut stream = body.into_data_stream();
         let mut written: u64 = 0;
         let stalled = std::time::Duration::from_secs(60);
-        while let Some(chunk) = tokio::time::timeout(stalled, stream.next())
-            .await
-            .map_err(|_| ApiError::bad("The upload stalled.").code("incomplete"))?
-        {
+        // A whole deadline beside the one per chunk: a byte now and then must not keep the
+        // upload (and its socket) open for ever (R1-14).
+        let deadline = tokio::time::Instant::now() + upload_deadline(size);
+        loop {
+            let until = (tokio::time::Instant::now() + stalled).min(deadline);
+            let next = tokio::time::timeout_at(until, stream.next())
+                .await
+                .map_err(|_| ApiError::bad("The upload stalled or was too slow.").code("incomplete"))?;
+            let Some(chunk) = next else { break };
             let chunk = chunk.map_err(|_| ApiError::bad("The upload broke off.").code("incomplete"))?;
             if written == 0 && chunk.first().is_some_and(|byte| *byte != 2) {
                 return Err(ApiError::bad("That is not an encrypted file.").code("invalid"));
@@ -870,7 +884,8 @@ mod tests {
         let summary = json(server.get_as(&owner.token, &format!("/uwu/v1/file-requests/{id}")).await).await;
         assert_eq!((summary["unseen"].as_i64(), summary["submissionCount"].as_i64()), (Some(1), Some(1)));
         let account = json(server.get_as(&owner.token, "/uwu/v1/account").await).await;
-        assert_eq!(account["storage"]["usedBytes"], 300);
+        let message = 2 * type2().len() as i64; // the sender and the text count too (R1-10)
+        assert_eq!(account["storage"]["usedBytes"], 300 + message);
 
         let fid = got["files"][0]["id"].as_str().unwrap();
         let file = format!("{listed}/{sid}/files/{fid}");
@@ -904,6 +919,48 @@ mod tests {
         let delete = server.call("DELETE", &format!("/uwu/v1/file-requests/{id}"), Some(&owner.token), json!({})).await;
         assert_eq!(delete.status(), StatusCode::OK);
         assert_eq!(json(server.get(&public).await).await["code"], "gone");
+    }
+
+    #[test]
+    fn an_upload_has_a_whole_deadline() {
+        assert_eq!(super::upload_deadline(0).as_secs(), 120);
+        assert_eq!(super::upload_deadline(100 * 1024 * 1024).as_secs(), 120 + 6400);
+    }
+
+    /// R1-9: a member's request file attached to a family's item counts for the family's owners.
+    #[tokio::test]
+    async fn into_a_family_item_the_owners_storage_is_checked() {
+        let server = TestServer::new().await;
+        let nyu = server.account("nyu@example.com").await;
+        let mio = server.account("mio@example.com").await;
+        let (org, collection) = family_with(&server, &nyu, &mio).await;
+        let made = request(&server, &mio.token, None).await;
+        let (id, access) = (made["id"].as_str().unwrap(), made["accessId"].as_str().unwrap());
+        let public = format!("/uwu/v1/public/file-requests/{access}");
+        let token = open(&server, access, None).await;
+        let submission =
+            json!({ "wrappedKey": type4(), "files": [ { "fileName": type2(), "key": type2(), "size": 300 } ] });
+        let started = server.call_from("192.0.2.7", "POST", &format!("{public}/submissions"), &token, submission).await;
+        let started = json(started).await;
+        let sid = started["id"].as_str().unwrap().to_string();
+        let url = started["files"][0]["url"].as_str().unwrap().to_string();
+        assert_eq!(server.send(put_file(&url, &token, encrypted(300))).await.status(), StatusCode::OK);
+        let complete = format!("{public}/submissions/{sid}/complete");
+        assert_eq!(server.call_from("192.0.2.7", "POST", &complete, &token, json!({})).await.status(), StatusCode::OK);
+        let fid = url.rsplit('/').next().unwrap().to_string();
+
+        let item = json!({"type": 2, "name": type2(), "secureNote": {"type": 0}, "organizationId": org});
+        let body = json!({ "cipher": item, "collectionIds": [collection] });
+        let family_item = json(server.call("POST", "/api/ciphers/create", Some(&mio.token), body).await).await;
+        let family_item = family_item["id"].as_str().unwrap().to_string();
+        // The owners have no room left.
+        server.state.apply_settings(crate::Settings { storage_per_user_mb: Some(0), ..server.state.settings() });
+        let attach = format!("/uwu/v1/file-requests/{id}/submissions/{sid}/files/{fid}/attach");
+        let body = json!({ "cipherId": family_item, "fileName": type2(), "key": type2() });
+        let refused = server.call("POST", &attach, Some(&mio.token), body).await;
+        assert_eq!(refused.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(json(refused).await["code"], "quota");
+        assert!(server.state.config.data.join("file-requests").join(id).join(&fid).exists(), "still where it was");
     }
 
     /// Review finding R3-19: one upload at a time per file, none over a file that arrived, and
@@ -1053,6 +1110,13 @@ mod tests {
             server.call_from("192.0.2.9", "POST", &format!("{public}/submissions"), &token, file(400 * 1024)).await;
         assert_eq!(second.status(), StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(json(second).await["code"], "request_full");
+        // A message alone counts too (R1-10).
+        use base64::Engine as _;
+        let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
+        let text = format!("2.{}|{}|{}", b64(&[1; 16]), b64(&vec![2; 300_000]), b64(&[3; 32]));
+        let message = json!({ "wrappedKey": type4(), "text": text });
+        let third = server.call_from("192.0.2.9", "POST", &format!("{public}/submissions"), &token, message).await;
+        assert_eq!(json(third).await["code"], "request_full");
     }
 
     #[tokio::test]

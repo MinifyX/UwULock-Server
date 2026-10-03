@@ -281,12 +281,15 @@ function Passkeys({
   passkeys,
   count,
   editable,
+  reload,
 }: {
   id: string;
   passkeys: PasskeyInfo[];
   /** How many the item has, also when the list could not be read. */
   count: number;
   editable: boolean;
+  /** Reads the list again: after a delete, also one that failed because it changed meanwhile. */
+  reload: () => void;
 }) {
   useLanguage();
   const [asking, setAsking] = useState<PasskeyInfo | null>(null);
@@ -301,6 +304,7 @@ function Passkeys({
     } finally {
       setBusy(false);
       setAsking(null);
+      reload();
     }
   };
   const site = (passkey: PasskeyInfo) =>
@@ -846,6 +850,7 @@ export function ItemDetail({
               passkeys={d.login.passkeyList ?? []}
               count={d.login.passkeys}
               editable={!summary.deleted && !summary.broken}
+              reload={load}
             />
           )}
 

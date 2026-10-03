@@ -25,6 +25,8 @@ services:
       UWULOCK_ACME_EMAIL: ${UWULOCK_ACME_EMAIL:-}
       UWULOCK_ACME_DIRECTORY: ${UWULOCK_ACME_DIRECTORY:-letsencrypt}
       UWULOCK_TRUST_FORWARDED: ${UWULOCK_TRUST_FORWARDED:-off}
+      # Only these proxies' X-Forwarded-For counts (addresses or CIDR, comma separated); empty: any peer.
+      UWULOCK_TRUSTED_PROXIES: ${UWULOCK_TRUSTED_PROXIES:-}
       UWULOCK_UPDATE_CHECK: ${UWULOCK_UPDATE_CHECK:-on}
       # `json` for one JSON object a line, the same the server sends to Grafana Loki.
       UWULOCK_LOG_FORMAT: ${UWULOCK_LOG_FORMAT:-text}

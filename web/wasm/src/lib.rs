@@ -335,7 +335,9 @@ pub fn generate(options: &str) -> Result<String, JsValue> {
     let options: uwulock_core::generator::Options = serde_json::from_str(options).map_err(Failure::from)?;
     options.check().map_err(|error| Failure::new("invalid", error.to_string()))?;
     let password = uwulock_core::generator::password(&options);
-    let bits = uwulock_core::generator::entropy_bits(&password);
+    // What the options make likely, minimums included — not what this one password happens to
+    // look like.
+    let bits = uwulock_core::generator::password_entropy_bits(&options);
     Ok(json(&serde_json::json!({
         "password": password.as_str(),
         "bits": bits,
@@ -496,12 +498,14 @@ pub fn share_item(draft: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&files::share_item(unlocked, draft)?))?)
 }
 
-/// The entry in a Send's text: `{entry, readable}`, or `null` for a plain text. `entry` is
+/// The entry in a Send's text: `{entry, readable, openable}`, or `null` for a plain text.
+/// `url_key` is the link's part after `#` (the marker is tagged with it). `entry` is
 /// `{name, username?, password?, websites[], notes?, fields[{name, value, hidden}], totp?}`;
-/// `totp` is shown only as live codes ([`totp_codes`]). No login needed.
+/// `totp` is shown only as live codes ([`totp_codes`]); a website is a link only where
+/// `openable[i]`. No login needed.
 #[wasm_bindgen(js_name = decodeEntrySend)]
-pub fn decode_entry_send(text: &str) -> Result<String, JsValue> {
-    Ok(files::decode_entry_send(text)?)
+pub fn decode_entry_send(text: &str, url_key: &str) -> Result<String, JsValue> {
+    Ok(files::decode_entry_send(text, url_key)?)
 }
 
 /// For somebody with a Send's link: the password's hash, to open it. No login needed.
@@ -835,9 +839,9 @@ pub fn item_passkeys(id: &str) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&passkeys::list(unlocked, id)?))?)
 }
 
-/// The item `id` without its passkey at `index` (checked against `credential_id` when given):
-/// the body of `PUT /api/ciphers/<id>`.
+/// The item `id` without its passkey at `index`, which must still be `name`: its credential id,
+/// or its fingerprint for one that can't be read. The body of `PUT /api/ciphers/<id>`.
 #[wasm_bindgen(js_name = deletePasskey)]
-pub fn delete_passkey(id: &str, index: u32, credential_id: Option<String>) -> Result<String, JsValue> {
-    Ok(with_unlocked(|unlocked| json(&passkeys::delete(unlocked, id, index as usize, credential_id.as_deref())?))?)
+pub fn delete_passkey(id: &str, index: u32, name: String) -> Result<String, JsValue> {
+    Ok(with_unlocked(|unlocked| json(&passkeys::delete(unlocked, id, index as usize, &name)?))?)
 }

@@ -115,6 +115,9 @@ pub struct ApiConfig {
     pub public: String,
     /// Believe `X-Forwarded-For` for the address a request comes from.
     pub trust_forwarded: bool,
+    /// The proxies whose forwarding headers are believed (`UWULOCK_TRUSTED_PROXIES`); empty:
+    /// every peer, as long as `trust_forwarded` is on.
+    pub trusted_proxies: Vec<networks::IpNetwork>,
     /// How hard the server's own hash of the master password hash works.
     pub hash_cost: HashCost,
     /// Where backups are kept, for the admin portal.

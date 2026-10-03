@@ -479,9 +479,10 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
                 .query_map(params![org_id, org_since, org_until], collection_from)?
             {
                 let collection = collection?;
-                match reach.get(&collection.id) {
-                    Some(access) => delta.collections.push((collection, *access)),
-                    None => delta.deleted_collections.push(collection.id),
+                // One out of reach was never theirs: losing access to a collection moves the
+                // member's sync epoch on, and they get everything again (R1-7).
+                if let Some(access) = reach.get(&collection.id) {
+                    delta.collections.push((collection, *access));
                 }
             }
             for id in conn
@@ -509,7 +510,7 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
             for (id, collections) in org_delta.deleted_ciphers.into_iter().zip(org_delta.tombstone_collections) {
                 let collections: Vec<String> =
                     collections.and_then(|list| serde_json::from_str(&list).ok()).unwrap_or_default();
-                if visible(&collections) {
+                if visible(&collections) || left_visible(conn, org_id, &id, *org_since, member, &reach)? {
                     delta.deleted_ciphers.push(id);
                 }
             }
@@ -528,11 +529,17 @@ fn read_delta(conn: &Connection, request: &DeltaRequest, counters: &Counters) ->
                     delta.icons_deleted.push(id);
                 }
             }
-            delta.deleted_collections.extend(org_delta.deleted_collections);
+            // A collection the member reached by name or group went with an epoch of its own
+            // (its access rows went with it); only who sees everything hears of it here (R1-7).
+            if member.sees_everything() {
+                delta.deleted_collections.extend(org_delta.deleted_collections);
+            }
         }
     }
     if !org_cipher_ids.is_empty() {
-        org_ciphers(conn, user, &members, &hidden, org_cipher_ids, &mut delta)?;
+        let since: HashMap<String, i64> =
+            org_windows.iter().map(|(org_id, org_since, _)| (org_id.clone(), *org_since)).collect();
+        org_ciphers(conn, user, &members, &hidden, org_cipher_ids, &since, &mut delta)?;
     }
 
     delta.tombstone_collections.clear();
@@ -597,14 +604,40 @@ fn tombstones_between(
     Ok(())
 }
 
+/// Whether the item `id` left a collection the member sees since `since`: then it was theirs,
+/// and is gone for them now.
+fn left_visible(
+    conn: &Connection,
+    org_id: &str,
+    id: &str,
+    since: i64,
+    member: &crate::organizations::Member,
+    reach: &HashMap<String, Access>,
+) -> rusqlite::Result<bool> {
+    let mut statement = conn.prepare_cached(
+        "SELECT collections FROM tombstones WHERE owner = ?1 AND kind = 'cipher-left' AND object_id = ?2 AND seq > ?3",
+    )?;
+    for collections in statement.query_map(params![org_id, id, since], |row| row.get::<_, Option<String>>(0))? {
+        let collections: Vec<String> =
+            collections?.and_then(|list| serde_json::from_str(&list).ok()).unwrap_or_default();
+        if access_to(member, reach, &collections).is_some() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Organisation items by id, as `user` sees them: with their collections, the member's access,
-/// folder and star. What the member cannot see (any more) is deleted for them.
+/// folder and star. What the member cannot see any more is deleted for them — when they could
+/// have had it (R1-7); what they never saw is left out, id and all.
+#[allow(clippy::too_many_arguments)]
 fn org_ciphers(
     conn: &Connection,
     user: &str,
     members: &HashMap<String, crate::organizations::Member>,
     hidden: &HashSet<String>,
     ids: HashSet<String>,
+    since: &HashMap<String, i64>,
     delta: &mut Delta,
 ) -> rusqlite::Result<()> {
     let mut reaches: HashMap<String, HashMap<String, Access>> = HashMap::new();
@@ -630,7 +663,10 @@ fn org_ciphers(
         }
         let collection_ids = collections_of(conn, &id)?;
         let Some(access) = access_to(member, &reaches[&org_id], &collection_ids) else {
-            delta.deleted_ciphers.push(id);
+            let from = since.get(&org_id).copied().unwrap_or(0);
+            if left_visible(conn, &org_id, &id, from, member, &reaches[&org_id])? {
+                delta.deleted_ciphers.push(id);
+            }
             continue;
         };
         let (folder, favorite): (Option<String>, bool) = conn

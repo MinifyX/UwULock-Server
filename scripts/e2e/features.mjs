@@ -179,17 +179,21 @@ try {
   await checkA11y(nyu, 'password check');
 
   step('the API key');
-  await settings(nyu, 'Konto');
-  await nyu.getByRole('button', { name: 'Anzeigen …' }).click();
-  const keyDialog = nyu.getByRole('dialog', { name: 'API-Key' });
-  await keyDialog.locator('input[type=password]').fill(password);
-  await keyDialog.getByRole('button', { name: 'Anzeigen' }).click();
-  await nyu.locator('.copy-field code').first().waitFor();
-  const [clientId, clientSecret] = await nyu.locator('.copy-field code').allInnerTexts();
-  if (!clientId?.startsWith('user.') || !clientSecret) throw new Error('no API key shown');
-  if (apiKeyFile) writeFileSync(apiKeyFile, `${clientId}\n${clientSecret}\n`);
-  await nyu.getByRole('button', { name: 'Fertig' }).click();
-  await nyu.keyboard.press('Escape');
+  const apiKey = async () => {
+    await settings(nyu, 'Konto');
+    await nyu.getByRole('button', { name: 'Anzeigen …' }).click();
+    const keyDialog = nyu.getByRole('dialog', { name: 'API-Key' });
+    await keyDialog.locator('input[type=password]').fill(password);
+    await keyDialog.getByRole('button', { name: 'Anzeigen' }).click();
+    await nyu.locator('.copy-field code').first().waitFor();
+    const [clientId, clientSecret] = await nyu.locator('.copy-field code').allInnerTexts();
+    if (!clientId?.startsWith('user.') || !clientSecret) throw new Error('no API key shown');
+    await nyu.getByRole('button', { name: 'Fertig' }).click();
+    await nyu.keyboard.press('Escape');
+    if (apiKeyFile) writeFileSync(apiKeyFile, `${clientId}\n${clientSecret}\n`);
+    return clientSecret;
+  };
+  const firstSecret = await apiKey();
 
   step('a security key as the second step');
   await authenticator(nyu);
@@ -333,6 +337,11 @@ try {
   await nyu.getByRole('button', { name: 'Neu verschlüsseln', exact: true }).click();
   await nyu.getByRole('heading', { name: 'Anmelden' }).waitFor({ timeout: 60000 });
   await login(nyu, email, password);
+  await vault(nyu);
+  // New keys change the security stamp, and with it the API key (R1-5): the old one is over.
+  // The new one is what Bitwarden's CLI logs in with afterwards.
+  const secondSecret = await apiKey();
+  if (secondSecret === firstSecret) throw new Error('the API key outlived new keys');
   await vault(nyu);
   await nyu.locator('.item-list').getByText('Drucker').first().click();
   const again = await downloaded(nyu, () =>

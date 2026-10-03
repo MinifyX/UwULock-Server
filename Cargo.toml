@@ -67,7 +67,6 @@ rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 # Certificates from Let's Encrypt over TLS-ALPN-01: port 443 is all it needs, no port 80.
 rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tls12", "webpki-roots", "axum"] }
-rustls-pemfile = "2"
 serde = { version = "1", features = ["derive"] }
 # `raw_value`: what the clients sent for an item goes back out without being parsed again.
 serde_json = { version = "1", features = ["raw_value"] }

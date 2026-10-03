@@ -191,37 +191,6 @@ async fn when_a_delta_cannot_say_it_everything_comes_again() {
 
 /// A family `owner` made, and `member` in its first collection; the family's id and the
 /// collection's.
-async fn family_with(server: &TestServer, owner: &Account, member: &Account) -> (String, String) {
-    let public = base64::engine::general_purpose::STANDARD.encode([1u8; 294]);
-    let body = json!({
-        "name": "Katzen", "billingEmail": owner.email, "planType": 22, "key": type4(),
-        "keys": { "publicKey": public, "encryptedPrivateKey": type2() }, "collectionName": type2(),
-    });
-    let org = json(server.call("POST", "/api/organizations", Some(&owner.token), body).await).await;
-    let org = org["id"].as_str().unwrap().to_string();
-    let collections = json(server.get_as(&owner.token, &format!("/api/organizations/{org}/collections")).await).await;
-    let collection = collections["data"][0]["id"].as_str().unwrap().to_string();
-    let invite =
-        json!({ "emails": [member.email], "type": 2, "collections": [{ "id": collection, "readOnly": false }] });
-    server.call("POST", &format!("/api/organizations/{org}/users/invite"), Some(&owner.token), invite).await;
-    let mail = server.wait_for_mail(|mail| mail.to == member.email && mail.text.contains("accept-organization")).await;
-    let link = mail.text.split_whitespace().find(|word| word.contains("accept-organization")).unwrap().to_string();
-    let id = link.split("organizationUserId=").nth(1).unwrap().split('&').next().unwrap().to_string();
-    let token = link.split("token=").nth(1).unwrap().split('&').next().unwrap();
-    let token = url::form_urlencoded::parse(format!("t={token}").as_bytes()).next().unwrap().1.into_owned();
-    let path = format!("/api/organizations/{org}/users/{id}/accept");
-    assert_eq!(
-        server.call("POST", &path, Some(&member.token), json!({ "token": token })).await.status(),
-        StatusCode::OK
-    );
-    let path = format!("/api/organizations/{org}/users/{id}/confirm");
-    assert_eq!(
-        server.call("POST", &path, Some(&owner.token), json!({ "key": type4() })).await.status(),
-        StatusCode::OK
-    );
-    (org, collection)
-}
-
 #[tokio::test]
 async fn a_shared_item_is_counted_once_and_reaches_every_member() {
     let server = TestServer::new().await;
@@ -329,6 +298,63 @@ async fn a_member_hears_only_of_what_they_could_see() {
     let owner = sync(&server, &nyu.token, "include=vault,uwu").await;
     let everything = since_for(&server, &nyu.token, "vault,uwu", &owner["cursor"]).await;
     assert_eq!(everything["reset"], false);
+}
+
+#[tokio::test]
+async fn edits_out_of_reach_tell_a_member_nothing_but_a_move_out_does() {
+    let server = TestServer::new().await;
+    let nyu = server.account("nyu@example.com").await;
+    let mio = server.account("mio@example.com").await;
+    let (org, reached) = family_with(&server, &nyu, &mio).await;
+    let other = json!({ "name": type2(), "users": [] });
+    let other =
+        json(server.call("POST", &format!("/api/organizations/{org}/collections"), Some(&nyu.token), other).await)
+            .await["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+    let create = |collection: &str| {
+        let mut item = login_item("2.shared|s|s");
+        item["organizationId"] = json!(org);
+        json!({ "cipher": item, "collectionIds": [collection] })
+    };
+    let mut listening = server.state.hub.listen(&mio.id).unwrap();
+    let hidden = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), create(&other)).await).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    // The hub tells her to sync, but not the id or collection of an item she can't see (R1-8).
+    let message = listening.messages.try_recv().expect("a message for Mio");
+    let leaks = |needle: &str| message.windows(needle.len()).any(|window| window == needle.as_bytes());
+    assert!(!leaks(&hidden) && !leaks(&other));
+    drop(listening);
+    let moved = json(server.call("POST", "/api/ciphers/create", Some(&nyu.token), create(&reached)).await).await["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let full = sync(&server, &mio.token, "include=vault,uwu").await;
+
+    // An edit and the trash of an item in a collection Mio does not see: not a word (R1-7).
+    let mut edit = login_item("2.edited|e|e");
+    edit["organizationId"] = json!(org);
+    assert_eq!(
+        server.call("PUT", &format!("/api/ciphers/{hidden}"), Some(&nyu.token), edit).await.status(),
+        StatusCode::OK
+    );
+    server.call("PUT", &format!("/api/ciphers/{hidden}/delete"), Some(&nyu.token), json!({})).await;
+    let renamed = json!({ "name": type2(), "users": [] });
+    server.call("PUT", &format!("/api/organizations/{org}/collections/{other}"), Some(&nyu.token), renamed).await;
+    let quiet = since_for(&server, &mio.token, "vault,uwu", &full["cursor"]).await;
+    assert_eq!(quiet["reset"], false);
+    assert_eq!(quiet["vault"]["deleted"]["ciphers"], json!([]), "{quiet}");
+    assert_eq!(quiet["vault"]["deleted"]["collections"], json!([]), "{quiet}");
+
+    // An item moved out of her collection is gone for her.
+    let body = json!({ "collectionIds": [other] });
+    let response = server.call("PUT", &format!("/api/ciphers/{moved}/collections"), Some(&nyu.token), body).await;
+    assert!(response.status().is_success(), "{}", text(response).await);
+    let gone = since_for(&server, &mio.token, "vault,uwu", &quiet["cursor"]).await;
+    assert_eq!(gone["vault"]["deleted"]["ciphers"], json!([moved]), "{gone}");
 }
 
 #[tokio::test]

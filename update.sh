@@ -337,7 +337,7 @@ running_image=$(docker inspect "$service" --format '{{.Image}}' 2>/dev/null)
 # The settings the stock file takes from .env. Written by hand into compose.yaml instead, they
 # move into .env; anything else somebody changed stops the update.
 lifted="UWULOCK_PUBLIC UWULOCK_TLS UWULOCK_ACME_EMAIL UWULOCK_ACME_DIRECTORY"
-lifted="$lifted UWULOCK_TRUST_FORWARDED UWULOCK_UPDATE_CHECK UWULOCK_LOG_FORMAT UWULOCK_TIME_SOURCE"
+lifted="$lifted UWULOCK_TRUST_FORWARDED UWULOCK_TRUSTED_PROXIES UWULOCK_UPDATE_CHECK UWULOCK_LOG_FORMAT UWULOCK_TIME_SOURCE"
 
 # shellcheck disable=SC2016  # the ${...} here are strings to compare against, not expansions
 lift_into_env() {

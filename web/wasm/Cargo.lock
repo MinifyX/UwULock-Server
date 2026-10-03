@@ -1276,7 +1276,7 @@ dependencies = [
 [[package]]
 name = "uwulock-core"
 version = "0.4.0-beta.3"
-source = "git+https://github.com/MinifyX/UwULock-Client?rev=2a8a70877f04a31d5c80780b9e36dfd6342c13f5#2a8a70877f04a31d5c80780b9e36dfd6342c13f5"
+source = "git+https://github.com/MinifyX/UwULock-Client?rev=b9580a202f8d8e6fa4ade28ff6cf495cdfef8339#b9580a202f8d8e6fa4ade28ff6cf495cdfef8339"
 dependencies = [
  "aes",
  "argon2",
@@ -1399,9 +1399,9 @@ dependencies = [
 
 [[package]]
 name = "yoke-derive"
-version = "0.8.3"
+version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33811428bee40dbceb6d545e95754741d17a6aef9a4849f0fd62e2ba4f412a78"
+checksum = "ec8ebde2db3681e8c9980cc27822030e68752690ddfa9473e739aeb4dbde6d71"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1456,6 +1456,7 @@ version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e13c156562582aa81c60cb29407084cdb54c4164760106ab78e6c5b0858cf64e"
 dependencies = [
+ "serde",
  "zeroize_derive",
 ]
 

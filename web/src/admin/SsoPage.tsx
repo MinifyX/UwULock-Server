@@ -14,7 +14,7 @@ import {
   TextField,
   Toggle,
 } from '../components/ui';
-import { ResultLine, type Result } from '../components/web/controls';
+import { PasswordPrompt, ResultLine, type Result } from '../components/web/controls';
 import { copyGenerated } from '../lib/api';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
@@ -24,6 +24,7 @@ import {
   pairSso,
   saveScimOnDelete,
   saveSso,
+  ssoNeedsPassword,
   ssoSettings,
   testSso,
   unpairSso,
@@ -138,8 +139,14 @@ function useSso(): Sso {
 function SsoActions({ test }: { test?: boolean }) {
   useLanguage();
   const { current, draft, secret, loaded, run, busy, result } = useSso();
+  const [asking, setAsking] = useState(false);
   if (!current || !draft) return null;
   const dirty = secret !== '' || JSON.stringify(draft) !== JSON.stringify(current);
+  const store = (password?: string) =>
+    run(async () => {
+      loaded(await saveSso({ ...draft, clientSecret: secret || null }, password));
+      return t('Gespeichert ✧');
+    });
   return (
     <>
       <ButtonRow>
@@ -164,16 +171,28 @@ function SsoActions({ test }: { test?: boolean }) {
         <Button
           variant="primary"
           onClick={() =>
-            void run(async () => {
-              loaded(await saveSso({ ...draft, clientSecret: secret || null }));
-              return t('Gespeichert ✧');
-            })
+            ssoNeedsPassword(current, draft, secret) ? setAsking(true) : void store()
           }
           disabled={busy || !dirty}
         >
           {t('Speichern')}
         </Button>
       </ButtonRow>
+      {asking && (
+        <PasswordPrompt
+          title={t('SSO-Anbieter ändern?')}
+          tone="warning"
+          lead={t(
+            'Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+          )}
+          confirm={t('Speichern')}
+          onCancel={() => setAsking(false)}
+          action={async (password) => {
+            setAsking(false);
+            await store(password);
+          }}
+        />
+      )}
       {dirty && (
         <p className="field-hint">
           {t('Speichern nimmt die Änderungen unter „SSO-Anbieter“ und „SSO-Regeln“ zusammen.')}
@@ -191,11 +210,12 @@ export function SsoProviderTab() {
   const [pairUrl, setPairUrl] = useState('');
   const [pairCode, setPairCode] = useState('');
   const [unpairing, setUnpairing] = useState(false);
+  const [pairing, setPairing] = useState(false);
   if (!draft || !current) return <ResultLine result={result} />;
 
-  const pair = () =>
+  const pair = (password: string) =>
     run(async () => {
-      loaded(await pairSso(pairUrl.trim(), pairCode.trim()));
+      loaded(await pairSso(pairUrl.trim(), pairCode.trim(), password));
       setPairCode('');
       return t('Mit UwUAuth gekoppelt ✧ Probier die Anmeldung in einem privaten Fenster aus.');
     });
@@ -262,7 +282,7 @@ export function SsoProviderTab() {
               />
             </FormRow>
             <ButtonRow end>
-              <Button onClick={() => void pair()} disabled={busy || !pairCode.trim()}>
+              <Button onClick={() => setPairing(true)} disabled={busy || !pairCode.trim()}>
                 {t('Koppeln')}
               </Button>
             </ButtonRow>
@@ -347,6 +367,20 @@ export function SsoProviderTab() {
       </Section>
       <SsoActions test />
 
+      {pairing && (
+        <PasswordPrompt
+          title={t('Mit UwUAuth koppeln')}
+          lead={t(
+            'Der Anbieter entscheidet, wer sich als wer anmeldet. Deshalb fragt der Server hier nach deinem Master-Passwort.',
+          )}
+          confirm={t('Koppeln')}
+          onCancel={() => setPairing(false)}
+          action={async (password) => {
+            setPairing(false);
+            await pair(password);
+          }}
+        />
+      )}
       {unpairing && (
         <Modal
           title={t('Von UwUAuth entkoppeln?')}

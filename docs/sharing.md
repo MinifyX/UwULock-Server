@@ -12,19 +12,29 @@ It is an **entry Send**: an ordinary text Send whose text is two things.
 
 - The readable lines, `Label: value` under the item's name, for the official Bitwarden apps and
   anybody who opens it there. **The authenticator key is never among them.**
-- A last line `uwulock-entry:v1:<base64url(JSON)>` with the same values as JSON —
+- A last line `uwulock-entry:v2:<base64url(JSON)>.<base64url(tag)>` with the same values as JSON —
   `{name, username?, password?, websites[], notes?, fields[{name, value, hidden}], totp?}`
-  (uwulock-core `entry_send`; the same contract in the web vault's WebAssembly and the apps).
+  (uwulock-core `entry_send`; the same contract in the web vault's WebAssembly and the apps;
+  details in UwULock-Client's docs/uwu-extras.md, "Contract (v2)"). The tag is an HMAC-SHA256 of
+  the line, keyed from the Send's secret — the part of the link after `#` — so only the Send's
+  own last line counts: a marker line that sat in an item's notes, or one from another Send, has
+  no valid tag and the text shows as plain text.
 
 UwULock's Send page sees that line, hides the raw text and shows the item the way the vault does:
 each value with a copy button, the password and hidden fields as dots until a click, websites as
-links. With the codes chosen, `totp` holds the key **only so the page can make the codes**: it
+links (only `http`/`https` ones; anything else is text to copy). Until the line is read the page
+shows "…", never the raw text; *Show original text* shows the readable lines, and every Copy on
+the page takes the value off the clipboard again after the vault's time. Names and values keep
+their own writing direction, so bidi characters can't reorder what is around them. With the codes chosen, `totp` holds the key **only so the page can make the codes**: it
 shows the current code counting down and, in the last 10 seconds, the next one ("Next: 123 456")
-with its own copy button — never the key, never a QR code. The dialog says so plainly: whoever has
-the link could still dig the key out of the Send, so share codes only with someone you would
-trust with your two-step login anyway. A text without the marker, with another version or one
+with its own copy button — never the key, never a QR code. But the key travels in the Send: the
+choice says *One-time codes (with their key)*, and ticking it asks once more — "the one-time
+code's key travels in the Send, encrypted; whoever has the link can read out the key and keep
+making codes with it, even after the Send is deleted" — with *Better not* as the default. A text without the marker, with another version or one
 that does not decode is shown as the plain text it is; Sends made before 0.8 stay as they were.
-In your own list (*Sends*) an entry Send shows its readable lines, marked *shared as an item*.
+In your own list (*Sends*) an entry Send shows its readable lines, marked *shared as an item*. Its
+text can't be edited there (the last line would still carry the old values): to take something
+back, delete the Send and share the item again.
 
 It shows up under *Sends*, in the UwULock app and in the official Bitwarden apps. What it starts
 with:

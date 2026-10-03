@@ -150,11 +150,13 @@ export type TotpCode = {
 
 /** A passkey of a login, as its details show it (uwulock-core `passkey::list`). */
 export type PasskeyInfo = {
-  /** Its place among the login's passkeys: what deleting takes. */
+  /** Its place among the login's passkeys; deleting also names it by id or fingerprint. */
   index: number;
   /** `false` for one UwULock can't open: it can still be deleted, the rest is empty. */
   readable: boolean;
   credentialId: string;
+  /** A name for it that needs no decrypting: what deletes one UwULock can't read. */
+  fingerprint: string;
   rpId: string;
   rpName: string | null;
   userName: string | null;
@@ -804,10 +806,13 @@ export const saveClone = async (sourceId: string, draft: Draft): Promise<string>
   return created.id;
 };
 
-/** Deletes a login's passkey at `index`, if it still is `credentialId` (else a `conflict`). */
+/**
+ * Deletes a login's passkey at `index`, if it still is that passkey — named by its credential id,
+ * or its fingerprint when it can't be read (else a `conflict`; the index alone isn't taken).
+ */
 export const deletePasskey = async (id: string, passkey: PasskeyInfo): Promise<void> => {
   const sealed = await call((core) =>
-    core.deletePasskey(id, passkey.index, passkey.credentialId || undefined),
+    core.deletePasskey(id, passkey.index, passkey.credentialId || passkey.fingerprint),
   );
   const body = JSON.parse(sealed) as Record<string, unknown>;
   await changed(request(`/api/ciphers/${encodeURIComponent(id)}`, { method: 'PUT', body }));

@@ -37,7 +37,7 @@ UwUAuth 0.4 and newer pair with a one-time code instead of copying ids and addre
    if you like, which groups get the roles `admin` (admin portal) and `user` (may make a vault
    without an invitation). UwUAuth shows a code and a QR code, valid for 15 minutes.
 2. In UwULock's admin portal: *Security & login → SSO provider → Pair with UwUAuth*, UwUAuth's address and the code
-   (or paste the QR code's text, which has both).
+   (or paste the QR code's text, which has both), then your master password.
 
 UwULock then gets its client id and secret, tells UwUAuth its redirect address, its icon, its two
 roles and its SCIM address, and switches SSO on with sign-ups by role. UwUAuth starts pushing its
@@ -122,6 +122,14 @@ other providers *Anmeldung → SCIM → Token erzeugen* shows one once.
   first use, readable only by the server). The off-site backups take the file along; a database
   copy alone does not open it. After a restore onto a new machine from a *local* backup, enter
   the secret again (or pair again).
+- Changing who may log in asks for the admin's master password: the issuer, the client id or
+  secret, *trust unverified addresses*, the extension ids, switching SSO on or off, and pairing.
+  So do *make admin* and *reset second step* on the users page. A stolen admin session alone
+  can't point SSO at another provider.
+- **The SCIM token acts with admin rights:** it finds every account by its address and can disable
+  it, or delete it with its vault when *Konto und Tresor löschen* is chosen — every account but the
+  last admin, not only those SCIM made. Keep it like an admin password, and make a new one if it
+  may have leaked.
 - SCIM tokens are kept as their SHA-256 and compared in constant time; wrong tokens are counted per
   address, and after 30 the address waits.
 - Every SSO sign-up, linking, admin change and SCIM change is in the event log.

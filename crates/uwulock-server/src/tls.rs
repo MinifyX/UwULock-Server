@@ -10,6 +10,8 @@ use axum_server::Handle;
 use parking_lot::RwLock;
 use rustls::ServerConfig;
 use rustls::crypto::ring;
+use rustls::pki_types::pem::{self, PemObject};
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
 use rustls_acme::caches::DirCache;
@@ -63,7 +65,8 @@ pub async fn serve(
     let main: Arc<dyn ResolvesServerCert> = match &config.tls {
         TlsMode::Off => {
             return server
-                .acceptor(Deadline(axum_server::accept::DefaultAcceptor))
+                // Behind a proxy every connection comes from the proxy: only the total counts.
+                .acceptor(Deadline(axum_server::accept::DefaultAcceptor, Connections::new(TOTAL, None)))
                 .serve(service)
                 .await
                 .map_err(|error| error.to_string());
@@ -85,7 +88,11 @@ pub async fn serve(
         connect: if local.ip().is_unspecified() { format!("127.0.0.1:{}", local.port()) } else { local.to_string() },
     };
     tokio::spawn(own.run());
-    server.acceptor(Deadline(SniAcceptor::new(sni)?)).serve(service).await.map_err(|error| error.to_string())
+    server
+        .acceptor(Deadline(SniAcceptor::new(sni)?, Connections::new(TOTAL, Some(PER_NETWORK))))
+        .serve(service)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 // ── Certificates by name ──────────────────────────────────
@@ -258,17 +265,103 @@ const HANDSHAKE: Duration = Duration::from_secs(10);
 /// HTTP/2 ping interval, so a client that answers pings stays.
 const IDLE: Duration = Duration::from_secs(90);
 
+/// The most connections the server holds at once (R1-14)…
+const TOTAL: usize = 8_192;
+/// …and from one IPv4 address or IPv6 /64, with TLS of its own (no proxy in front).
+const PER_NETWORK: usize = 256;
+
+/// Counts open connections, overall and per address (IPv6 by its /64), and refuses new ones past
+/// the caps: a few clients that trickle bytes or answer pings must not take every file
+/// descriptor (R1-14).
+#[derive(Clone)]
+struct Connections {
+    inner: Arc<ConnectionCounts>,
+}
+
+struct ConnectionCounts {
+    total: usize,
+    per_network: Option<usize>,
+    open: parking_lot::Mutex<(usize, HashMap<std::net::IpAddr, usize>)>,
+}
+
+/// One counted connection; the count goes down when it is dropped with its stream.
+struct Counted {
+    counts: Arc<ConnectionCounts>,
+    network: Option<std::net::IpAddr>,
+}
+
+impl Drop for Counted {
+    fn drop(&mut self) {
+        let mut open = self.counts.open.lock();
+        open.0 = open.0.saturating_sub(1);
+        if let Some(network) = self.network
+            && let Some(count) = open.1.get_mut(&network)
+        {
+            *count -= 1;
+            if *count == 0 {
+                open.1.remove(&network);
+            }
+        }
+    }
+}
+
+impl Connections {
+    fn new(total: usize, per_network: Option<usize>) -> Self {
+        Connections {
+            inner: Arc::new(ConnectionCounts {
+                total,
+                per_network,
+                open: parking_lot::Mutex::new((0, HashMap::new())),
+            }),
+        }
+    }
+
+    /// A slot for a connection from `peer`, or none past a cap.
+    fn take(&self, peer: Option<std::net::IpAddr>) -> Option<Counted> {
+        let network = self.inner.per_network.and(peer).map(network_of);
+        let mut open = self.inner.open.lock();
+        if open.0 >= self.inner.total {
+            return None;
+        }
+        if let (Some(most), Some(network)) = (self.inner.per_network, network) {
+            let count = open.1.entry(network).or_insert(0);
+            if *count >= most {
+                return None;
+            }
+            *count += 1;
+        }
+        open.0 += 1;
+        Some(Counted { counts: self.inner.clone(), network })
+    }
+}
+
+/// An IPv4 address as it is, an IPv6 address by its /64 (an IPv4-mapped one as IPv4).
+fn network_of(ip: std::net::IpAddr) -> std::net::IpAddr {
+    match ip {
+        std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.into(),
+            None => {
+                let mut octets = v6.octets();
+                octets[8..].fill(0);
+                std::net::IpAddr::from(octets)
+            }
+        },
+        v4 => v4,
+    }
+}
+
 /// Puts a deadline on every connection: the TLS handshake has to be done in [`HANDSHAKE`], and
 /// after that a connection on which nothing moves for [`IDLE`] is closed. Without it, a
 /// connection that sends nothing at all — not even the first byte hyper waits for to tell
 /// HTTP/1 from HTTP/2 — would hold its socket for ever, and a few thousand of them would use up
-/// every file descriptor the server has.
+/// every file descriptor the server has. It also caps how many connections are open
+/// ([`Connections`]).
 #[derive(Clone)]
-struct Deadline<A>(A);
+struct Deadline<A>(A, Connections);
 
-impl<I, S, A> axum_server::accept::Accept<I, S> for Deadline<A>
+impl<S, A> axum_server::accept::Accept<tokio::net::TcpStream, S> for Deadline<A>
 where
-    A: axum_server::accept::Accept<I, S>,
+    A: axum_server::accept::Accept<tokio::net::TcpStream, S>,
     A::Future: Send + 'static,
     A::Stream: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     A::Service: Send + 'static,
@@ -277,13 +370,20 @@ where
     type Service = A::Service;
     type Future = Pin<Box<dyn Future<Output = io::Result<(Self::Stream, Self::Service)>> + Send>>;
 
-    fn accept(&self, stream: I, service: S) -> Self::Future {
+    fn accept(&self, stream: tokio::net::TcpStream, service: S) -> Self::Future {
+        let peer = stream.peer_addr().ok().map(|addr| addr.ip());
+        let Some(counted) = self.1.take(peer) else {
+            drop(stream);
+            return Box::pin(async { Err(io::Error::other("too many connections")) });
+        };
         let accepting = self.0.accept(stream, service);
         Box::pin(async move {
             let (stream, service) = tokio::time::timeout(HANDSHAKE, accepting)
                 .await
                 .map_err(|_| io::Error::from(io::ErrorKind::TimedOut))??;
-            Ok((Idle::new(stream, IDLE), service))
+            let mut idle = Idle::new(stream, IDLE);
+            idle.counted = Some(counted);
+            Ok((idle, service))
         })
     }
 }
@@ -293,11 +393,13 @@ pub struct Idle<S> {
     inner: S,
     after: Duration,
     deadline: Pin<Box<tokio::time::Sleep>>,
+    /// Its slot among the open connections, given back with the stream.
+    counted: Option<Counted>,
 }
 
 impl<S> Idle<S> {
     fn new(inner: S, after: Duration) -> Self {
-        Idle { inner, after, deadline: Box::pin(tokio::time::sleep(after)) }
+        Idle { inner, after, deadline: Box::pin(tokio::time::sleep(after)), counted: None }
     }
 
     fn moved(&mut self) {
@@ -378,15 +480,16 @@ pub fn from_files(cert: &Path, key: &Path) -> Result<Arc<ServerConfig>, String> 
 /// A certificate chain and its key from PEM files, checked to go together.
 fn certified_from_files(cert: &Path, key: &Path) -> Result<Arc<CertifiedKey>, String> {
     let read = |path: &Path| std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()));
-    let chain = rustls_pemfile::certs(&mut read(cert)?.as_slice())
+    let chain = CertificateDer::pem_slice_iter(&read(cert)?)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("{}: {error}", cert.display()))?;
     if chain.is_empty() {
         return Err(format!("{} holds no certificate", cert.display()));
     }
-    let key_der = rustls_pemfile::private_key(&mut read(key)?.as_slice())
-        .map_err(|error| format!("{}: {error}", key.display()))?
-        .ok_or_else(|| format!("{} holds no private key", key.display()))?;
+    let key_der = PrivateKeyDer::from_pem_slice(&read(key)?).map_err(|error| match error {
+        pem::Error::NoItemsFound => format!("{} holds no private key", key.display()),
+        error => format!("{}: {error}", key.display()),
+    })?;
     let certified = CertifiedKey::from_der(chain, key_der, &provider())
         .map_err(|error| format!("{} and {} do not go together: {error}", cert.display(), key.display()))?;
     Ok(Arc::new(certified))
@@ -455,7 +558,7 @@ fn acme_resolver(acme: &Acme, cache: &Path) -> Result<Arc<dyn ResolvesServerCert
 fn client_trusting(ca: &Path) -> Result<Arc<rustls::ClientConfig>, String> {
     let pem = std::fs::read(ca).map_err(|error| format!("{}: {error}", ca.display()))?;
     let mut roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
-    for cert in rustls_pemfile::certs(&mut pem.as_slice()) {
+    for cert in CertificateDer::pem_slice_iter(&pem) {
         let cert = cert.map_err(|error| format!("{}: {error}", ca.display()))?;
         roots.add(cert).map_err(|error| format!("{}: {error}", ca.display()))?;
     }
@@ -471,6 +574,23 @@ fn client_trusting(ca: &Path) -> Result<Arc<rustls::ClientConfig>, String> {
 mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[test]
+    fn connections_are_capped_overall_and_per_network() {
+        let connections = Connections::new(3, Some(2));
+        let a: std::net::IpAddr = "2001:db8:1:2::1".parse().unwrap();
+        let b: std::net::IpAddr = "2001:db8:1:2::ffff".parse().unwrap();
+        let first = connections.take(Some(a)).unwrap();
+        let _second = connections.take(Some(b)).unwrap();
+        assert!(connections.take(Some(a)).is_none(), "the same /64 is full");
+        let _third = connections.take(Some("192.0.2.1".parse().unwrap())).unwrap();
+        assert!(connections.take(Some("192.0.2.2".parse().unwrap())).is_none(), "the total is full");
+        drop(first);
+        assert!(connections.take(Some(a)).is_some(), "a closed connection gives its slot back");
+        let behind_proxy = Connections::new(2, None);
+        let (_one, _two) = (behind_proxy.take(Some(a)).unwrap(), behind_proxy.take(Some(a)).unwrap());
+        assert!(behind_proxy.take(Some(a)).is_none());
+    }
 
     #[tokio::test]
     async fn a_connection_on_which_nothing_moves_is_closed() {

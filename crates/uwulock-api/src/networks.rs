@@ -127,7 +127,7 @@ pub(crate) async fn guard(State(state): State<AppState>, request: Request, next:
         return next.run(request).await;
     }
     let (parts, body) = request.into_parts();
-    let ip = client_ip(&parts, state.config.trust_forwarded);
+    let ip = client_ip(&parts, &state.config);
     if !allowed(&state.settings.read().admin_networks, ip) && !reloaded_allows(&state, ip).await {
         tracing::info!(%ip, path = parts.uri.path(), "the admin portal was asked for from outside the admin networks");
         return crate::errors::not_found().await.into_response();

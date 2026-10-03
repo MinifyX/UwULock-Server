@@ -679,6 +679,29 @@ impl Store {
         .await
     }
 
+    /// Of the organisation's confirmed members, the user ids of those who see an item in
+    /// `collections` (R1-8: only they hear its id).
+    pub async fn org_members_seeing(&self, org_id: &str, collections: &[String]) -> Result<HashSet<String>> {
+        let (org_id, collections) = (org_id.to_string(), collections.to_vec());
+        self.sqlite_read(move |conn| {
+            let members: Vec<Member> = conn
+                .prepare_cached(&format!(
+                    "SELECT {MEMBER_COLUMNS} FROM org_members WHERE org_id = ?1 AND status = 2 AND user_id IS NOT NULL"
+                ))?
+                .query_map([&org_id], |row| member_from(row, 0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let mut seeing = HashSet::new();
+            for member in members {
+                let reach = reachable(conn, &member)?;
+                if access_to(&member, &reach, &collections).is_some() {
+                    seeing.extend(member.user_id.clone());
+                }
+            }
+            Ok(seeing)
+        })
+        .await
+    }
+
     /// The user ids of an organisation's confirmed members.
     pub async fn org_members_users(&self, org_id: &str) -> Result<Vec<String>> {
         let org_id = org_id.to_string();

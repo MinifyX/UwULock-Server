@@ -49,6 +49,7 @@ impl TestServer {
         let config = ApiConfig {
             public: "https://vault.example.com".into(),
             trust_forwarded: false,
+            trusted_proxies: Vec::new(),
             hash_cost: HashCost::cheap(),
             backups: dir.path().join("backups"),
             data: dir.path().to_path_buf(),
@@ -299,4 +300,37 @@ pub(crate) fn type2() -> String {
 pub(crate) fn type4() -> String {
     use base64::Engine as _;
     format!("4.{}", base64::engine::general_purpose::STANDARD.encode([4; 256]))
+}
+
+/// A family of `owner`'s with `member` in it (confirmed, writing to its first collection): its
+/// id and that collection's.
+pub(crate) async fn family_with(server: &TestServer, owner: &Account, member: &Account) -> (String, String) {
+    let public = base64::engine::general_purpose::STANDARD.encode([1u8; 294]);
+    let body = json!({
+        "name": "Katzen", "billingEmail": owner.email, "planType": 22, "key": type4(),
+        "keys": { "publicKey": public, "encryptedPrivateKey": type2() }, "collectionName": type2(),
+    });
+    let org = json(server.call("POST", "/api/organizations", Some(&owner.token), body).await).await;
+    let org = org["id"].as_str().unwrap().to_string();
+    let collections = json(server.get_as(&owner.token, &format!("/api/organizations/{org}/collections")).await).await;
+    let collection = collections["data"][0]["id"].as_str().unwrap().to_string();
+    let invite =
+        json!({ "emails": [member.email], "type": 2, "collections": [{ "id": collection, "readOnly": false }] });
+    server.call("POST", &format!("/api/organizations/{org}/users/invite"), Some(&owner.token), invite).await;
+    let mail = server.wait_for_mail(|mail| mail.to == member.email && mail.text.contains("accept-organization")).await;
+    let link = mail.text.split_whitespace().find(|word| word.contains("accept-organization")).unwrap().to_string();
+    let id = link.split("organizationUserId=").nth(1).unwrap().split('&').next().unwrap().to_string();
+    let token = link.split("token=").nth(1).unwrap().split('&').next().unwrap();
+    let token = url::form_urlencoded::parse(format!("t={token}").as_bytes()).next().unwrap().1.into_owned();
+    let path = format!("/api/organizations/{org}/users/{id}/accept");
+    assert_eq!(
+        server.call("POST", &path, Some(&member.token), json!({ "token": token })).await.status(),
+        StatusCode::OK
+    );
+    let path = format!("/api/organizations/{org}/users/{id}/confirm");
+    assert_eq!(
+        server.call("POST", &path, Some(&owner.token), json!({ "key": type4() })).await.status(),
+        StatusCode::OK
+    );
+    (org, collection)
 }

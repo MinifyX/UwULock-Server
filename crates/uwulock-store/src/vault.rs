@@ -312,6 +312,16 @@ impl Store {
         .await
     }
 
+    /// How many items of their own the user has, trash and archive included.
+    pub async fn cipher_count(&self, user_id: &str) -> Result<i64> {
+        let user_id = user_id.to_string();
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached("SELECT count(*) FROM ciphers WHERE user_id = ?1")?
+                .query_row([user_id], |row| row.get(0))
+        })
+        .await
+    }
+
     pub async fn ciphers(&self, user_id: &str) -> Result<Vec<Cipher>> {
         let user_id = user_id.to_string();
         self.sqlite_read(move |conn| {

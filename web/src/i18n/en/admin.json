@@ -164,5 +164,7 @@
   "Über ihn gehen Einladungen, Codes für die Zwei-Schritt-Anmeldung, Passwort-Hinweise und Sicherheitshinweise. Ohne Mailserver geht alles andere trotzdem; Einladungen gibt es dann nur als Link.": "Invitations, two-step login codes, password hints and security notices go through it. Without a mail server everything else still works; invitations are then only a link.",
   "Über welchen Mailserver der Server schreibt, was er Nutzern und Admins meldet.": "Which mail server the server writes through, and what it tells users and admins.",
   "Überwachung": "Monitoring",
-  "„Auf diesem Gerät merken“ lässt den zweiten Schritt dort 30 Tage lang weg.": "“Remember this device” skips the second step there for 30 days."
+  "„Auf diesem Gerät merken“ lässt den zweiten Schritt dort 30 Tage lang weg.": "“Remember this device” skips the second step there for 30 days.",
+  "Zum Admin machen?": "Make an admin?",
+  "{email} kann danach alles im Admin-Portal: Konten, Einstellungen, Backups. Bestätige mit deinem Master-Passwort.": "{email} can then do everything in the admin portal: accounts, settings, backups. Confirm with your master password."
 }

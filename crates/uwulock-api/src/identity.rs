@@ -159,13 +159,38 @@ async fn password_login(
     if username.len() > MAX_EMAIL || device_name.len() > 256 || device_id.len() > 256 {
         return Err(ApiError::bad("Username or password is incorrect. Try again"));
     }
-    if !state.limits.login.check(ip) {
+    if !state.limits.login.check(ip) || !state.limits.login_wide.check_wide(ip) {
         return Err(ApiError::too_many("Too many login requests. Wait a minute and try again."));
     }
 
     let user = state.store.user_by_email(username).await?;
     // With the code of an approved "log in with a device" request instead of the password.
     let by_request = form.get("authrequest");
+    // Wrong passwords per address tried, from everywhere at once (R1-2): when they ran out, only
+    // a device the account knows gets its password checked. Keyed by the address as typed, so
+    // the answer is the same whether it has an account.
+    let account_key = username.trim().to_lowercase();
+    if by_request.is_none() && !state.limits.login_account.allows(&account_key) {
+        let known = match &user {
+            Some(user) => state.store.device(&user.id, device_id).await?.is_some(),
+            None => false,
+        };
+        if !known {
+            log(state, "login-failed", user.as_ref(), username, ip, device_type, "too many wrong passwords").await;
+            return Err(ApiError::too_many(
+                "Too many wrong passwords for this account lately. Log in on a device you used before, or try again in a few minutes.",
+            )
+            .code("account_limited"));
+        }
+    }
+    // Rather "busy" at once than a queue that ends in the request's timeout (R1-2).
+    if by_request.is_none() && auth::hashing_busy() {
+        let mut response = ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "The server is busy. Try again in a moment.")
+            .code("busy")
+            .into_response();
+        response.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(2));
+        return Ok(response);
+    }
     let passed = match (by_request, &user) {
         (Some(request), Some(found)) => state
             .store
@@ -181,6 +206,9 @@ async fn password_login(
         }
     };
     if !passed {
+        if by_request.is_none() {
+            state.limits.login_account.take(account_key);
+        }
         log(state, "login-failed", user.as_ref(), username, ip, device_type, "wrong email or password").await;
         // Beside the answer, not before it: the time a refused login takes must not tell whether
         // the address has an account.
@@ -643,12 +671,10 @@ async fn prelogin(
     if !state.limits.anonymous.check(ip) {
         return Err(ApiError::too_many("Too many requests. Wait a minute and try again."));
     }
-    let kdf = state.store.user_by_email(&request.email).await?.map(|user| user.kdf).unwrap_or(Kdf {
-        kind: 0,
-        iterations: 600_000,
-        memory: None,
-        parallelism: None,
-    });
+    let kdf = match state.store.user_by_email(&request.email).await? {
+        Some(user) => user.kdf,
+        None => stand_in_kdf(&state, &request.email),
+    };
     Ok(Json(json!({
         "kdf": kdf.kind,
         "kdfIterations": kdf.iterations,
@@ -662,6 +688,24 @@ async fn prelogin(
         },
         "salt": null,
     })))
+}
+
+/// The KDF the prelogin answers for an address without an account: one of the defaults accounts
+/// use — the web vault's Argon2id (3 iterations, 64 MiB, 4 threads) three times in four, the
+/// apps' PBKDF2 with 600 000 iterations otherwise — chosen by a MAC of the address under the
+/// server's secret, so asking again gives the same answer and nobody else can tell it from a
+/// real one (R1-6).
+fn stand_in_kdf(state: &AppState, email: &str) -> Kdf {
+    let pbkdf2 = Kdf { kind: 0, iterations: 600_000, memory: None, parallelism: None };
+    let normalized = email.trim().to_lowercase();
+    match state.secret.mac("prelogin-kdf", normalized.as_bytes()) {
+        Ok(mac) if mac[0] < 192 => Kdf { kind: 1, iterations: 3, memory: Some(64), parallelism: Some(4) },
+        Ok(_) => pbkdf2,
+        Err(error) => {
+            tracing::warn!(%error, "the server secret could not be read for the prelogin");
+            pbkdf2
+        }
+    }
 }
 
 // ── Registering ───────────────────────────────────────────
@@ -1007,11 +1051,27 @@ mod tests {
     #[tokio::test]
     async fn a_prelogin_tells_nobody_who_has_an_account() {
         let server = TestServer::new().await;
-        let unknown =
-            json(server.call("POST", "/api/accounts/prelogin", None, json!({"email": "nobody@example.com"})).await)
-                .await;
-        assert_eq!(unknown["kdf"], 0);
-        assert_eq!(unknown["kdfIterations"], 600000);
+        let ask = |email: String| {
+            let server = &server;
+            async move { json(server.call("POST", "/api/accounts/prelogin", None, json!({ "email": email })).await).await }
+        };
+        // The same address, the same answer; the defaults accounts use, both of them (R1-6).
+        let unknown = ask("nobody@example.com".into()).await;
+        assert_eq!(ask(" NOBODY@example.com".into()).await, unknown);
+        let mut kinds = std::collections::BTreeSet::new();
+        for n in 0..40 {
+            let answer = ask(format!("nobody{n}@example.com")).await;
+            match answer["kdf"].as_i64().unwrap() {
+                0 => assert_eq!(answer["kdfIterations"], 600000),
+                1 => assert_eq!(
+                    (answer["kdfIterations"].clone(), answer["kdfMemory"].clone(), answer["kdfParallelism"].clone()),
+                    (json!(3), json!(64), json!(4))
+                ),
+                other => panic!("kdf {other}"),
+            }
+            kinds.insert(answer["kdf"].as_i64().unwrap());
+        }
+        assert_eq!(kinds.len(), 2);
     }
 
     #[tokio::test]
@@ -1027,6 +1087,32 @@ mod tests {
         assert_eq!(unknown.status(), StatusCode::BAD_REQUEST);
         let events = server.state.store.events(Some("login-failed".into()), None, 10).await.unwrap();
         assert_eq!(events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn too_many_wrong_passwords_leave_only_known_devices_in() {
+        let server = TestServer::new().await;
+        server.account("nyu@example.com").await; // device-1
+        let mut limits = crate::Limits::generous();
+        limits.login_account = crate::limits::Limiter::new(2, std::time::Duration::from_secs(3600));
+        let server = server.with_limits(limits);
+        for _ in 0..2 {
+            let mut form = login_form("NYU@example.com", "elsewhere");
+            form[2].1 = "wrong";
+            assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::BAD_REQUEST);
+        }
+        // The right password from a new device now waits…
+        let refused = server.form("/identity/connect/token", &login_form("nyu@example.com", "elsewhere")).await;
+        assert_eq!(refused.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(json(refused).await["code"], "account_limited");
+        // …the owner's own device is not locked out.
+        server.login("nyu@example.com", "device-1").await;
+        // An address without an account answers the same way once its tries ran out.
+        for _ in 0..2 {
+            server.form("/identity/connect/token", &login_form("nobody@example.com", "x")).await;
+        }
+        let unknown = server.form("/identity/connect/token", &login_form("nobody@example.com", "x")).await;
+        assert_eq!(unknown.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

@@ -148,7 +148,7 @@ impl FromRequestParts<AppState> for Scim {
     type Rejection = ScimError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, Self::Rejection> {
-        let ip = auth::client_ip(parts, state.config.trust_forwarded);
+        let ip = auth::client_ip(parts, &state.config);
         let key = crate::limits::network_of(ip);
         if !state.limits.scim_refused.allows(&key) {
             return Err(ScimError::new(StatusCode::TOO_MANY_REQUESTS, None, "Too many refused tokens. Wait a while."));

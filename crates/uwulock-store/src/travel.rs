@@ -165,6 +165,16 @@ impl Store {
         self.sqlite_read(move |conn| is_hidden(conn, &user_id, &cipher_id)).await
     }
 
+    /// Whether a file link made for `user_id` no longer opens the item's files: they don't see the
+    /// item any more (left the family or the collection, R1-12), or travel mode hides it.
+    pub async fn closed_for(&self, user_id: &str, cipher_id: &str) -> Result<bool> {
+        let (user_id, cipher_id) = (user_id.to_string(), cipher_id.to_string());
+        self.sqlite_read(move |conn| {
+            Ok(!crate::organizations::sees(conn, &user_id, &cipher_id)? || is_hidden(conn, &user_id, &cipher_id)?)
+        })
+        .await
+    }
+
     /// Whether the item is hidden from its owner by travel mode, for a download that comes with
     /// a link instead of a session. An organisation's item is nobody's alone: never.
     pub async fn hidden_from_owner(&self, cipher_id: &str) -> Result<bool> {

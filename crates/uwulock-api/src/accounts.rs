@@ -1127,11 +1127,19 @@ mod tests {
         assert!(body.get("refresh_token").is_none());
 
         let rotated =
-            json(server.call("POST", "/api/accounts/rotate-api-key", Some(&account.token), secret).await).await;
+            json(server.call("POST", "/api/accounts/rotate-api-key", Some(&account.token), secret.clone()).await).await;
         assert_ne!(rotated["apiKey"], key.as_str());
         let response = server.form("/identity/connect/token", &form).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "the old key is gone");
         assert_eq!(json(response).await["error"], "invalid_client");
+
+        // "Log out everywhere" ends the API key too (R1-5); the next fetch makes a new one.
+        let rotated = rotated["apiKey"].as_str().unwrap().to_string();
+        let fields = login(rotated.clone());
+        let form: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::OK);
+        server.call("POST", "/api/accounts/security-stamp", Some(&account.token), secret).await;
+        assert_eq!(server.form("/identity/connect/token", &form).await.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

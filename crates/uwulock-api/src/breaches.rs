@@ -213,9 +213,11 @@ async fn xon_password(
                 return Err(ApiError::too_many("Too many checks. Wait a minute and try again."));
             }
             let base = state.icons.fetcher().map(|(_, upstream)| upstream.xon_passwords.clone()).unwrap_or_default();
-            let count: Arc<str> = match state.breaches.xon_queue.ask(&state, &base, &prefix).await {
+            let count: Arc<str> = match state.breaches.xon_queue.ask(&state, &session.user.id, &base, &prefix).await {
                 Ok(count) => count.to_string().into(),
                 Err(XonError::Busy(wait)) => {
+                    // Nothing was asked: the try comes back (R1-15).
+                    state.limits.hibp.give_back(&session.user.id);
                     // The queue is long: the client asks again later, nothing failed.
                     let seconds = wait.as_secs().max(1);
                     let mut response =
@@ -248,6 +250,10 @@ pub struct XonLimits {
     /// How long one request may wait in the queue before its client is told to come back
     /// (429 `busy`).
     pub longest_wait: Duration,
+    /// How many requests of one account may wait in the queue at once; one more is `busy` at
+    /// once, so one account cannot fill the queue for everybody else (R1-15). The web vault asks
+    /// four at a time.
+    pub per_account: usize,
 }
 
 impl Default for XonLimits {
@@ -259,6 +265,7 @@ impl Default for XonLimits {
             retries: 4,
             longest_pause: Duration::from_secs(120),
             longest_wait: Duration::from_secs(60),
+            per_account: 4,
         }
     }
 }
@@ -287,6 +294,8 @@ enum XonError {
 
 struct XonQueue {
     limits: XonLimits,
+    /// Requests waiting (or being asked) per account.
+    waiting: Arc<parking_lot::Mutex<HashMap<String, usize>>>,
     /// When the next question may go out. Held while a question is asked (and waited for), so
     /// the requests take turns in the order they came (tokio's mutex is fair).
     next: tokio::sync::Mutex<Instant>,
@@ -294,12 +303,26 @@ struct XonQueue {
 
 impl XonQueue {
     fn new(limits: XonLimits) -> Self {
-        XonQueue { limits, next: tokio::sync::Mutex::new(Instant::now()) }
+        XonQueue { limits, waiting: Arc::default(), next: tokio::sync::Mutex::new(Instant::now()) }
+    }
+
+    /// A place in the queue for `account`, or none while it has `per_account` waiting already.
+    fn enter(&self, account: &str) -> Option<QueuePlace> {
+        let mut waiting = self.waiting.lock();
+        let count = waiting.entry(account.to_string()).or_insert(0);
+        if *count >= self.limits.per_account {
+            return None;
+        }
+        *count += 1;
+        Some(QueuePlace { waiting: self.waiting.clone(), account: account.to_string() })
     }
 
     /// How often XposedOrNot saw passwords whose hash starts with `prefix`: 0 when never.
-    async fn ask(&self, state: &AppState, base: &str, prefix: &str) -> Result<u64, XonError> {
+    async fn ask(&self, state: &AppState, account: &str, base: &str, prefix: &str) -> Result<u64, XonError> {
         let limits = &self.limits;
+        let Some(_place) = self.enter(account) else {
+            return Err(XonError::Busy(limits.spacing.max(Duration::from_secs(1)).saturating_mul(2)));
+        };
         let started = Instant::now();
         let mut next = match tokio::time::timeout(limits.longest_wait, self.next.lock()).await {
             Ok(next) => next,
@@ -334,6 +357,24 @@ impl XonQueue {
             );
             *next = now + pause;
             attempt += 1;
+        }
+    }
+}
+
+/// An account's request in the XposedOrNot queue; leaving it makes room for the next.
+struct QueuePlace {
+    waiting: Arc<parking_lot::Mutex<HashMap<String, usize>>>,
+    account: String,
+}
+
+impl Drop for QueuePlace {
+    fn drop(&mut self) {
+        let mut waiting = self.waiting.lock();
+        if let Some(count) = waiting.get_mut(&self.account) {
+            *count -= 1;
+            if *count == 0 {
+                waiting.remove(&self.account);
+            }
         }
     }
 }

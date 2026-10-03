@@ -96,7 +96,7 @@ pub(crate) async fn guard(State(state): State<AppState>, request: Request, next:
         return next.run(request).await;
     }
     let (parts, body) = request.into_parts();
-    let ip = client_ip(&parts, state.config.trust_forwarded);
+    let ip = client_ip(&parts, &state.config);
     state.blocks.reload_after(&state.store, 60).await;
     // A block lifted on the command line counts within seconds.
     if state.blocks.blocks(ip) && !(state.blocks.reload_after(&state.store, 5).await && !state.blocks.blocks(ip)) {
