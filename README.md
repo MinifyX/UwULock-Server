@@ -28,44 +28,52 @@ teams and SSO.
   you pass on a changed version, or run one for others, its source stays open too.
 - **No support.** Issues and pull requests are okay, but I might answer late or not at all.
 
-> **Status: 0.4, everything Vaultwarden does for one person — beta.** Accounts by invitation,
-> the vault with attachments, Sends, emergency access, security keys and passkeys, live updates
-> and push, and the official Bitwarden apps, browser extension and CLI on top; a web vault of its
-> own that works on a phone, and an admin portal. `uwulock-server import-vaultwarden` moves a
-> Vaultwarden over, devices and all. Organisations come along from Vaultwarden and work as they
-> are; families are made and managed here from the next release on, companies' organisations
-> after that. The [UwULock app](https://github.com/MinifyX/UwULock-Client)
-> fits from 0.2.0-beta.3 on. The [plan](docs/plan.md) has every step (in German).
+> **Status: 0.8, everything Vaultwarden does for one person and a family, and more — beta.**
+> Accounts by invitation or through SSO, the vault with attachments, Sends, emergency access,
+> security keys and passkeys, live updates, families, and the official Bitwarden apps, browser
+> extension and CLI on top; a web vault of its own that works on a phone, and an admin portal.
+> `uwulock-server import-vaultwarden` moves a Vaultwarden over, devices and all. Organisations
+> come along from Vaultwarden and work as they are; companies' organisations (Stufe 5) are
+> planned, not built. The [UwULock app](https://github.com/MinifyX/UwULock-Client) fits from
+> 0.2.0-beta.3 on, and gets the most out of it from 0.5.0-beta.1 on. The [plan](docs/plan.md) has
+> every step (in German).
 
-## What is in 0.4
+## What is in 0.8
 
 - **The official Bitwarden clients work**: browser extension, mobile apps, desktop app and
-  `bw` CLI log in (with two-step login, a security key, another device or the API key), sync,
-  and save, with live updates over Bitwarden's notification hub — tested in CI with Bitwarden's
-  own CLI. (Push to Bitwarden's phone apps through Bitwarden's relay was removed in 0.8: they sync
-  when opened.)
+  `bw` CLI log in (with two-step login, a security key, another device, the API key or SSO),
+  sync, and save, with live updates over Bitwarden's notification hub — tested in CI with
+  Bitwarden's own CLI. (Push to Bitwarden's phone apps through Bitwarden's relay was removed in
+  0.7.0-beta.3, a plan change: it sent account and device ids to Bitwarden with every change.
+  Bitwarden's phone apps sync when they are opened.)
 - **Everything for one person**: attachments (500 MB each by default), Sends with a page of
   their own for whoever gets the link, emergency access with a waiting time, security keys and
   passkeys (with PRF, a passkey unlocks the web vault too), logging in with another device, and
-  a password check that asks Have I Been Pwned through this server.
+  a password check that asks Have I Been Pwned and XposedOrNot through this server.
 - **Moving in from Vaultwarden**: `uwulock-server import-vaultwarden <its data directory>`
   brings accounts, devices (which stay logged in), two-step login, items, attachments, Sends,
   emergency access and organisations over in one go. Tested in CI against a real Vaultwarden.
+  **Import from KeePass, 1Password, Chrome, Firefox, Apple Passwords, Proton Pass and LastPass**,
+  read in the browser with a preview ([docs/import.md](docs/import.md)).
 - **UwULock's own web vault** at `/`, in the look of the UwULock app: the vault in three panes
   (one at a time on a phone), several items at once, the generator, import and export (Bitwarden
-  JSON and CSV), Sends, file requests, the password check, the emergency sheet, and every account
-  setting. The crypto runs in the
-  browser, as WebAssembly: the same code the UwULock app uses.
+  JSON and CSV), Sends, file requests, the password check, the emergency sheet, Wi-Fi networks
+  with a QR code ([docs/wifi.md](docs/wifi.md)), UwUSSH's and UwURDP's hosts and connections, and
+  every account setting. The crypto runs in the browser, as WebAssembly: the same code the
+  UwULock app uses.
+- **The password check** finds weak, reused and breached passwords (Have I Been Pwned and
+  XposedOrNot, by the first characters of a hash only), sites breached after a password's last
+  change and sites that offer two-step login you don't use, and goes through them one card at a
+  time: open the site's change-password page, save a new password, put it off or ignore it.
 - **An admin portal** at `/admin`: users with their files, invitations and who may send them,
-  mail, push and other settings, numbers over time, the event log, the server's log, backups —
-  here and on another system, put back while the server runs — and the update notice. Admins are ordinary accounts with the
-  admin right. Every extra below is a **feature switch** there: a new server starts with only
-  the vault and icons, and what is off is gone from sight but not deleted ([docs/features.md](docs/features.md)).
+  mail and other settings, numbers over time, the event log, failed logins with their origin and
+  blocked addresses ([docs/failed-logins.md](docs/failed-logins.md)), the server's log, backups —
+  here and on another system, put back while the server runs — and the update notice. Admins are
+  ordinary accounts with the admin right. Every extra below is a **feature switch** there: a new
+  server starts with only the vault and icons, and what is off is gone from sight but not deleted
+  ([docs/features.md](docs/features.md)).
 - **Registration by invitation**: by mail, or as a link to pass on by hand; users may
   invite a few people too, if the admin allows it.
-
-Coming with the next release (on `main` already):
-
 - **Log in with UwUAuth or any OpenID Connect provider**, in the web vault, the admin portal and
   the official Bitwarden apps ("Log in with SSO", any identifier); the master password still
   opens the vault. People in a group sign up without an invitation, admins can follow a group,
@@ -74,19 +82,19 @@ Coming with the next release (on `main` already):
 - **Security notices** for everybody, in the web vault and bundled by mail; **server policies**
   (two-step login required, a minimum KDF, master password rules); the admin portal only from
   some networks.
-- **Running it**: `/metrics` for Prometheus, the log to Loki, admin alerts by mail, ntfy, Gotify
-  and Matrix, a diagnosis of the setup, and backups on another system (SFTP, S3 or a folder).
+- **Running it**: `/metrics` for Prometheus, the log as JSON lines (`UWULOCK_LOG_FORMAT=json`)
+  or straight to Loki, admin alerts by mail, ntfy, Gotify and Matrix, a diagnosis of the setup,
+  and backups on another system (SFTP, S3 or a folder) that put a server back on a new machine
+  ([docs/metrics.md](docs/metrics.md), [docs/backups.md](docs/backups.md)).
 - **File requests** (people without an account send you files, encrypted in their browser) and
   **the emergency sheet** as a PDF for your family.
 - **Icons** for items — the website's, fetched by the server and never by your browser, or your
   own, encrypted, also from the selfh.st library ([docs/icons.md](docs/icons.md)); **travel
   mode**, **earlier versions** of items and **reminders** to renew a password
   ([docs/travel-mode.md](docs/travel-mode.md)).
-- **Import from KeePass, 1Password, Chrome, Firefox, Apple Passwords, Proton Pass and LastPass**,
-  read in the browser with a preview ([docs/import.md](docs/import.md)); **share an item as a
-  Send**, **Sends only for given addresses** with a code by mail, and the report **"2FA possible,
-  not set up"** ([docs/sharing.md](docs/sharing.md)); the server's own **branding**
-  ([docs/branding.md](docs/branding.md)).
+- **Share an item as a Send**, **Sends only for given addresses** with a code by mail, and the
+  report **"2FA possible, not set up"** ([docs/sharing.md](docs/sharing.md)); the server's own
+  **branding** ([docs/branding.md](docs/branding.md)).
 - **Families**: share items with a few people in collections, read or write per member, like
   Bitwarden's Families and seen by the official apps too; members are confirmed with a
   fingerprint phrase ([docs/families.md](docs/families.md)).
@@ -99,6 +107,36 @@ Coming with the next release (on `main` already):
 - **Masked addresses** from UwUMail, a mail address of its own for every website — in the web
   vault and in the Bitwarden apps' generator ([docs/masked-addresses.md](docs/masked-addresses.md)).
 
+New in 0.8:
+
+- **The password check finishes.** All accounts' XposedOrNot questions wait in one queue on the
+  server, one a second; a 429 pauses it as long as XposedOrNot's `Retry-After` says and the prefix
+  is asked again. Have I Been Pwned's results show at once, with the progress per source
+  ("XposedOrNot: 120 von 363"), and "a source did not answer" only comes for a real outage.
+- **Generator minimums**: at least so many capitals, small letters, digits and symbols; the
+  length grows to fit them and says so.
+- **One-time codes**: in a code's last 10 seconds the next one shows below it, with its own copy
+  button.
+- **Items**: only the first website on an item's page, the others behind "+2 more websites"; the
+  favourite is a star in the editor; the reminder to renew is a switch in the editor and shows on
+  the item only while it is on.
+- **Passkeys** in the web vault: an item's page lists its passkeys — site, user, created — and
+  deletes one; *Duplicate* keeps them in the copy.
+- **Entry Sends**: an item shared as a Send shows on the Send page as an entry, with copy
+  buttons, secrets behind the eye, each website with its address and, if you tick them, live
+  one-time codes — never the key on the page, but the key travels in the Send, so whoever has the
+  link can read it out, and the web vault asks before it goes along. The Bitwarden apps still see
+  readable text ([docs/sharing.md](docs/sharing.md)).
+- **A new look**: a font of your choice per device (UwU Sans, the UwU apps' font, by default;
+  Manrope, Rubik, DM Sans or the system's), checkboxes and switches like UwUMail's, and more Nyu —
+  empty lists, loading, unlocking, the password check, toasts — following *Appearance →
+  Animations* and the system's wish for less motion.
+- **Security review** of the server, the web vault and the admin portal, with every finding
+  fixed or explained, and a re-check of the fixes ([docs/security-review-0.8.md](docs/security-review-0.8.md)):
+  stricter login limits per address, network and account, the master password for the admin
+  portal's SSO and user actions, API keys that end with a password change, forwarding headers
+  only from `UWULOCK_TRUSTED_PROXIES`, and caps on connections, items and bulk requests.
+
 ## What it will and won't do
 
 - **It never sees your passwords.** Like Bitwarden's server, it stores what your clients
@@ -108,8 +146,11 @@ Coming with the next release (on `main` already):
 - **No favicons from third parties, no telemetry.** The only connections it opens on its own are
   Let's Encrypt (if you use it), a daily look at GitHub for a newer release, which
   `UWULOCK_UPDATE_CHECK=off` stops, and — unless the admin switches them off — websites' icons
-  and the icon library's index, fetched for your apps so they never ask anybody but this server,
-  and 2FA Directory's list once somebody opens the password check.
+  and the icon library's index, fetched for your apps so they never ask anybody but this server;
+  for the password check Have I Been Pwned's and XposedOrNot's password ranges (a short prefix
+  of a hash, never with an account), their lists of breached sites, 2FA Directory's
+  list and sites' change-password pages; and DB-IP's GeoIP databases once a month for the failed
+  logins page.
 - **Faster than Vaultwarden, measured.** [docs/performance.md](docs/performance.md) has the
   numbers, and CI runs both side by side every week.
 
@@ -130,15 +171,27 @@ the first admin: the link to register with is shown at the end. Without question
 ```bash
 sudo bash install.sh --domain vault.example.com --admin you@example.com --yes
 sudo bash install.sh --behind-proxy https://vault.example.com --admin you@example.com --yes
-# the proxy runs as a container here: the server joins its Docker network
-sudo bash install.sh --behind-proxy https://vault.example.com --proxy-network proxy --yes
+# the proxy runs as a container here: the server joins its Docker network,
+# and believes forwarding headers only from the proxy's address
+sudo bash install.sh --behind-proxy https://vault.example.com --proxy-network proxy \
+  --trusted-proxy 192.0.2.2 --yes
 ```
 
 Everybody else you invite in the admin portal. Mail (for invitations and codes) is set up there
 too, or in `.env` before the first start.
 
 [docs/deployment.md](docs/deployment.md) has the rest: Caddy and nginx in front, your own
-certificate, backups, every setting.
+certificate, backups, logs, every setting. Settings new in 0.8, all in `.env`:
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `UWULOCK_TRUSTED_PROXIES` | — (every peer) | With `UWULOCK_TRUST_FORWARDED=on`: believe `X-Forwarded-For`, `X-Real-IP` and `X-Forwarded-Host` only from these addresses or CIDR networks, comma separated. Set it when other containers share the proxy's network. |
+| `UWULOCK_CLIENT_IP_HEADER` | `x-forwarded-for` | `x-real-ip` for a proxy that sets only `X-Real-IP`. Leave it alone behind Caddy. |
+| `UWULOCK_CONNECTIONS_PER_NETWORK` | `256` | With TLS of its own: the most connections from one IPv4 address or IPv6 /64; `0` for no cap but the total of 8 192. |
+
+`UWULOCK_LOG_FORMAT=json` (one JSON object a line, for Grafana Alloy, Promtail or Vector) has been
+there before; *Admin portal → System & diagnosis → Monitoring* sends the same lines straight to
+Loki, and switches `/metrics` on.
 
 ## Update
 
@@ -218,7 +271,9 @@ GitHub release with the scripts.
 - [Icons](docs/icons.md) — website icons fetched by the server, own icons and the icon library
 - [Travel mode, versions and reminders](docs/travel-mode.md) — hiding folders at the border, earlier versions of items, renewing passwords
 - [Import](docs/import.md) — moving in from KeePass, 1Password, browsers, Proton Pass and LastPass
-- [Sharing](docs/sharing.md) — an item as a Send, Sends only for given addresses, the 2FA report
+- [Wi-Fi networks](docs/wifi.md) — networks as items, with a QR code, readable by Bitwarden's apps as notes
+- [Failed logins](docs/failed-logins.md) — refused logins with their origin, and blocking addresses
+- [Sharing](docs/sharing.md) — an item as a Send (an entry Send), Sends only for given addresses, the 2FA report
 - [Branding](docs/branding.md) — the server's own name, colour, logos and favicon
 - [Delta sync and realtime](docs/sync.md) — what UwULock's own apps sync, and how they hear of changes
 - [Suite vault](docs/suite.md) — UwUSSH and UwURDP syncing through this server, and moving over from UwUSync
@@ -233,5 +288,10 @@ GitHub release with the scripts.
   and how it was fixed
 - [Security review of 0.6](docs/security-review-0.6.md) — what was found for 0.6, what is fixed,
   and the low findings that stay open
+- [Security review of 0.7](docs/security-review-0.7.md) — the password check's sources, failed
+  logins, Wi-Fi, and the SSH/RDP sections
+- [Security review of 0.8](docs/security-review-0.8.md) — logins, proxies, the admin portal,
+  entry Sends and passkeys, and the re-check of the fixes; the apps' side is in UwULock's
+  [review of 0.5](https://github.com/MinifyX/UwULock-Client/blob/main/docs/security-review-0.5.md)
 - [Changelog](CHANGELOG.md)
 - [Security](SECURITY.md) — how to report a vulnerability
