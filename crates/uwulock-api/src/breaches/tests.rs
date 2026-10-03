@@ -235,25 +235,35 @@ async fn a_long_queue_answers_busy_with_retry_after() {
 }
 
 /// One account keeps at most `per_account` requests in the queue; the next is busy at once, and
-/// another account still gets its turn (R1-15).
+/// another account still gets its turn (R1-15). A place is given back when its request ends.
+#[test]
+fn one_account_cannot_fill_the_queue_for_everybody() {
+    let queue = XonQueue::new(XonLimits { per_account: 2, ..QUICK_XON });
+    let first = queue.enter("nyu").expect("a place");
+    let second = queue.enter("nyu").expect("a second place");
+    assert!(queue.enter("nyu").is_none(), "a third waits not");
+    let mio = queue.enter("mio").expect("another account still gets in");
+    drop(first);
+    let third = queue.enter("nyu").expect("a place that was given back");
+    drop((second, third, mio));
+    assert!(queue.waiting.lock().is_empty(), "nothing is left behind");
+}
+
+/// Over its share, an account is told to come back at once: 429 `busy` with `Retry-After`,
+/// without waiting in the queue (R1-15).
 #[tokio::test]
-async fn one_account_cannot_fill_the_queue_for_everybody() {
+async fn over_its_share_an_account_is_busy_at_once() {
     let (upstream, _) = fake_internet().await;
-    let spacing = Duration::from_millis(40);
-    let limits = XonLimits { spacing, per_account: 2, ..QUICK_XON };
+    let limits = XonLimits { per_account: 0, ..QUICK_XON };
     let server = TestServer::with_settings(all_on())
         .await
         .with_upstream(upstream)
         .with_breaches(quick().with_xon_limits(limits));
     let nyu = server.account("nyu@example.com").await;
-    let mio = server.account("mio@example.com").await;
-    let paths: Vec<String> = (1..=4).map(|n| format!("/uwu/v1/xon/000000010{n}")).collect();
-    let nyus = futures_util::future::join_all(paths.iter().map(|path| server.get_as(&nyu.token, path)));
-    let mios = server.get_as(&mio.token, "/uwu/v1/xon/0000000200");
-    let (nyus, mios) = tokio::join!(nyus, mios);
-    let busy = nyus.iter().filter(|answer| answer.status() == StatusCode::TOO_MANY_REQUESTS).count();
-    assert_eq!(busy, 2, "two wait, two are told to come back");
-    assert_eq!(mios.status(), StatusCode::OK);
+    let answer = server.get_as(&nyu.token, "/uwu/v1/xon/0000000101").await;
+    assert_eq!(answer.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(answer.headers().contains_key("retry-after"));
+    assert_eq!(body(answer).await["code"], "busy");
 }
 
 #[test]

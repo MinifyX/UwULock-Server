@@ -224,7 +224,7 @@ try {
   // The codes are a choice of their own, never ticked from the start.
   const codes = share.getByRole('checkbox', { name: /Einmal-Codes/ });
   if (await codes.isChecked()) throw new Error('the one-time codes are ticked from the start');
-  await codes.check();
+  await codes.click();
   // Their key travels in the Send: ticking them asks once more.
   await share.locator('[data-totp-confirm]').waitFor();
   if (await codes.isChecked()) throw new Error('the one-time codes are ticked before the confirm');
@@ -274,6 +274,14 @@ try {
   }
   await snap(friend, 'send-opened');
   await checkA11y(friend, 'entry Send');
+  // The original text: the readable lines, never the marker line with the key.
+  await friend.getByRole('button', { name: 'Originaltext anzeigen' }).click();
+  const original = await friend.locator('.send-text').innerText();
+  if (!original.includes('nyu') || original.includes('uwulock-entry') || original.includes('JBSWY3DPEHPK3PXP')) {
+    throw new Error(`the original text is “${original}”`);
+  }
+  await friend.getByRole('button', { name: 'Als Eintrag zeigen' }).click();
+  await entry.waitFor();
   await friend.context().close();
 } catch (error) {
   await snap(nyu, 'failed').catch(() => undefined);
