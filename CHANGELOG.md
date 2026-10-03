@@ -73,6 +73,25 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
     installation id at bitwarden.com/host.
   - The SCIM token acts with admin rights over every account (it can disable or delete any but the
     last admin): keep it like an admin password (docs/sso.md).
+- **Re-check of the security fixes** (docs/security-review-0.8.md, R5):
+  - **Logins:** a try is taken before the password is hashed and given back when it was right, so
+    logins at the same moment can't share the last one. Wrong passwords count per address and
+    network (10 per IPv4 address or IPv6 /48, one back every 6 minutes) and per address from
+    everywhere (300, one back every 12 s): a guesser no longer keeps the owner's new devices out.
+    Known devices get a few more once those are out, but no longer skip the limit. When an
+    account's tries run out, its owner gets a security notice by mail (at most once an hour), and
+    the log a `login refused: …` warning for Grafana.
+  - **Admin portal:** the admin group and the claims for groups and roles, a new SCIM token and what
+    SCIM does when it deletes somebody ask for the master password too.
+  - **Limits:** `/api/ciphers/create` counts against an account's 100 000 items, and a family holds
+    at most as many; a bulk change of a family's items works out who sees them once, not per item.
+  - **Connections:** with TLS of its own, Docker's gateway, a NAT or another private address counts
+    only in the total, not as one client; `UWULOCK_CONNECTIONS_PER_NETWORK` sets the cap per address
+    (`0`: off). For IPv6 or rootless Docker, put a proxy in front or use host networking.
+  - **Proxies:** `X-Forwarded-Host` only counts from `UWULOCK_TRUSTED_PROXIES`;
+    `UWULOCK_CLIENT_IP_HEADER=x-real-ip` for a proxy that sets only `X-Real-IP`.
+  - Migration 0026: an index that makes delta syncs after a large reorganisation fast again.
+  - Docs: local backups (`backups/`) hold API keys and need the same care as `data/`.
 
 ## 0.7.0-beta.3
 

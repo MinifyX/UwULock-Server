@@ -603,6 +603,12 @@ Kern aus UwULock-Client PR #26 (`2a8a708`, in `web/wasm` und `uwulock-e2e` gepin
   Master-Passwort für SSO/Admin-Aktionen, API-Schlüssel am Security-Stamp, Prelogin-Ersatz-KDF,
   Delta-Sync/Hub nur Sichtbares, Speicher- und Mengenlimits, Verbindungs-Caps, XON fair pro Konto,
   Eintrags-Sends v2 im Web-Tresor); Migrationen 0024 und 0025.
+- [x] Nachprüfung R5 (docs/security-review-0.8.md): Login-Versuche vor dem Hash genommen, pro Konto
+  und Netz (/48) streng plus pro Konto weit, Hinweis `loginsLimited` an den Besitzer; Master-Passwort
+  auch für SSO-Admin-Regeln, SCIM-Token und SCIM-Löschen; Eintrags-Limit für `/ciphers/create` und
+  Familien; Hub einmal pro Stapel; Verbindungs-Cap ohne private Peers
+  (`UWULOCK_CONNECTIONS_PER_NETWORK`); `X-Forwarded-Host` nur von vertrauten Proxys,
+  `UWULOCK_CLIENT_IP_HEADER`; Migration 0026.
 - [x] Design: Schriftwahl wie UwUMail (UwU Sans Standard, Manrope, Rubik, DM Sans, System; Lizenzen
   in THIRD-PARTY-NOTICES.txt), Ligaturen aus; Checkboxen und Schalter im UwUMail-Stil; mehr Nyu
   (leere Listen, Laden, Entsperren, Passwortprüfung, Toasts), alles mit reduzierter Bewegung.
