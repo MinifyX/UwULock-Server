@@ -28,6 +28,11 @@ UwULock 0.4.0-beta.2.
 0.7.0-beta.3 behebt, was eine Wiederherstellungsprobe (SFTP, S3, Ordner, lokales Backup auf einen
 leeren Server) gefunden hat: Feature-Schalter gehen mit ins Backup, `install.sh --no-start`,
 bessere Meldungen und Doku; dazu ein stabiler ACME-Test in CI.
+0.8.0-beta.1 bringt im Web-Tresor Generator-Mindestzahlen, den nächsten Einmalcode, Passkeys mit
+Löschen, Sends als Eintrag und das neue Design, wirft Bitwardens Push-Relay hinaus (Planänderung)
+und lässt XposedOrNot-Prüfungen nicht mehr an 429 scheitern, nach einem Sicherheitsreview mit
+Nachprüfungen ([docs/security-review-0.8.md](security-review-0.8.md)); passend dazu UwULock
+0.5.0-beta.1 mit Passkey-Anbietern für Linux, Windows, Android, iOS und macOS.
 Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 

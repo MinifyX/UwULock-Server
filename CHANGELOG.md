@@ -3,10 +3,14 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
-## Unreleased
+## 0.8.0-beta.1
+
+**Passkeys, entry Sends and a new look in the web vault, no more push relay, a password check that
+waits out XposedOrNot** — after a security review with re-checks
+([docs/security-review-0.8.md](docs/security-review-0.8.md)). Fits UwULock 0.5.0-beta.1.
 
 - **Web vault: items, entry Sends, passkeys and a new look.** Needs UwULock-Client's core at
-  `b9580a2` (pinned in `web/wasm` and `uwulock-e2e`).
+  `c773261` (UwULock 0.5.0-beta.1, pinned in `web/wasm` and `uwulock-e2e`).
   - Password generator: a minimum per kind of character (A–Z, a–z, 0–9, symbols); the length grows
     to fit them and says so. Remembered in the browser with the other options.
   - One-time codes: in the last 10 seconds of a code the next one shows below it, small, with a copy
