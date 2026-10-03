@@ -193,18 +193,26 @@ try {
     await snap(admin, "settings");
 
     step("who becomes an admin, and SCIM, want the master password too (R5-3)");
-    await admin
-        .getByLabel("Claim mit den Rollen (statt der Gruppen)")
-        .fill("roles");
-    await admin.getByRole("button", { name: "Speichern", exact: true }).click();
-    const rules = admin.getByRole("dialog");
-    await rules
-        .getByText("Admin-Regeln für SSO ändern?")
-        .waitFor({ timeout: 30000 });
-    await rules.locator("input[type=password]").fill(password);
-    await rules.getByRole("button", { name: "Speichern", exact: true }).click();
-    await rules.waitFor({ state: "detached", timeout: 30000 });
-    await admin.getByText("Gespeichert ✧").waitFor({ timeout: 30000 });
+    // A roles claim, and back: with one, only the role "user" signs up, which the
+    // provider here doesn't send.
+    for (const roles of ["roles", ""]) {
+        await admin
+            .getByLabel("Claim mit den Rollen (statt der Gruppen)")
+            .fill(roles);
+        await admin
+            .getByRole("button", { name: "Speichern", exact: true })
+            .click();
+        const rules = admin.getByRole("dialog");
+        await rules
+            .getByText("Admin-Regeln für SSO ändern?")
+            .waitFor({ timeout: 30000 });
+        await rules.locator("input[type=password]").fill(password);
+        await rules
+            .getByRole("button", { name: "Speichern", exact: true })
+            .click();
+        await rules.waitFor({ state: "detached", timeout: 30000 });
+        await admin.getByText("Gespeichert ✧").waitFor({ timeout: 30000 });
+    }
     await admin.getByRole("tab", { name: "SCIM", exact: true }).click();
     await admin
         .getByRole("button", { name: "Token erzeugen", exact: true })
