@@ -60,9 +60,10 @@ server (`font-src 'self'`), and the browser only fetches the one in use. UwU San
 build (`brand/fonts/uwu-sans`, keep it byte-identical with UwUMail's copy); the licences (all SIL
 OFL 1.1) are in `THIRD-PARTY-NOTICES.txt`.
 
-UwU Sans turns `:3` into Nyu and `<3` into a heart. In a password manager no value may look
-different from what it is, so contextual alternates are off for the whole page
-(`font-variant-ligatures: no-contextual`, again on fields, code and buttons).
+UwU Sans has no ligatures: `:3` and `<3` stay as typed (until font version 1.100 they turned into
+Nyu and a heart). In a password manager no value may look different from what it is, so contextual
+alternates are still off for the whole page (`font-variant-ligatures: no-contextual`, again on
+fields, code and buttons): JetBrains Mono would join `->`, `!=` or `==` into one sign.
 
 ## Checkboxes and switches
 

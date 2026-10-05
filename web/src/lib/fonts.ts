@@ -6,9 +6,9 @@
  * styles/fonts.css (UwU Sans) and by @fontsource (imported in main.tsx). All of them come from
  * this server, and the browser only fetches the one in use.
  *
- * UwU Sans turns ":3" into Nyu and "<3" into a heart (contextual alternates). In a password
- * manager no value may look different from what it is, so app.css switches contextual
- * alternates off for the whole page.
+ * UwU Sans has no ligatures (`:3` and `<3` stay as typed). In a password manager no value may
+ * look different from what it is, so app.css still switches contextual alternates off for the
+ * whole page: JetBrains Mono, the font of values and code, would join "->", "!=" or "==".
  */
 
 export const FONT_CHOICES = ['uwu', 'manrope', 'rubik', 'dmsans', 'system'] as const;
