@@ -30,8 +30,6 @@ pub const ACCESS_SECONDS: i64 = 60 * 60;
 pub const REFRESH_DAYS: i64 = 30;
 /// The same for the phone apps, which are opened less often.
 pub const REFRESH_DAYS_MOBILE: i64 = 90;
-/// How long "remember this device" skips two-step login.
-pub const REMEMBER_DAYS: i64 = 30;
 
 pub(crate) const TOKEN_KEY: &str = "token_key";
 

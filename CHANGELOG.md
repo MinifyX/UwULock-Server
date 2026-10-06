@@ -3,6 +3,26 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.2
+
+**How long a device is remembered is a setting now.**
+
+- **Remember this device:** the admin portal (*Security & sign-in → Sign-in*, below "Remember
+  devices") sets how long "remember this device" skips two-step login: 30 days, 90 days (the new
+  default, also for servers that have saved settings), 1 year or unlimited
+  (`rememberTwoFactorDays`: 30, 90, 365 or 0; `uwulock-server settings set rememberTwoFactorDays
+  365`). It was a fixed 30 days.
+  - Each login with a remembered device starts the days again, with the same token.
+  - The days count from the device's last login with the setting of the moment: a shorter setting
+    also holds for devices remembered before, a longer one lengthens them. The daily sweep forgets
+    what ran out.
+  - Migration 0027 keeps the time of that last login instead of an end date; devices remembered
+    before keep the login that remembered them (30 days before their old end).
+  - `/uwu/v1/account` also has `rememberTwoFactorDays` (docs/uwu-api.md §2, §21.1).
+  - The security-key page for Bitwarden's extension no longer says "for 30 days".
+- UwU Sans 1.100 (from `@uwusuite/design` 1.1.0): the font itself no longer turns `:3` into Nyu
+  and `<3` into a heart; the connector page no longer needs to switch that off.
+
 ## 0.8.0-beta.1
 
 **Passkeys, entry Sends and a new look in the web vault, no more push relay, a password check that

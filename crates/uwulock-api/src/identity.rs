@@ -400,9 +400,7 @@ pub(crate) async fn finish_login(
             ip: Some(ip.to_string()),
             refresh_hash: auth::sha256(refresh_token.as_bytes()),
             refresh_expires: clock::in_seconds(refresh_days(device_type) * 86_400),
-            remember: remember
-                .as_ref()
-                .map(|token| (auth::sha256(token.as_bytes()), clock::in_seconds(auth::REMEMBER_DAYS * 86_400))),
+            remember: remember.as_ref().map(|token| auth::sha256(token.as_bytes())),
             sso,
             client_id: Some(client_id.chars().take(64).collect()),
         })

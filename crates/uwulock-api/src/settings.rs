@@ -8,6 +8,9 @@ use uwulock_store::secret::{ServerSecret, is_sealed};
 
 const KEY: &str = "settings";
 
+/// What "remember this device" may last, in days; 0 is without end.
+pub const REMEMBER_DAYS: [u32; 4] = [30, 90, 365, 0];
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -21,8 +24,12 @@ pub struct Settings {
     pub new_device_mail: bool,
     /// Whether a master password hint may be kept, and sent by mail when asked for.
     pub password_hints: bool,
-    /// Whether "remember this device" may skip two-step login for 30 days.
+    /// Whether "remember this device" may skip two-step login.
     pub remember_two_factor: bool,
+    /// For how many days from its last login a remembered device skips two-step login: one of
+    /// [`REMEMBER_DAYS`], 0 for no end. Each login with it starts the days again; a shorter
+    /// setting holds for devices remembered before as well.
+    pub remember_two_factor_days: u32,
     /// The largest attachment or Send file, in MiB.
     pub max_file_mb: u32,
     /// Whether the web vault's password check may ask Have I Been Pwned, through this server,
@@ -308,6 +315,7 @@ impl Default for Settings {
             new_device_mail: true,
             password_hints: true,
             remember_two_factor: true,
+            remember_two_factor_days: 90,
             max_file_mb: 500,
             hibp: true,
             geoip: true,
@@ -446,6 +454,9 @@ impl Settings {
         if !(1..=90).contains(&self.invitation_days) {
             return Err("Invitations can last from 1 to 90 days.".into());
         }
+        if !REMEMBER_DAYS.contains(&self.remember_two_factor_days) {
+            return Err("A device can be remembered for 30, 90 or 365 days, or 0 for no end.".into());
+        }
         if !(1..=100).contains(&self.invitations_per_user) {
             return Err("A user may bring in from 1 to 100 people.".into());
         }
@@ -559,6 +570,8 @@ mod tests {
     fn what_would_not_work_is_refused() {
         assert!(Settings::default().check().is_ok());
         assert!(Settings { invitation_days: 0, ..Settings::default() }.check().is_err());
+        assert!(Settings { remember_two_factor_days: 31, ..Settings::default() }.check().is_err());
+        assert!(Settings { remember_two_factor_days: 0, ..Settings::default() }.check().is_ok(), "no end");
         let smtp = SmtpSettings { host: "mail.example.com".into(), port: 0, ..SmtpSettings::default() };
         assert!(Settings { smtp: Some(smtp), ..Settings::default() }.check().is_err());
     }
@@ -572,6 +585,8 @@ mod tests {
         assert!(on.policies.require_two_factor.enabled);
         assert!(start.with("adminNetworks", serde_json::json!(["nonsense"])).is_err(), "checked");
         assert!(start.with("noSuchThing", serde_json::json!(1)).is_err());
+        assert_eq!(start.with("rememberTwoFactorDays", serde_json::json!(365)).unwrap().remember_two_factor_days, 365);
+        assert!(start.with("rememberTwoFactorDays", serde_json::json!(7)).is_err());
         let token = start.with("metrics.token", serde_json::json!("a-long-token-for-prometheus")).unwrap();
         assert!(token.metrics.token_hash.is_some() && token.metrics.token.is_none(), "only the hash");
     }
@@ -581,5 +596,6 @@ mod tests {
         let settings: Settings = serde_json::from_str(r#"{"invitationDays": 5}"#).unwrap();
         assert_eq!(settings.invitation_days, 5);
         assert!(settings.remember_two_factor);
+        assert_eq!(settings.remember_two_factor_days, 90, "remembered devices: 90 days");
     }
 }

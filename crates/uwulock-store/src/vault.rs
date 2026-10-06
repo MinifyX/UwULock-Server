@@ -626,7 +626,7 @@ impl Store {
                 crate::accounts::save_user_in(tx, &user)?;
                 tx.execute(
                     "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL, remember_hash = NULL, \
-                     remember_expires = NULL WHERE user_id = ?1",
+                     remember_renewed = NULL WHERE user_id = ?1",
                     [&user.id],
                 )?;
                 Ok(RotationOutcome::Done)

@@ -13,7 +13,7 @@ const text = german
       title: 'Bestätige, dass du es bist',
       lead: 'Nimm deinen Sicherheitsschlüssel, um die Anmeldung abzuschließen.',
       button: 'Sicherheitsschlüssel verwenden',
-      remember: '30 Tage lang auf diesem Gerät nicht mehr fragen',
+      remember: 'Auf diesem Gerät nicht mehr fragen',
       done: 'Fertig. Du kannst diesen Tab schließen.',
       unsupported: 'Dieser Browser kann keine Sicherheitsschlüssel.',
     }
@@ -21,7 +21,7 @@ const text = german
       title: 'Verify it’s you',
       lead: 'Use your security key to finish logging in.',
       button: 'Use security key',
-      remember: 'Don’t ask again on this device for 30 days',
+      remember: 'Don’t ask again on this device',
       done: 'Done. You can close this tab.',
       unsupported: 'This browser cannot use security keys.',
     };

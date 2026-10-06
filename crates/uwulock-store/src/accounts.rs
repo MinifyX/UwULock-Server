@@ -158,15 +158,36 @@ pub struct Device {
     pub logged_in: bool,
     pub refresh_expires: Option<String>,
     pub remember_hash: Option<Vec<u8>>,
-    pub remember_expires: Option<String>,
+    /// The last login that skipped two-step login with the remembered token (or set it up). How
+    /// long that holds is a setting, counted from here ([`Device::remembered`]).
+    pub remember_renewed: Option<String>,
     /// The device's login came through SSO.
     pub sso: bool,
     /// The client it logged in as: `uwussh`, `uwurdp`, … for a suite app (docs/uwu-api.md §6.5).
     pub client_id: Option<String>,
 }
 
+impl Device {
+    /// Whether the device may skip two-step login with `token`: it was remembered with it, and
+    /// its last login with it is less than `days` ago (0: no end). Counted with the days set now,
+    /// so a shorter setting holds for devices remembered before as well.
+    pub fn remembered(&self, token_hash: &[u8], days: u32) -> bool {
+        self.remember_hash.as_deref().is_some_and(|hash| constant_time_eq(hash, token_hash))
+            && self.remembered_within(days)
+    }
+
+    /// Whether the device is remembered at all, and not yet run out, given `days` (0: no end).
+    pub fn remembered_within(&self, days: u32) -> bool {
+        self.remember_hash.is_some()
+            && self
+                .remember_renewed
+                .as_deref()
+                .is_some_and(|renewed| days == 0 || renewed > clock::in_seconds(-i64::from(days) * 86_400).as_str())
+    }
+}
+
 const DEVICE_COLUMNS: &str = "user_id, id, name, type, created, last_seen, last_ip, refresh_hash IS NOT NULL, \
-     refresh_expires, remember_hash, remember_expires, sso, client_id";
+     refresh_expires, remember_hash, remember_renewed, sso, client_id";
 
 fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
     Ok(Device {
@@ -180,7 +201,7 @@ fn device_from(row: &Row<'_>) -> rusqlite::Result<Device> {
         logged_in: row.get(7)?,
         refresh_expires: row.get(8)?,
         remember_hash: row.get(9)?,
-        remember_expires: row.get(10)?,
+        remember_renewed: row.get(10)?,
         sso: row.get(11)?,
         client_id: row.get(12)?,
     })
@@ -196,8 +217,8 @@ pub struct DeviceLogin {
     pub ip: Option<String>,
     pub refresh_hash: Vec<u8>,
     pub refresh_expires: String,
-    /// A new token that skips two-step login here, when "remember me" was ticked.
-    pub remember: Option<(Vec<u8>, String)>,
+    /// The hash of a new token that skips two-step login here, when "remember me" was ticked.
+    pub remember: Option<Vec<u8>>,
     /// The login came through SSO.
     pub sso: bool,
     /// The client it logs in as.
@@ -386,7 +407,7 @@ impl Store {
                 if user.security_stamp != stamp {
                     tx.execute(
                         "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL, remember_hash = NULL, \
-                         remember_expires = NULL WHERE user_id = ?1",
+                         remember_renewed = NULL WHERE user_id = ?1",
                         [&user.id],
                     )?;
                 }
@@ -526,10 +547,10 @@ impl Store {
                         login.client_id,
                     ],
                 )?;
-                if let Some((hash, expires)) = login.remember {
+                if let Some(hash) = login.remember {
                     tx.execute(
-                        "UPDATE devices SET remember_hash = ?3, remember_expires = ?4 WHERE user_id = ?1 AND id = ?2",
-                        params![login.user_id, login.id, hash, expires],
+                        "UPDATE devices SET remember_hash = ?3, remember_renewed = ?4 WHERE user_id = ?1 AND id = ?2",
+                        params![login.user_id, login.id, hash, now],
                     )?;
                 }
                 tx.execute("UPDATE users SET last_login = ?2 WHERE id = ?1", params![login.user_id, now])?;
@@ -594,7 +615,7 @@ impl Store {
             .sqlite_write(move |tx| {
                 Ok(tx.execute(
                     "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL, remember_hash = NULL, \
-                     remember_expires = NULL WHERE user_id = ?1 AND id = ?2",
+                     remember_renewed = NULL WHERE user_id = ?1 AND id = ?2",
                     [owned_user, owned_id],
                 )? > 0)
             })
@@ -615,11 +636,25 @@ impl Store {
         Ok(done)
     }
 
+    /// A remembered device skipped two-step login at `at` (now, but for tests): it stays
+    /// remembered for the set number of days from then. Nothing for a device not remembered.
+    pub async fn renew_remembered_device(&self, user_id: &str, id: &str, at: String) -> Result<()> {
+        let (user_id, id) = (user_id.to_string(), id.to_string());
+        self.sqlite_write(move |tx| {
+            tx.execute(
+                "UPDATE devices SET remember_renewed = ?3 WHERE user_id = ?1 AND id = ?2 AND remember_hash IS NOT NULL",
+                params![user_id, id, at],
+            )
+            .map(drop)
+        })
+        .await
+    }
+
     /// Two-step login is no longer skipped on any device of the user.
     pub async fn forget_remembered_devices(&self, user_id: &str) -> Result<()> {
         let user_id = user_id.to_string();
         self.sqlite_write(move |tx| {
-            tx.execute("UPDATE devices SET remember_hash = NULL, remember_expires = NULL WHERE user_id = ?1", [user_id])
+            tx.execute("UPDATE devices SET remember_hash = NULL, remember_renewed = NULL WHERE user_id = ?1", [user_id])
                 .map(drop)
         })
         .await
@@ -841,7 +876,7 @@ impl Store {
                     params![owned, clock::now()],
                 )?;
                 tx.execute(
-                    "UPDATE devices SET remember_hash = NULL, remember_expires = NULL WHERE user_id = ?1",
+                    "UPDATE devices SET remember_hash = NULL, remember_renewed = NULL WHERE user_id = ?1",
                     [&owned],
                 )?;
             }

@@ -86,8 +86,9 @@ pub(crate) fn end_sessions(conn: &Connection) -> rusqlite::Result<()> {
     if has_accounts {
         conn.execute_batch(
             "UPDATE users SET security_stamp = lower(hex(randomblob(16))); \
-             UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL, remember_hash = NULL, \
-             remember_expires = NULL;",
+             UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL, remember_hash = NULL;",
+            // Only the hash: a backup from before 0027 calls the time beside it differently, and
+            // without the hash no device is remembered.
         )?;
     }
     // Every delta-sync cursor from before starts over (docs/uwu-api.md §4.3). A backup from

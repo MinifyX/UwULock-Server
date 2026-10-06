@@ -151,7 +151,7 @@ impl Store {
                 for device in &migration.devices {
                     tx.execute(
                         "INSERT INTO devices (user_id, id, name, type, created, last_seen, refresh_hash, refresh_expires, \
-                         remember_hash, remember_expires) \
+                         remember_hash, remember_renewed) \
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                         params![
                             device.user_id,
@@ -163,7 +163,7 @@ impl Store {
                             device.refresh_hash,
                             device.refresh_hash.as_ref().map(|_| clock::in_seconds(30 * 86_400)),
                             device.remember_hash,
-                            device.remember_hash.as_ref().map(|_| clock::in_seconds(30 * 86_400)),
+                            device.remember_hash.as_ref().map(|_| clock::now()),
                         ],
                     )?;
                 }

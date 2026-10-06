@@ -221,7 +221,7 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
         // every time.
         tokio::time::sleep(Duration::from_secs(10 * 60)).await;
         loop {
-            if let Err(error) = state.store.sweep().await {
+            if let Err(error) = state.store.sweep(state.settings().remember_two_factor_days).await {
                 tracing::warn!(%error, "sweeping up did not work");
             }
             sweep_files(&config, &state).await;

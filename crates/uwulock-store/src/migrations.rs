@@ -32,6 +32,7 @@ const STEPS: &[&str] = &[
     include_str!("../migrations/sqlite/0024_api_key_stamp.sql"),
     include_str!("../migrations/sqlite/0025_cipher_left_collection.sql"),
     include_str!("../migrations/sqlite/0026_tombstones_left_index.sql"),
+    include_str!("../migrations/sqlite/0027_remember_renewed.sql"),
 ];
 
 /// The schema this build writes.
@@ -107,6 +108,32 @@ mod tests {
         conn.execute("DELETE FROM ciphers WHERE id = 'c'", []).unwrap();
         let left: i64 = conn.query_row("SELECT count(*) FROM attachments", [], |row| row.get(0)).unwrap();
         assert_eq!(left, 0, "and the attachment still goes with its item");
+    }
+
+    /// A device remembered for 30 days before 0027 keeps the login that remembered it, 30 days
+    /// before its end, to the microsecond; one not remembered keeps nothing.
+    #[test]
+    fn a_remembered_device_keeps_when_it_was_remembered() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        let step = STEPS.iter().position(|step| step.contains("RENAME COLUMN remember_expires")).unwrap();
+        for step in &STEPS[..step] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.pragma_update(None, "user_version", step as i64).unwrap();
+        conn.execute_batch(
+            "INSERT INTO users (id, email, password_hash, user_key, kdf_type, kdf_iterations, security_stamp, language, \
+             created, updated, revision) VALUES ('u', 'nyu@example.com', 'h', 'k', 0, 600000, 's', 'de', 't', 't', 't');
+             INSERT INTO devices (user_id, id, name, type, created, last_seen, remember_hash, remember_expires) VALUES
+               ('u', 'd1', 'n', 8, 't', 't', x'01', '2026-03-31T12:34:56.123456Z'),
+               ('u', 'd2', 'n', 8, 't', 't', NULL, '2026-03-31T12:34:56.123456Z');",
+        )
+        .unwrap();
+        run(&mut conn).unwrap();
+        let renewed = |id: &str| -> Option<String> {
+            conn.query_row("SELECT remember_renewed FROM devices WHERE id = ?1", [id], |row| row.get(0)).unwrap()
+        };
+        assert_eq!(renewed("d1").as_deref(), Some("2026-03-01T12:34:56.123456Z"));
+        assert_eq!(renewed("d2"), None);
     }
 
     /// The schema up to the step before the feature switches.

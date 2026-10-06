@@ -57,6 +57,14 @@ function setPolicy<K extends keyof Policies>(
  * *Sicherheit → Anmeldung*: the second step for every account, remembered devices, and the
  * password hint. Rules for every account on this server; organisations have their own later.
  */
+/** What "remember this device" may last; 0 is without end (`settings.rs`, `REMEMBER_DAYS`). */
+const REMEMBER_DAYS = [
+  { days: 30, label: N_('30 Tage') },
+  { days: 90, label: N_('90 Tage') },
+  { days: 365, label: N_('1 Jahr') },
+  { days: 0, label: N_('Unbegrenzt') },
+];
+
 export function SignInTab() {
   useLanguage();
   return (
@@ -108,9 +116,7 @@ export function SignInTab() {
               )}
               <SettingRow
                 label={t('Geräte merken')}
-                description={t(
-                  '„Auf diesem Gerät merken“ lässt den zweiten Schritt dort 30 Tage lang weg.',
-                )}
+                description={t('„Auf diesem Gerät merken“ lässt den zweiten Schritt dort weg.')}
               >
                 <Toggle
                   label={t('Geräte merken')}
@@ -118,6 +124,28 @@ export function SignInTab() {
                   onChange={(rememberTwoFactor) => setDraft({ ...draft, rememberTwoFactor })}
                 />
               </SettingRow>
+              {draft.rememberTwoFactor && (
+                <SettingRow
+                  label={t('So lange merken')}
+                  description={
+                    <Explain recommended={t('90 Tage')}>
+                      {t(
+                        'Ab der letzten Anmeldung auf dem Gerät; jede zählt neu. Kürzer gilt auch für schon gemerkte Geräte.',
+                      )}
+                    </Explain>
+                  }
+                >
+                  <Select
+                    label={t('So lange merken')}
+                    value={String(draft.rememberTwoFactorDays ?? 90)}
+                    onChange={(days) => setDraft({ ...draft, rememberTwoFactorDays: Number(days) })}
+                    options={REMEMBER_DAYS.map(({ days, label }) => ({
+                      value: String(days),
+                      label: t(label),
+                    }))}
+                  />
+                </SettingRow>
+              )}
             </Section>
             <Section
               heading={t('Vergessenes Master-Passwort')}
