@@ -315,10 +315,16 @@ impl Store {
         .await
     }
 
-    /// Sweep away what has run out: old events, codes and invitations nobody used.
-    pub async fn sweep(&self) -> Result<()> {
-        self.sqlite_write(|tx| {
+    /// Sweep away what has run out: old events, codes and invitations nobody used, and devices
+    /// remembered longer than `remember_days` ago (0: they stay).
+    pub async fn sweep(&self, remember_days: u32) -> Result<()> {
+        self.sqlite_write(move |tx| {
             let now = clock::now();
+            // No time sorts before the empty text: "remembered without end" sweeps nothing.
+            let remembered_since = match remember_days {
+                0 => String::new(),
+                days => clock::in_seconds(-i64::from(days) * 86_400),
+            };
             tx.execute("DELETE FROM events WHERE time < ?1", [clock::in_seconds(-EVENT_DAYS * 86_400)])?;
             tx.execute("DELETE FROM ip_blocks WHERE expires < ?1", [&now])?;
             tx.execute(
@@ -332,8 +338,8 @@ impl Store {
                 [&now],
             )?;
             tx.execute(
-                "UPDATE devices SET remember_hash = NULL, remember_expires = NULL WHERE remember_expires < ?1",
-                [&now],
+                "UPDATE devices SET remember_hash = NULL, remember_renewed = NULL WHERE remember_renewed < ?1",
+                [&remembered_since],
             )?;
             // Invitations stay a while after they ran out, so the portal can still show them.
             tx.execute("DELETE FROM invitations WHERE expires < ?1", [clock::in_seconds(-30 * 86_400)])?;
@@ -478,7 +484,7 @@ mod tests {
         let rest = store.events(Some("login-failed".into()), Some(first[2].id), 3).await.unwrap();
         assert_eq!(rest.len(), 2);
         assert_eq!(store.stats().await.unwrap().failed_logins_day, 5);
-        store.sweep().await.unwrap();
+        store.sweep(90).await.unwrap();
         assert_eq!(store.events(None, None, 100).await.unwrap().len(), 5, "the old login is gone");
     }
 

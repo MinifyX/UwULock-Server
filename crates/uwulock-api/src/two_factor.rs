@@ -176,17 +176,14 @@ pub(crate) async fn check_login(
     let checked: ApiResult<bool> = async {
         match provider {
             REMEMBER => {
-                let remembered = device.is_some_and(|device| {
-                    device
-                        .remember_hash
-                        .as_deref()
-                        .is_some_and(|hash| auth::constant_time_eq(hash, &auth::sha256(code.as_bytes())))
-                        && device.remember_expires.as_deref().is_some_and(|expires| expires > clock::now().as_str())
-                });
-                if !remembered {
+                let days = state.settings().remember_two_factor_days;
+                let Some(device) =
+                    device.filter(|device| device.remembered(&auth::sha256(code.as_bytes()), days))
+                else {
                     return Err(required());
-                }
-                // The device stays remembered; no new token.
+                };
+                // The device stays remembered with the token it has, for the set days from now.
+                state.store.renew_remembered_device(&user.id, &device.id, clock::now()).await?;
                 return Ok(false);
             }
             RECOVERY => {
@@ -840,6 +837,66 @@ mod tests {
             StatusCode::BAD_REQUEST,
             "only on its device"
         );
+    }
+
+    /// "Remember this device": 90 days by default, from the last login with it; a shorter setting
+    /// holds for devices remembered before; 0 is without end. The time is moved, not waited for.
+    #[tokio::test]
+    async fn a_remembered_device_lasts_the_set_days_from_its_last_login() {
+        let server = TestServer::new().await;
+        assert_eq!(server.state.settings().remember_two_factor_days, 90, "the default");
+        let account = server.account("nyu@example.com").await;
+        let key = with_authenticator(&server, &account).await;
+        let next = totp::code(&totp::base32_decode(&key).unwrap(), auth::now_seconds() / 30 + 1);
+        let mut form = login_form("nyu@example.com", "d2");
+        form.extend([("twoFactorProvider", "0"), ("twoFactorToken", next.as_str()), ("twoFactorRemember", "1")]);
+        let response = server.form("/identity/connect/token", &form).await;
+        assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
+        let token = json(response).await["TwoFactorToken"].as_str().unwrap().to_string();
+        let mut remembered = login_form("nyu@example.com", "d2");
+        remembered.extend([("twoFactorProvider", "5"), ("twoFactorToken", token.as_str())]);
+        let days_ago = |days: i64| clock::in_seconds(-days * 86_400);
+        let last_login = |at: String| {
+            let store = server.state.store.clone();
+            let user = account.id.clone();
+            async move { store.renew_remembered_device(&user, "d2", at).await.unwrap() }
+        };
+        let renewed =
+            || async { server.state.store.device(&account.id, "d2").await.unwrap().unwrap().remember_renewed.unwrap() };
+        let set_days = |days: u32| server.state.settings.write().remember_two_factor_days = days;
+
+        // 89 days after the last login it still works, and the days start again.
+        last_login(days_ago(89)).await;
+        assert_eq!(server.form("/identity/connect/token", &remembered).await.status(), StatusCode::OK);
+        assert!(renewed().await > clock::in_seconds(-60), "renewed with the login");
+        let list = json(server.get_as(&account.token, "/uwu/v1/devices").await).await;
+        let d2 = list.as_array().unwrap().iter().find(|device| device["id"] == "d2").unwrap();
+        assert_eq!(d2["remembered"], true);
+
+        // 91 days: run out.
+        last_login(days_ago(91)).await;
+        assert_eq!(server.form("/identity/connect/token", &remembered).await.status(), StatusCode::BAD_REQUEST);
+
+        // Without end, even after ten years.
+        set_days(0);
+        last_login(days_ago(3650)).await;
+        assert_eq!(server.form("/identity/connect/token", &remembered).await.status(), StatusCode::OK);
+        server.state.store.sweep(0).await.unwrap();
+        assert!(server.state.store.device(&account.id, "d2").await.unwrap().unwrap().remember_hash.is_some());
+
+        // A shorter setting holds for the device remembered before: 40 days ago is too long for 30.
+        set_days(30);
+        last_login(days_ago(40)).await;
+        assert_eq!(server.form("/identity/connect/token", &remembered).await.status(), StatusCode::BAD_REQUEST);
+        set_days(365);
+        assert_eq!(server.form("/identity/connect/token", &remembered).await.status(), StatusCode::OK);
+
+        // The sweep forgets what ran out under the setting.
+        last_login(days_ago(366)).await;
+        server.state.store.sweep(365).await.unwrap();
+        let device = server.state.store.device(&account.id, "d2").await.unwrap().unwrap();
+        assert!(device.remember_hash.is_none() && device.remember_renewed.is_none());
+        assert_eq!(server.form("/identity/connect/token", &remembered).await.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

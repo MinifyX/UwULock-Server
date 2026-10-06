@@ -11,7 +11,6 @@ use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uwulock_mail::Language;
-use uwulock_store::clock;
 
 pub(crate) fn routes() -> Router<AppState> {
     Router::new()
@@ -230,6 +229,7 @@ async fn account(State(state): State<AppState>, session: Session) -> ApiResult<J
         "mail": state.mailer.enabled(),
         "passwordHints": settings.password_hints,
         "rememberTwoFactor": settings.remember_two_factor,
+        "rememberTwoFactorDays": settings.remember_two_factor_days,
         "hibp": settings.hibp,
         "breaches": crate::breaches::info(&state),
         "emailBreachCheck": crate::breaches::account_info(&state, &session.user.id).await?,
@@ -261,6 +261,7 @@ async fn set_language(
 /// last seen, and which one is asking.
 async fn devices(State(state): State<AppState>, session: Session) -> ApiResult<Json<Value>> {
     let devices = state.store.devices(&session.user.id).await?;
+    let remember_days = state.settings().remember_two_factor_days;
     let list: Vec<Value> = devices
         .iter()
         .filter(|device| device.logged_in)
@@ -276,7 +277,7 @@ async fn devices(State(state): State<AppState>, session: Session) -> ApiResult<J
                 "current": device.id == session.device,
                 // A suite app's device (docs/uwu-api.md §6.5), so it can be shown and removed.
                 "app": device.client_id.as_deref().filter(|client| crate::suite::space_of_client(client).is_some()),
-                "remembered": device.remember_expires.as_deref().is_some_and(|expires| expires > clock::now().as_str()),
+                "remembered": device.remembered_within(remember_days),
             })
         })
         .collect();

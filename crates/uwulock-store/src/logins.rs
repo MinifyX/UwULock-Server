@@ -288,7 +288,7 @@ mod tests {
         let again = store.block_ip("203.0.113.5", "again", Some(clock::in_seconds(60)), None).await.unwrap();
         assert_eq!(again.id, forever.id, "the same network is one block");
         assert_eq!(store.ip_blocks().await.unwrap().len(), 2);
-        store.sweep().await.unwrap();
+        store.sweep(90).await.unwrap();
         assert!(store.unblock_ip(forever.id).await.unwrap().is_some());
         assert!(store.unblock_ip(forever.id).await.unwrap().is_none());
         assert!(store.unblock_network("2001:db8::/64").await.unwrap());

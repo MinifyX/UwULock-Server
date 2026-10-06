@@ -176,6 +176,8 @@ export type Settings = {
   newDeviceMail: boolean;
   passwordHints: boolean;
   rememberTwoFactor: boolean;
+  /** How long a remembered device skips two-step login, from its last login: 30, 90 or 365; 0 without end. Missing before 0.8.0-beta.2. */
+  rememberTwoFactorDays?: number;
   maxFileMb: number;
   hibp: boolean;
   /** Where the addresses of failed logins are, from DB-IP's databases on the server. */

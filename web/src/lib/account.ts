@@ -18,6 +18,8 @@ export type AccountInfo = {
   mail: boolean;
   passwordHints: boolean;
   rememberTwoFactor: boolean;
+  /** Days a remembered device skips two-step login from its last login; 0 without end. */
+  rememberTwoFactorDays?: number;
   hibp: boolean;
   /** The breach sources the server offers (§15); missing on servers before 0.7. */
   breaches?: BreachSwitches;

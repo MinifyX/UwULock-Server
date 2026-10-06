@@ -279,6 +279,10 @@ Unchanged keys plus:
 without two-step login) and `minimumKdf` (§20's object), so the web vault can offer settings that
 meet it.
 
+`rememberTwoFactor` and `rememberTwoFactorDays` (0.8.0-beta.2; 0 = no end) say whether and how
+long "remember this device" skips two-step login (§21.1); `GET /uwu/v1/devices` marks a device
+remembered right now with `"remembered": true`.
+
 `sendDomainId` is §14.2, `travel` §9, `families` §16.4, `policy` §20, `storage` counts
 attachments, Send files, file-request submissions, versions and own icons.
 
@@ -2945,7 +2949,20 @@ defaults in brackets):
 | `metrics` | `{ enabled [false], tokenSet, listen [null] }` (§22); `token` write-only |
 | `loki` | `{ enabled [false], url, tenant, username, passwordSet, labels [{"job":"uwulock"}] }` (§21.7) |
 | `scim` | `{ onDelete ["disable"], tokenSet }` (§19.4) |
+| `rememberTwoFactorDays` | [90] how long "remember this device" skips two-step login: 30, 90, 365, or 0 for no end (0.8.0-beta.2); `rememberTwoFactor` [true] switches it off altogether |
 | `storagePerUserMb` | [null = no limit] counts attachments, Send files, file requests, versions, icons, suite; a family's attachments, versions and own icons count fully for each of its confirmed owners. What would go past it is refused with 422 `quota` (announcing or uploading an attachment of an own or a family item, moving an item with attachments into a family, an own icon, a Send file, a file-request submission for its owner) |
+
+**Remembered devices.** A login with "remember this device" (`twoFactorRemember=1`) gets a
+`TwoFactorToken`; the device keeps its hash and the time of that login (`devices.remember_renewed`).
+A later login with the token (`twoFactorProvider=5`) works while that time is less than
+`rememberTwoFactorDays` ago, and sets it to now: each login starts the days again (sliding), the
+token stays the same. The days are counted with the setting of the moment, so a shorter setting
+also holds for devices remembered before (one last used 40 days ago is forgotten when it goes from
+90 to 30), and a longer one lengthens them; 0 never runs out. The daily sweep forgets what ran
+out. As before, remembered devices are forgotten when a way of two-step login is turned off, with a
+new security stamp (a new master password, "log out everywhere"), a key rotation, when the device
+is deleted (web vault, admin portal) and when a backup is restored.
+Devices remembered before 0.8.0-beta.2 (30 days from their login) keep that login as their time.
 
 `metrics` is stored with `tokenHash` (hex SHA-256), which `GET` replaces by `tokenSet`; on `PUT`,
 `token` left out or `null` keeps it, `""` removes it, otherwise it needs 16 characters. `loki`

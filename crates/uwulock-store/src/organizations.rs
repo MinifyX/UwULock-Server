@@ -883,7 +883,7 @@ pub(crate) mod tests {
             .await
             .unwrap();
         let before = store.user(&member).await.unwrap().unwrap().revision;
-        store.sweep().await.unwrap();
+        store.sweep(90).await.unwrap();
         assert!(store.org_cipher(&owner, "in-a").await.unwrap().is_none());
         assert_ne!(store.user(&member).await.unwrap().unwrap().revision, before, "the members hear of it");
     }

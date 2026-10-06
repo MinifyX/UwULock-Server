@@ -33,6 +33,8 @@ Löschen, Sends als Eintrag und das neue Design, wirft Bitwardens Push-Relay hin
 und lässt XposedOrNot-Prüfungen nicht mehr an 429 scheitern, nach einem Sicherheitsreview mit
 Nachprüfungen ([docs/security-review-0.8.md](security-review-0.8.md)); passend dazu UwULock
 0.5.0-beta.1 mit Passkey-Anbietern für Linux, Windows, Android, iOS und macOS.
+0.8.0-beta.2 macht die Dauer von „Gerät merken“ einstellbar (30, 90, 365 Tage oder unbegrenzt,
+Standard 90), gezählt ab der letzten Anmeldung mit dem Gerät.
 Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
