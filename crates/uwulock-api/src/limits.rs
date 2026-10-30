@@ -198,6 +198,9 @@ pub struct Limits {
     pub file_request_uploads: Limiter,
     /// Requests to `/scim/v2` with a wrong token, per address: 30, then one every 30 seconds.
     pub scim_refused: Limiter,
+    /// Refused back-channel logout tokens, per network: 30, then one every 30 seconds. Valid
+    /// ones are never counted.
+    pub logout_refused: Limiter,
     /// Websites' icons the server has not fetched yet, per address: sixty, one back a second.
     pub icons: Limiter,
     /// Wrong tries to switch travel mode off, per account: five, one back every 3 minutes.
@@ -239,6 +242,7 @@ impl Default for Limits {
             reports: Limiter::new(10, Duration::from_secs(6 * 60)),
             file_request_uploads: Limiter::new(10, Duration::from_secs(6 * 60)),
             scim_refused: Limiter::new(30, Duration::from_secs(30)),
+            logout_refused: Limiter::new(30, Duration::from_secs(30)),
             icons: Limiter::new(60, Duration::from_secs(1)),
             travel: Limiter::new(5, Duration::from_secs(3 * 60)),
             invites: Limiter::new(30, Duration::from_secs(2 * 60)),
@@ -286,6 +290,7 @@ impl Limits {
             reports: generous(),
             file_request_uploads: generous(),
             scim_refused: generous(),
+            logout_refused: generous(),
             icons: generous(),
             travel: generous(),
             invites: generous(),

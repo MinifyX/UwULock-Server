@@ -580,18 +580,31 @@ async fn codes_by_mail_work_after_an_sso_login_too() {
     assert_eq!(asked["Email"], "mia@example.com");
     let session = asked["SsoEmail2faSessionToken"].as_str().unwrap().to_string();
 
-    // Without the password, with the token instead — and only for its own address.
+    // Without the password, with the token instead — only for its own address, device and login.
     let ask = |email: &str, token: &str| json!({ "email": email, "ssoEmail2FaSessionToken": token, "deviceIdentifier": "d9" });
     let send = |body: Value| server.call("POST", "/api/two-factor/send-email-login", None, body);
+    let code_hash = auth::sha256(code.as_bytes());
     assert_eq!(send(ask("mia@example.com", "made-up")).await.status(), StatusCode::BAD_REQUEST);
     let other = server.account("nyu@example.com").await;
-    let theirs = server.state.tokens.sso_email_2fa_token(&other.id, "nyu@example.com", 60);
+    let theirs = server.state.tokens.sso_email_2fa_token(&other.id, "nyu@example.com", &code_hash, "d9", 60);
     assert_eq!(send(ask("mia@example.com", &theirs)).await.status(), StatusCode::BAD_REQUEST, "another account");
+    assert_eq!(send(ask("nyu@example.com", &theirs)).await.status(), StatusCode::BAD_REQUEST, "not its login");
     assert_eq!(send(ask("nyu@example.com", &session)).await.status(), StatusCode::BAD_REQUEST, "another address");
-    let ran_out = server.state.tokens.sso_email_2fa_token(&account.id, "mia@example.com", -120);
+    let ran_out = server.state.tokens.sso_email_2fa_token(&account.id, "mia@example.com", &code_hash, "d9", -120);
     assert_eq!(send(ask("mia@example.com", &ran_out)).await.status(), StatusCode::BAD_REQUEST, "ran out");
+    let elsewhere = json!({ "email": "mia@example.com", "ssoEmail2FaSessionToken": session, "deviceIdentifier": "d8" });
+    assert_eq!(send(elsewhere).await.status(), StatusCode::BAD_REQUEST, "another device");
+    let no_device = json!({ "email": "mia@example.com", "ssoEmail2FaSessionToken": session });
+    assert_eq!(send(no_device).await.status(), StatusCode::BAD_REQUEST, "no device");
     let none = json!({ "email": "mia@example.com", "deviceIdentifier": "d9" });
     assert_eq!(send(none).await.status(), StatusCode::BAD_REQUEST, "neither token nor password");
+    // Not while SSO is off.
+    let mut settings = server.state.settings();
+    settings.sso.enabled = false;
+    server.state.apply_settings(settings.clone());
+    assert_eq!(send(ask("mia@example.com", &session)).await.status(), StatusCode::BAD_REQUEST, "SSO off");
+    settings.sso.enabled = true;
+    server.state.apply_settings(settings);
     assert!(server.mails().iter().all(|mail| mail.to != "codes@example.com"));
 
     let response = send(ask("MIA@example.com", &session)).await;
@@ -603,11 +616,10 @@ async fn codes_by_mail_work_after_an_sso_login_too() {
     let response = server.form("/identity/connect/token", &form).await;
     assert_eq!(response.status(), StatusCode::OK, "{}", text(response).await);
 
-    // The same token works no more once SSO is off.
-    let mut settings = server.state.settings();
-    settings.sso.enabled = false;
-    server.state.apply_settings(settings);
-    assert_eq!(send(ask("mia@example.com", &session)).await.status(), StatusCode::BAD_REQUEST);
+    // The login is over: its token asks for no more mail.
+    let sent = server.mails().len();
+    assert_eq!(send(ask("mia@example.com", &session)).await.status(), StatusCode::BAD_REQUEST, "login over");
+    assert_eq!(server.mails().len(), sent);
 }
 
 #[tokio::test]
@@ -620,6 +632,10 @@ async fn a_device_remembered_at_an_sso_login_skips_the_second_step_for_the_set_d
     let now_code = crate::totp::code(&crate::totp::base32_decode(&key).unwrap(), auth::now_seconds() / 30);
 
     let code = up_to_the_second_step(&server, &provider, json!({})).await;
+    // The account comes along, so that the web vault can pick its remembered device.
+    let asked = json(server.form("/identity/connect/token", &redeem_form(&code, "d9", &[])).await).await;
+    assert_eq!(asked["Email"], "mia@example.com");
+    assert!(asked.get("SsoEmail2faSessionToken").is_none(), "no codes by mail here");
     let form = redeem_form(
         &code,
         "d9",
@@ -639,6 +655,9 @@ async fn a_device_remembered_at_an_sso_login_skips_the_second_step_for_the_set_d
     };
     assert_eq!(remembered("d9").await, StatusCode::OK);
     assert_eq!(remembered("d8").await, StatusCode::BAD_REQUEST, "only on its device");
+    // A remembered token that does not hold is no wrong code: no event, no notice, no try spent.
+    let failed = server.state.store.events(Some("two-factor-failed".into()), None, 10).await.unwrap();
+    assert!(failed.is_empty(), "{failed:?}");
     // A password login on the same device takes it as well: one device, one memory.
     let mut password = login_form("mia@example.com", "d9");
     password.extend([("twoFactorProvider", "5"), ("twoFactorToken", remember.as_str())]);
@@ -750,6 +769,28 @@ async fn the_provider_ends_the_sso_sessions_by_back_channel() {
     // Somebody not here, or a session not known: fine, nothing to do.
     assert_eq!(back_channel(&server, &logout_token(&provider, json!({ "sub": "nobody" }))).await.0, StatusCode::OK);
     assert_eq!(back_channel(&server, &logout_token(&provider, json!({ "sid": "gone" }))).await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn only_refused_logout_tokens_hold_the_provider_back() {
+    let provider = Provider::start().await;
+    let limits = crate::Limits {
+        logout_refused: crate::limits::Limiter::new(3, std::time::Duration::from_secs(3600)),
+        login: crate::limits::Limiter::new(1, std::time::Duration::from_secs(3600)),
+        ..crate::Limits::generous()
+    };
+    let server = TestServer::new().await.with_limits(limits);
+    configure(&server, &provider, |_| {});
+    // Many at once from the provider's one address, more than any login limit: all taken.
+    for _ in 0..20 {
+        let token = logout_token(&provider, json!({ "sub": "nobody" }));
+        assert_eq!(back_channel(&server, &token).await.0, StatusCode::OK);
+    }
+    for _ in 0..3 {
+        assert_eq!(back_channel(&server, "not-a-token").await.0, StatusCode::BAD_REQUEST);
+    }
+    let token = logout_token(&provider, json!({ "sub": "nobody" }));
+    assert_eq!(back_channel(&server, &token).await.0, StatusCode::TOO_MANY_REQUESTS, "after refused ones");
 }
 
 #[test]

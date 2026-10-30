@@ -139,12 +139,15 @@ other providers *Anmeldung → SCIM → Token erzeugen* shows one once.
 - A **logout token** (back-channel logout, OpenID Connect Back-Channel Logout 1.0) is checked like
   an ID token — signature against the provider's keys (never `none`), issuer, audience — and must
   be at most five minutes old, have the logout event, no `nonce`, and `sub` or a `sid` this server
-  saw at an SSO login. Each `jti` is taken once; a token sent again is refused. The answer is 200
-  (also when the account is unknown) or 400, never cached. It nulls the refresh tokens of the
+  saw at an SSO login. Each `jti` is taken once, together with the logout (a failed logout leaves it
+  for the provider's retry); a token sent again is refused. The answer is 200 (also when the
+  account is unknown) or 400, never cached. Only refused tokens count against a limit, so many
+  logouts at once from the provider are never held back. It nulls the refresh tokens of the
   account's SSO devices and ends their sessions; the event log gets `sso-logout`.
 - The mail with a code for the second step after SSO needs the short-lived token from the SSO
-  login's answer (`SsoEmail2faSessionToken`, five minutes) instead of the password; a wrong or
-  stale token gets one answer for every cause, and the login limits count as for a password.
+  login's answer (`SsoEmail2faSessionToken`, five minutes) instead of the password. It holds only
+  for that login on that device, until the login is through; a wrong or stale token gets one
+  answer for every cause, and the login limits count as for a password.
 - The client secret is kept encrypted, under a key in `secret.key` in the data directory (made on
   first use, readable only by the server). The off-site backups take the file along; a database
   copy alone does not open it. After a restore onto a new machine from a *local* backup, enter

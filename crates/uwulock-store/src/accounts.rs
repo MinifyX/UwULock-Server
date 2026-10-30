@@ -624,25 +624,6 @@ impl Store {
         Ok(done)
     }
 
-    /// Every device of the account that logged in through SSO is logged out: the provider ended
-    /// the session. A remembered two-step login stays, and so does every device that logged in
-    /// with the master password. The ids of the devices that were logged in.
-    pub async fn log_out_sso_devices(&self, user_id: &str) -> Result<Vec<String>> {
-        let owned = user_id.to_string();
-        let ids = self
-            .sqlite_write(move |tx| {
-                tx.prepare_cached(
-                    "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL \
-                     WHERE user_id = ?1 AND sso = 1 AND refresh_hash IS NOT NULL RETURNING id",
-                )?
-                .query_map([owned], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<String>>>()
-            })
-            .await?;
-        self.forget_session_of(user_id);
-        Ok(ids)
-    }
-
     /// Forget the device altogether.
     pub async fn delete_device(&self, user_id: &str, id: &str) -> Result<bool> {
         let (owned_user, owned_id) = (user_id.to_string(), id.to_string());

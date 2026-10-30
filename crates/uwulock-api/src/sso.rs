@@ -944,11 +944,15 @@ async fn backchannel_logout(
         response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
         response
     };
+    // Every logout comes from the provider's one address, many at once when it ends many
+    // sessions: only refused tokens count, so a valid one is never held back.
+    let network = crate::limits::network_of(ip);
     let invalid = |reason: &str| {
+        state.limits.logout_refused.take(network);
         tracing::info!(%reason, "a back-channel logout was refused");
         answer(StatusCode::BAD_REQUEST, json!({ "error": "invalid_request", "error_description": reason }))
     };
-    if !state.limits.login.check(ip) {
+    if !state.limits.logout_refused.allows(&network) {
         return answer(StatusCode::TOO_MANY_REQUESTS, json!({ "error": "too_many_requests" }));
     }
     let settings = state.settings();
@@ -986,18 +990,6 @@ async fn backchannel_logout(
     };
     let text = |name: &str| claims.get(name).and_then(Value::as_str).filter(|value| !value.is_empty());
     let issuer = sso.issuer.trim().trim_end_matches('/').to_string();
-    // Once only: a token seen before is refused, for as long as it would be taken.
-    let iat = claims.get("iat").and_then(Value::as_i64).unwrap_or_default();
-    let seen = auth::sha256(format!("{issuer}\n{}", text("jti").unwrap_or_default()).as_bytes());
-    let until = clock::in_seconds(iat + oidc::LOGOUT_MAX_AGE + 2 * oidc::LEEWAY - auth::now_seconds());
-    match state.store.take_sso_logout_token(seen, until).await {
-        Ok(true) => {}
-        Ok(false) => return invalid("this logout_token was used already"),
-        Err(error) => {
-            tracing::error!(%error, "a back-channel logout could not be stored");
-            return answer(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "server_error" }));
-        }
-    }
     let by_subject = match text("sub") {
         Some(subject) => state.store.sso_identity(&issuer, subject).await.map(|found| found.map(|id| id.user_id)),
         None => Ok(None),
@@ -1008,22 +1000,29 @@ async fn backchannel_logout(
         (other, _) => other,
     };
     let user_id = match user_id {
-        Ok(Some(user_id)) => user_id,
-        // Nobody here: nothing to end, which is fine for the provider.
-        Ok(None) => return answer(StatusCode::OK, json!({})),
+        Ok(user_id) => user_id,
         Err(error) => {
             tracing::error!(%error, "a back-channel logout could not be looked up");
             return answer(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "server_error" }));
         }
     };
-    let devices = match state.store.log_out_sso_devices(&user_id).await {
-        Ok(devices) => devices,
+    // Once only: a token seen before is refused, for as long as it would be taken. It is marked
+    // in the same transaction that ends the sessions, so a failure leaves it for the retry.
+    let iat = claims.get("iat").and_then(Value::as_i64).unwrap_or_default();
+    let seen = auth::sha256(format!("{issuer}\n{}", text("jti").unwrap_or_default()).as_bytes());
+    let until = clock::in_seconds(
+        iat.saturating_add(oidc::LOGOUT_MAX_AGE + 2 * oidc::LEEWAY).saturating_sub(auth::now_seconds()),
+    );
+    let devices = match state.store.back_channel_logout(&issuer, user_id.as_deref(), seen, until).await {
+        Ok(Some(devices)) => devices,
+        Ok(None) => return invalid("this logout_token was used already"),
         Err(error) => {
             tracing::error!(%error, "a back-channel logout could not end the sessions");
             return answer(StatusCode::INTERNAL_SERVER_ERROR, json!({ "error": "server_error" }));
         }
     };
-    let _ = state.store.forget_sso_sessions(&user_id, &issuer).await;
+    // Nobody here: nothing to end, which is fine for the provider.
+    let Some(user_id) = user_id else { return answer(StatusCode::OK, json!({})) };
     for device in &devices {
         crate::notify::live_to_device(
             &state,
@@ -1088,14 +1087,19 @@ pub(crate) async fn grant(state: &AppState, ip: IpAddr, headers: &HeaderMap, for
         Err(mut error) => {
             // Asked for the second step with codes by mail among the ways: the client has no
             // password hash to ask for the mail with, so it gets this instead (as at Bitwarden).
+            // `Email` always: the web vault picks this account's remembered device by it.
             if let Some(body) = error.json_mut()
-                && body.get("TwoFactorProviders2").and_then(|providers| providers.get("1")).is_some()
+                && let Some(providers) = body.get("TwoFactorProviders2")
             {
-                body["SsoEmail2faSessionToken"] =
-                    state.tokens.sso_email_2fa_token(&user.id, &user.email, CODE_SECONDS).into();
+                if providers.get("1").is_some() {
+                    body["SsoEmail2faSessionToken"] = state
+                        .tokens
+                        .sso_email_2fa_token(&user.id, &user.email, &code_hash, device_id, CODE_SECONDS)
+                        .into();
+                }
                 body["Email"] = user.email.clone().into();
             }
-            if error.status == StatusCode::BAD_REQUEST && form.get("twofactortoken").is_some() {
+            if error.status == StatusCode::BAD_REQUEST && crate::two_factor::sent_a_wrong_code(form) {
                 identity::log(state, "two-factor-failed", Some(&user), &user.email, ip, device_type, "wrong code")
                     .await;
                 let context = notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) };

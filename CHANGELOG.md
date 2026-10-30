@@ -12,15 +12,21 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   audience, age (5 minutes), the logout event, no `nonce`, `sub` and/or `sid`; a `jti` sent again
   is refused. The account's SSO sessions lose their tokens at once and open apps get `logout` with
   the new reason `ssoLogout`; devices logged in with the master password stay. Answers 200 or 400,
-  both `Cache-Control: no-store`. Event `sso-logout`. Migration 0028 keeps the SSO logins' `sid`
+  both `Cache-Control: no-store`. Only refused tokens count against a limit (a burst of logouts
+  from the provider is never held back), and the `jti` is marked in the same transaction that ends
+  the sessions, so a failure leaves it for the retry. Event `sso-logout`. Migration 0028 keeps the SSO logins' `sid`
   (90 days) and the used `jti`s.
   - Pairing with UwUAuth now sends `backchannelLogoutUri`. **Existing pairings have to pair again**
     for logouts at UwUAuth to arrive (docs/sso.md). Other providers: enter the address there.
 - **Code by mail after SSO:** the two-step answer after an SSO login has `SsoEmail2faSessionToken`
-  and `Email`, and `send-email-login` takes that token instead of the password hash (same answer
-  for every refusal, the login limits as before; the password path is unchanged).
-- **Remember this device after SSO:** the web vault now keeps the token the server gives and sends
-  it at the next login (also after SSO), for the set `rememberTwoFactorDays`.
+  and `Email`, and `send-email-login` takes that token instead of the password hash. The token
+  holds only for that SSO login and device until it is through (same answer for every refusal,
+  the login limits as before; the password path is unchanged).
+- **Remember this device after SSO:** the web vault now keeps the token the server gives, per
+  account, and sends it at the next login, for the set `rememberTwoFactorDays`; after SSO only once
+  the server's answer named the account (`Email`, now in every SSO two-step answer). A remembered
+  token that no longer holds is no wrong code: no `two-factor-failed` event, notice or spent try.
+- Times at the edge of `i64` in ID and logout tokens no longer overflow.
 - **Rules for existing accounts:** the admin's two-step rule asks accounts made before it at their
   next login, SSO included (now tested); with *enforce on login*, the web vault asks for a new
   master password after login or unlock when the old one breaks the master password rules.

@@ -434,10 +434,12 @@ pub fn check_id_token(
     }
     let number = |name: &str| claims.get(name).and_then(Value::as_i64);
     match number("exp") {
-        Some(exp) if exp + LEEWAY > now => {}
+        Some(exp) if exp.saturating_add(LEEWAY) > now => {}
         _ => return Err(invalid("it ran out")),
     }
-    if number("nbf").is_some_and(|nbf| nbf > now + LEEWAY) || number("iat").is_some_and(|iat| iat > now + 5 * LEEWAY) {
+    if number("nbf").is_some_and(|nbf| nbf > now.saturating_add(LEEWAY))
+        || number("iat").is_some_and(|iat| iat > now.saturating_add(5 * LEEWAY))
+    {
         return Err(invalid("it is from the future"));
     }
     let nonce = text("nonce").unwrap_or_default();
@@ -484,12 +486,12 @@ pub fn check_logout_token(
     }
     let number = |name: &str| claims.get(name).and_then(Value::as_i64);
     match number("iat") {
-        Some(iat) if iat > now + LEEWAY => return Err(invalid("it is from the future")),
-        Some(iat) if iat + LOGOUT_MAX_AGE + LEEWAY < now => return Err(invalid("it is too old")),
+        Some(iat) if iat > now.saturating_add(LEEWAY) => return Err(invalid("it is from the future")),
+        Some(iat) if iat.saturating_add(LOGOUT_MAX_AGE + LEEWAY) < now => return Err(invalid("it is too old")),
         Some(_) => {}
         None => return Err(invalid("it says nothing of when it was made (no iat)")),
     }
-    if number("exp").is_some_and(|exp| exp + LEEWAY <= now) {
+    if number("exp").is_some_and(|exp| exp.saturating_add(LEEWAY) <= now) {
         return Err(invalid("it ran out"));
     }
     let event = claims.get("events").and_then(Value::as_object).and_then(|events| events.get(LOGOUT_EVENT));
@@ -658,6 +660,11 @@ pub(crate) mod tests {
         };
         assert!(refused(&|c| c["iss"] = "https://evil.example.com".into()).is_err(), "issuer");
         assert!(refused(&|c| c["aud"] = "other".into()).is_err(), "audience");
+        // Times at the edge of i64 neither overflow nor pass.
+        assert!(refused(&|c| c["exp"] = i64::MAX.into()).is_ok(), "an exp far out is the provider's call");
+        assert!(refused(&|c| c["exp"] = i64::MIN.into()).is_err(), "ran out long ago");
+        assert!(refused(&|c| c["iat"] = i64::MAX.into()).is_err(), "from the far future");
+        assert!(refused(&|c| c["nbf"] = i64::MAX.into()).is_err(), "not before the far future");
         assert!(refused(&|c| c["aud"] = serde_json::json!(["lock", "other"])).is_ok(), "among several");
         assert!(refused(&|c| c["azp"] = "other".into()).is_err(), "handed to another client");
         assert!(refused(&|c| c["exp"] = (NOW - 3600).into()).is_err(), "ran out");
@@ -716,6 +723,9 @@ pub(crate) mod tests {
         assert!(check("logout+jwt", &remove("exp"), NOW + LOGOUT_MAX_AGE + LEEWAY + 1).is_err(), "too old");
         assert!(check("logout+jwt", &|_| {}, NOW - LEEWAY - 1).is_err(), "from the future");
         assert!(check("logout+jwt", &remove("iat"), NOW).is_err(), "no iat");
+        assert!(check("logout+jwt", &|c| c["exp"] = i64::MAX.into(), NOW).is_ok(), "exp at the edge");
+        assert!(check("logout+jwt", &|c| c["iat"] = i64::MAX.into(), NOW).is_err(), "iat at the edge");
+        assert!(check("logout+jwt", &|c| c["iat"] = i64::MIN.into(), NOW).is_err(), "iat long gone");
         assert!(check("logout+jwt", &|c| c["exp"] = (NOW - LEEWAY).into(), NOW).is_err(), "ran out");
         assert!(check("logout+jwt", &remove("events"), NOW).is_err(), "no event");
         assert!(check("logout+jwt", &|c| c["events"] = serde_json::json!({ "other": {} }), NOW).is_err());

@@ -2850,13 +2850,17 @@ app on the UwUAuth side is deleted there.
   `bitwarden://sso-callback`.
 - The one-time code of step 4 stays valid (5 minutes) until a token request with it succeeds, so
   the client can send it again with the second step of two-step login.
-- Since 0.8.0-beta.3, when two-step login is asked for after SSO and a code by mail is one of the
-  ways, the 400 answer also has `SsoEmail2faSessionToken` (signed, 5 minutes) and `Email`.
-  **[BW]** `POST /api/two-factor/send-email-login` takes `{ "email", "ssoEmail2FaSessionToken",
-  "deviceIdentifier" }` instead of `masterPasswordHash`: the token must be valid, for that address,
-  SSO switched on, the account there and not disabled — else always the same 400. The login limits
+- Since 0.8.0-beta.3, when two-step login is asked for after SSO, the 400 answer also has `Email`
+  (the web vault picks the account's remembered device by it), and when a code by mail is one of
+  the ways, `SsoEmail2faSessionToken` (signed, 5 minutes, bound to the SSO login's code and the
+  device). **[BW]** `POST /api/two-factor/send-email-login` takes `{ "email",
+  "ssoEmail2FaSessionToken", "deviceIdentifier" }` instead of `masterPasswordHash`: the token must
+  be valid, for that address and device, its SSO code not yet used up, SSO switched on, the account
+  there and not disabled — else always the same 400. The login limits
   apply first, as on the password path, which is unchanged. *Remember this device* (provider 5)
-  works after SSO as after a password.
+  works after SSO as after a password. A remembered token that does not hold (run out, another
+  account's) is no wrong code: no `two-factor-failed` event or notice, and no try of the per-account
+  limit.
 - **Back-channel logout** (since 0.8.0-beta.3): `POST /identity/connect/backchannel-logout`,
   form field `logout_token` (OpenID Connect Back-Channel Logout 1.0). The token is checked against
   the provider's JWKS (fetched again once on an unknown `kid`; `alg: none` refused), `iss`, `aud`
@@ -2866,7 +2870,10 @@ app on the UwUAuth side is deleted there.
   linked login), else by a `sid` kept from its SSO logins (90 days). Its SSO devices lose their
   refresh tokens and sessions, get `logout` with reason `ssoLogout`; master-password devices stay.
   Answer 200 `{}` (also for an unknown account) or 400 `{ "error": "invalid_request" }`, both
-  `Cache-Control: no-store`; rate-limited like logins; 400 while SSO is off. Event `sso-logout`.
+  `Cache-Control: no-store`; 400 while SSO is off. Only refused tokens count against a limit
+  (30 per network, then one every 30 s, 429 after that), so a burst of valid logouts from the
+  provider's one address is never held back. The `jti` is marked in the same transaction that
+  ends the sessions: when that fails (500), the provider's retry is taken. Event `sso-logout`.
 - Refused SSO logins are written to the event log as `login-failed` (detail `SSO: …`); SSO sign-ups
   as `register` (detail `through SSO`); step 6 as `password-set`; SCIM changes as `scim`; the admin
   right given or taken by SSO as `admin`. SCIM refuses to disable or delete the last admin (409

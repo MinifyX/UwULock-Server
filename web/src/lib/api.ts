@@ -244,8 +244,10 @@ type Pending = {
   ssoEmailToken?: string;
   /** The password breaks the rules the server enforces at login. */
   passwordDue?: boolean;
-  /** The remembered device's token went with the first try. */
+  /** The remembered device's token went with this try. */
   triedRemembered?: boolean;
+  /** The remembered device's token was tried once in this login already. */
+  usedRemembered?: boolean;
 };
 
 let pending: Pending | null = null;
@@ -317,21 +319,21 @@ export async function prelogin(email: string): Promise<string> {
 
 /**
  * "Remember this device": the server's token for skipping the second step, by account, in this
- * browser only. An SSO login does not know its account before it is through, so the account of
- * the last one is kept as well.
+ * browser only. An SSO login learns its account from the server's answer asking for the second
+ * step (`Email`), and only then sends that account's token — never another account's.
  */
 const REMEMBER_KEY = 'uwulock.remember';
-type Remembered = { tokens: Record<string, string>; sso: string | null };
+type Remembered = { tokens: Record<string, string> };
 
 function remembered(): Remembered {
   try {
     const stored = JSON.parse(localStorage.getItem(REMEMBER_KEY) ?? 'null') as Remembered | null;
-    if (stored && typeof stored.tokens === 'object')
-      return { tokens: stored.tokens, sso: stored.sso ?? null };
+    if (stored && stored.tokens && typeof stored.tokens === 'object')
+      return { tokens: stored.tokens };
   } catch {
     // Storage blocked or garbled: nothing remembered.
   }
-  return { tokens: {}, sso: null };
+  return { tokens: {} };
 }
 
 function remember(change: (stored: Remembered) => void) {
@@ -381,12 +383,15 @@ const TWO_FACTOR_KINDS: Record<string, [TwoFactorMethod['kind'], boolean]> = {
 async function token(extra: Record<string, string>): Promise<LoginStep> {
   const p = pending!;
   const device = deviceType();
-  // The first try goes with a remembered device's token, if there is one for the account.
-  const rememberedFor = p.form ? remembered().sso : p.email;
+  // The first try goes with a remembered device's token, if there is one for the account (an
+  // SSO login knows its account only once the server asked for the second step).
+  const rememberedFor = p.email;
   const rememberedToken = rememberedFor ? remembered().tokens[rememberedFor] : undefined;
-  p.triedRemembered = !extra.twoFactorToken && Boolean(rememberedToken);
-  if (p.triedRemembered)
+  p.triedRemembered = !extra.twoFactorToken && !p.usedRemembered && Boolean(rememberedToken);
+  if (p.triedRemembered) {
+    p.usedRemembered = true;
     extra = { twoFactorProvider: '5', twoFactorToken: rememberedToken!, ...extra };
+  }
   const form = new URLSearchParams({
     ...(p.form ?? {
       grant_type: 'password',
@@ -416,9 +421,13 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
           // Run out or forgotten by the server: asked for the second step as without it.
           remember((stored) => delete stored.tokens[rememberedFor]);
         }
-        if (typeof refusal.SsoEmail2faSessionToken === 'string') {
+        if (typeof refusal.SsoEmail2faSessionToken === 'string')
           p.ssoEmailToken = refusal.SsoEmail2faSessionToken;
-          p.email = typeof refusal.Email === 'string' ? refusal.Email : p.email;
+        if (p.form && typeof refusal.Email === 'string') {
+          p.email = refusal.Email.toLowerCase();
+          // Now that the account is known: its remembered device, if this browser has one.
+          if (!extra.twoFactorToken && !p.usedRemembered && remembered().tokens[p.email])
+            return token({});
         }
         p.methods = Object.entries(providers).map(([provider, details]) => {
           const [kind, supported] = TWO_FACTOR_KINDS[provider] ?? ['other', false];
@@ -443,7 +452,6 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
       stored.tokens[account] = kept;
     });
   }
-  if (p.form) remember((stored) => (stored.sso = account));
   if (p.form) {
     // Through SSO: logged in, but the vault opens only with the master password — or, for an
     // account made just now, waits for its first one.

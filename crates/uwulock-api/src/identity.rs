@@ -234,7 +234,7 @@ async fn password_login(
         match two_factor::check_login(state, &user, form, known_device.as_ref(), ip, headers).await {
             Ok(remember) => remember,
             Err(error) => {
-                if error.status == StatusCode::BAD_REQUEST && form.get("twofactortoken").is_some() {
+                if error.status == StatusCode::BAD_REQUEST && two_factor::sent_a_wrong_code(form) {
                     log(state, "two-factor-failed", Some(&user), username, ip, device_type, "wrong code").await;
                     let context = notices::Context { device_type: Some(device_type), ..notices::Context::ip(ip) };
                     let provider = form.get("twofactorprovider").and_then(|value| value.trim().parse::<i64>().ok());
