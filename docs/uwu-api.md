@@ -595,7 +595,7 @@ Server answers:
 | Message | Meaning | Client does |
 | --- | --- | --- |
 | `{ "type": "changed", "areas": ["vault", "uwu"], "spaces": ["ssh"] }` | Something in these areas changed. `spaces` only with `suite`. | Delta sync (debounce 250 ms). |
-| `{ "type": "logout", "reason": "securityStamp" }` | The session ended: `securityStamp`, `deviceRemoved`, `disabled`, `keysRotated`. Then close 4401. | Log out locally (keep nothing decrypted). |
+| `{ "type": "logout", "reason": "securityStamp" }` | The session ended: `securityStamp`, `deviceRemoved`, `disabled`, `keysRotated`, `ssoLogout` (the SSO provider logged the session out, §19.6). Then close 4401. | Log out locally (keep nothing decrypted). |
 | `{ "type": "authRequest", "id": "…" }` | A "log in with device" request for this account (not for suite tokens). | Show the approval prompt (Bitwarden's `/api/auth-requests/{id}`). |
 | `{ "type": "notice", "kind": "securityNotice", "id": 123 }` | A new security notice (§12). | Badge, optional OS notification. |
 | `{ "type": "notice", "kind": "fileRequest", "id": "<requestId>" }` | Something arrived for a file request (§11). | Badge, optional OS notification. |
@@ -2778,12 +2778,14 @@ protocol both sides implement; UwUAuth builds its half from this section.
         { "id": "admin", "name": "Administrator", "description": "Uses the admin portal" },
         { "id": "user", "name": "User", "description": "May create a vault without an invitation" }
       ],
-      "scim": { "baseUrl": "https://lock.example.com/scim/v2", "resources": ["User", "Group"] }
+      "scim": { "baseUrl": "https://lock.example.com/scim/v2", "resources": ["User", "Group"] },
+      "backchannelLogoutUri": "https://lock.example.com/identity/connect/backchannel-logout"
     }
   }
   ```
 
-  `icon` at most 64 KiB, PNG. UwUAuth checks every URI is `https` on the host of `app.url` (or a
+  `backchannelLogoutUri` since UwULock Server 0.8.0-beta.3; pairings made before have to pair
+  again to get it. `icon` at most 64 KiB, PNG. UwUAuth checks every URI is `https` on the host of `app.url` (or a
   loopback address), then creates an app as `NewApp` does today: `public: false`,
   `tokenAuthMethod: client_secret_basic`, `requirePkce: true`, `consent: false` (a first-party
   suite app), `allowedGroups` and roles from the code, `grantTypes: ["authorization_code", "refresh_token"]`,
@@ -2848,6 +2850,23 @@ app on the UwUAuth side is deleted there.
   `bitwarden://sso-callback`.
 - The one-time code of step 4 stays valid (5 minutes) until a token request with it succeeds, so
   the client can send it again with the second step of two-step login.
+- Since 0.8.0-beta.3, when two-step login is asked for after SSO and a code by mail is one of the
+  ways, the 400 answer also has `SsoEmail2faSessionToken` (signed, 5 minutes) and `Email`.
+  **[BW]** `POST /api/two-factor/send-email-login` takes `{ "email", "ssoEmail2FaSessionToken",
+  "deviceIdentifier" }` instead of `masterPasswordHash`: the token must be valid, for that address,
+  SSO switched on, the account there and not disabled — else always the same 400. The login limits
+  apply first, as on the password path, which is unchanged. *Remember this device* (provider 5)
+  works after SSO as after a password.
+- **Back-channel logout** (since 0.8.0-beta.3): `POST /identity/connect/backchannel-logout`,
+  form field `logout_token` (OpenID Connect Back-Channel Logout 1.0). The token is checked against
+  the provider's JWKS (fetched again once on an unknown `kid`; `alg: none` refused), `iss`, `aud`
+  (the client id), `iat` at most 300 s old (with leeway), `events` with
+  `http://schemas.openid.net/event/backchannel-logout`, no `nonce`, `sub` and/or `sid`; each `jti`
+  once (kept as SHA-256 until it would be too old anyway). The account is found by `sub` (the
+  linked login), else by a `sid` kept from its SSO logins (90 days). Its SSO devices lose their
+  refresh tokens and sessions, get `logout` with reason `ssoLogout`; master-password devices stay.
+  Answer 200 `{}` (also for an unknown account) or 400 `{ "error": "invalid_request" }`, both
+  `Cache-Control: no-store`; rate-limited like logins; 400 while SSO is off. Event `sso-logout`.
 - Refused SSO logins are written to the event log as `login-failed` (detail `SSO: …`); SSO sign-ups
   as `register` (detail `through SSO`); step 6 as `password-set`; SCIM changes as `scim`; the admin
   right given or taken by SSO as `admin`. SCIM refuses to disable or delete the last admin (409

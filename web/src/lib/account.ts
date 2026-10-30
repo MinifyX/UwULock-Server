@@ -6,11 +6,18 @@
 
 import { currentProfile, lock, logout, prelogin } from './api';
 import type { BreachSwitches } from './breaches';
-import { t } from './i18n';
 import { call, callJson } from './web/core';
 import { openExtras } from './requests';
 import { type SendDomain } from './links';
 import { ApiError, deviceId, request } from './web/http';
+import type { PasswordRules } from './passwordRules';
+
+export {
+  complexityScore,
+  DEFAULT_RULES,
+  passwordProblem,
+  type PasswordRules,
+} from './passwordRules';
 
 export type AccountInfo = {
   admin: boolean;
@@ -66,9 +73,6 @@ export type MinimumKdf = {
   argon2Parallelism: number;
 };
 
-/** The rules for a new master password: `minComplexity` is a zxcvbn score, 0 (none) to 4. */
-export type PasswordRules = { minLength: number; minComplexity: number; enforceOnLogin?: boolean };
-
 /** The server's own look (§14.4): UwULock's unless an admin changed it. */
 export type Branding = {
   name: string;
@@ -95,9 +99,6 @@ export type ServerInfo = {
 };
 
 export const serverInfo = () => request<ServerInfo>('/uwu/v1/info', { auth: false });
-
-/** Without a word from the server: what Bitwarden's clients ask anyway. */
-export const DEFAULT_RULES: PasswordRules = { minLength: 12, minComplexity: 0 };
 
 export type Kdf =
   | { kind: 'pbkdf2'; iterations: number }
@@ -258,38 +259,6 @@ export async function setInitialPassword(input: {
 
 /** How strong a password is, in bits, the way the generator counts. */
 export const strength = (password: string) => call((core) => core.entropyBits(password));
-
-/**
- * The bits as a score from 0 to 4 like zxcvbn's, which the admin's rule is written in. zxcvbn
- * draws its lines at 10³, 10⁶, 10⁸ and 10¹⁰ guesses: that is 10, 20, 26.6 and 33.2 bits.
- */
-export function complexityScore(bits: number): number {
-  if (bits < 10) return 0;
-  if (bits < 20) return 1;
-  if (bits < 26.6) return 2;
-  if (bits < 33.2) return 3;
-  return 4;
-}
-
-/** Why a new master password is refused under `rules`, or null when it is fine. */
-export function passwordProblem(
-  password: string,
-  bits: number,
-  rules: PasswordRules,
-): string | null {
-  // Bitwarden's clients ask for 12 characters whatever the server says; so does this one.
-  const length = Math.max(rules.minLength, DEFAULT_RULES.minLength);
-  if ([...password].length < length) return t('Mindestens {n} Zeichen.', { n: length });
-  if (rules.minComplexity > 0 && complexityScore(bits) < rules.minComplexity)
-    return t(
-      'Dieser Server verlangt ein stärkeres Master-Passwort (Stufe {need} von 4, dieses hat {has}).',
-      {
-        need: rules.minComplexity,
-        has: complexityScore(bits),
-      },
-    );
-  return null;
-}
 
 /**
  * Key derivation settings that meet the server's minimum. Bitwarden's Argon2id default when that

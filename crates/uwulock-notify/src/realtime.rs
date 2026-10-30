@@ -18,7 +18,8 @@ use tokio::sync::mpsc;
 pub enum Live {
     /// Something in these areas (`vault`, `uwu`, `suite`) changed; for `suite`, in these spaces.
     Changed { areas: Vec<&'static str>, spaces: Vec<String> },
-    /// The session ended: `securityStamp`, `deviceRemoved`, `disabled`, `keysRotated`.
+    /// The session ended: `securityStamp`, `deviceRemoved`, `disabled`, `keysRotated`,
+    /// `ssoLogout` (the login provider ended the session).
     Logout { reason: &'static str },
     /// Somebody asks to log in with this account's approval.
     AuthRequest { id: String },

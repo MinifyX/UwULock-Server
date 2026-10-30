@@ -8,6 +8,7 @@ import {
   passwordProblem,
   type MinimumKdf,
 } from './account';
+import { breaksRules } from './passwordRules';
 
 describe('key derivation settings', () => {
   it('go to the WebAssembly module and back unchanged', () => {
@@ -41,6 +42,14 @@ describe('the master password rules', () => {
     expect(passwordProblem('a'.repeat(14), 25, rules)).not.toBeNull();
     expect(passwordProblem('a'.repeat(14), 34, rules)).toBeNull();
     expect(passwordProblem('a'.repeat(12), 1, { minLength: 12, minComplexity: 0 })).toBeNull();
+  });
+
+  it("enforced at login, ask for a change only where the admin's own rules are broken", () => {
+    const rules = { minLength: 10, minComplexity: 2, enforceOnLogin: true };
+    expect(breaksRules('a'.repeat(9), 90, rules)).toBe(true);
+    expect(breaksRules('a'.repeat(10), 19, rules)).toBe(true);
+    expect(breaksRules('a'.repeat(10), 20, rules), "not the clients' 12 on top").toBe(false);
+    expect(breaksRules('ä'.repeat(10), 20, rules), 'characters, not bytes').toBe(false);
   });
 });
 

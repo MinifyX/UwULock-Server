@@ -255,6 +255,26 @@ impl Tokens {
         self.verify_link(token, "sso").is_some()
     }
 
+    /// What lets the second step of an SSO login ask for its code by mail, where a password
+    /// login has the password hash (Bitwarden's `SsoEmail2faSessionToken`): for the account and
+    /// its address, as long as the SSO code it came with.
+    pub fn sso_email_2fa_token(&self, user_id: &str, email: &str, seconds: i64) -> String {
+        let claims = LinkClaims {
+            sub: user_id.to_string(),
+            exp: now_seconds() + seconds,
+            iss: self.link_issuer("ssoemail2fa"),
+            email: Some(email.to_string()),
+            viewer: None,
+        };
+        self.sign(&claims)
+    }
+
+    /// The account and address an [`Tokens::sso_email_2fa_token`] is for, while it holds.
+    pub fn check_sso_email_2fa_token(&self, token: &str) -> Option<(String, String)> {
+        let claims = self.verify_link(token, "ssoemail2fa")?;
+        Some((claims.sub, claims.email?))
+    }
+
     /// The file request an upload token is for.
     pub fn check_upload_token(&self, token: &str) -> Option<String> {
         self.verify_link(token, "filerequest").map(|claims| claims.sub)

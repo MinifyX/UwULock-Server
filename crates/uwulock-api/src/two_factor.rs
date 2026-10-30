@@ -340,10 +340,14 @@ struct LoginCodeRequest {
     email: Option<String>,
     #[serde(default, alias = "MasterPasswordHash")]
     master_password_hash: Option<String>,
+    /// After an SSO login, in place of the password hash: what its token answer handed out.
+    #[serde(default, alias = "ssoEmail2FaSessionToken", alias = "SsoEmail2faSessionToken")]
+    sso_email2fa_session_token: Option<String>,
 }
 
-/// "Send me the code by mail" on the second step of a login. The password comes along, so this
-/// cannot fill somebody's inbox with codes.
+/// "Send me the code by mail" on the second step of a login. The password comes along — or,
+/// after SSO, the short-lived token the SSO login's answer handed out — so this cannot fill
+/// somebody's inbox with codes.
 async fn send_login_code(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
@@ -354,17 +358,34 @@ async fn send_login_code(
     }
     let wrong = || ApiError::bad("Username or password is incorrect. Try again");
     let email = request.email.filter(|email| !email.is_empty()).ok_or_else(wrong)?;
-    let password = request
-        .master_password_hash
-        .filter(|hash| !hash.is_empty())
-        .ok_or_else(|| ApiError::bad("No password hash has been submitted."))?;
-    let user = state.store.user_by_email(&email).await?;
-    if !auth::verify_password(state.config.hash_cost, user.as_ref().map(|user| user.password_hash.as_str()), &password)
-        .await
-    {
-        return Err(wrong());
-    }
-    let user = user.expect("a password matched");
+    let user = match request.sso_email2fa_session_token.filter(|token| !token.is_empty()) {
+        Some(token) => {
+            // One answer for a token that is wrong, ran out, or is for another address.
+            let refused = || ApiError::bad("This SSO login ran out. Start it again.");
+            let (user_id, address) = state.tokens.check_sso_email_2fa_token(&token).ok_or_else(refused)?;
+            if uwulock_store::normalize_email(&email) != address || !crate::sso::active(&state, &state.settings()) {
+                return Err(refused());
+            }
+            state
+                .store
+                .user(&user_id)
+                .await?
+                .filter(|user| user.email == address && !user.disabled)
+                .ok_or_else(refused)?
+        }
+        None => {
+            let password = request
+                .master_password_hash
+                .filter(|hash| !hash.is_empty())
+                .ok_or_else(|| ApiError::bad("No password hash has been submitted."))?;
+            let user = state.store.user_by_email(&email).await?;
+            let stored = user.as_ref().map(|user| user.password_hash.as_str());
+            if !auth::verify_password(state.config.hash_cost, stored, &password).await {
+                return Err(wrong());
+            }
+            user.expect("a password matched")
+        }
+    };
     if !state.mailer.enabled() {
         return Err(ApiError::bad("This server cannot send mail."));
     }

@@ -12,6 +12,7 @@ import { locale, t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Icon } from '../Icon';
 import type { SettingsSection } from '../SettingsDialog';
+import { NewPassword } from './AccountSettings';
 import { PasswordPrompt, Segmented } from './controls';
 import { TwoFactorSettings } from './TwoFactorSettings';
 
@@ -179,6 +180,41 @@ export function TwoFactorRequired({
           <button onClick={() => void logout()}>{t('Abmelden')}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The master password breaks the server's rules, and the admin enforces them at login: until it
+ * is changed, the web vault shows only this. Changing it ends the session, as it always does.
+ */
+export function PasswordChangeRequired({ info }: { info: AccountInfo | null }) {
+  useLanguage();
+  const [changing, setChanging] = useState(false);
+  return (
+    <div className="lock">
+      <div className="lock-card required-card">
+        <h1 className="card-title">{t('Master-Passwort ändern')}</h1>
+        <p className="dialog-lead">
+          {t(
+            'Dein Master-Passwort erfüllt die Regeln dieses Servers nicht mehr. Bis du es geändert hast, zeigt der Web-Tresor nur das hier.',
+          )}
+        </p>
+        <div className="form-actions">
+          <span className="spacer" />
+          <button onClick={() => void logout()}>{t('Abmelden')}</button>
+          <button className="primary" onClick={() => setChanging(true)}>
+            {t('Ändern')}
+          </button>
+        </div>
+      </div>
+      {changing && (
+        <NewPassword
+          hasHint={info?.hasHint ?? false}
+          onCancel={() => setChanging(false)}
+          onDone={() => toast(t('Master-Passwort geändert. Melde dich mit dem neuen an.'), 'info')}
+        />
+      )}
     </div>
   );
 }

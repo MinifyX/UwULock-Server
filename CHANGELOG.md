@@ -3,6 +3,29 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.3
+
+**Logging out at the SSO provider logs out here too, and two-step login after SSO works fully.**
+
+- **Back-channel logout:** `POST /identity/connect/backchannel-logout` takes the provider's logout
+  token (OpenID Connect Back-Channel Logout 1.0), checked against its keys (`none` refused), issuer,
+  audience, age (5 minutes), the logout event, no `nonce`, `sub` and/or `sid`; a `jti` sent again
+  is refused. The account's SSO sessions lose their tokens at once and open apps get `logout` with
+  the new reason `ssoLogout`; devices logged in with the master password stay. Answers 200 or 400,
+  both `Cache-Control: no-store`. Event `sso-logout`. Migration 0028 keeps the SSO logins' `sid`
+  (90 days) and the used `jti`s.
+  - Pairing with UwUAuth now sends `backchannelLogoutUri`. **Existing pairings have to pair again**
+    for logouts at UwUAuth to arrive (docs/sso.md). Other providers: enter the address there.
+- **Code by mail after SSO:** the two-step answer after an SSO login has `SsoEmail2faSessionToken`
+  and `Email`, and `send-email-login` takes that token instead of the password hash (same answer
+  for every refusal, the login limits as before; the password path is unchanged).
+- **Remember this device after SSO:** the web vault now keeps the token the server gives and sends
+  it at the next login (also after SSO), for the set `rememberTwoFactorDays`.
+- **Rules for existing accounts:** the admin's two-step rule asks accounts made before it at their
+  next login, SSO included (now tested); with *enforce on login*, the web vault asks for a new
+  master password after login or unlock when the old one breaks the master password rules.
+  Bitwarden's own apps check that only after a password login.
+
 ## 0.8.0-beta.2
 
 **How long a device is remembered is a setting now.**

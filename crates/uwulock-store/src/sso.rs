@@ -112,10 +112,16 @@ fn scim_group_from(row: &Row<'_>) -> rusqlite::Result<ScimGroup> {
     })
 }
 
-/// States and codes that ran out.
+/// How long the provider's session id of an SSO login is kept: as long as the longest refresh
+/// token (a phone's) lasts.
+pub const SSO_SESSION_DAYS: i64 = 90;
+
+/// States, codes, sessions and logout tokens that ran out.
 pub(crate) fn sweep(tx: &rusqlite::Transaction<'_>, now: &str) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM sso_states WHERE expires < ?1", [now])?;
     tx.execute("DELETE FROM sso_codes WHERE expires < ?1", [now])?;
+    tx.execute("DELETE FROM sso_logout_tokens WHERE expires < ?1", [now])?;
+    tx.execute("DELETE FROM sso_sessions WHERE created < ?1", [clock::in_seconds(-SSO_SESSION_DAYS * 86_400)])?;
     Ok(())
 }
 
@@ -201,6 +207,54 @@ impl Store {
                 tx.execute("DELETE FROM sso_identities WHERE user_id = ?1 AND issuer = ?2", [user_id, issuer])
             }
             None => tx.execute("DELETE FROM sso_identities WHERE user_id = ?1", [user_id]),
+        })
+        .await
+    }
+
+    // ── Provider sessions and back-channel logout ──────────
+
+    /// An SSO login of `user_id` belongs to the provider's session `sid`.
+    pub async fn sso_session_started(&self, issuer: &str, sid: &str, user_id: &str) -> Result<()> {
+        let (issuer, sid, user_id) = (issuer.to_string(), sid.to_string(), user_id.to_string());
+        self.sqlite_write(move |tx| {
+            tx.execute(
+                "INSERT INTO sso_sessions (issuer, sid, user_id, created) VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT (issuer, sid) DO UPDATE SET user_id = excluded.user_id, created = excluded.created",
+                params![issuer, sid, user_id, clock::now()],
+            )
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// The account whose SSO login belongs to the provider's session `sid`.
+    pub async fn sso_session_user(&self, issuer: &str, sid: &str) -> Result<Option<String>> {
+        let (issuer, sid) = (issuer.to_string(), sid.to_string());
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached("SELECT user_id FROM sso_sessions WHERE issuer = ?1 AND sid = ?2")?
+                .query_row([issuer, sid], |row| row.get(0))
+                .optional()
+        })
+        .await
+    }
+
+    /// Forget the provider's sessions of an account: they ended.
+    pub async fn forget_sso_sessions(&self, user_id: &str, issuer: &str) -> Result<usize> {
+        let (user_id, issuer) = (user_id.to_string(), issuer.to_string());
+        self.sqlite_write(move |tx| {
+            tx.execute("DELETE FROM sso_sessions WHERE user_id = ?1 AND issuer = ?2", [user_id, issuer])
+        })
+        .await
+    }
+
+    /// A logout token is taken, by the SHA-256 of its issuer and `jti`, until `expires`: `false`
+    /// when it was taken before.
+    pub async fn take_sso_logout_token(&self, jti_hash: Vec<u8>, expires: String) -> Result<bool> {
+        self.sqlite_write(move |tx| {
+            Ok(tx.execute(
+                "INSERT INTO sso_logout_tokens (jti_hash, expires) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+                params![jti_hash, expires],
+            )? == 1)
         })
         .await
     }

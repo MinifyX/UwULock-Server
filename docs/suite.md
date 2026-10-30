@@ -35,6 +35,10 @@ compares it, and only then switches. Running it again, or on a second device, me
 nothing twice. UwULock Server does not read UwUSync's database itself — the records there are
 sealed with keys only the apps have.
 
+The apps log in with the master password, so a **logout at the SSO provider** (back-channel
+logout, [sso.md](sso.md)) leaves their sessions alone; it ends only the sessions that came through
+SSO.
+
 **When a device is lost**, remove it in the web vault (*Settings → Devices*): its session ends at
 once, and its refresh token is gone. The server can also give a space a new key and id, with
 every record sealed again (`POST /uwu/v1/suite/spaces/{space}/rekey`), after which every other
