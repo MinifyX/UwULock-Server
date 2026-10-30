@@ -35,6 +35,10 @@ Nachprüfungen ([docs/security-review-0.8.md](security-review-0.8.md)); passend 
 0.5.0-beta.1 mit Passkey-Anbietern für Linux, Windows, Android, iOS und macOS.
 0.8.0-beta.2 macht die Dauer von „Gerät merken“ einstellbar (30, 90, 365 Tage oder unbegrenzt,
 Standard 90), gezählt ab der letzten Anmeldung mit dem Gerät.
+0.8.0-beta.3 bringt OIDC-Back-Channel-Logout (die SSO-Sitzungen enden mit der Abmeldung beim
+Anbieter; bestehende UwUAuth-Kopplungen müssen neu koppeln), den Code per Mail und „Gerät merken“
+nach SSO sowie die Zwei-Schritt- und Masterpasswort-Regeln bei der nächsten Anmeldung bestehender
+Konten.
 Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 

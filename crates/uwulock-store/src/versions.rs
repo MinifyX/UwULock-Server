@@ -329,7 +329,8 @@ mod tests {
         assert_eq!(versions[0].revision, moved.revision);
         assert_eq!(store.personal_versions(&user.id).await.unwrap().len(), 1);
 
-        let refused = store.restore_version("c", &versions[0].id, &first.revision).await.unwrap();
+        // A revision long gone: the saves above may share one millisecond.
+        let refused = store.restore_version("c", &versions[0].id, "2020-01-01T00:00:00.000Z").await.unwrap();
         assert_eq!(refused.unwrap_err(), RestoreRefusal::Changed, "an old revision");
         let (restored, users) = store.restore_version("c", &versions[0].id, &second.revision).await.unwrap().unwrap();
         assert_eq!(restored.name, "2.name|name|name");

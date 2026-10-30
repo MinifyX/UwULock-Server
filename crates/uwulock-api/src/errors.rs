@@ -63,6 +63,14 @@ impl ApiError {
         Self { status: StatusCode::BAD_REQUEST, body: Body::Json(value), code: None }
     }
 
+    /// The JSON of an answer made with [`ApiError::json`], to add to.
+    pub fn json_mut(&mut self) -> Option<&mut Value> {
+        match &mut self.body {
+            Body::Json(value) => Some(value),
+            _ => None,
+        }
+    }
+
     /// 400 "The model state is invalid." with messages by field.
     pub fn validation(errors: serde_json::Map<String, Value>) -> Self {
         Self { status: StatusCode::BAD_REQUEST, body: Body::Validation(errors), code: None }

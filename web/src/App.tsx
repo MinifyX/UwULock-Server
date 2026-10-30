@@ -9,7 +9,12 @@ import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { SkipLink, TitleBar } from './components/TitleBar';
 import { Toasts } from './components/Toasts';
 import { VaultScreen } from './components/VaultScreen';
-import { lacksTwoFactor, PolicyBanners, TwoFactorRequired } from './components/web/Policies';
+import {
+  lacksTwoFactor,
+  PasswordChangeRequired,
+  PolicyBanners,
+  TwoFactorRequired,
+} from './components/web/Policies';
 import { RegisterScreen } from './components/web/RegisterScreen';
 import { SetPasswordScreen, SsoForward } from './components/web/SetPasswordScreen';
 import { RequestPage } from './components/web/RequestPage';
@@ -303,6 +308,8 @@ export function App() {
               onUnlocked={setStatus}
               onLoggedOut={() => void vaultStatus().then(setStatus)}
             />
+          ) : status.passwordChangeDue ? (
+            <PasswordChangeRequired info={info} />
           ) : mustSetUp ? (
             <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
           ) : (

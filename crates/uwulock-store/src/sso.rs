@@ -112,10 +112,16 @@ fn scim_group_from(row: &Row<'_>) -> rusqlite::Result<ScimGroup> {
     })
 }
 
-/// States and codes that ran out.
+/// How long the provider's session id of an SSO login is kept: as long as the longest refresh
+/// token (a phone's) lasts.
+pub const SSO_SESSION_DAYS: i64 = 90;
+
+/// States, codes, sessions and logout tokens that ran out.
 pub(crate) fn sweep(tx: &rusqlite::Transaction<'_>, now: &str) -> rusqlite::Result<()> {
     tx.execute("DELETE FROM sso_states WHERE expires < ?1", [now])?;
     tx.execute("DELETE FROM sso_codes WHERE expires < ?1", [now])?;
+    tx.execute("DELETE FROM sso_logout_tokens WHERE expires < ?1", [now])?;
+    tx.execute("DELETE FROM sso_sessions WHERE created < ?1", [clock::in_seconds(-SSO_SESSION_DAYS * 86_400)])?;
     Ok(())
 }
 
@@ -203,6 +209,74 @@ impl Store {
             None => tx.execute("DELETE FROM sso_identities WHERE user_id = ?1", [user_id]),
         })
         .await
+    }
+
+    // ── Provider sessions and back-channel logout ──────────
+
+    /// An SSO login of `user_id` belongs to the provider's session `sid`.
+    pub async fn sso_session_started(&self, issuer: &str, sid: &str, user_id: &str) -> Result<()> {
+        let (issuer, sid, user_id) = (issuer.to_string(), sid.to_string(), user_id.to_string());
+        self.sqlite_write(move |tx| {
+            tx.execute(
+                "INSERT INTO sso_sessions (issuer, sid, user_id, created) VALUES (?1, ?2, ?3, ?4) \
+                 ON CONFLICT (issuer, sid) DO UPDATE SET user_id = excluded.user_id, created = excluded.created",
+                params![issuer, sid, user_id, clock::now()],
+            )
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// The account whose SSO login belongs to the provider's session `sid`.
+    pub async fn sso_session_user(&self, issuer: &str, sid: &str) -> Result<Option<String>> {
+        let (issuer, sid) = (issuer.to_string(), sid.to_string());
+        self.sqlite_read(move |conn| {
+            conn.prepare_cached("SELECT user_id FROM sso_sessions WHERE issuer = ?1 AND sid = ?2")?
+                .query_row([issuer, sid], |row| row.get(0))
+                .optional()
+        })
+        .await
+    }
+
+    /// A back-channel logout, in one transaction: the logout token is taken, by the SHA-256 of
+    /// its issuer and `jti`, until `expires`; then the account's SSO devices lose their refresh
+    /// tokens (a remembered two-step login stays, and so do devices that logged in with the master
+    /// password) and the provider's sessions of the account are forgotten. `None` when the token was
+    /// taken before; else the devices logged out. Nothing is kept when any of it fails, so the
+    /// provider can send the token again.
+    pub async fn back_channel_logout(
+        &self,
+        issuer: &str,
+        user_id: Option<&str>,
+        jti_hash: Vec<u8>,
+        expires: String,
+    ) -> Result<Option<Vec<String>>> {
+        let (issuer, owned) = (issuer.to_string(), user_id.map(str::to_string));
+        let devices = self
+            .sqlite_write(move |tx| {
+                let fresh = tx.execute(
+                    "INSERT INTO sso_logout_tokens (jti_hash, expires) VALUES (?1, ?2) ON CONFLICT DO NOTHING",
+                    params![jti_hash, expires],
+                )? == 1;
+                if !fresh {
+                    return Ok(None);
+                }
+                let Some(user_id) = owned else { return Ok(Some(Vec::new())) };
+                let ids = tx
+                    .prepare_cached(
+                        "UPDATE devices SET refresh_hash = NULL, refresh_expires = NULL \
+                         WHERE user_id = ?1 AND sso = 1 AND refresh_hash IS NOT NULL RETURNING id",
+                    )?
+                    .query_map([&user_id], |row| row.get(0))?
+                    .collect::<rusqlite::Result<Vec<String>>>()?;
+                tx.execute("DELETE FROM sso_sessions WHERE user_id = ?1 AND issuer = ?2", [&user_id, &issuer])?;
+                Ok(Some(ids))
+            })
+            .await?;
+        if let (Some(_), Some(user_id)) = (&devices, user_id) {
+            self.forget_session_of(user_id);
+        }
+        Ok(devices)
     }
 
     // ── States and codes ───────────────────────────────────
@@ -524,6 +598,33 @@ mod tests {
         assert_eq!(store.sso_identities_of(&nyu.id).await.unwrap().len(), 2);
         store.delete_user(&nyu.id).await.unwrap();
         assert!(store.sso_identity(issuer, "sub-1").await.unwrap().is_none(), "gone with the account");
+    }
+
+    #[tokio::test]
+    async fn a_logout_token_is_taken_only_with_the_logout() {
+        let (store, _dir) = store();
+        let nyu = store.create_user(new_user("nyu@example.com")).await.unwrap();
+        let issuer = "https://auth.example.com";
+        store.sso_session_started(issuer, "sid-1", &nyu.id).await.unwrap();
+        let logout = |jti: u8| store.back_channel_logout(issuer, Some(&nyu.id), vec![jti; 32], clock::in_seconds(600));
+        // A logout that fails keeps nothing: the provider's retry is taken.
+        store
+            .sqlite_write(|tx| {
+                tx.execute_batch(
+                    "CREATE TRIGGER fail BEFORE DELETE ON sso_sessions BEGIN SELECT RAISE(ABORT, 'test'); END",
+                )
+            })
+            .await
+            .unwrap();
+        assert!(logout(1).await.is_err());
+        store.sqlite_write(|tx| tx.execute_batch("DROP TRIGGER fail")).await.unwrap();
+        assert_eq!(store.sso_session_user(issuer, "sid-1").await.unwrap(), Some(nyu.id.clone()), "still there");
+        assert_eq!(logout(1).await.unwrap(), Some(Vec::new()), "the retry");
+        assert_eq!(store.sso_session_user(issuer, "sid-1").await.unwrap(), None);
+        assert_eq!(logout(1).await.unwrap(), None, "once");
+        let nobody = store.back_channel_logout(issuer, None, vec![2; 32], clock::in_seconds(600)).await.unwrap();
+        assert_eq!(nobody, Some(Vec::new()));
+        assert_eq!(store.back_channel_logout(issuer, None, vec![2; 32], clock::in_seconds(600)).await.unwrap(), None);
     }
 
     #[tokio::test]

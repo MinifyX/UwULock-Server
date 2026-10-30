@@ -215,7 +215,8 @@ mod tests {
         assert_eq!(json(server.get_as(&nyu.token, &one).await).await["id"], version_id);
 
         let restore = format!("{one}/restore");
-        let stale = json!({"lastKnownRevisionDate": created["revisionDate"]});
+        // A date long gone: the change above may have fallen into the same millisecond as the creation.
+        let stale = json!({"lastKnownRevisionDate": "2020-01-01T00:00:00.000Z"});
         let response = server.call("POST", &restore, Some(&nyu.token), stale).await;
         assert_eq!(response.status(), StatusCode::CONFLICT);
         assert_eq!(json(response).await["code"], "conflict");

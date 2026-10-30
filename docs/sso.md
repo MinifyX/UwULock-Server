@@ -23,7 +23,15 @@ admin says otherwise.
   vault, which passes the login on to the provider, and come back logged in; a new account sets
   its master password in the app.
 - **Two-step login** set up on the account still applies after SSO: the code (or security key) is
-  asked for as after a password.
+  asked for as after a password. A code by mail works too (since 0.8.0-beta.3), and so does
+  *remember this device*, for the same days as after a password (*Security & sign-in → Sign-in*).
+- **The admin's two-step and master password rules** also hold for accounts made before them: the
+  next login asks for the second step to be set up (password or SSO); the web vault asks for a new
+  master password after the next login or unlock when the old one breaks the rules and
+  *enforce on login* is on. Bitwarden's own apps check that rule only after a password login.
+- **Logging out at the provider** logs out the SSO sessions here too (back-channel logout, since
+  0.8.0-beta.3): their tokens end at once and open apps are told (`ssoLogout`). Devices that logged
+  in with the master password stay logged in.
 - An existing account is **linked** the first time somebody logs in through SSO with its address —
   only if the provider says the address is verified. The account gets a security notice
   (*a login through … was linked*). After that, the account is found by the login at the
@@ -46,6 +54,11 @@ off; delete the app in UwUAuth too (the page links to it).
 
 UwULock has to be reachable at an `https` address for this.
 
+Since 0.8.0-beta.3 the pairing also tells UwUAuth the back-channel logout address
+(`https://<your server>/identity/connect/backchannel-logout`). **Pairings made before have to be
+made again** (*Entkoppeln*, delete the app in UwUAuth, pair again) for a logout at UwUAuth to reach
+UwULock; until then, SSO logins keep working, only the logout does not come through.
+
 ## Any other provider
 
 Make a **confidential client** (with a secret) or a public one with PKCE at the provider:
@@ -59,6 +72,11 @@ Make a **confidential client** (with a secret) or a public one with PKCE at the 
 Then *Anmeldung → OpenID Connect* in the admin portal: issuer (the provider's address, as in its
 `/.well-known/openid-configuration`), client id and secret, and switch it on. *Anbieter testen*
 reads the discovery document and the keys.
+
+For **back-channel logout**, enter `https://<your server>/identity/connect/backchannel-logout` as
+the client's back-channel logout URI at the provider (Keycloak: *Backchannel logout URL*, with
+*session required* on; Authentik: *Back-channel logout URL*). The provider has to put `sid` into
+the ID token or `sub` into the logout token.
 
 | Provider | Issuer |
 | --- | --- |
@@ -118,6 +136,18 @@ other providers *Anmeldung → SCIM → Token erzeugen* shows one once.
   `bitwarden://sso-callback`, a loopback address for native apps and the CLI). The ID token is
   checked: signature against the provider's keys, issuer, audience, time and nonce.
 - The code the client gets is used once, lasts five minutes, and is bound to its PKCE challenge.
+- A **logout token** (back-channel logout, OpenID Connect Back-Channel Logout 1.0) is checked like
+  an ID token — signature against the provider's keys (never `none`), issuer, audience — and must
+  be at most five minutes old, have the logout event, no `nonce`, and `sub` or a `sid` this server
+  saw at an SSO login. Each `jti` is taken once, together with the logout (a failed logout leaves it
+  for the provider's retry); a token sent again is refused. The answer is 200 (also when the
+  account is unknown) or 400, never cached. Only refused tokens count against a limit, so many
+  logouts at once from the provider are never held back. It nulls the refresh tokens of the
+  account's SSO devices and ends their sessions; the event log gets `sso-logout`.
+- The mail with a code for the second step after SSO needs the short-lived token from the SSO
+  login's answer (`SsoEmail2faSessionToken`, five minutes) instead of the password. It holds only
+  for that login on that device, until the login is through; a wrong or stale token gets one
+  answer for every cause, and the login limits count as for a password.
 - The client secret is kept encrypted, under a key in `secret.key` in the data directory (made on
   first use, readable only by the server). The off-site backups take the file along; a database
   copy alone does not open it. After a restore onto a new machine from a *local* backup, enter

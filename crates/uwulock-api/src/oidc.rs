@@ -26,7 +26,7 @@ const REFETCH: Duration = Duration::from_secs(60);
 /// The most an answer of the provider may be.
 const MAX_ANSWER: usize = 512 * 1024;
 /// Clocks may differ this much.
-const LEEWAY: i64 = 60;
+pub(crate) const LEEWAY: i64 = 60;
 /// How long a failed fetch is remembered: while the provider fails, anonymous authorize calls
 /// do not each ask it again (SV-L21).
 const FAILED: Duration = Duration::from_secs(30);
@@ -359,14 +359,14 @@ fn invalid(reason: impl Into<String>) -> Refused {
     Refused::Invalid(reason.into())
 }
 
-/// The claims of `token`, when it is signed by one of `keys` and is for `expected`.
-pub fn check_id_token(
-    token: &str,
-    keys: &[Jwk],
-    expected: &Expected<'_>,
-    now: i64,
-) -> Result<Map<String, Value>, Refused> {
-    let mut parts = token.trim().split('.');
+/// The header and claims of `token`, when it is signed by one of `keys`. The algorithm is the
+/// one the key is listed for; `none` and HMAC never verify.
+/// A JWT's header and claims.
+type Parts = (Map<String, Value>, Map<String, Value>);
+
+fn signed_claims(token: &str, keys: &[Jwk]) -> Result<Parts, Refused> {
+    let token = token.trim();
+    let mut parts = token.split('.');
     let (Some(header), Some(payload), Some(signature), None) = (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return Err(invalid("not a signed JWT"));
@@ -379,7 +379,7 @@ pub fn check_id_token(
     let alg = header.get("alg").and_then(Value::as_str).unwrap_or_default();
     let kid = header.get("kid").and_then(Value::as_str);
     let signature = URL_SAFE_NO_PAD.decode(signature).map_err(|_| invalid("its signature is not base64url"))?;
-    let signed = &token.trim()[..header_and_payload_len(token.trim())];
+    let signed = &token[..header_and_payload_len(token)];
     let candidates: Vec<&Jwk> = keys
         .iter()
         .filter(|key| kid.is_none_or(|kid| key.kid.as_deref() == Some(kid)))
@@ -398,15 +398,34 @@ pub fn check_id_token(
         .ok()
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .ok_or_else(|| invalid("its claims are not JSON"))?;
-    let text = |name: &str| claims.get(name).and_then(Value::as_str);
-    if text("iss").map(|iss| iss.trim_end_matches('/')) != Some(expected.issuer.trim_end_matches('/')) {
-        return Err(invalid("it is from another issuer"));
-    }
-    let audiences: Vec<&str> = match claims.get("aud") {
+    Ok((header, claims))
+}
+
+fn audiences(claims: &Map<String, Value>) -> Vec<&str> {
+    match claims.get("aud") {
         Some(Value::String(one)) => vec![one.as_str()],
         Some(Value::Array(many)) => many.iter().filter_map(Value::as_str).collect(),
         _ => Vec::new(),
-    };
+    }
+}
+
+fn same_issuer(claims: &Map<String, Value>, issuer: &str) -> bool {
+    claims.get("iss").and_then(Value::as_str).map(|iss| iss.trim_end_matches('/')) == Some(issuer.trim_end_matches('/'))
+}
+
+/// The claims of `token`, when it is signed by one of `keys` and is for `expected`.
+pub fn check_id_token(
+    token: &str,
+    keys: &[Jwk],
+    expected: &Expected<'_>,
+    now: i64,
+) -> Result<Map<String, Value>, Refused> {
+    let (_, claims) = signed_claims(token, keys)?;
+    let text = |name: &str| claims.get(name).and_then(Value::as_str);
+    if !same_issuer(&claims, expected.issuer) {
+        return Err(invalid("it is from another issuer"));
+    }
+    let audiences = audiences(&claims);
     if !audiences.contains(&expected.client_id) {
         return Err(invalid("it is for another client"));
     }
@@ -415,10 +434,12 @@ pub fn check_id_token(
     }
     let number = |name: &str| claims.get(name).and_then(Value::as_i64);
     match number("exp") {
-        Some(exp) if exp + LEEWAY > now => {}
+        Some(exp) if exp.saturating_add(LEEWAY) > now => {}
         _ => return Err(invalid("it ran out")),
     }
-    if number("nbf").is_some_and(|nbf| nbf > now + LEEWAY) || number("iat").is_some_and(|iat| iat > now + 5 * LEEWAY) {
+    if number("nbf").is_some_and(|nbf| nbf > now.saturating_add(LEEWAY))
+        || number("iat").is_some_and(|iat| iat > now.saturating_add(5 * LEEWAY))
+    {
         return Err(invalid("it is from the future"));
     }
     let nonce = text("nonce").unwrap_or_default();
@@ -427,6 +448,65 @@ pub fn check_id_token(
     }
     if text("sub").is_none_or(str::is_empty) {
         return Err(invalid("it names nobody (no sub)"));
+    }
+    Ok(claims)
+}
+
+// ── Logout tokens ─────────────────────────────────────────
+
+/// The event a logout token of OpenID Connect Back-Channel Logout 1.0 carries.
+pub const LOGOUT_EVENT: &str = "http://schemas.openid.net/event/backchannel-logout";
+
+/// How long after it was made a logout token is still taken. UwUAuth's last two minutes.
+pub const LOGOUT_MAX_AGE: i64 = 5 * 60;
+
+/// The claims of a logout token (Back-Channel Logout 1.0 §2.6), when it is signed by one of
+/// `keys`, comes from `issuer`, is for `client_id`, is fresh, carries the logout event and no
+/// nonce, has a `jti`, and names somebody (`sub`) or a session (`sid`).
+pub fn check_logout_token(
+    token: &str,
+    keys: &[Jwk],
+    issuer: &str,
+    client_id: &str,
+    now: i64,
+) -> Result<Map<String, Value>, Refused> {
+    let (header, claims) = signed_claims(token, keys)?;
+    // Explicitly typed tokens must be logout tokens; an ID token passed off as one is not.
+    if let Some(typ) = header.get("typ").and_then(Value::as_str) {
+        let typ = typ.to_ascii_lowercase();
+        if !matches!(typ.as_str(), "logout+jwt" | "application/logout+jwt" | "jwt") {
+            return Err(invalid(format!("it is a {typ}, not a logout token")));
+        }
+    }
+    if !same_issuer(&claims, issuer) {
+        return Err(invalid("it is from another issuer"));
+    }
+    if !audiences(&claims).contains(&client_id) {
+        return Err(invalid("it is for another client"));
+    }
+    let number = |name: &str| claims.get(name).and_then(Value::as_i64);
+    match number("iat") {
+        Some(iat) if iat > now.saturating_add(LEEWAY) => return Err(invalid("it is from the future")),
+        Some(iat) if iat.saturating_add(LOGOUT_MAX_AGE + LEEWAY) < now => return Err(invalid("it is too old")),
+        Some(_) => {}
+        None => return Err(invalid("it says nothing of when it was made (no iat)")),
+    }
+    if number("exp").is_some_and(|exp| exp.saturating_add(LEEWAY) <= now) {
+        return Err(invalid("it ran out"));
+    }
+    let event = claims.get("events").and_then(Value::as_object).and_then(|events| events.get(LOGOUT_EVENT));
+    if !event.is_some_and(Value::is_object) {
+        return Err(invalid("it carries no logout event"));
+    }
+    if claims.contains_key("nonce") {
+        return Err(invalid("it has a nonce, as only an ID token has"));
+    }
+    let text = |name: &str| claims.get(name).and_then(Value::as_str).filter(|value| !value.is_empty());
+    if text("jti").is_none() {
+        return Err(invalid("it has no jti"));
+    }
+    if text("sub").is_none() && text("sid").is_none() {
+        return Err(invalid("it names neither somebody (sub) nor a session (sid)"));
     }
     Ok(claims)
 }
@@ -523,12 +603,16 @@ pub(crate) mod tests {
         }
 
         pub(crate) fn sign(&self, kid: &str, claims: &Value) -> String {
+            self.sign_typed(kid, "JWT", claims)
+        }
+
+        /// Signed with `typ` in the header: a logout token says `logout+jwt`.
+        pub(crate) fn sign_typed(&self, kid: &str, typ: &str, claims: &Value) -> String {
             let alg = match self {
                 Signer::Ec(_) => "ES256",
                 Signer::Ed(_) => "EdDSA",
             };
-            let header =
-                URL_SAFE_NO_PAD.encode(serde_json::json!({ "alg": alg, "kid": kid, "typ": "JWT" }).to_string());
+            let header = URL_SAFE_NO_PAD.encode(serde_json::json!({ "alg": alg, "kid": kid, "typ": typ }).to_string());
             let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
             let signed = format!("{header}.{payload}");
             let signature = match self {
@@ -576,6 +660,11 @@ pub(crate) mod tests {
         };
         assert!(refused(&|c| c["iss"] = "https://evil.example.com".into()).is_err(), "issuer");
         assert!(refused(&|c| c["aud"] = "other".into()).is_err(), "audience");
+        // Times at the edge of i64 neither overflow nor pass.
+        assert!(refused(&|c| c["exp"] = i64::MAX.into()).is_ok(), "an exp far out is the provider's call");
+        assert!(refused(&|c| c["exp"] = i64::MIN.into()).is_err(), "ran out long ago");
+        assert!(refused(&|c| c["iat"] = i64::MAX.into()).is_err(), "from the far future");
+        assert!(refused(&|c| c["nbf"] = i64::MAX.into()).is_err(), "not before the far future");
         assert!(refused(&|c| c["aud"] = serde_json::json!(["lock", "other"])).is_ok(), "among several");
         assert!(refused(&|c| c["azp"] = "other".into()).is_err(), "handed to another client");
         assert!(refused(&|c| c["exp"] = (NOW - 3600).into()).is_err(), "ran out");
@@ -600,6 +689,82 @@ pub(crate) mod tests {
             URL_SAFE_NO_PAD.encode(claims().to_string())
         );
         assert!(check_id_token(&none, &keys, &EXPECTED, NOW).is_err(), "alg none");
+    }
+
+    fn logout_claims() -> Value {
+        serde_json::json!({
+            "iss": "https://auth.example.com", "aud": "lock", "sub": "p-1", "sid": "s-1",
+            "iat": NOW, "exp": NOW + 120, "jti": "j-1",
+            "events": { LOGOUT_EVENT: {} },
+        })
+    }
+
+    #[test]
+    fn a_logout_token_is_checked_like_back_channel_logout_says() {
+        let signer = Signer::eddsa();
+        let keys = keys_of(&[signer.jwk("k1")]);
+        let check = |typ: &str, change: &dyn Fn(&mut Value), now: i64| {
+            let mut changed = logout_claims();
+            change(&mut changed);
+            check_logout_token(&signer.sign_typed("k1", typ, &changed), &keys, "https://auth.example.com/", "lock", now)
+        };
+        let remove = |name: &'static str| move |c: &mut Value| drop(c.as_object_mut().unwrap().remove(name));
+        assert_eq!(check("logout+jwt", &|_| {}, NOW).unwrap()["sid"], "s-1");
+        assert!(check("JWT", &|_| {}, NOW + 100).is_ok(), "a plain JWT type, a bit later");
+        assert!(check("logout+jwt", &remove("sub"), NOW).is_ok(), "a session alone");
+        assert!(check("logout+jwt", &remove("sid"), NOW).is_ok(), "somebody alone");
+        assert!(check("logout+jwt", &remove("exp"), NOW).is_ok(), "exp is up to the provider");
+
+        assert!(check("at+jwt", &|_| {}, NOW).is_err(), "another kind of token");
+        assert!(check("logout+jwt", &|c| c["iss"] = "https://evil.example.com".into(), NOW).is_err());
+        assert!(check("logout+jwt", &|c| c["aud"] = "other".into(), NOW).is_err());
+        assert!(check("logout+jwt", &|c| c["aud"] = serde_json::json!(["other", "lock"]), NOW).is_ok());
+        assert!(check("logout+jwt", &|_| {}, NOW + LOGOUT_MAX_AGE + LEEWAY + 1).is_err(), "too old");
+        assert!(check("logout+jwt", &remove("exp"), NOW + LOGOUT_MAX_AGE + LEEWAY + 1).is_err(), "too old");
+        assert!(check("logout+jwt", &|_| {}, NOW - LEEWAY - 1).is_err(), "from the future");
+        assert!(check("logout+jwt", &remove("iat"), NOW).is_err(), "no iat");
+        assert!(check("logout+jwt", &|c| c["exp"] = i64::MAX.into(), NOW).is_ok(), "exp at the edge");
+        assert!(check("logout+jwt", &|c| c["iat"] = i64::MAX.into(), NOW).is_err(), "iat at the edge");
+        assert!(check("logout+jwt", &|c| c["iat"] = i64::MIN.into(), NOW).is_err(), "iat long gone");
+        assert!(check("logout+jwt", &|c| c["exp"] = (NOW - LEEWAY).into(), NOW).is_err(), "ran out");
+        assert!(check("logout+jwt", &remove("events"), NOW).is_err(), "no event");
+        assert!(check("logout+jwt", &|c| c["events"] = serde_json::json!({ "other": {} }), NOW).is_err());
+        assert!(check("logout+jwt", &|c| c["events"] = serde_json::json!({ LOGOUT_EVENT: "x" }), NOW).is_err());
+        assert!(check("logout+jwt", &|c| c["nonce"] = "n-1".into(), NOW).is_err(), "an ID token's nonce");
+        assert!(check("logout+jwt", &remove("jti"), NOW).is_err(), "no jti");
+        assert!(
+            check(
+                "logout+jwt",
+                &|c| {
+                    c["sub"] = "".into();
+                    c["sid"] = "".into()
+                },
+                NOW
+            )
+            .is_err()
+        );
+
+        // An ID token is not a logout token, and `none` signs nothing.
+        assert!(
+            check_logout_token(&signer.sign("k1", &claims()), &keys, "https://auth.example.com", "lock", NOW).is_err()
+        );
+        let none = format!(
+            "{}.{}.",
+            URL_SAFE_NO_PAD.encode(r#"{"alg":"none","kid":"k1","typ":"logout+jwt"}"#),
+            URL_SAFE_NO_PAD.encode(logout_claims().to_string())
+        );
+        assert!(check_logout_token(&none, &keys, "https://auth.example.com", "lock", NOW).is_err(), "alg none");
+        let other = Signer::eddsa();
+        assert_eq!(
+            check_logout_token(
+                &other.sign_typed("k9", "logout+jwt", &logout_claims()),
+                &keys,
+                "https://auth.example.com",
+                "lock",
+                NOW
+            ),
+            Err(Refused::UnknownKey)
+        );
     }
 
     #[test]

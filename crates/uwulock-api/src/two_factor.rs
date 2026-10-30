@@ -180,6 +180,9 @@ pub(crate) async fn check_login(
                 let Some(device) =
                     device.filter(|device| device.remembered(&auth::sha256(code.as_bytes()), days))
                 else {
+                    // A remembered token that ran out, or another account's in a shared browser:
+                    // no guess (it is 32 random bytes), so it costs no try.
+                    state.limits.two_factor.give_back(&user.id);
                     return Err(required());
                 };
                 // The device stays remembered with the token it has, for the set days from now.
@@ -340,10 +343,24 @@ struct LoginCodeRequest {
     email: Option<String>,
     #[serde(default, alias = "MasterPasswordHash")]
     master_password_hash: Option<String>,
+    /// After an SSO login, in place of the password hash: what its token answer handed out.
+    #[serde(default, alias = "ssoEmail2FaSessionToken", alias = "SsoEmail2faSessionToken")]
+    sso_email2fa_session_token: Option<String>,
+    /// The device asking: after SSO, the one the SSO login is for.
+    #[serde(default, alias = "DeviceIdentifier")]
+    device_identifier: Option<String>,
 }
 
-/// "Send me the code by mail" on the second step of a login. The password comes along, so this
-/// cannot fill somebody's inbox with codes.
+/// Whether a refused login sent a code of its own that was wrong: worth an event and a notice.
+/// A remembered device's token that no longer holds is not one — clients send it on their own.
+pub(crate) fn sent_a_wrong_code(form: &TokenForm) -> bool {
+    form.get("twofactortoken").is_some()
+        && form.get("twofactorprovider").and_then(|value| value.trim().parse::<i64>().ok()) != Some(REMEMBER)
+}
+
+/// "Send me the code by mail" on the second step of a login. The password comes along — or,
+/// after SSO, the short-lived token the SSO login's answer handed out — so this cannot fill
+/// somebody's inbox with codes.
 async fn send_login_code(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
@@ -354,17 +371,44 @@ async fn send_login_code(
     }
     let wrong = || ApiError::bad("Username or password is incorrect. Try again");
     let email = request.email.filter(|email| !email.is_empty()).ok_or_else(wrong)?;
-    let password = request
-        .master_password_hash
-        .filter(|hash| !hash.is_empty())
-        .ok_or_else(|| ApiError::bad("No password hash has been submitted."))?;
-    let user = state.store.user_by_email(&email).await?;
-    if !auth::verify_password(state.config.hash_cost, user.as_ref().map(|user| user.password_hash.as_str()), &password)
-        .await
-    {
-        return Err(wrong());
-    }
-    let user = user.expect("a password matched");
+    let user = match request.sso_email2fa_session_token.filter(|token| !token.is_empty()) {
+        Some(token) => {
+            // One answer for a token that is wrong, ran out, is for another address or device,
+            // or whose SSO login is over (its code used up or gone).
+            let refused = || ApiError::bad("This SSO login ran out. Start it again.");
+            let login = state.tokens.check_sso_email_2fa_token(&token).ok_or_else(refused)?;
+            let device = request.device_identifier.unwrap_or_default();
+            let same_device = auth::constant_time_eq(&auth::sha256(device.as_bytes()), &login.device_hash);
+            if !same_device
+                || uwulock_store::normalize_email(&email) != login.email
+                || !crate::sso::active(&state, &state.settings())
+            {
+                return Err(refused());
+            }
+            let code = state.store.sso_code(login.code_hash).await?.ok_or_else(refused)?;
+            if code.user_id != login.user_id {
+                return Err(refused());
+            }
+            state
+                .store
+                .user(&login.user_id)
+                .await?
+                .filter(|user| user.email == login.email && !user.disabled)
+                .ok_or_else(refused)?
+        }
+        None => {
+            let password = request
+                .master_password_hash
+                .filter(|hash| !hash.is_empty())
+                .ok_or_else(|| ApiError::bad("No password hash has been submitted."))?;
+            let user = state.store.user_by_email(&email).await?;
+            let stored = user.as_ref().map(|user| user.password_hash.as_str());
+            if !auth::verify_password(state.config.hash_cost, stored, &password).await {
+                return Err(wrong());
+            }
+            user.expect("a password matched")
+        }
+    };
     if !state.mailer.enabled() {
         return Err(ApiError::bad("This server cannot send mail."));
     }

@@ -8,6 +8,7 @@
  */
 
 import { emit, listen } from './events';
+import { breaksRules, type PasswordRules } from './passwordRules';
 import { getSettings } from './settings';
 import { call, callJson } from './web/core';
 import { ApiError, currentSession, deviceId, deviceType, request, setSession } from './web/http';
@@ -45,6 +46,8 @@ export type Status = {
   syncError: string | null;
   sessionExpired: boolean;
   accounts: AccountBrief[];
+  /** The master password breaks the server's rules, which it enforces at login: change it. */
+  passwordChangeDue?: boolean;
 };
 
 export type TwoFactorMethod = {
@@ -237,6 +240,14 @@ type Pending = {
   methods: TwoFactorMethod[];
   /** An SSO login: the form of its code, in place of the password's. */
   form?: Record<string, string>;
+  /** After SSO: what asks for the code by mail in place of the password hash. */
+  ssoEmailToken?: string;
+  /** The password breaks the rules the server enforces at login. */
+  passwordDue?: boolean;
+  /** The remembered device's token went with this try. */
+  triedRemembered?: boolean;
+  /** The remembered device's token was tried once in this login already. */
+  usedRemembered?: boolean;
 };
 
 let pending: Pending | null = null;
@@ -247,6 +258,7 @@ let name: string | null = null;
 /** The profile of the last sync, for what the module does not keep: the public key. */
 let profile: Record<string, unknown> | null = null;
 let unlocked = false;
+let passwordChangeDue = false;
 
 /** Errors as `{ kind, message }`, whatever threw them. */
 export function failure(error: unknown): Failure {
@@ -276,6 +288,7 @@ async function status(): Promise<Status> {
     syncError,
     sessionExpired: false,
     accounts: [],
+    passwordChangeDue: unlocked && passwordChangeDue,
   };
 }
 
@@ -304,6 +317,61 @@ export async function prelogin(email: string): Promise<string> {
 
 // ── Logging in ────────────────────────────────────────────
 
+/**
+ * "Remember this device": the server's token for skipping the second step, by account, in this
+ * browser only. An SSO login learns its account from the server's answer asking for the second
+ * step (`Email`), and only then sends that account's token — never another account's.
+ */
+const REMEMBER_KEY = 'uwulock.remember';
+type Remembered = { tokens: Record<string, string> };
+
+function remembered(): Remembered {
+  try {
+    const stored = JSON.parse(localStorage.getItem(REMEMBER_KEY) ?? 'null') as Remembered | null;
+    if (stored && stored.tokens && typeof stored.tokens === 'object')
+      return { tokens: stored.tokens };
+  } catch {
+    // Storage blocked or garbled: nothing remembered.
+  }
+  return { tokens: {} };
+}
+
+function remember(change: (stored: Remembered) => void) {
+  const stored = remembered();
+  change(stored);
+  try {
+    localStorage.setItem(REMEMBER_KEY, JSON.stringify(stored));
+  } catch {
+    // Not kept: the next login asks for the second step again.
+  }
+}
+
+/** The account a login's access token is for. */
+function emailOf(accessToken: string): string {
+  const claims = JSON.parse(
+    atob(accessToken.split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')),
+  ) as { email: string };
+  return claims.email;
+}
+
+/**
+ * Whether `password` breaks the master password rules the server enforces at login. Without an
+ * answer from the server, nothing is asked.
+ */
+async function passwordBreaksPolicy(password: string): Promise<boolean> {
+  try {
+    const info = await request<{ policies?: { masterPassword?: PasswordRules } }>('/uwu/v1/info', {
+      auth: false,
+    });
+    const rules = info.policies?.masterPassword;
+    if (!rules?.enforceOnLogin) return false;
+    const bits = await call((core) => core.entropyBits(password));
+    return breaksRules(password, bits, rules);
+  } catch {
+    return false;
+  }
+}
+
 const TWO_FACTOR_KINDS: Record<string, [TwoFactorMethod['kind'], boolean]> = {
   '0': ['authenticator', true],
   '1': ['email', true],
@@ -315,6 +383,15 @@ const TWO_FACTOR_KINDS: Record<string, [TwoFactorMethod['kind'], boolean]> = {
 async function token(extra: Record<string, string>): Promise<LoginStep> {
   const p = pending!;
   const device = deviceType();
+  // The first try goes with a remembered device's token, if there is one for the account (an
+  // SSO login knows its account only once the server asked for the second step).
+  const rememberedFor = p.email;
+  const rememberedToken = rememberedFor ? remembered().tokens[rememberedFor] : undefined;
+  p.triedRemembered = !extra.twoFactorToken && !p.usedRemembered && Boolean(rememberedToken);
+  if (p.triedRemembered) {
+    p.usedRemembered = true;
+    extra = { twoFactorProvider: '5', twoFactorToken: rememberedToken!, ...extra };
+  }
   const form = new URLSearchParams({
     ...(p.form ?? {
       grant_type: 'password',
@@ -340,6 +417,18 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
       const providers = refusal.TwoFactorProviders2 as
         Record<string, ({ Email?: string } & Record<string, unknown>) | null> | undefined;
       if (providers) {
+        if (p.triedRemembered && rememberedFor) {
+          // Run out or forgotten by the server: asked for the second step as without it.
+          remember((stored) => delete stored.tokens[rememberedFor]);
+        }
+        if (typeof refusal.SsoEmail2faSessionToken === 'string')
+          p.ssoEmailToken = refusal.SsoEmail2faSessionToken;
+        if (p.form && typeof refusal.Email === 'string') {
+          p.email = refusal.Email.toLowerCase();
+          // Now that the account is known: its remembered device, if this browser has one.
+          if (!extra.twoFactorToken && !p.usedRemembered && remembered().tokens[p.email])
+            return token({});
+        }
         p.methods = Object.entries(providers).map(([provider, details]) => {
           const [kind, supported] = TWO_FACTOR_KINDS[provider] ?? ['other', false];
           return {
@@ -350,11 +439,18 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
             options: kind === 'webauthn' ? details : null,
           };
         });
-        const message = extra.twoFactorToken ? error.message : null;
+        const message = extra.twoFactorToken && !p.triedRemembered ? error.message : null;
         return { step: 'two-factor', methods: p.methods, message };
       }
     }
     throw failure(error);
+  }
+  const account = p.form ? emailOf(String(body.access_token)) : p.email;
+  if (typeof body.TwoFactorToken === 'string') {
+    const kept = body.TwoFactorToken;
+    remember((stored) => {
+      stored.tokens[account] = kept;
+    });
   }
   if (p.form) {
     // Through SSO: logged in, but the vault opens only with the master password — or, for an
@@ -371,6 +467,7 @@ async function token(extra: Record<string, string>): Promise<LoginStep> {
   await call((core) => core.unlock(p.email, p.kdf, String(body.Key)));
   pending = null;
   unlocked = true;
+  passwordChangeDue = p.passwordDue ?? false;
   await sync();
   return { step: 'done', status: await announce() };
 }
@@ -383,7 +480,13 @@ export const login = async (
   const address = email.trim().toLowerCase();
   const kdf = await prelogin(address);
   const hash = await call((core) => core.deriveLogin(address, password, kdf));
-  pending = { email: address, hash, kdf, methods: [] };
+  pending = {
+    email: address,
+    hash,
+    kdf,
+    methods: [],
+    passwordDue: await passwordBreaksPolicy(password),
+  };
   return token({});
 };
 
@@ -428,10 +531,7 @@ async function finishKeyless(
   body: Record<string, unknown>,
   unlock: (email: string, kdf: string) => Promise<boolean>,
 ): Promise<LoginStep> {
-  const claims = JSON.parse(
-    atob(String(body.access_token).split('.')[1]!.replace(/-/g, '+').replace(/_/g, '/')),
-  ) as { email: string };
-  const email = claims.email;
+  const email = emailOf(String(body.access_token));
   setSession({
     email,
     accessToken: String(body.access_token),
@@ -559,11 +659,17 @@ export const loginNewDevice = async (_code: string): Promise<LoginStep> => {
 export const loginSendEmail = async () => {
   if (!pending) return;
   await request('/api/two-factor/send-email-login', {
-    body: {
-      email: pending.email,
-      masterPasswordHash: pending.hash,
-      deviceIdentifier: deviceId(),
-    },
+    body: pending.ssoEmailToken
+      ? {
+          email: pending.email,
+          ssoEmail2FaSessionToken: pending.ssoEmailToken,
+          deviceIdentifier: deviceId(),
+        }
+      : {
+          email: pending.email,
+          masterPasswordHash: pending.hash,
+          deviceIdentifier: deviceId(),
+        },
     auth: false,
   });
 };
@@ -584,6 +690,7 @@ export const unlock = async (password: string): Promise<Status> => {
   const key = (sync.profile as Record<string, unknown>).key as string;
   await call((core) => core.unlock(session.email, kdf, key));
   unlocked = true;
+  passwordChangeDue = await passwordBreaksPolicy(password);
   await open(sync);
   return announce();
 };
@@ -595,6 +702,7 @@ export const lock = async () => {
   stopLive();
   await call((core) => core.lock());
   unlocked = false;
+  passwordChangeDue = false;
   await announce();
 };
 
@@ -611,6 +719,7 @@ export const logout = async (_id?: string): Promise<Status> => {
   void clearClipboard();
   await call((core) => core.lock());
   unlocked = false;
+  passwordChangeDue = false;
   name = null;
   profile = null;
   return announce();

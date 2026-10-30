@@ -112,6 +112,27 @@ struct LinkClaims {
     /// mode the download follows.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     viewer: Option<String>,
+    /// For the mail of an SSO login's second step: the login it belongs to, as the SHA-256 of
+    /// its one-time code and of the device's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    login: Option<SsoLogin>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct SsoLogin {
+    code: String,
+    device: String,
+}
+
+/// What an [`Tokens::sso_email_2fa_token`] is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SsoEmail2fa {
+    pub user_id: String,
+    pub email: String,
+    /// The SHA-256 of the SSO login's one-time code.
+    pub code_hash: Vec<u8>,
+    /// The SHA-256 of the device's id.
+    pub device_hash: Vec<u8>,
 }
 
 impl Tokens {
@@ -191,6 +212,7 @@ impl Tokens {
             iss: self.link_issuer("file"),
             email: None,
             viewer: viewer.map(str::to_string),
+            login: None,
         };
         self.sign(&claims)
     }
@@ -215,6 +237,7 @@ impl Tokens {
             iss: self.link_issuer("send"),
             email: email.map(str::to_string),
             viewer: None,
+            login: None,
         };
         (self.sign(&claims), seconds)
     }
@@ -234,6 +257,7 @@ impl Tokens {
             iss: self.link_issuer("filerequest"),
             email: None,
             viewer: None,
+            login: None,
         };
         (self.sign(&claims), seconds)
     }
@@ -246,6 +270,7 @@ impl Tokens {
             iss: self.link_issuer("sso"),
             email: None,
             viewer: None,
+            login: None,
         };
         self.sign(&claims)
     }
@@ -253,6 +278,43 @@ impl Tokens {
     /// Whether `token` is one [`Tokens::sso_token`] made, and has not run out.
     pub fn check_sso_token(&self, token: &str) -> bool {
         self.verify_link(token, "sso").is_some()
+    }
+
+    /// What lets the second step of an SSO login ask for its code by mail, where a password
+    /// login has the password hash (Bitwarden's `SsoEmail2faSessionToken`): for the account and
+    /// its address, and bound to that login — its one-time code (by its SHA-256) and the device.
+    pub fn sso_email_2fa_token(
+        &self,
+        user_id: &str,
+        email: &str,
+        code_hash: &[u8],
+        device_id: &str,
+        seconds: i64,
+    ) -> String {
+        let claims = LinkClaims {
+            sub: user_id.to_string(),
+            exp: now_seconds() + seconds,
+            iss: self.link_issuer("ssoemail2fa"),
+            email: Some(email.to_string()),
+            viewer: None,
+            login: Some(SsoLogin {
+                code: URL_SAFE_NO_PAD.encode(code_hash),
+                device: URL_SAFE_NO_PAD.encode(sha256(device_id.as_bytes())),
+            }),
+        };
+        self.sign(&claims)
+    }
+
+    /// What an [`Tokens::sso_email_2fa_token`] is for, while it holds.
+    pub fn check_sso_email_2fa_token(&self, token: &str) -> Option<SsoEmail2fa> {
+        let claims = self.verify_link(token, "ssoemail2fa")?;
+        let login = claims.login?;
+        Some(SsoEmail2fa {
+            user_id: claims.sub,
+            email: claims.email?,
+            code_hash: URL_SAFE_NO_PAD.decode(login.code).ok()?,
+            device_hash: URL_SAFE_NO_PAD.decode(login.device).ok()?,
+        })
     }
 
     /// The file request an upload token is for.
@@ -269,6 +331,7 @@ impl Tokens {
             iss: self.link_issuer("orginvite"),
             email: Some(email.to_string()),
             viewer: None,
+            login: None,
         };
         self.sign(&claims)
     }

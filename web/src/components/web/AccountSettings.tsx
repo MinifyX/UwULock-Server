@@ -387,7 +387,7 @@ function Rotate({ onCancel, onDone }: { onCancel: () => void; onDone: () => void
   );
 }
 
-function NewPassword({
+export function NewPassword({
   hasHint,
   onCancel,
   onDone,
