@@ -9,4 +9,9 @@ ignore = [
     # can make the victim's browser decrypt many chosen values and time each. The UwULock app's
     # own review (security-review-2026-09) weighs it the same. Look again when `rsa` 0.10 is out.
     "RUSTSEC-2023-0071",
+    # RUSTSEC-2026-0387: timing differences in crypto-bigint's constant-time operations, fixed only
+    # in 0.7.6+. The 0.5 line comes in through p256 0.13 in UwULock's `uwulock-core`: here only in
+    # the tests (uwulock-e2e) and the web vault, never in the server binary. Look again when
+    # uwulock-core moves to p256 0.14 / elliptic-curve 0.14.
+    "RUSTSEC-2026-0387",
 ]
