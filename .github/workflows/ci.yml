@@ -39,7 +39,7 @@ env:
 jobs:
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       # Let's Encrypt's test CA, for the one test that gets a real certificate. It takes every
       # challenge as passed, so the server needs no port 443 for it; what is tested is everything
@@ -84,7 +84,7 @@ jobs:
 
   scripts:
     name: Scripts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -97,7 +97,7 @@ jobs:
 
   version:
     name: Version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -119,7 +119,7 @@ jobs:
 
   audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -136,7 +136,7 @@ jobs:
 
   web:
     name: Web vault
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: web
@@ -191,7 +191,7 @@ jobs:
   binary-amd64:
     name: Binary amd64
     needs: web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       # The server knows its commit and, for a release, checks for newer releases instead of
       # newer commits.
@@ -232,7 +232,7 @@ jobs:
   binary-arm64:
     name: Binary arm64
     needs: web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       UWULOCK_GIT_SHA: ${{ github.sha }}
       UWULOCK_RELEASE: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
@@ -276,7 +276,7 @@ jobs:
   e2e:
     name: A browser and Bitwarden's CLI
     needs: binary-amd64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -390,7 +390,7 @@ jobs:
   vaultwarden:
     name: Moving in from Vaultwarden
     needs: binary-amd64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       VAULTWARDEN: vaultwarden/server:1.37.3
       # The newest CLI wants an endpoint Vaultwarden does not have yet; this one fills it.
@@ -462,7 +462,7 @@ jobs:
   install:
     name: Install and update
     needs: binary-amd64
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -581,7 +581,7 @@ jobs:
     name: Container image
     if: github.event_name != 'pull_request'
     needs: [test, scripts, audit, web, binary-arm64, e2e, vaultwarden, install, version]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -662,7 +662,7 @@ jobs:
     name: GitHub release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [image]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
