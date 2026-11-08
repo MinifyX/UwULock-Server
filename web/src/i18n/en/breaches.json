@@ -45,5 +45,8 @@
   "(neues Fenster)": "(new window)",
   "Neues Passwort erzeugen & speichern": "Generate & save a new password",
   "Später": "Later",
-  "Neues Passwort gespeichert": "New password saved"
+  "Neues Passwort gespeichert": "New password saved",
+  "Nicht mehr prüfen": "Don't check again",
+  "Wieder prüfen": "Check again",
+  "Ganzer Login, nicht mehr geprüft": "Whole login, no longer checked"
 }

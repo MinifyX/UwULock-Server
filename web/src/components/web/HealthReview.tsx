@@ -6,6 +6,7 @@ import {
   cardsOf,
   changeIgnores,
   changePasswordPage,
+  exclude,
   ignore,
   isIgnored,
   loadIgnores,
@@ -286,14 +287,30 @@ export function HealthReview({ onBack, onOpen }: Props) {
     }
   };
 
+  const drop = (id: string) => {
+    setCards((all) => all?.filter((c) => c.finding.id !== id) ?? null);
+    setIndex((at) => Math.min(at, Math.max(total - 2, 0)));
+  };
+
   const skip = () => {
     if (!card) return;
     const next = new Set(later);
     next.add(card.finding.id);
     setLater(next);
     keepLater(next);
-    setCards((all) => all?.filter((c) => c.finding.id !== card.finding.id) ?? null);
-    setIndex((at) => Math.min(at, Math.max(total - 2, 0)));
+    drop(card.finding.id);
+  };
+
+  // The whole login, on every device, until "Wieder prüfen" in the report.
+  const stopChecking = async () => {
+    if (!ignores || !card) return;
+    const id = card.finding.id;
+    try {
+      setIgnores(await changeIgnores(ignores, (list) => exclude(list, id)));
+      drop(id);
+    } catch (e) {
+      toast(errorText(e), 'error');
+    }
   };
 
   const saveNew = async (password: string) => {
@@ -476,6 +493,10 @@ export function HealthReview({ onBack, onOpen }: Props) {
                   <button className="quiet" onClick={skip}>
                     <Icon name="clock" size={15} />
                     {t('Später')}
+                  </button>
+                  <button className="quiet" onClick={() => void stopChecking()}>
+                    <Icon name="eye" size={15} />
+                    {t('Nicht mehr prüfen')}
                   </button>
                   <button className="quiet" onClick={() => onOpen(card.finding.id)}>
                     {t('Eintrag öffnen')}

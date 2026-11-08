@@ -39,6 +39,8 @@ Standard 90), gezählt ab der letzten Anmeldung mit dem Gerät.
 Anbieter; bestehende UwUAuth-Kopplungen müssen neu koppeln), den Code per Mail und „Gerät merken“
 nach SSO sowie die Zwei-Schritt- und Masterpasswort-Regeln bei der nächsten Anmeldung bestehender
 Konten.
+0.8.0-beta.4 lässt in der Passwortprüfung einen ganzen Login dauerhaft weg („Nicht mehr prüfen“,
+neuer Schlüssel `excluded` in der geteilten Ignorierliste, wie im UwULock-Client).
 Stufe 5 (Firma) ist
 zurückgestellt (Entscheidung von Lorin) und bleibt geplant.
 
