@@ -3,6 +3,17 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.4
+
+**A whole login can be left out of the password check for good.**
+
+- **Don't check again:** the review card has "Nicht mehr prüfen" / "Don't check again". The login
+  goes into the new `excluded` list of the shared ignore list (docs/uwu-api.md §15.6): every kind
+  of problem, also ones that appear later, is no longer shown or counted, on every device, until
+  "Wieder prüfen" / "Check again" in the report's "Ignoriert" list. Same format as UwULock.
+- The web vault now keeps keys of the ignore list it does not know when it saves it, as the spec
+  says; before, saving dropped them (and so would have dropped another app's `excluded`).
+
 ## 0.8.0-beta.3
 
 **Logging out at the SSO provider logs out here too, and two-step login after SSO works fully.**

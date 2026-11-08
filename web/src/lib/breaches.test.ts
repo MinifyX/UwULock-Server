@@ -6,7 +6,10 @@ import {
   cardsOf,
   ignore,
   isAddress,
+  exclude,
+  include,
   isIgnored,
+  parseIgnores,
   retryingBusy,
   switchesOf,
   tidy,
@@ -82,6 +85,50 @@ describe('the ignore list', () => {
     list = ignore(list, 'gone', 'reused');
     expect(tidy(list, new Set(['a'])).ignored).toHaveLength(1);
     expect(isIgnored(unignore(list, 'a', 'weak'), 'a', 'weak')).toBe(false);
+  });
+});
+
+describe('excluded logins', () => {
+  it('hide every kind, are undone, and tidied', () => {
+    let list = exclude(exclude({ version: 1, ignored: [] }, 'a'), 'a');
+    expect(list.excluded).toHaveLength(1);
+    expect(isIgnored(list, 'a', 'breached')).toBe(true);
+    expect(isIgnored(list, 'b', 'breached')).toBe(false);
+    list = exclude(list, 'gone');
+    expect(tidy(list, new Set(['a'])).excluded?.map((e) => e.itemId)).toEqual(['a']);
+    expect(isIgnored(include(list, 'a'), 'a', 'weak')).toBe(false);
+  });
+
+  it('keep unknown keys through a change', () => {
+    const list = parseIgnores(
+      JSON.stringify({
+        version: 1,
+        later: { x: 1 },
+        ignored: [
+          { itemId: 'a', kind: 'weak', since: '2026-10-01T08:00:00.000Z', note: 'n' },
+          { itemId: 'a', kind: 'unknownKind', since: '2026-10-01T08:00:00.000Z' },
+        ],
+        excluded: [{ itemId: 'b', since: '2026-10-01T08:00:00.000Z', by: 'phone' }, { since: 'x' }],
+      }),
+    );
+    const saved = JSON.parse(JSON.stringify(exclude(ignore(list, 'c', 'reused'), 'd')));
+    expect(saved.later).toEqual({ x: 1 });
+    expect(saved.ignored[0].note).toBe('n');
+    expect(saved.ignored.map((e: { kind: string }) => e.kind)).toEqual(['weak', 'reused']);
+    expect(saved.excluded[0].by).toBe('phone');
+    expect(saved.excluded.map((e: { itemId: string }) => e.itemId)).toEqual(['b', 'd']);
+    expect(parseIgnores('{"version":1}')).toMatchObject({ ignored: [], excluded: [] });
+  });
+
+  it('have no card', () => {
+    const report: Report = {
+      findings: [finding({ id: 'leak', name: 'A', breached: 3 })],
+      checked: 1,
+      breachesChecked: true,
+      breachesIncomplete: false,
+    };
+    const ignored = exclude({ version: 1, ignored: [] }, 'leak');
+    expect(cardsOf(report, { sites: null, ignored })).toEqual([]);
   });
 });
 

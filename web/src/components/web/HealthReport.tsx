@@ -6,6 +6,7 @@ import {
   changeIgnores,
   checkEmails,
   emailOptIn,
+  include,
   isAddress,
   loadIgnores,
   setEmailOptIn,
@@ -214,6 +215,15 @@ export function HealthReport({ onOpen, onReview }: Props) {
     }
   };
 
+  const check = async (id: string) => {
+    if (!ignores) return;
+    try {
+      setIgnores(await changeIgnores(ignores, (list) => include(list, id)));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const group = (title: string, lead: string, list: Finding[], detail: (f: Finding) => string) =>
     list.length > 0 && (
       <section className="detail-card" key={title}>
@@ -253,7 +263,11 @@ export function HealthReport({ onOpen, onReview }: Props) {
         .filter(({ finding }) => open('siteBreach')(finding))
     : [];
   const names = new Map(findings.map((f) => [f.id, f.name]));
-  const ignored = (ignores?.list.ignored ?? []).filter((entry) => names.has(entry.itemId));
+  const excluded = (ignores?.list.excluded ?? []).filter((entry) => names.has(entry.itemId));
+  const excludedIds = new Set(excluded.map((entry) => entry.itemId));
+  const ignored = (ignores?.list.ignored ?? []).filter(
+    (entry) => names.has(entry.itemId) && !excludedIds.has(entry.itemId),
+  );
   const xonNames = useMemo(() => {
     const byName = new Map<string, SiteBreach>();
     for (const breach of sites?.breaches ?? []) {
@@ -507,14 +521,29 @@ export function HealthReport({ onOpen, onReview }: Props) {
             )}
           </section>
         )}
-        {ignored.length > 0 && (
+        {ignored.length + excluded.length > 0 && (
           <section className="detail-card" data-testid="ignored">
             <h3 className="detail-card-title">
-              {t('Ignoriert')} <span className="nav-count">{ignored.length}</span>
+              {t('Ignoriert')} <span className="nav-count">{ignored.length + excluded.length}</span>
             </h3>
             <p className="field-hint">
               {t('Diese Hinweise zeigt die Prüfung nicht mehr, auf keinem Gerät.')}
             </p>
+            {excluded.map((entry) => (
+              <div className="detail-row" key={entry.itemId}>
+                <div className="detail-text">
+                  <span className="detail-value">
+                    {names.get(entry.itemId) || t('(ohne Namen)')}
+                  </span>
+                  <span className="detail-label">{t('Ganzer Login, nicht mehr geprüft')}</span>
+                </div>
+                <div className="detail-actions">
+                  <button className="quiet" onClick={() => void check(entry.itemId)}>
+                    {t('Wieder prüfen')}
+                  </button>
+                </div>
+              </div>
+            ))}
             {ignored.map((entry) => (
               <div className="detail-row" key={`${entry.itemId}:${entry.kind}`}>
                 <div className="detail-text">

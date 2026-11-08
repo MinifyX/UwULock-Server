@@ -2232,7 +2232,11 @@ The plain JSON inside (`version` 1; unknown keys are kept as far as a client can
 are dropped):
 
 ```json
-{ "version": 1, "ignored": [ { "itemId": "<cipher id>", "kind": "weak", "since": "2026-10-01T08:00:00.000Z" } ] }
+{
+  "version": 1,
+  "ignored": [ { "itemId": "<cipher id>", "kind": "weak", "since": "2026-10-01T08:00:00.000Z" } ],
+  "excluded": [ { "itemId": "<cipher id>", "since": "2026-11-08T08:00:00.000Z" } ]
+}
 ```
 
 `kind` is one of the stable problem ids: `breached` (HIBP or XposedOrNot saw the password),
@@ -2240,6 +2244,12 @@ are dropped):
 (2FA possible, not set up, §15). An entry hides that kind for that item in the report and the
 review, on every device, until it is undone; one per item and kind. Clients drop entries of items
 that no longer exist when they save.
+
+`excluded` (0.8.0-beta.4; missing = empty) leaves a **whole login** out of the check: every kind,
+also problems that only appear later, not counted in the report and without a review card, on
+every device, until it is undone ("Wieder prüfen" / "Check again" in the report's "Ignoriert"
+list). One entry per item; clients drop entries of items that no longer exist when they save.
+Clients that do not know the key keep it (unknown keys are kept).
 
 ### 15.7 The review one login at a time (client behaviour, 0.7)
 
@@ -2251,7 +2261,8 @@ card: "Seite öffnen & Passwort ändern" (§15.5 URL, else the login URI, new ta
 erzeugen & speichern" (generator; saving sets only the password, the old one goes into
 `passwordHistory` — newest first, at most five, `passwordRevisionDate` = now, as Bitwarden does),
 "Später" (hidden for this session only) and, per problem, "Ignorieren" (§15.6; "Rückgängig"
-right there and in the report's "Ignoriert" list).
+right there and in the report's "Ignoriert" list) and "Nicht mehr prüfen" / "Don't check again"
+(adds the login to `excluded`, §15.6; the card goes). An excluded login has no card.
 
 ---
 

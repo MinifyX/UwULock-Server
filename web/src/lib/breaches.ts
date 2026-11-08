@@ -227,25 +227,39 @@ export const PROBLEM_KINDS: ProblemKind[] = [
 
 export type Ignored = { itemId: string; kind: ProblemKind; since: string };
 
-/** The ignore list as it is encrypted (docs/uwu-api.md §15.6). */
-export type IgnoreList = { version: 1; ignored: Ignored[] };
+/** A login the check leaves out altogether: every kind, also problems that appear later. */
+export type Excluded = { itemId: string; since: string };
+
+/**
+ * The ignore list as it is encrypted (docs/uwu-api.md §15.6). Unknown keys, here and in the
+ * entries, ride along unchanged.
+ */
+export type IgnoreList = { version: 1; ignored: Ignored[]; excluded?: Excluded[] };
 
 export type StoredIgnores = { list: IgnoreList; revision: string | null };
 
-const EMPTY: IgnoreList = { version: 1, ignored: [] };
+const EMPTY: IgnoreList = { version: 1, ignored: [], excluded: [] };
 
-function parse(text: string): IgnoreList {
-  const value = JSON.parse(text) as Partial<IgnoreList>;
+/** The opened list: known entries checked, unknown kinds dropped, unknown keys kept. */
+export function parseIgnores(text: string): IgnoreList {
+  const value = JSON.parse(text) as Record<string, unknown>;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return EMPTY;
   const kinds = new Set<string>(PROBLEM_KINDS);
-  const ignored = Array.isArray(value.ignored)
-    ? value.ignored.filter(
-        (entry): entry is Ignored =>
-          typeof entry?.itemId === 'string' &&
-          typeof entry.since === 'string' &&
-          kinds.has(entry.kind as string),
-      )
-    : [];
-  return { version: 1, ignored };
+  const entries = (key: string) =>
+    (Array.isArray(value[key]) ? (value[key] as unknown[]) : []).filter(
+      (entry): entry is Record<string, unknown> =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof (entry as Record<string, unknown>).itemId === 'string' &&
+        typeof (entry as Record<string, unknown>).since === 'string',
+    );
+  const ignored = entries('ignored').filter((entry) => kinds.has(entry.kind as string));
+  return {
+    ...value,
+    version: 1,
+    ignored: ignored as Ignored[],
+    excluded: entries('excluded') as Excluded[],
+  };
 }
 
 type Wire = { data: string | null; revisionDate: string | null };
@@ -258,7 +272,7 @@ export async function loadIgnores(): Promise<StoredIgnores> {
   const data = stored.data;
   try {
     const text = await call((core) => core.openReport(data));
-    return { list: parse(text), revision: stored.revisionDate };
+    return { list: parseIgnores(text), revision: stored.revisionDate };
   } catch {
     // A list that does not open (another key) is started over.
     return { list: EMPTY, revision: stored.revisionDate };
@@ -297,22 +311,42 @@ export const ignore = (list: IgnoreList, itemId: string, kind: ProblemKind): Ign
   list.ignored.some((entry) => entry.itemId === itemId && entry.kind === kind)
     ? list
     : {
-        version: 1,
+        ...list,
         ignored: [...list.ignored, { itemId, kind, since: new Date().toISOString() }],
       };
 
 export const unignore = (list: IgnoreList, itemId: string, kind: ProblemKind): IgnoreList => ({
-  version: 1,
+  ...list,
   ignored: list.ignored.filter((entry) => !(entry.itemId === itemId && entry.kind === kind)),
+});
+
+export const isExcluded = (list: IgnoreList, itemId: string) =>
+  (list.excluded ?? []).some((entry) => entry.itemId === itemId);
+
+/** Leave the whole login out of the check, on every device, until `include`. */
+export const exclude = (list: IgnoreList, itemId: string): IgnoreList =>
+  isExcluded(list, itemId)
+    ? list
+    : {
+        ...list,
+        excluded: [...(list.excluded ?? []), { itemId, since: new Date().toISOString() }],
+      };
+
+export const include = (list: IgnoreList, itemId: string): IgnoreList => ({
+  ...list,
+  excluded: (list.excluded ?? []).filter((entry) => entry.itemId !== itemId),
 });
 
 /** Without entries for items that are gone. */
 export const tidy = (list: IgnoreList, itemIds: Set<string>): IgnoreList => ({
-  version: 1,
+  ...list,
   ignored: list.ignored.filter((entry) => itemIds.has(entry.itemId)),
+  excluded: (list.excluded ?? []).filter((entry) => itemIds.has(entry.itemId)),
 });
 
+/** Whether the check hides `kind` of `itemId`: ignored, or the whole login excluded. */
 export const isIgnored = (list: IgnoreList, itemId: string, kind: ProblemKind) =>
+  isExcluded(list, itemId) ||
   list.ignored.some((entry) => entry.itemId === itemId && entry.kind === kind);
 
 // ── One card per login ────────────────────────────────────
