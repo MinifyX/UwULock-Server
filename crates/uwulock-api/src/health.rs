@@ -56,8 +56,10 @@ async fn healthz(State(state): State<AppState>) -> impl IntoResponse {
         status,
         Json(json!({
             "ok": ok,
+            "status": if ok { "ok" } else { "down" },
             "version": state.version,
             "database": if ok { "ok" } else { "unavailable" },
+            "checks": { "database": if ok { json!({"status": "ok"}) } else { json!({"status": "down", "message": "database does not answer"}) } },
         })),
     )
 }
@@ -91,6 +93,8 @@ mod tests {
         let body = json(response).await;
         assert_eq!(body["ok"], true);
         assert_eq!(body["database"], "ok");
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["checks"]["database"]["status"], "ok");
         assert_eq!(body["version"], "0.0.0-test");
     }
 }

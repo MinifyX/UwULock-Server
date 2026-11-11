@@ -3,6 +3,11 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.5 (unreleased)
+
+- `/healthz` follows the suite format: besides `ok`, `version` and `database` it answers with
+  `status` and `checks.database`, and with 503 when the database does not respond.
+
 ## 0.8.0-beta.4
 
 **A whole login can be left out of the password check for good.**
