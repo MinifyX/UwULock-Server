@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.8.0-beta.4"
+version = "0.8.0-beta.5"
 edition = "2024"
 license = "AGPL-3.0-only"
 repository = "https://github.com/MinifyX/UwULock-Server"
@@ -61,7 +61,7 @@ ciborium = "0.2"
 ring = "0.17"
 # SVG icons, drawn as PNG: no text, no fonts, no images from outside the file.
 resvg = { version = "0.48", default-features = false }
-rusqlite = { version = "0.40", features = ["bundled", "backup"] }
+rusqlite = { version = "0.41", features = ["bundled", "backup"] }
 # `ring` rather than aws-lc: it needs no C toolchain beyond a compiler, which keeps the arm64
 # cross build simple.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
