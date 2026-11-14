@@ -33,6 +33,7 @@ import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
 import { useServerInfo } from './lib/branding';
+import { revealOnMount } from './lib/motion';
 import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
 import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
@@ -313,7 +314,7 @@ export function App() {
           ) : mustSetUp ? (
             <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
           ) : (
-            <div className="vault-frame">
+            <div className="vault-frame" ref={revealOnMount}>
               <PolicyBanners status={status} info={info} onSettings={setSettingsOpen} />
               <VaultScreen
                 status={status}

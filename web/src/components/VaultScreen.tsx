@@ -14,6 +14,7 @@ import {
   type Status,
 } from '../lib/api';
 import { errorText } from '../lib/errors';
+import { NavIndicator } from './ui';
 import { copiedText } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { dueItems, useComfort } from '../lib/comfort';
@@ -729,6 +730,7 @@ export function VaultScreen({
 
           <span className="spacer" />
           <AccountCard status={status} />
+          <NavIndicator />
         </nav>
 
         {filter.kind === 'family' && familiesOn ? (
@@ -1093,6 +1095,7 @@ export function VaultScreen({
             <Icon name="more" size={18} />
             <span>{t('Mehr')}</span>
           </button>
+          <NavIndicator />
         </nav>
 
         {status.email && <DeviceRequests email={status.email} />}

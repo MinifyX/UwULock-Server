@@ -16,6 +16,7 @@ import './styles/ui.css';
 import './styles/web.css';
 import './styles/entries.css';
 import './styles/a11y.css';
+import './styles/motion.css';
 
 // Dark by default, like the other UwU apps; the settings switch to light or follow the system.
 applyAppearance();

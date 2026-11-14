@@ -30,7 +30,7 @@ export function TitleBar({ onSettings, settingsLabel, badge = 0, area, children 
   const name = branding?.name ?? 'UwULock';
   return (
     <header className="titlebar">
-      <a className="titlebar-brand" href="/" aria-label={name}>
+      <a className="titlebar-brand" href="/" aria-label={name} data-uwu-reveal-origin>
         <BrandMark size={22} />
         {branding && branding.name !== 'UwULock' ? (
           <span className="wordmark">{branding.name}</span>

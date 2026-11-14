@@ -8,7 +8,8 @@ import { Appearance } from '../components/SettingsDialog';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { SkipLink, TitleBar } from '../components/TitleBar';
 import { Toasts } from '../components/Toasts';
-import { Button, Modal, TabPanel, Tabs, useTabsId } from '../components/ui';
+import { Button, Modal, NavIndicator, TabPanel, Tabs, useTabsId } from '../components/ui';
+import { revealOnMount } from '../lib/motion';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
@@ -238,7 +239,7 @@ export function AdminApp() {
     body = (
       <SettingsProvider>
         <SsoProvider>
-          <div className="admin">
+          <div className="admin" ref={revealOnMount}>
             <nav className="sidebar admin-sidebar" aria-label={t('Admin-Portal')}>
               <ul className="nav-list">
                 {areas.map((each, index) => (
@@ -256,6 +257,7 @@ export function AdminApp() {
                   </li>
                 ))}
               </ul>
+              <NavIndicator />
               <span className="spacer" />
               <div className="account-card admin-account">
                 <span className="avatar" aria-hidden>
@@ -291,13 +293,18 @@ export function AdminApp() {
                       onChange={(id) => go(area.tabs.find((each) => each.id === id)!.path)}
                       tabs={area.tabs.map((each) => ({ id: each.id, label: t(each.label) }))}
                     />
-                    <TabPanel idPrefix={tabsId} tab={tab.id} className="admin-panel" key={tab.id}>
+                    <TabPanel
+                      idPrefix={tabsId}
+                      tab={tab.id}
+                      className="admin-panel uwu-page"
+                      key={tab.id}
+                    >
                       <h2 className="sr-only">{t(tab.label)}</h2>
                       {shown}
                     </TabPanel>
                   </>
                 ) : (
-                  <div className="admin-panel" key={tab.id}>
+                  <div className="admin-panel uwu-page" key={tab.id}>
                     {shown}
                   </div>
                 )}

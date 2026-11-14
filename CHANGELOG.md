@@ -3,6 +3,15 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.6
+
+- Motion, subtle and like the rest of the suite (UwUSuite-Design 1.15): after login or unlock
+  the vault and the admin portal open in a circle from the logo; the highlight of the active row
+  slides along in the vault sidebar, the bottom bar, the settings and the admin portal; admin
+  pages and settings sections fade in, the overview tiles come in one after the other and their
+  numbers count up. Nothing moves with reduced motion in the system or animations switched off
+  in the look settings.
+
 ## 0.8.0-beta.5
 
 - Bundled SQLite 3.54.1 (rusqlite 0.41) against CVE-2026-119375 / RUSTSEC-2026-0459.
