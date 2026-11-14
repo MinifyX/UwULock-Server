@@ -55,7 +55,8 @@ async function run() {
     const remember = (document.getElementById('remember') as HTMLInputElement).checked;
     window.postMessage(
       { command: 'webAuthnResult', data: JSON.stringify(answerJson(credential)), remember },
-      '*',
+      // To this very page, where the extension's content script listens.
+      window.location.origin,
     );
     sent = true;
     (document.getElementById('webauthn-button') as HTMLButtonElement).disabled = true;

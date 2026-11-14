@@ -9,6 +9,7 @@ type Props = {
   disabled?: boolean;
   autoComplete?: string;
   id?: string;
+  name?: string;
   label?: string;
   /** The form's error is about this field: marked, and read out with it. */
   invalid?: boolean;
@@ -24,6 +25,7 @@ export function PasswordInput({
   disabled,
   autoComplete = 'current-password',
   id,
+  name,
   label,
   invalid,
   describedBy,
@@ -37,6 +39,7 @@ export function PasswordInput({
     <span className="password-input">
       <input
         id={id}
+        name={name}
         type={visible ? 'text' : 'password'}
         value={value}
         onChange={(e) => onChange(e.target.value)}

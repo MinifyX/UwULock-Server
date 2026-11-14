@@ -196,6 +196,8 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
             <label className="field">
               <span>{t('E-Mail-Adresse')}</span>
               <input
+                id="login-email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -208,6 +210,8 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
             <label className="field">
               <span>{t('Master-Passwort')}</span>
               <PasswordInput
+                id="login-password"
+                name="password"
                 value={password}
                 onChange={setPassword}
                 autoFocus={Boolean(email)}

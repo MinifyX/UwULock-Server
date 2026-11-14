@@ -157,6 +157,11 @@ export function AdminApp() {
     if (portal && MOVED[route.path]) location.replace(`#${tab.path}`);
   }, [portal, route.path, tab.path]);
 
+  const pageTitle = portal ? `${t(area.label)} – UwULock` : 'UwULock';
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
+
   // As in the vault: the background is inert under a dialog, and stops being so before the
   // dialog hands focus back.
   useLayoutEffect(() => {
