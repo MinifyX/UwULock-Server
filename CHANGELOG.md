@@ -11,6 +11,12 @@ release. Versions follow semver; `-beta.N` versions are pre-releases.
   pages and settings sections fade in, the overview tiles come in one after the other and their
   numbers count up. Nothing moves with reduced motion in the system or animations switched off
   in the look settings.
+- Web vault: the window title names the screen (sign in, unlock, vault, admin area) and keeps
+  the server's own name when it is branded. Login fields carry name and id so password managers
+  recognise them, the QR code of the two-factor setup is described for screen readers, the page
+  behind an open dialog no longer scrolls, and the WebAuthn fallback only answers its own page.
+- Backups over SFTP use russh 0.65 (RUSTSEC-2026-0495); quinn updated (RUSTSEC-2026-0523,
+  -0524, -0538).
 
 ## 0.8.0-beta.5
 

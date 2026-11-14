@@ -32,7 +32,7 @@ import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
-import { useServerInfo } from './lib/branding';
+import { pageName, useServerInfo } from './lib/branding';
 import { revealOnMount } from './lib/motion';
 import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
@@ -232,7 +232,7 @@ export function App() {
         : status.state === 'locked'
           ? t('Entsperren')
           : t('Tresor');
-  const pageTitle = screen ? `${screen} – UwULock` : 'UwULock';
+  const pageTitle = screen ? `${screen} – ${pageName}` : pageName;
   useEffect(() => {
     document.title = pageTitle;
   }, [pageTitle]);

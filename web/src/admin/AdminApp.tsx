@@ -15,7 +15,7 @@ import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
 import { t, useLanguage } from '../lib/i18n';
 import { go, useRoute } from '../lib/route';
-import { useServerInfo } from '../lib/branding';
+import { pageName, useServerInfo } from '../lib/branding';
 import { switchedOff } from '../lib/switches';
 import { ADMIN_SHORTCUTS, singleKey } from '../lib/shortcuts';
 import { locate, MOVED, visibleAreas, type TabId } from './areas';
@@ -158,7 +158,7 @@ export function AdminApp() {
     if (portal && MOVED[route.path]) location.replace(`#${tab.path}`);
   }, [portal, route.path, tab.path]);
 
-  const pageTitle = portal ? `${t(area.label)} – UwULock` : 'UwULock';
+  const pageTitle = portal ? `${t(area.label)} – ${pageName}` : pageName;
   useEffect(() => {
     document.title = pageTitle;
   }, [pageTitle]);
