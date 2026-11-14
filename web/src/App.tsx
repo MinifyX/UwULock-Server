@@ -221,6 +221,22 @@ export function App() {
     wasSetUp.current = Boolean(mustSetUp);
   }, [mustSetUp, unlocked]);
 
+  // The window's title names the screen; the special pages keep the plain name.
+  const special =
+    ssoForward || unavailable || sendLink || requestLink || (joinNew && joining) || registering;
+  const screen =
+    special || !status
+      ? null
+      : status.state === 'logged-out'
+        ? t('Anmelden')
+        : status.state === 'locked'
+          ? t('Entsperren')
+          : t('Tresor');
+  const pageTitle = screen ? `${screen} – UwULock` : 'UwULock';
+  useEffect(() => {
+    document.title = pageTitle;
+  }, [pageTitle]);
+
   return (
     <div className="shell">
       <div className="background" ref={backgroundRef}>

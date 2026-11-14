@@ -210,6 +210,7 @@
   "Registriert": "Registered",
   "Runden": "Rounds",
   "Scanne den Code mit deiner Authenticator-App, oder gib den Schlüssel dort von Hand ein.": "Scan the code with your authenticator app, or type the key into it by hand.",
+  "QR-Code für die Authenticator-App": "QR code for the authenticator app",
   "Schaltet die Zwei-Schritt-Anmeldung aus, wenn du keinen Code mehr bekommst. Schreib ihn auf und heb ihn getrennt vom Rechner auf.": "Turns two-step login off when you can't get a code any more. Write it down and keep it away from the computer.",
   "Schlüsselableitung": "Key derivation",
   "Schlüsselableitung geändert. Melde dich neu an.": "Key derivation changed. Log in again.",

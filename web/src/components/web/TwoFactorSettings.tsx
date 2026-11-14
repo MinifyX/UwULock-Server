@@ -265,6 +265,8 @@ function SetUpAuthenticator({
             </p>
             <div
               className="qr"
+              role="img"
+              aria-label={t('QR-Code für die Authenticator-App')}
               dangerouslySetInnerHTML={{
                 __html: renderSVG(uri, {
                   border: 2,

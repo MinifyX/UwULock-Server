@@ -968,6 +968,9 @@ button.toggle {
   padding: var(--uwu-space-6);
   background: color-mix(in srgb, #141016 45%, transparent);
   z-index: 10;
+  /* A scroll box of its own, so a swipe beside the dialog does not scroll the page under it. */
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 /*
@@ -1043,6 +1046,7 @@ button.toggle {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: grid;
   align-content: start;
   gap: var(--uwu-form-gap);
