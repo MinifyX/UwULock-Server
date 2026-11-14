@@ -1,0 +1,114 @@
+/*
+ * Motion from @uwusuite/design 1.15 (src/css/motion.css), ported: page fade, staggered
+ * cards, the sliding nav pill and the reveal backdrop. Static by default; it only moves
+ * when the system allows motion and the look settings haven't switched animations off.
+ */
+
+:root {
+  --uwu-duration-fast: 150ms;
+  --uwu-duration-enter: 220ms;
+  --uwu-duration-count: 600ms;
+  --uwu-duration-reveal: 480ms;
+  --uwu-stagger-step: 40ms;
+  --uwu-ease-out: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --uwu-ease-pop: cubic-bezier(0.2, 0.9, 0.3, 1.3);
+  --uwu-reveal-backdrop: #1c1420;
+}
+
+:root[data-theme='dark'] {
+  --uwu-reveal-backdrop: #050306;
+}
+
+@keyframes uwu-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes uwu-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+/* Steps for engines without sibling-index(). Capped at 8, later cards come in together. */
+.uwu-stagger > :nth-child(2) {
+  --uwu-i: 1;
+}
+.uwu-stagger > :nth-child(3) {
+  --uwu-i: 2;
+}
+.uwu-stagger > :nth-child(4) {
+  --uwu-i: 3;
+}
+.uwu-stagger > :nth-child(5) {
+  --uwu-i: 4;
+}
+.uwu-stagger > :nth-child(6) {
+  --uwu-i: 5;
+}
+.uwu-stagger > :nth-child(7) {
+  --uwu-i: 6;
+}
+.uwu-stagger > :nth-child(8) {
+  --uwu-i: 7;
+}
+.uwu-stagger > :nth-child(n + 9) {
+  --uwu-i: 8;
+}
+
+/* The pill's containing block. Layered, so a nav that is fixed or sticky keeps its position. */
+@layer motion {
+  :where([data-uwu-indicator]) {
+    position: relative;
+  }
+}
+
+[data-uwu-indicator] {
+  isolation: isolate;
+}
+
+/* !important: beats the row's own background and :hover while the pill draws it. */
+[data-uwu-indicator] [data-uwu-indicated] {
+  background-color: transparent !important;
+}
+
+.uwu-nav-indicator {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--uwu-pink-tint);
+}
+
+.uwu-nav-indicator[data-on] {
+  opacity: 1;
+}
+
+:root.uwu-revealing,
+:root.uwu-revealing body {
+  background-color: var(--uwu-reveal-backdrop);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* On the element that changes per page, so it plays when that page mounts. */
+  :root:not([data-motion='reduced']) .uwu-page {
+    animation: uwu-fade var(--uwu-duration-enter) var(--uwu-ease-out) backwards;
+  }
+
+  :root:not([data-motion='reduced']) .uwu-stagger > * {
+    animation: uwu-slide-up var(--uwu-duration-enter) var(--uwu-ease-out) backwards;
+    animation-delay: calc(var(--uwu-i, 0) * var(--uwu-stagger-step));
+  }
+
+  :root:not([data-motion='reduced']) .uwu-nav-indicator[data-ready] {
+    transition:
+      translate var(--uwu-duration-enter) var(--uwu-ease-pop),
+      width var(--uwu-duration-enter) var(--uwu-ease-out),
+      height var(--uwu-duration-enter) var(--uwu-ease-out),
+      opacity var(--uwu-duration-fast) var(--uwu-ease-out);
+  }
+}

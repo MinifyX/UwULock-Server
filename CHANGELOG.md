@@ -3,6 +3,21 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.6
+
+- Motion, subtle and like the rest of the suite (UwUSuite-Design 1.15): after login or unlock
+  the vault and the admin portal open in a circle from the logo; the highlight of the active row
+  slides along in the vault sidebar, the bottom bar, the settings and the admin portal; admin
+  pages and settings sections fade in, the overview tiles come in one after the other and their
+  numbers count up. Nothing moves with reduced motion in the system or animations switched off
+  in the look settings.
+- Web vault: the window title names the screen (sign in, unlock, vault, admin area) and keeps
+  the server's own name when it is branded. Login fields carry name and id so password managers
+  recognise them, the QR code of the two-factor setup is described for screen readers, the page
+  behind an open dialog no longer scrolls, and the WebAuthn fallback only answers its own page.
+- Backups over SFTP use russh 0.65 (RUSTSEC-2026-0495); quinn updated (RUSTSEC-2026-0523,
+  -0524, -0538).
+
 ## 0.8.0-beta.5
 
 - Bundled SQLite 3.54.1 (rusqlite 0.41) against CVE-2026-119375 / RUSTSEC-2026-0459.

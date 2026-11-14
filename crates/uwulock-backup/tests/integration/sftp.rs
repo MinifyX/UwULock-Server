@@ -52,9 +52,13 @@ impl russh::server::Handler for Connection {
         Ok(if user == "backup" && password == "geheim" { Auth::Accept } else { Auth::reject() })
     }
 
-    async fn auth_publickey(&mut self, user: &str, key: &russh::keys::PublicKey) -> Result<Auth, Self::Error> {
+    async fn auth_publickey(
+        &mut self,
+        user: &str,
+        key: russh::server::VerifiedPublicKey<'_>,
+    ) -> Result<Auth, Self::Error> {
         self.server.disk.lock().unwrap().logins += 1;
-        let line = key.to_openssh().unwrap_or_default();
+        let line = key.public_key.to_openssh().unwrap_or_default();
         let known = self.server.authorized.split_whitespace().take(2).collect::<Vec<_>>();
         let offered = line.split_whitespace().take(2).collect::<Vec<_>>();
         Ok(if user == "backup" && known == offered { Auth::Accept } else { Auth::reject() })

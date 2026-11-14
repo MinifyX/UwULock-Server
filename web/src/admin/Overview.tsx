@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Badge, Button, Callout, Card, Section } from '../components/ui';
+import { Badge, Button, Callout, Card, CountUp, Section } from '../components/ui';
 import { alertTitle, overview, type Alert, type Overview as Data } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { ago, bytes, seconds, when } from '../lib/format';
@@ -101,7 +101,7 @@ export function Overview() {
             )}
       </Callout>
       <Section heading={t('Zahlen')}>
-        <div className="stat-grid">
+        <div className="stat-grid uwu-stagger">
           <Stat
             label={t('Nutzer')}
             value={data.users}
@@ -224,7 +224,7 @@ function Stat({
   const content = (
     <>
       <span className="stat-value" data-alarm={alarm || undefined}>
-        {value.toLocaleString()}
+        <CountUp value={value} />
       </span>
       <span className="stat-label">{label}</span>
       {note && <span className="stat-note">{note}</span>}

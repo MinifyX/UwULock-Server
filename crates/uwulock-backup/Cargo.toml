@@ -22,7 +22,7 @@ flate2 = "1"
 reqwest.workspace = true
 ring.workspace = true
 # SFTP with `ring`, like everything else here: no second crypto library.
-russh = { version = "0.63", default-features = false, features = ["ring", "flate2"] }
+russh = { version = "0.65", default-features = false, features = ["ring", "flate2"] }
 russh-sftp = "3"
 rustls.workspace = true
 serde.workspace = true

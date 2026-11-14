@@ -11,6 +11,9 @@ let info: ServerInfo | null = null;
 let loading: Promise<void> | null = null;
 const listeners = new Set<() => void>();
 
+/** The name the server put in the page's title (the branded one), before any script renames the window. */
+export const pageName = (typeof document !== 'undefined' && document.title) || 'UwULock';
+
 function notify() {
   for (const listener of listeners) listener();
 }

@@ -181,7 +181,7 @@ try {
   await nyu.locator('.titlebar .brand-logo:visible').waitFor();
   await snap(nyu, 'branding');
   await nyu.reload();
-  if ((await nyu.title()) !== 'Post & Co') throw new Error(`the page is called ${await nyu.title()}`);
+  if (!(await nyu.title()).endsWith('Post & Co')) throw new Error(`the page is called ${await nyu.title()}`);
   // The colours come with the page, before any script: the light theme's accent is the chosen one.
   const colours = await nyu.evaluate(() => document.getElementById('uwu-branding')?.textContent ?? '');
   if (!colours.includes('--uwu-pink: #0891b2;')) throw new Error(`the page's colours: ${colours}`);

@@ -8,6 +8,7 @@ import { updateSettings, useSettings, type AutoLock, type ClipboardClear } from 
 import { switchedOff, useSwitch } from '../lib/switches';
 import { FontPicker } from './FontPicker';
 import { Modal } from './Modal';
+import { NavIndicator } from './ui';
 import { Nyu } from './nyu/Nyu';
 import { AccountSettings } from './web/AccountSettings';
 import { Row, Segmented, Toggle } from './web/controls';
@@ -300,9 +301,10 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
               )}
             </button>
           ))}
+          <NavIndicator />
         </nav>
         {/* A section of its own starts at its top, not where the last one was scrolled to. */}
-        <div className="settings-content" key={section}>
+        <div className="settings-content uwu-page" key={section}>
           {section === 'appearance' && <Appearance />}
           {section === 'security' && loggedIn && (
             <Security

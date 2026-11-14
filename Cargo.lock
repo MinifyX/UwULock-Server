@@ -1390,7 +1390,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1670,7 +1670,6 @@ version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "337d46834ee672ab3e48caca2cb0c78cc174fb12b3a68d0d88f99a0519a5e36e"
 dependencies = [
- "generic-array 0.14.7",
  "rustversion",
  "typenum",
 ]
@@ -3239,9 +3238,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.18"
+version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9746dbde176634f4f2f1faf2404e30a31b2bc1e9cafb5329c95d8177a18c9fc"
+checksum = "0e750cca55fe4f0439a15d0bb529da9651e79993e8e72c61a899a36d462befbe"
 dependencies = [
  "bytes",
  "getrandom 0.4.3",
@@ -3261,16 +3260,16 @@ dependencies = [
 
 [[package]]
 name = "quinn-udp"
-version = "0.5.15"
+version = "0.5.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35a133f956daabe89a61a685c2649f13d82d5aa4bd5d12d1277e1072a21c0694"
+checksum = "af66907df18639dcf4db56ca65490cabc4b27a97dbadd96f2926cca73298f016"
 dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3630,9 +3629,9 @@ dependencies = [
 
 [[package]]
 name = "russh"
-version = "0.63.3"
+version = "0.65.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "036204edbd199552a5b3832f63c60dcdf395dc44c7f06b4af1c0e8139cc11bce"
+checksum = "94be3d86c71b9ed220a675c405e35c7a02565a009bf8da2e9cc13a700320a5c5"
 dependencies = [
  "aes 0.9.3",
  "bitflags",
@@ -3775,7 +3774,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3863,7 +3862,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4520,7 +4519,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4985,7 +4984,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-api"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "argon2 0.5.3",
  "axum",
@@ -5029,7 +5028,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-backup"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "axum",
  "bytes",
@@ -5055,7 +5054,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-bench"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "clap",
  "reqwest 0.13.5",
@@ -5123,7 +5122,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-e2e"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5143,7 +5142,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-mail"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "lettre",
  "parking_lot",
@@ -5155,7 +5154,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-notify"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "parking_lot",
  "serde",
@@ -5166,7 +5165,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-server"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "axum",
  "axum-server",
@@ -5202,7 +5201,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-store"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -5220,7 +5219,7 @@ dependencies = [
 
 [[package]]
 name = "uwulock-web"
-version = "0.8.0-beta.5"
+version = "0.8.0-beta.6"
 
 [[package]]
 name = "valuable"
@@ -5389,7 +5388,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
