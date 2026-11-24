@@ -362,9 +362,15 @@ pub async fn backup(
     let mut known = repo.object_ids().await?;
     let mut uploaded = 0;
     // The newest snapshot says which files it had, and how they looked: those that still look
-    // the same are not read again.
+    // the same are not read again. One that cannot be read only costs reading every file again.
     let previous: HashMap<String, FileEntry> = match repo.snapshots().await?.last() {
-        Some(name) => repo.manifest(name).await?.files.into_iter().map(|file| (file.path.clone(), file)).collect(),
+        Some(name) => match repo.manifest(name).await {
+            Ok(manifest) => manifest.files.into_iter().map(|file| (file.path.clone(), file)).collect(),
+            Err(error) => {
+                tracing::warn!(snapshot = %name, %error, "the newest snapshot cannot be read; backing up every file");
+                HashMap::new()
+            }
+        },
         None => HashMap::new(),
     };
 
@@ -434,12 +440,19 @@ pub async fn backup(
     Ok(BackupReport { snapshot: name, uploaded, total: database_size + files_size, removed_snapshots, removed_objects })
 }
 
-/// Removes snapshots the retention rules let go, then objects no snapshot needs.
+/// Removes snapshots the retention rules let go, then objects no snapshot needs. Nothing at all
+/// while a snapshot cannot be read: what it needs is not known, so no object may go.
 pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, usize), Error> {
     let names = repo.snapshots().await?;
     let mut manifests = Vec::new();
     for name in &names {
-        manifests.push((name.clone(), repo.manifest(name).await?));
+        match repo.manifest(name).await {
+            Ok(manifest) => manifests.push((name.clone(), manifest)),
+            Err(error) => {
+                tracing::warn!(snapshot = %name, %error, "a snapshot cannot be read; nothing is pruned this time");
+                return Ok((0, 0));
+            }
+        }
     }
     let times: Vec<i64> = manifests.iter().map(|(_, manifest)| manifest.created_at).collect();
     let kept = retention::keep(&times, retention);
@@ -500,8 +513,9 @@ async fn write_chunks(repo: &Repository, chunks: &[String], path: &Path) -> Resu
 }
 
 /// Puts a snapshot's files into a data directory: those that are missing, or not the size they
-/// were. A file this server has already, the same size, stays: attachments and Send files never
-/// change under their names. Returns how many were written.
+/// were. An attachment, Send or file-request file this server has already, the same size, stays:
+/// those never change under their names. Every other file (keys, certificates) is written again.
+/// Returns how many were written.
 ///
 /// A second attempt after a broken connection picks up where the first one stopped.
 pub async fn restore_files(repo: &Repository, manifest: &Manifest, data_dir: &Path) -> Result<usize, Error> {
@@ -516,7 +530,9 @@ pub async fn restore_files(repo: &Repository, manifest: &Manifest, data_dir: &Pa
             return Err(Error::Damaged(format!("the file name {} leaves its place", file.path.escape_debug())));
         }
         let path = data_dir.join(relative);
-        if tokio::fs::symlink_metadata(&path).await.is_ok_and(|meta| meta.is_file() && meta.len() == file.size) {
+        if matches!(top, "attachments" | "sends" | "file-requests")
+            && tokio::fs::symlink_metadata(&path).await.is_ok_and(|meta| meta.is_file() && meta.len() == file.size)
+        {
             continue;
         }
         tokio::fs::create_dir_all(path.parent().unwrap_or(data_dir)).await?;

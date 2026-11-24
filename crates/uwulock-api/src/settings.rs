@@ -449,6 +449,18 @@ impl Settings {
         Ok(new)
     }
 
+    /// Like [`Settings::with`], from the command line's text: JSON, or else the text as it is,
+    /// so a password like `123456` stays text where the setting wants text.
+    pub fn with_text(&self, path: &str, text: &str) -> Result<Settings, String> {
+        match serde_json::from_str::<serde_json::Value>(text) {
+            Ok(parsed) if !parsed.is_string() => self
+                .with(path, parsed)
+                .or_else(|error| self.with(path, serde_json::Value::String(text.into())).map_err(|_| error)),
+            Ok(parsed) => self.with(path, parsed),
+            Err(_) => self.with(path, serde_json::Value::String(text.into())),
+        }
+    }
+
     /// Checked before saving: what would not work, said so a person can fix it.
     pub fn check(&self) -> Result<(), String> {
         if !(1..=90).contains(&self.invitation_days) {
@@ -589,6 +601,13 @@ mod tests {
         assert!(start.with("rememberTwoFactorDays", serde_json::json!(7)).is_err());
         let token = start.with("metrics.token", serde_json::json!("a-long-token-for-prometheus")).unwrap();
         assert!(token.metrics.token_hash.is_some() && token.metrics.token.is_none(), "only the hash");
+        let digits = start.with_text("metrics.token", "12345678901234567890123456").unwrap();
+        assert!(digits.metrics.token_hash.is_some(), "digits are text where text is wanted");
+        assert_eq!(start.with_text("rememberTwoFactorDays", "365").unwrap().remember_two_factor_days, 365);
+        assert!(
+            !start.with_text("rememberTwoFactorDays", "7").unwrap_err().contains("invalid type"),
+            "the real reason"
+        );
     }
 
     #[test]

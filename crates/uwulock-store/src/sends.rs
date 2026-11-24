@@ -87,7 +87,7 @@ pub(crate) fn write_send(tx: &rusqlite::Transaction<'_>, send: &Send) -> rusqlit
          ON CONFLICT (id) DO UPDATE SET name = excluded.name, notes = excluded.notes, data = excluded.data, \
          key = excluded.key, password_hash = excluded.password_hash, max_access_count = excluded.max_access_count, \
          revision = excluded.revision, expiration = excluded.expiration, deletion = excluded.deletion, \
-         disabled = excluded.disabled, hide_email = excluded.hide_email, uploaded = excluded.uploaded, emails = excluded.emails \
+         disabled = excluded.disabled, hide_email = excluded.hide_email, emails = excluded.emails \
          WHERE sends.user_id = excluded.user_id"
     ))?
     .execute(params![
@@ -309,6 +309,19 @@ pub(crate) mod tests {
         send.deletion = clock::in_seconds(60);
         send.kind = FILE;
         assert!(!send.accessible(), "the file did not arrive");
+    }
+
+    #[tokio::test]
+    async fn an_edit_keeps_the_uploaded_file() {
+        let (store, _dir) = store();
+        let user = store.create_user(new_user("nyu@example.com")).await.unwrap();
+        let mut send = text_send(&user.id, "s1");
+        send.kind = FILE;
+        store.save_send(send.clone()).await.unwrap().unwrap();
+        store.send_file_uploaded(&user.id, "s1").await.unwrap().unwrap();
+        send.name = "2.new|new|new".into();
+        let saved = store.save_send(send).await.unwrap().unwrap();
+        assert!(saved.uploaded, "editing the Send must not forget its file");
     }
 
     #[tokio::test]
