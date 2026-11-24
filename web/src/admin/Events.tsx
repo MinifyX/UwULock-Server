@@ -1,5 +1,6 @@
+import { Button, Segmented } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import { Button, ButtonRow, Segmented, Table } from '../components/ui';
+import { ButtonRow, Table } from '../components/ui';
 import { events, type Event } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';

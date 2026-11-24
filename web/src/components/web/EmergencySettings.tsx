@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Button, SettingRow } from '@uwusuite/design';
 import { errorText } from '../../lib/errors';
 import {
   EMERGENCY_STATUS,
@@ -21,7 +22,7 @@ import { useSwitch } from '../../lib/switches';
 import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import { Row, save } from './controls';
+import { save } from './controls';
 import { EmergencySheetDialog } from './EmergencySheet';
 
 const STATUS: Record<number, string> = {
@@ -85,130 +86,136 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
       </p>
 
       {sheet && (
-        <Row
+        <SettingRow
           label={t('Notfallblatt')}
           description={t(
             'Ein PDF für deine Angehörigen, mit Server-Adresse, E-Mail, einem Feld für das Master-Passwort, dem Wiederherstellungscode und deinen Notfallkontakten – im Browser erstellt.',
           )}
         >
-          <button onClick={() => setDialog({ kind: 'sheet' })}>
+          <Button onClick={() => setDialog({ kind: 'sheet' })}>
             {t('Notfallblatt erstellen')}
-          </button>
-        </Row>
+          </Button>
+        </SettingRow>
       )}
 
       <h3 className="settings-heading">{t('Meine Vertrauenspersonen')}</h3>
       {trusted.map((contact) => (
-        <Row
+        <SettingRow
           key={contact.id}
           label={who(contact)}
           description={`${t(STATUS[contact.status] ?? '')} · ${kind(contact)} · ${t('{n} Tage Wartezeit', { n: contact.waitTimeDays })}`}
         >
-          {contact.status === EMERGENCY_STATUS.accepted && (
-            <button
-              className="primary"
-              onClick={() =>
-                void contactKey(contact).then(
-                  (key) => setDialog({ kind: 'confirm', contact, ...key }),
-                  (e) => toast(errorText(e), 'error'),
-                )
-              }
+          <div className="flex flex-wrap items-center gap-2">
+            {contact.status === EMERGENCY_STATUS.accepted && (
+              <Button
+                variant="primary"
+                onClick={() =>
+                  void contactKey(contact).then(
+                    (key) => setDialog({ kind: 'confirm', contact, ...key }),
+                    (e) => toast(errorText(e), 'error'),
+                  )
+                }
+              >
+                {t('Bestätigen …')}
+              </Button>
+            )}
+            {contact.status === EMERGENCY_STATUS.invited && mail && (
+              <Button
+                onClick={() =>
+                  void act(() => reinviteContact(contact.id), t('Einladung neu verschickt.'))
+                }
+              >
+                {t('Nochmal einladen')}
+              </Button>
+            )}
+            {contact.status === EMERGENCY_STATUS.asked && (
+              <Button
+                variant="primary"
+                onClick={() => void act(() => answerRecovery(contact.id, true), t('Freigegeben.'))}
+              >
+                {t('Freigeben')}
+              </Button>
+            )}
+            {(contact.status === EMERGENCY_STATUS.asked ||
+              contact.status === EMERGENCY_STATUS.approved) && (
+              <Button
+                variant="danger"
+                onClick={() => void act(() => answerRecovery(contact.id, false), t('Abgelehnt.'))}
+              >
+                {t('Ablehnen')}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              className="text-danger-ink"
+              onClick={() => void act(() => removeContact(contact.id), t('Entfernt.'))}
             >
-              {t('Bestätigen …')}
-            </button>
-          )}
-          {contact.status === EMERGENCY_STATUS.invited && mail && (
-            <button
-              onClick={() =>
-                void act(() => reinviteContact(contact.id), t('Einladung neu verschickt.'))
-              }
-            >
-              {t('Nochmal einladen')}
-            </button>
-          )}
-          {contact.status === EMERGENCY_STATUS.asked && (
-            <button
-              className="primary"
-              onClick={() => void act(() => answerRecovery(contact.id, true), t('Freigegeben.'))}
-            >
-              {t('Freigeben')}
-            </button>
-          )}
-          {(contact.status === EMERGENCY_STATUS.asked ||
-            contact.status === EMERGENCY_STATUS.approved) && (
-            <button
-              className="danger"
-              onClick={() => void act(() => answerRecovery(contact.id, false), t('Abgelehnt.'))}
-            >
-              {t('Ablehnen')}
-            </button>
-          )}
-          <button
-            className="quiet danger-text"
-            onClick={() => void act(() => removeContact(contact.id), t('Entfernt.'))}
-          >
-            {t('Entfernen')}
-          </button>
-        </Row>
+              {t('Entfernen')}
+            </Button>
+          </div>
+        </SettingRow>
       ))}
-      <Row label={t('Vertrauensperson hinzufügen')}>
-        <button onClick={() => setDialog({ kind: 'invite' })}>{t('Einladen …')}</button>
-      </Row>
+      <SettingRow label={t('Vertrauensperson hinzufügen')}>
+        <Button onClick={() => setDialog({ kind: 'invite' })}>{t('Einladen …')}</Button>
+      </SettingRow>
 
       {granted.length > 0 && (
         <>
           <h3 className="settings-heading">{t('Mir anvertraut')}</h3>
           {granted.map((contact) => (
-            <Row
+            <SettingRow
               key={contact.id}
               label={who(contact)}
               description={`${t(STATUS[contact.status] ?? '')} · ${kind(contact)} · ${t('{n} Tage Wartezeit', { n: contact.waitTimeDays })}`}
             >
-              {contact.status === EMERGENCY_STATUS.invited && (
-                <button
-                  className="primary"
-                  onClick={() => void act(() => acceptContact(contact.id, ''), t('Angenommen ✧'))}
+              <div className="flex flex-wrap items-center gap-2">
+                {contact.status === EMERGENCY_STATUS.invited && (
+                  <Button
+                    variant="primary"
+                    onClick={() => void act(() => acceptContact(contact.id, ''), t('Angenommen ✧'))}
+                  >
+                    {t('Annehmen')}
+                  </Button>
+                )}
+                {contact.status === EMERGENCY_STATUS.confirmed && (
+                  <Button
+                    onClick={() =>
+                      void act(
+                        () => askForAccess(contact.id),
+                        t('Angefragt. Du bekommst eine Mail, sobald der Zugriff frei ist.'),
+                      )
+                    }
+                  >
+                    {t('Zugriff anfragen')}
+                  </Button>
+                )}
+                {contact.status === EMERGENCY_STATUS.approved && contact.type === 0 && (
+                  <Button
+                    variant="primary"
+                    onClick={() =>
+                      void emergencyVault(contact.id).then(
+                        (vault) => setDialog({ kind: 'view', contact, vault }),
+                        (e) => toast(errorText(e), 'error'),
+                      )
+                    }
+                  >
+                    {t('Tresor ansehen')}
+                  </Button>
+                )}
+                {contact.status === EMERGENCY_STATUS.approved && contact.type === 1 && (
+                  <Button variant="danger" onClick={() => setDialog({ kind: 'takeover', contact })}>
+                    {t('Übernehmen …')}
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  className="text-danger-ink"
+                  onClick={() => void act(() => removeContact(contact.id), t('Entfernt.'))}
                 >
-                  {t('Annehmen')}
-                </button>
-              )}
-              {contact.status === EMERGENCY_STATUS.confirmed && (
-                <button
-                  onClick={() =>
-                    void act(
-                      () => askForAccess(contact.id),
-                      t('Angefragt. Du bekommst eine Mail, sobald der Zugriff frei ist.'),
-                    )
-                  }
-                >
-                  {t('Zugriff anfragen')}
-                </button>
-              )}
-              {contact.status === EMERGENCY_STATUS.approved && contact.type === 0 && (
-                <button
-                  className="primary"
-                  onClick={() =>
-                    void emergencyVault(contact.id).then(
-                      (vault) => setDialog({ kind: 'view', contact, vault }),
-                      (e) => toast(errorText(e), 'error'),
-                    )
-                  }
-                >
-                  {t('Tresor ansehen')}
-                </button>
-              )}
-              {contact.status === EMERGENCY_STATUS.approved && contact.type === 1 && (
-                <button className="danger" onClick={() => setDialog({ kind: 'takeover', contact })}>
-                  {t('Übernehmen …')}
-                </button>
-              )}
-              <button
-                className="quiet danger-text"
-                onClick={() => void act(() => removeContact(contact.id), t('Entfernt.'))}
-              >
-                {t('Entfernen')}
-              </button>
-            </Row>
+                  {t('Entfernen')}
+                </Button>
+              </div>
+            </SettingRow>
           ))}
         </>
       )}
@@ -230,11 +237,11 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="primary"
+              </Button>
+              <Button
+                variant="primary"
                 onClick={() => {
                   const { contact, publicKey } = dialog;
                   setDialog(null);
@@ -242,7 +249,7 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
                 }}
               >
                 {t('Bestätigen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -302,16 +309,16 @@ function Invite({ onClose, onDone }: { onClose: () => void; onDone: () => void }
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            variant="primary"
             disabled={busy || !email.includes('@')}
             onClick={() => void submit()}
           >
             {t('Einladen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -381,7 +388,7 @@ function EmergencyVault({
       onCancel={onClose}
       footer={
         <>
-          <button
+          <Button
             onClick={() =>
               save(
                 new Blob([vault], { type: 'application/json' }),
@@ -390,11 +397,11 @@ function EmergencyVault({
             }
           >
             {t('Als Bitwarden-JSON speichern')}
-          </button>
+          </Button>
           <span className="spacer" />
-          <button className="primary" onClick={onClose}>
+          <Button variant="primary" onClick={onClose}>
             {t('Schließen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -448,12 +455,12 @@ function Takeover({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="danger" disabled={busy || !ok} onClick={() => void submit()}>
+          </Button>
+          <Button variant="danger" disabled={busy || !ok} onClick={() => void submit()}>
             {t('Master-Passwort setzen')}
-          </button>
+          </Button>
         </>
       }
     >

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Button, Segmented } from '@uwusuite/design';
 import { recoveryCode } from '../../lib/account';
 import { errorText } from '../../lib/errors';
 import { EMERGENCY_STATUS, trustedContacts } from '../../lib/features';
@@ -8,7 +9,7 @@ import { toast } from '../../lib/toast';
 import { currentSession } from '../../lib/web/http';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import { Segmented, save } from './controls';
+import { save } from './controls';
 
 /**
  * The emergency sheet, made here in the browser: after the master password (for the recovery
@@ -65,12 +66,12 @@ export function EmergencySheetDialog({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={busy || !password} onClick={() => void make()}>
+          </Button>
+          <Button variant="primary" disabled={busy || !password} onClick={() => void make()}>
             {busy ? t('Einen Moment …') : t('PDF erstellen')}
-          </button>
+          </Button>
         </>
       }
     >

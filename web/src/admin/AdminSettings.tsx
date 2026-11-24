@@ -1,17 +1,7 @@
+import { Button, Section, Segmented, SettingRow, Switch } from '@uwusuite/design';
 import { useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
-import {
-  Button,
-  Callout,
-  Field,
-  FormRow,
-  Section,
-  Segmented,
-  Select,
-  SettingRow,
-  TextField,
-  Toggle,
-} from '../components/ui';
+import { Callout, Field, FormRow, Select, TextField } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import { testMail, type Smtp } from '../lib/admin';
 import { errorText } from '../lib/errors';
@@ -45,7 +35,7 @@ export function MailServerTab({ me }: { me: string }) {
         return (
           <>
             <Section
-              heading={t('Mailserver (SMTP)')}
+              title={t('Mailserver (SMTP)')}
               lead={t(
                 'Über ihn gehen Einladungen, Codes für die Zwei-Schritt-Anmeldung, Passwort-Hinweise und Sicherheitshinweise. Ohne Mailserver geht alles andere trotzdem; Einladungen gibt es dann nur als Link.',
               )}
@@ -101,7 +91,7 @@ export function MailServerTab({ me }: { me: string }) {
               )}
             </Section>
             <Section
-              heading={t('Anmeldung beim Mailserver')}
+              title={t('Anmeldung beim Mailserver')}
               lead={t(
                 'Die Zugangsdaten, die dein Mail-Anbieter dir gibt. Leer, wenn er keine braucht.',
               )}
@@ -130,7 +120,7 @@ export function MailServerTab({ me }: { me: string }) {
               </FormRow>
             </Section>
             <Section
-              heading={t('Absender')}
+              title={t('Absender')}
               lead={t('So stehen die Mails im Postfach der Empfänger.')}
             >
               <FormRow min="wide">
@@ -149,7 +139,7 @@ export function MailServerTab({ me }: { me: string }) {
               </FormRow>
             </Section>
             <Section
-              heading={t('Testmail')}
+              title={t('Testmail')}
               lead={t(
                 'Schickt eine Mail mit den gespeicherten Angaben. Änderungen erst speichern.',
               )}
@@ -198,7 +188,7 @@ export function InvitationRules() {
     <SettingsTab>
       {({ draft, setDraft }) => (
         <Section
-          heading={t('Regeln für Einladungen')}
+          title={t('Regeln für Einladungen')}
           lead={t('Ohne Einladung legt niemand ein Konto an.')}
         >
           <SettingRow
@@ -209,15 +199,18 @@ export function InvitationRules() {
               </Explain>
             }
           >
-            <Select
-              label={t('Einladungen gelten')}
-              value={String(draft.invitationDays)}
-              onChange={(days) => setDraft({ ...draft, invitationDays: Number(days) })}
-              options={DAYS.map((days) => ({
-                value: String(days),
-                label: days === 1 ? t('1 Tag') : t('{n} Tage', { n: days }),
-              }))}
-            />
+            {({ id }) => (
+              <Select
+                id={id}
+                label={t('Einladungen gelten')}
+                value={String(draft.invitationDays)}
+                onChange={(days) => setDraft({ ...draft, invitationDays: Number(days) })}
+                options={DAYS.map((days) => ({
+                  value: String(days),
+                  label: days === 1 ? t('1 Tag') : t('{n} Tage', { n: days }),
+                }))}
+              />
+            )}
           </SettingRow>
           <SettingRow
             label={t('Nutzer dürfen einladen')}
@@ -225,11 +218,14 @@ export function InvitationRules() {
               'Sonst nur Admins. Einladungen von Nutzern machen nie Admins; im Tresor unter Einstellungen → Einladen.',
             )}
           >
-            <Toggle
-              label={t('Nutzer dürfen einladen')}
-              checked={draft.usersMayInvite}
-              onChange={(usersMayInvite) => setDraft({ ...draft, usersMayInvite })}
-            />
+            {({ id, describedBy }) => (
+              <Switch
+                id={id}
+                describedBy={describedBy}
+                checked={draft.usersMayInvite}
+                onChange={(usersMayInvite) => setDraft({ ...draft, usersMayInvite })}
+              />
+            )}
           </SettingRow>
           {draft.usersMayInvite && (
             <SettingRow
@@ -238,15 +234,18 @@ export function InvitationRules() {
                 'So viele Leute holt ein Nutzer höchstens her, offene Einladungen mitgezählt.',
               )}
             >
-              <Select
-                label={t('Einladungen pro Nutzer')}
-                value={String(draft.invitationsPerUser)}
-                onChange={(n) => setDraft({ ...draft, invitationsPerUser: Number(n) })}
-                options={[1, 2, 3, 5, 10, 20, 50, 100].map((n) => ({
-                  value: String(n),
-                  label: String(n),
-                }))}
-              />
+              {({ id }) => (
+                <Select
+                  id={id}
+                  label={t('Einladungen pro Nutzer')}
+                  value={String(draft.invitationsPerUser)}
+                  onChange={(n) => setDraft({ ...draft, invitationsPerUser: Number(n) })}
+                  options={[1, 2, 3, 5, 10, 20, 50, 100].map((n) => ({
+                    value: String(n),
+                    label: String(n),
+                  }))}
+                />
+              )}
             </SettingRow>
           )}
           <SettingRow
@@ -292,7 +291,7 @@ export function StorageTab() {
         return (
           <>
             <Section
-              heading={t('Dateien und Speicherplatz')}
+              title={t('Dateien und Speicherplatz')}
               lead={t('Wie groß eine Datei sein darf, und wie viel ein Konto insgesamt ablegt.')}
             >
               <SettingRow
@@ -301,17 +300,20 @@ export function StorageTab() {
                   'Für Anhänge und Sends. Steht ein Proxy davor, muss er so große Uploads auch durchlassen (die Diagnose prüft das).',
                 )}
               >
-                <Select
-                  label={t('Größte Datei')}
-                  value={String(draft.maxFileMb)}
-                  onChange={(mb) => setDraft({ ...draft, maxFileMb: Number(mb) })}
-                  options={[...new Set([...SIZES, draft.maxFileMb])]
-                    .sort((a, b) => a - b)
-                    .map((mb) => ({
-                      value: String(mb),
-                      label: mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`,
-                    }))}
-                />
+                {({ id }) => (
+                  <Select
+                    id={id}
+                    label={t('Größte Datei')}
+                    value={String(draft.maxFileMb)}
+                    onChange={(mb) => setDraft({ ...draft, maxFileMb: Number(mb) })}
+                    options={[...new Set([...SIZES, draft.maxFileMb])]
+                      .sort((a, b) => a - b)
+                      .map((mb) => ({
+                        value: String(mb),
+                        label: mb >= 1024 ? `${mb / 1024} GB` : `${mb} MB`,
+                      }))}
+                  />
+                )}
               </SettingRow>
               <SettingRow
                 label={t('Speicher pro Konto')}
@@ -334,7 +336,7 @@ export function StorageTab() {
 
             {versionsOn && (
               <Section
-                heading={t('Frühere Versionen von Einträgen')}
+                title={t('Frühere Versionen von Einträgen')}
                 lead={t(
                   'Bei jeder Änderung hebt der Server den Stand davor auf, verschlüsselt wie der Eintrag. Zählt zum Speicher des Kontos.',
                 )}
@@ -373,7 +375,7 @@ export function StorageTab() {
 
             {requestsOn && (
               <Section
-                heading={t('Datei-Anfragen')}
+                title={t('Datei-Anfragen')}
                 lead={t('Links, über die jemand ohne Konto Dateien hochlädt.')}
               >
                 <SettingRow
@@ -418,7 +420,7 @@ export function StorageTab() {
 
             {suiteOn && (
               <Section
-                heading={t('Suite-Tresor (UwUSSH und UwURDP)')}
+                title={t('Suite-Tresor (UwUSSH und UwURDP)')}
                 lead={t('Was die UwU-Apps pro Konto auf diesem Server ablegen dürfen.')}
               >
                 <SettingRow

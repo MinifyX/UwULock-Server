@@ -1,4 +1,5 @@
-import { NavIndicator } from '@uwusuite/design';
+import { Button, Icon, IconButton, ICONS, NavIndicator } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 import { listen } from '../lib/events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -26,7 +27,6 @@ import { singleKey, typing } from '../lib/shortcuts';
 import { toast } from '../lib/toast';
 import { AccountCard } from './AccountCard';
 import { ContextMenu, type MenuItem } from './ContextMenu';
-import { Icon, type IconName } from './Icon';
 import { ItemDetail, MaskedOffCheck, switchOffMasked } from './ItemDetail';
 import { ItemEditor } from './ItemEditor';
 import { ItemTile } from './ItemTile';
@@ -70,13 +70,13 @@ export type Filter =
   | { kind: 'review' }
   | { kind: 'suite'; space: SpaceName };
 
-const TYPES: { type: ItemKind; label: string; icon: IconName }[] = [
-  { type: 'login', label: N_('Logins'), icon: 'globe' },
-  { type: 'card', label: N_('Karten'), icon: 'card' },
-  { type: 'identity', label: N_('Identitäten'), icon: 'id' },
-  { type: 'note', label: N_('Notizen'), icon: 'note' },
-  { type: 'ssh-key', label: N_('SSH-Schlüssel'), icon: 'key' },
-  { type: 'wifi', label: N_('WLAN'), icon: 'wifi' },
+const TYPES: { type: ItemKind; label: string; icon: LucideIcon }[] = [
+  { type: 'login', label: N_('Logins'), icon: ICONS.website },
+  { type: 'card', label: N_('Karten'), icon: ICONS.card },
+  { type: 'identity', label: N_('Identitäten'), icon: ICONS.identity },
+  { type: 'note', label: N_('Notizen'), icon: ICONS.note },
+  { type: 'ssh-key', label: N_('SSH-Schlüssel'), icon: ICONS.sshKey },
+  { type: 'wifi', label: N_('WLAN'), icon: ICONS.wifi },
 ];
 
 function matches(filter: Filter, item: ItemSummary): boolean {
@@ -447,14 +447,14 @@ export function VaultScreen({
     }
   };
 
-  const nav = (target: Filter, icon: IconName, label: string, count: number) => (
+  const nav = (target: Filter, icon: LucideIcon, label: string, count: number) => (
     <li key={JSON.stringify(target)}>
       <button
         className="nav-row"
         aria-current={!query.trim() && same(filter, target) ? 'true' : undefined}
         onClick={() => pick(target)}
       >
-        <Icon name={icon} size={16} />
+        <Icon icon={icon} />
         <span className="nav-label">{label}</span>
         {count > 0 && <span className="nav-count">{count}</span>}
       </button>
@@ -467,12 +467,12 @@ export function VaultScreen({
     return [
       {
         label: t('Umbenennen'),
-        icon: 'pencil',
+        icon: ICONS.edit,
         onSelect: () => setFolderDialog({ id, name: folder.name }),
       },
       {
         label: t('Löschen'),
-        icon: 'trash',
+        icon: ICONS.delete,
         danger: true,
         onSelect: () => setFolderToDelete({ id, name: folder.name }),
       },
@@ -487,10 +487,10 @@ export function VaultScreen({
         <h1 className="sr-only">{t('Tresor')}</h1>
         <nav className="sidebar" aria-label={t('Tresor')}>
           <ul className="nav-list">
-            {nav({ kind: 'all' }, 'layers', t('Alle Einträge'), counts.all)}
-            {nav({ kind: 'favorites' }, 'star', t('Favoriten'), counts.favorites)}
+            {nav({ kind: 'all' }, ICONS.collection, t('Alle Einträge'), counts.all)}
+            {nav({ kind: 'favorites' }, ICONS.favorite, t('Favoriten'), counts.favorites)}
             {(counts.due > 0 || filter.kind === 'due') &&
-              nav({ kind: 'due' }, 'bell', t('Fällig'), counts.due)}
+              nav({ kind: 'due' }, ICONS.reminder, t('Fällig'), counts.due)}
           </ul>
 
           <ul className="nav-list">
@@ -500,7 +500,7 @@ export function VaultScreen({
                 aria-current={filter.kind === 'sends' ? 'true' : undefined}
                 onClick={() => pick({ kind: 'sends' })}
               >
-                <Icon name="send" size={16} />
+                <Icon icon={ICONS.send} />
                 <span className="nav-label">{t('Sends')}</span>
               </button>
             </li>
@@ -511,7 +511,7 @@ export function VaultScreen({
                   aria-current={filter.kind === 'requests' ? 'true' : undefined}
                   onClick={() => pick({ kind: 'requests' })}
                 >
-                  <Icon name="download" size={16} />
+                  <Icon icon={ICONS.download} />
                   <span className="nav-label">{t('Datei-Anfragen')}</span>
                 </button>
               </li>
@@ -522,7 +522,7 @@ export function VaultScreen({
                 aria-current={filter.kind === 'health' ? 'true' : undefined}
                 onClick={() => pick({ kind: 'health' })}
               >
-                <Icon name="pulse" size={16} />
+                <Icon icon={ICONS.stats} />
                 <span className="nav-label">{t('Passwortprüfung')}</span>
               </button>
             </li>
@@ -532,7 +532,7 @@ export function VaultScreen({
                 aria-current={filter.kind === 'review' ? 'true' : undefined}
                 onClick={() => pick({ kind: 'review' })}
               >
-                <Icon name="layers" size={16} />
+                <Icon icon={ICONS.review} />
                 <span className="nav-label">{t('Durchgehen')}</span>
               </button>
             </li>
@@ -549,14 +549,12 @@ export function VaultScreen({
             <>
               <h2 className="nav-heading">
                 {t('Ordner')}
-                <button
-                  className="icon-button tiny"
-                  title={t('Neuer Ordner')}
-                  aria-label={t('Neuer Ordner')}
+                <IconButton
+                  icon={ICONS.newFolder}
+                  size="sm"
+                  label={t('Neuer Ordner')}
                   onClick={() => setFolderDialog({ id: null, name: '' })}
-                >
-                  <Icon name="folderPlus" size={14} />
-                </button>
+                />
               </h2>
               <ul className="nav-list">
                 {[...overview.folders]
@@ -585,7 +583,7 @@ export function VaultScreen({
                         }
                         onClick={() => pick({ kind: 'folder', id: f.id })}
                       >
-                        <Icon name="folder" size={16} />
+                        <Icon icon={ICONS.folder} />
                         <span className="nav-label">{f.name}</span>
                         {counts.folder(f.id) > 0 && (
                           <span className="nav-count">{counts.folder(f.id)}</span>
@@ -595,7 +593,7 @@ export function VaultScreen({
                   ))}
                 {overview.folders.length > 0 &&
                   noFolder > 0 &&
-                  nav({ kind: 'folder', id: null }, 'folder', t('Ohne Ordner'), noFolder)}
+                  nav({ kind: 'folder', id: null }, ICONS.folder, t('Ohne Ordner'), noFolder)}
               </ul>
             </>
           )}
@@ -613,7 +611,7 @@ export function VaultScreen({
                       }
                       onClick={() => pick({ kind: 'suite', space })}
                     >
-                      <Icon name={space === 'ssh' ? 'terminal' : 'monitor'} size={16} />
+                      <Icon icon={space === 'ssh' ? ICONS.terminal : ICONS.computer} />
                       <span className="nav-label">{t(SPACE_LABEL[space])}</span>
                     </button>
                   </li>
@@ -632,8 +630,8 @@ export function VaultScreen({
                     })}
               </p>
               <div className="buttons">
-                <button
-                  className="primary"
+                <Button
+                  variant="primary"
                   onClick={() =>
                     void acceptInvitation(invitation.organizationId, invitation.id).then(
                       () => {
@@ -649,9 +647,9 @@ export function VaultScreen({
                   }
                 >
                   {t('Annehmen')}
-                </button>
-                <button
-                  className="quiet"
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={() =>
                     void declineInvitation(invitation.id).then(
                       () => void reload(),
@@ -660,7 +658,7 @@ export function VaultScreen({
                   }
                 >
                   {t('Ablehnen')}
-                </button>
+                </Button>
               </div>
             </div>
           ))}
@@ -669,21 +667,19 @@ export function VaultScreen({
             <h2 className="nav-heading">
               {t('Familien')}
               {familyRules?.mayCreate && (
-                <button
-                  className="icon-button tiny"
-                  title={t('Neue Familie')}
-                  aria-label={t('Neue Familie')}
+                <IconButton
+                  icon={ICONS.add}
+                  size="sm"
+                  label={t('Neue Familie')}
                   onClick={() => setNewFamily(true)}
-                >
-                  <Icon name="plus" size={14} />
-                </button>
+                />
               )}
             </h2>
           )}
           {families().map((org) => (
             <div key={org.id}>
               <h2 className="org-heading">
-                <Icon name={org.family ? 'house' : 'building'} size={13} />
+                <Icon icon={org.family ? ICONS.home : ICONS.organization} size="xs" />
                 {org.name}
               </h2>
               <ul className="nav-list">
@@ -695,7 +691,7 @@ export function VaultScreen({
                   <>
                     {nav(
                       { kind: 'organization', id: org.id },
-                      'layers',
+                      ICONS.collection,
                       t('Alle Einträge'),
                       counts.organization(org.id),
                     )}
@@ -705,13 +701,18 @@ export function VaultScreen({
                       .map((c) =>
                         nav(
                           { kind: 'collection', id: c.id },
-                          'grid',
+                          ICONS.overview,
                           c.name,
                           counts.collection(c.id),
                         ),
                       )}
                     {familiesOn &&
-                      nav({ kind: 'family', id: org.id }, 'user', t('Mitglieder & Sammlungen'), 0)}
+                      nav(
+                        { kind: 'family', id: org.id },
+                        ICONS.people,
+                        t('Mitglieder & Sammlungen'),
+                        0,
+                      )}
                   </>
                 )}
               </ul>
@@ -721,10 +722,10 @@ export function VaultScreen({
           {(counts.archive > 0 || (settings.showTrash && counts.trash > 0)) && (
             <ul className="nav-list nav-trash">
               {counts.archive > 0 &&
-                nav({ kind: 'archive' }, 'archive', t('Archiv'), counts.archive)}
+                nav({ kind: 'archive' }, ICONS.archive, t('Archiv'), counts.archive)}
               {settings.showTrash &&
                 counts.trash > 0 &&
-                nav({ kind: 'trash' }, 'trash', t('Papierkorb'), counts.trash)}
+                nav({ kind: 'trash' }, ICONS.delete, t('Papierkorb'), counts.trash)}
             </ul>
           )}
 
@@ -768,10 +769,17 @@ export function VaultScreen({
           />
         ) : (
           <>
-            <section className="list-pane" aria-label={title} tabIndex={-1} data-main-content>
+            <section
+              // A new section fades in (motion.md: page change).
+              key={JSON.stringify(filter)}
+              className="list-pane uwu-page"
+              aria-label={title}
+              tabIndex={-1}
+              data-main-content
+            >
               <div className="list-head">
                 <label className="search-box">
-                  <Icon name="search" size={15} />
+                  <Icon icon={ICONS.search} />
                   <input
                     ref={searchRef}
                     className="search"
@@ -799,8 +807,8 @@ export function VaultScreen({
                     <span className="spacer" />
                     {filter.kind === 'trash' ? (
                       <>
-                        <button
-                          className="quiet"
+                        <Button
+                          variant="ghost"
                           onClick={() =>
                             void bulk(
                               () => bulkItems('restore', [...checked]),
@@ -809,16 +817,17 @@ export function VaultScreen({
                           }
                         >
                           {t('Wiederherstellen')}
-                        </button>
-                        <button
-                          className="quiet danger-text"
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="text-danger-ink"
                           onClick={() => {
                             setSwitchOff(true);
                             setConfirmBulkDelete(true);
                           }}
                         >
                           {t('Endgültig löschen')}
-                        </button>
+                        </Button>
                       </>
                     ) : (
                       <>
@@ -843,12 +852,9 @@ export function VaultScreen({
                             ))}
                           </select>
                         )}
-                        <button
-                          className="icon-button"
-                          title={
-                            filter.kind === 'archive' ? t('Aus dem Archiv holen') : t('Archivieren')
-                          }
-                          aria-label={
+                        <IconButton
+                          icon={ICONS.archive}
+                          label={
                             filter.kind === 'archive' ? t('Aus dem Archiv holen') : t('Archivieren')
                           }
                           onClick={() =>
@@ -862,38 +868,31 @@ export function VaultScreen({
                                 : t('Archiviert.'),
                             )
                           }
-                        >
-                          <Icon name="archive" size={15} />
-                        </button>
-                        <button
-                          className="icon-button"
-                          title={t('In den Papierkorb')}
-                          aria-label={t('In den Papierkorb')}
+                        />
+                        <IconButton
+                          icon={ICONS.delete}
+                          label={t('In den Papierkorb')}
                           onClick={() =>
                             void bulk(() => bulkItems('trash', [...checked]), t('Im Papierkorb.'))
                           }
-                        >
-                          <Icon name="trash" size={15} />
-                        </button>
+                        />
                       </>
                     )}
-                    <button
-                      className="icon-button"
-                      title={t('Auswahl aufheben')}
-                      aria-label={t('Auswahl aufheben')}
+                    <IconButton
+                      icon={ICONS.close}
+                      label={t('Auswahl aufheben')}
                       onClick={() => setChecked(new Set())}
-                    >
-                      ×
-                    </button>
+                    />
                   </div>
                 ) : (
                   <p className="list-title">
                     <span>{title}</span>
                     <span className="list-count">{visible.length}</span>
                     <span className="spacer" />
-                    <button
+                    <Button
                       ref={newButtonRef}
-                      className="new-item"
+                      size="sm"
+                      icon={ICONS.add}
                       aria-haspopup="menu"
                       aria-expanded={Boolean(newMenu)}
                       title={t('Neuer Eintrag (N)')}
@@ -903,9 +902,8 @@ export function VaultScreen({
                         setNewMenu({ x: rect.right - 180, y: rect.bottom + 4 });
                       }}
                     >
-                      <Icon name="plus" size={15} />
                       {t('Neu')}
-                    </button>
+                    </Button>
                   </p>
                 )}
               </div>
@@ -948,7 +946,7 @@ export function VaultScreen({
                           toggle(item.id, event.shiftKey);
                         }}
                       >
-                        {checked.has(item.id) && <Icon name="check" size={12} />}
+                        {checked.has(item.id) && <Icon icon={ICONS.done} size="xs" />}
                       </span>
                       <ItemTile item={item} />
                       <span className="item-text">
@@ -959,31 +957,40 @@ export function VaultScreen({
                         {item.broken && (
                           <span title={t('Nicht alles ließ sich entschlüsseln')}>
                             <Icon
-                              name="warning"
-                              size={13}
+                              icon={ICONS.warning}
+                              size="xs"
                               className="badge-warning"
-                              title={t('Nicht alles ließ sich entschlüsseln')}
+                              label={t('Nicht alles ließ sich entschlüsseln')}
                             />
                           </span>
                         )}
                         {item.reprompt && (
-                          <Icon name="lock" size={13} title={t('Fragt nach dem Master-Passwort')} />
+                          <Icon
+                            icon={ICONS.locked}
+                            size="xs"
+                            label={t('Fragt nach dem Master-Passwort')}
+                          />
                         )}
                         {item.hasTotp && (
-                          <Icon name="clock" size={13} title={t('Mit Einmal-Code')} />
+                          <Icon icon={ICONS.oneTimeCode} size="xs" label={t('Mit Einmal-Code')} />
                         )}
                         {item.organizationId && (
-                          <Icon name="building" size={13} title={t('Organisation')} />
+                          <Icon icon={ICONS.organization} size="xs" label={t('Organisation')} />
                         )}
                         {item.favorite && (
-                          <Icon name="star" size={13} className="badge-star" title={t('Favorit')} />
+                          <Icon
+                            icon={ICONS.favorite}
+                            size="xs"
+                            className="badge-star"
+                            label={t('Favorit')}
+                          />
                         )}
                         {due.has(item.id) && (
                           <Icon
-                            name="bell"
-                            size={13}
+                            icon={ICONS.reminder}
+                            size="xs"
                             className="item-due"
-                            title={t('Fällig: Zeit für ein neues Passwort')}
+                            label={t('Fällig: Zeit für ein neues Passwort')}
                           />
                         )}
                       </span>
@@ -1069,11 +1076,11 @@ export function VaultScreen({
         <nav className="bottom-nav" aria-label={t('Bereiche')}>
           {(
             [
-              [{ kind: 'all' }, 'layers', t('Alle')],
-              [{ kind: 'favorites' }, 'star', t('Favoriten')],
-              [{ kind: 'sends' }, 'send', t('Sends')],
-              [{ kind: 'health' }, 'pulse', t('Prüfung')],
-            ] as [Filter, IconName, string][]
+              [{ kind: 'all' }, ICONS.collection, t('Alle')],
+              [{ kind: 'favorites' }, ICONS.favorite, t('Favoriten')],
+              [{ kind: 'sends' }, ICONS.send, t('Sends')],
+              [{ kind: 'health' }, ICONS.stats, t('Prüfung')],
+            ] as [Filter, LucideIcon, string][]
           ).map(([target, icon, label]) => (
             <button
               key={target.kind}
@@ -1083,7 +1090,7 @@ export function VaultScreen({
               }
               onClick={() => pick(target)}
             >
-              <Icon name={icon} size={18} />
+              <Icon icon={icon} size="md" />
               <span>{label}</span>
             </button>
           ))}
@@ -1092,7 +1099,7 @@ export function VaultScreen({
             aria-current={view === 'nav' ? 'page' : undefined}
             onClick={() => setView(view === 'nav' ? 'list' : 'nav')}
           >
-            <Icon name="more" size={18} />
+            <Icon icon={ICONS.more} size="md" />
             <span>{t('Mehr')}</span>
           </button>
           <NavIndicator />
@@ -1108,11 +1115,11 @@ export function VaultScreen({
             footer={
               <>
                 <span className="spacer" />
-                <button onClick={() => setConfirmBulkDelete(false)} data-secondary>
+                <Button onClick={() => setConfirmBulkDelete(false)} data-secondary>
                   {t('Abbrechen')}
-                </button>
-                <button
-                  className="danger"
+                </Button>
+                <Button
+                  variant="danger"
                   onClick={() => {
                     setConfirmBulkDelete(false);
                     const links = switchOff ? enabledLinks : [];
@@ -1123,7 +1130,7 @@ export function VaultScreen({
                   }}
                 >
                   {t('Endgültig löschen')}
-                </button>
+                </Button>
               </>
             }
           >
@@ -1180,8 +1187,8 @@ export function VaultScreen({
             footer={
               <>
                 <span className="spacer" />
-                <button
-                  className="danger"
+                <Button
+                  variant="danger"
                   data-secondary
                   onClick={() => {
                     const id = folderToDelete.id;
@@ -1196,10 +1203,10 @@ export function VaultScreen({
                   }}
                 >
                   {t('Löschen')}
-                </button>
-                <button className="primary" data-autofocus onClick={() => setFolderToDelete(null)}>
+                </Button>
+                <Button variant="primary" data-autofocus onClick={() => setFolderToDelete(null)}>
                   {t('Abbrechen')}
-                </button>
+                </Button>
               </>
             }
           >
@@ -1272,12 +1279,12 @@ function FolderDialog({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose}>
+          <Button data-secondary onClick={onClose}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={!name.trim() || busy} onClick={() => void save()}>
+          </Button>
+          <Button variant="primary" disabled={!name.trim() || busy} onClick={() => void save()}>
             {folder.id ? t('Übernehmen') : t('Anlegen')}
-          </button>
+          </Button>
         </>
       }
     >

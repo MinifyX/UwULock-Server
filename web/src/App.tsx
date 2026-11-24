@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GeneratorDialog } from './components/GeneratorDialog';
-import { Icon } from './components/Icon';
 import { LockScreen } from './components/LockScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { NyuLoading } from './components/NyuStates';
@@ -32,7 +31,7 @@ import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
 import { pageName, useServerInfo } from './lib/branding';
-import { revealFrom, Toaster } from '@uwusuite/design';
+import { Icon, IconButton, ICONS, revealFrom, Toaster } from '@uwusuite/design';
 import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
 import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
@@ -246,37 +245,34 @@ export function App() {
         >
           {info?.admin && (
             <a className="titlebar-link" href="/admin">
-              <Icon name="shield" size={15} />
+              <Icon icon={ICONS.securityCheck} />
               <span className="titlebar-link-text">{t('Admin-Portal')}</span>
             </a>
           )}
-          <button
+          <IconButton
+            icon={ICONS.keyboard}
+            label={t('Tastenkürzel')}
             className="titlebar-action"
             onClick={() => setShortcuts(true)}
             title={t('Tastenkürzel (?)')}
-            aria-label={t('Tastenkürzel')}
-          >
-            <Icon name="keyboard" size={17} />
-          </button>
-          <button
+          />
+          <IconButton
+            icon={ICONS.generate}
+            label={t('Passwort-Generator')}
             className="titlebar-action"
             onClick={() => setGenerator(true)}
             title={t('Passwort-Generator (Strg+G)')}
-            aria-label={t('Passwort-Generator')}
             aria-keyshortcuts="Control+G"
-          >
-            <Icon name="dice" size={17} />
-          </button>
+          />
           {unlocked && (
-            <button
+            <IconButton
+              icon={ICONS.locked}
+              label={t('Sperren')}
               className="titlebar-action"
               onClick={() => void lock()}
               title={t('Sperren (Strg+L)')}
-              aria-label={t('Sperren')}
               aria-keyshortcuts="Control+L"
-            >
-              <Icon name="lock" size={17} />
-            </button>
+            />
           )}
         </TitleBar>
 

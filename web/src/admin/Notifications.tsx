@@ -1,22 +1,16 @@
+import { Button, Card, ICONS, Section, Segmented, SettingRow, Switch, Tag } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import {
-  Badge,
-  Button,
   ButtonRow,
   Callout,
-  Card,
   Checkbox,
   Field,
   FieldGroup,
   FormRow,
   Modal,
-  Section,
-  Segmented,
   Select,
-  SettingRow,
   TextField,
-  Toggle,
 } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import {
@@ -111,7 +105,7 @@ export function Notifications() {
   if (!channels) return null;
   return (
     <Section
-      heading={t('Wohin der Server meldet')}
+      title={t('Wohin der Server meldet')}
       lead={t(
         'Der Server meldet sich, wenn etwas nicht stimmt, und noch einmal, wenn es vorbei ist – jede Meldung höchstens einmal pro Stunde und Kanal. Die Nachrichten nennen keine Konten, nur Zahlen. Geht ein Kanal nicht, versucht der Server es später wieder und zeigt es in der Übersicht.',
       )}
@@ -144,7 +138,11 @@ export function Notifications() {
           />
         ) : (
           <ButtonRow>
-            <Button variant="primary" icon="plus" onClick={() => setAdding(blank('ntfy', events))}>
+            <Button
+              variant="primary"
+              icon={ICONS.add}
+              onClick={() => setAdding(blank('ntfy', events))}
+            >
               {t('Kanal hinzufügen')}
             </Button>
           </ButtonRow>
@@ -213,14 +211,14 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
   return (
     <Card
       className={channel && !channel.enabled ? 'channel-card channel-off' : 'channel-card'}
-      heading={
+      title={
         <>
-          <Badge tone="neutral">{kindLabel(draft.kind)}</Badge>{' '}
+          <Tag tone="neutral">{kindLabel(draft.kind)}</Tag>{' '}
           {channel ? channel.name : t('Neuer Kanal')}
         </>
       }
       aside={
-        <Toggle
+        <Switch
           label={t('Kanal an')}
           checked={draft.enabled}
           onChange={(enabled) => setDraft({ ...draft, enabled })}
@@ -399,7 +397,7 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
         {channel && (
           <>
             <Button
-              size="small"
+              size="sm"
               disabled={busy || dirty}
               title={dirty ? t('Erst speichern') : undefined}
               onClick={() =>
@@ -412,8 +410,9 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
               {t('Testen')}
             </Button>
             <Button
-              size="small"
-              variant="quiet-danger"
+              className="text-danger-ink"
+              size="sm"
+              variant="ghost"
               disabled={busy}
               onClick={() => setDeleting(true)}
             >
@@ -424,7 +423,7 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
         <span className="spacer" />
         {channel ? (
           <Button
-            size="small"
+            size="sm"
             disabled={busy || !dirty}
             onClick={() => setDraft(saved)}
             data-secondary
@@ -432,12 +431,12 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
             {t('Verwerfen')}
           </Button>
         ) : (
-          <Button size="small" disabled={busy} onClick={onCancel} data-secondary>
+          <Button size="sm" disabled={busy} onClick={onCancel} data-secondary>
             {t('Abbrechen')}
           </Button>
         )}
         <Button
-          size="small"
+          size="sm"
           variant="primary"
           disabled={busy || !dirty || !draft.name.trim()}
           onClick={() => void save()}

@@ -1,5 +1,6 @@
+import { Button, ICONS, Section } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import { Button, ButtonRow, Section, Table } from '../components/ui';
+import { ButtonRow, Table } from '../components/ui';
 import { PasswordPrompt, save } from '../components/web/controls';
 import { logout } from '../lib/api';
 import { backups, createBackup, downloadBackup, restoreBackup, type Backup } from '../lib/admin';
@@ -43,7 +44,7 @@ export function Backups() {
   return (
     <>
       <Section
-        heading={t('Backups auf diesem Server')}
+        title={t('Backups auf diesem Server')}
         lead={t(
           'Jede Nacht und vor jedem Update schreibt der Server ein Backup und hebt sieben auf. Sie liegen im selben Volume wie die Datenbank: Gegen eine kaputte Platte hilft nur eine Kopie woanders – lade ab und zu eines herunter, oder richte Backups außer Haus ein.',
         )}
@@ -93,12 +94,13 @@ export function Backups() {
                 </td>
                 <td>{bytes(backup.bytes)}</td>
                 <td className="row-actions">
-                  <Button size="small" icon="download" onClick={() => setTaking(backup.name)}>
+                  <Button size="sm" icon={ICONS.download} onClick={() => setTaking(backup.name)}>
                     {t('Herunterladen')}
                   </Button>
                   <Button
-                    size="small"
-                    variant="quiet-danger"
+                    className="text-danger-ink"
+                    size="sm"
+                    variant="ghost"
                     onClick={() => setRestoring(backup.name)}
                   >
                     {t('Zurückspielen')}

@@ -2,15 +2,16 @@ import { useState } from 'react';
 import type { ItemKind, ItemSummary } from '../lib/api';
 import { automaticIcon, hasOwnIcon, ownIcon, useComfort } from '../lib/comfort';
 import { useSettings } from '../lib/settings';
-import { Icon, type IconName } from './Icon';
+import { Icon, ICONS } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 
-const KIND_ICON: Record<ItemKind, IconName> = {
-  login: 'globe',
-  card: 'card',
-  identity: 'id',
-  note: 'note',
-  'ssh-key': 'key',
-  wifi: 'wifi',
+const KIND_ICON: Record<ItemKind, LucideIcon> = {
+  login: ICONS.website,
+  card: ICONS.card,
+  identity: ICONS.identity,
+  note: ICONS.note,
+  'ssh-key': ICONS.sshKey,
+  wifi: ICONS.wifi,
 };
 
 /** Six soft tile colours; each item keeps its own, by name. */
@@ -65,7 +66,7 @@ export function ItemTile({
       ) : item.kind === 'login' ? (
         letter
       ) : (
-        <Icon name={KIND_ICON[item.kind]} size={size === 'large' ? 24 : 16} />
+        <Icon icon={KIND_ICON[item.kind]} size={size === 'large' ? 'xl' : 'sm'} />
       )}
     </span>
   );

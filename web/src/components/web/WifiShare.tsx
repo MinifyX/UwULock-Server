@@ -5,9 +5,9 @@ import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { securityLabel } from '../../lib/items';
 import { wifiQr, type WifiView } from '../../lib/wifi';
-import { Icon } from '../Icon';
+import { Button, ICONS, IconButton } from '@uwusuite/design';
 import { Modal } from '../Modal';
-import { Button, Callout } from '../ui';
+import { Callout } from '../ui';
 
 /**
  * A Wi-Fi network as a QR code, for a phone to join it with its camera. The code is made here,
@@ -107,16 +107,12 @@ export function WifiShare({
             <dd className="mono wifi-share-password">
               <span>{password === null ? '…' : shown ? password || '—' : '••••••••••••'}</span>
               {password && (
-                <button
-                  type="button"
-                  className="icon-button"
+                <IconButton
+                  icon={shown ? ICONS.hide : ICONS.show}
                   aria-pressed={shown}
-                  aria-label={shown ? t('Passwort verbergen') : t('Passwort zeigen')}
-                  title={shown ? t('Verbergen') : t('Zeigen')}
+                  label={shown ? t('Passwort verbergen') : t('Passwort zeigen')}
                   onClick={() => setShown(!shown)}
-                >
-                  <Icon name={shown ? 'eyeOff' : 'eye'} size={15} />
-                </button>
+                />
               )}
             </dd>
           </>

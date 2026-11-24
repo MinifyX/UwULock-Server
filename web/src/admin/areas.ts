@@ -5,7 +5,8 @@
  * any tab left is not there either.
  */
 
-import type { IconName } from '../components/Icon';
+import { ICONS } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 import { N_ } from '../lib/i18n';
 import type { SwitchId } from '../lib/switches';
 
@@ -51,7 +52,7 @@ export type Area = {
   label: string;
   /** One line under the heading: what is found here. */
   lead: string;
-  icon: IconName;
+  icon: LucideIcon;
   tabs: AdminTab[];
 };
 
@@ -60,14 +61,14 @@ export const AREAS: Area[] = [
     id: 'overview',
     label: N_('Übersicht'),
     lead: N_('Was gerade Aufmerksamkeit braucht, und die Zahlen des Servers.'),
-    icon: 'house',
+    icon: ICONS.home,
     tabs: [{ id: 'overview', path: '/', label: N_('Übersicht') }],
   },
   {
     id: 'users',
     label: N_('Benutzer & Einladungen'),
     lead: N_('Wer ein Konto hat, wer eingeladen ist, und wer mit wem teilt.'),
-    icon: 'user',
+    icon: ICONS.account,
     tabs: [
       { id: 'accounts', path: '/users', label: N_('Konten') },
       { id: 'invitations', path: '/users/invitations', label: N_('Einladungen') },
@@ -80,7 +81,7 @@ export const AREAS: Area[] = [
     lead: N_(
       'Wie sich Konten anmelden, wie stark Master-Passwörter sein müssen, wer ins Admin-Portal kommt, und wer es vergeblich versucht.',
     ),
-    icon: 'shield',
+    icon: ICONS.securityCheck,
     tabs: [
       { id: 'sign-in', path: '/security', label: N_('Anmeldung') },
       { id: 'master-password', path: '/security/master-password', label: N_('Master-Passwort') },
@@ -100,7 +101,7 @@ export const AREAS: Area[] = [
     id: 'vault',
     label: N_('Tresor & Funktionen'),
     lead: N_('Was UwULock über den Tresor hinaus kann, und wie viel Platz jedes Konto bekommt.'),
-    icon: 'grid',
+    icon: ICONS.overview,
     tabs: [
       { id: 'features', path: '/vault', label: N_('Funktionen') },
       { id: 'storage', path: '/vault/storage', label: N_('Speicher & Grenzen') },
@@ -123,7 +124,7 @@ export const AREAS: Area[] = [
     id: 'mail',
     label: N_('E-Mail & Benachrichtigungen'),
     lead: N_('Über welchen Mailserver der Server schreibt, was er Nutzern und Admins meldet.'),
-    icon: 'bell',
+    icon: ICONS.notifications,
     tabs: [
       { id: 'mail-server', path: '/mail', label: N_('Mailserver') },
       { id: 'user-mails', path: '/mail/users', label: N_('Mails an Nutzer') },
@@ -139,7 +140,7 @@ export const AREAS: Area[] = [
     id: 'backups',
     label: N_('Datensicherung'),
     lead: N_('Backups auf diesem Server und an einem zweiten Ort, und der Weg zurück.'),
-    icon: 'drive',
+    icon: ICONS.drive,
     tabs: [
       { id: 'local-backups', path: '/backups', label: N_('Auf diesem Server') },
       {
@@ -154,14 +155,14 @@ export const AREAS: Area[] = [
     id: 'branding',
     label: N_('Aussehen'),
     lead: N_('Name, Farbe und Logos, mit denen der Server sich zeigt.'),
-    icon: 'eye',
+    icon: ICONS.show,
     tabs: [{ id: 'branding', path: '/branding', label: N_('Aussehen') }],
   },
   {
     id: 'system',
     label: N_('System & Diagnose'),
     lead: N_('Ob alles richtig eingerichtet ist, was passiert ist, und was der Server schreibt.'),
-    icon: 'lifebuoy',
+    icon: ICONS.help,
     tabs: [
       { id: 'diagnosis', path: '/system', label: N_('Diagnose') },
       { id: 'events', path: '/system/events', label: N_('Ereignisse') },

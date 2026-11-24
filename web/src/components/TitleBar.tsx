@@ -1,3 +1,4 @@
+import { Icon, ICONS, Wordmark } from '@uwusuite/design';
 import { type ReactNode } from 'react';
 import { useBranding } from '../lib/branding';
 import { t, useLanguage } from '../lib/i18n';
@@ -12,11 +13,6 @@ type Props = {
   /** What the bar is for: nothing for the vault, "Admin" for the admin portal. */
   area?: string;
   children?: ReactNode;
-};
-
-const ICONS = {
-  settings:
-    'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z',
 };
 
 /**
@@ -35,9 +31,7 @@ export function TitleBar({ onSettings, settingsLabel, badge = 0, area, children 
         {branding && branding.name !== 'UwULock' ? (
           <span className="wordmark">{branding.name}</span>
         ) : (
-          <span className="wordmark">
-            <span>UwU</span>Lock
-          </span>
+          <Wordmark product="Lock" />
         )}
         {area && <span className="titlebar-area">{area}</span>}
       </a>
@@ -52,9 +46,7 @@ export function TitleBar({ onSettings, settingsLabel, badge = 0, area, children 
           aria-keyshortcuts="Control+,"
           aria-describedby={badge > 0 ? 'settings-badge' : undefined}
         >
-          <svg viewBox="0 0 24 24" aria-hidden>
-            <path d={ICONS.settings} />
-          </svg>
+          <Icon icon={ICONS.settings} size="md" />
           {badge > 0 && (
             <span className="titlebar-badge" aria-hidden>
               {badge > 99 ? '99+' : badge}

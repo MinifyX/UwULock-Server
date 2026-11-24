@@ -1,6 +1,7 @@
 import { t, useLanguage } from '../../lib/i18n';
 import { NyuScene } from '../nyu/scenes';
-import { Button, ButtonRow } from '../ui';
+import { Button } from '@uwusuite/design';
+import { ButtonRow } from '../ui';
 
 /**
  * Where a link led to something this server has switched off (docs/features.md): said plainly,

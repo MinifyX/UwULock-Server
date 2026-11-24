@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import { account } from '../../lib/account';
 import { savePassword, vaultItems, type ItemSummary } from '../../lib/api';
 import {
@@ -27,7 +28,6 @@ import { useSwitch } from '../../lib/switches';
 import { toast } from '../../lib/toast';
 import { missingTwoFactor, twofaDirectory } from '../../lib/twofa';
 import { GeneratorDialog } from '../GeneratorDialog';
-import { Icon } from '../Icon';
 import { ItemTile } from '../ItemTile';
 
 type Props = {
@@ -352,7 +352,7 @@ export function HealthReview({ onBack, onOpen }: Props) {
       <article className="detail review">
         <header className="detail-head">
           <span className="item-tile" data-size="large" data-hue="4">
-            <Icon name="pulse" size={26} />
+            <Icon icon={ICONS.stats} size="xl" className="size-[26px]" />
           </span>
           <div className="detail-title">
             <h2>{t('Passwörter durchgehen')}</h2>
@@ -365,9 +365,9 @@ export function HealthReview({ onBack, onOpen }: Props) {
             </p>
           </div>
           <div className="detail-tools">
-            <button className="quiet" onClick={onBack}>
+            <Button variant="ghost" onClick={onBack}>
               {t('Zum Bericht')}
-            </button>
+            </Button>
           </div>
         </header>
         {busy && (
@@ -420,7 +420,7 @@ export function HealthReview({ onBack, onOpen }: Props) {
                     <ItemTile item={summary} size="large" />
                   ) : (
                     <span className="item-tile" data-size="large" data-hue="1">
-                      <Icon name="globe" size={22} />
+                      <Icon icon={ICONS.website} size="xl" />
                     </span>
                   )}
                   <div className="detail-title">
@@ -442,7 +442,7 @@ export function HealthReview({ onBack, onOpen }: Props) {
                         className="review-problem"
                         data-state={solved ? 'solved' : ignored ? 'ignored' : 'open'}
                       >
-                        <Icon name={solved ? 'check' : ignored ? 'eye' : 'warning'} size={16} />
+                        <Icon icon={solved ? ICONS.done : ignored ? ICONS.show : ICONS.warning} />
                         <div className="detail-text">
                           <span className="detail-value">{problemTitle(problem.kind)}</span>
                           <span className="detail-label">
@@ -454,15 +454,16 @@ export function HealthReview({ onBack, onOpen }: Props) {
                           </span>
                         </div>
                         {!solved && (
-                          <button
-                            className="quiet small"
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             onClick={() =>
                               void changeIgnore(card.finding.id, problem.kind, !ignored)
                             }
                           >
                             {ignored ? t('Rückgängig') : t('Ignorieren')}
                             <span className="sr-only">: {problemTitle(problem.kind)}</span>
-                          </button>
+                          </Button>
                         )}
                       </li>
                     );
@@ -481,36 +482,33 @@ export function HealthReview({ onBack, onOpen }: Props) {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Icon name="external" size={15} />
+                      <Icon icon={ICONS.openExternal} />
                       {t('Seite öffnen & Passwort ändern')}
                       <span className="sr-only">{t('(neues Fenster)')}</span>
                     </a>
                   ) : null}
-                  <button onClick={() => setGenerating(card.finding.id)}>
-                    <Icon name="key" size={15} />
+                  <Button onClick={() => setGenerating(card.finding.id)} icon={ICONS.generate}>
                     {t('Neues Passwort erzeugen & speichern')}
-                  </button>
-                  <button className="quiet" onClick={skip}>
-                    <Icon name="clock" size={15} />
+                  </Button>
+                  <Button variant="ghost" onClick={skip} icon={ICONS.time}>
                     {t('Später')}
-                  </button>
-                  <button className="quiet" onClick={() => void stopChecking()}>
-                    <Icon name="eye" size={15} />
+                  </Button>
+                  <Button variant="ghost" onClick={() => void stopChecking()} icon={ICONS.show}>
                     {t('Nicht mehr prüfen')}
-                  </button>
-                  <button className="quiet" onClick={() => onOpen(card.finding.id)}>
+                  </Button>
+                  <Button variant="ghost" onClick={() => onOpen(card.finding.id)}>
                     {t('Eintrag öffnen')}
-                  </button>
+                  </Button>
                 </div>
               </section>
             </div>
             <nav className="review-nav" aria-label={t('Karten')}>
-              <button className="quiet" disabled={index === 0} onClick={() => go(-1)}>
+              <Button variant="ghost" disabled={index === 0} onClick={() => go(-1)}>
                 <span aria-hidden>‹</span> {t('Zurück')}
-              </button>
-              <button className="quiet" disabled={index + 1 >= total} onClick={() => go(1)}>
+              </Button>
+              <Button variant="ghost" disabled={index + 1 >= total} onClick={() => go(1)}>
                 {t('Weiter')} <span aria-hidden>›</span>
-              </button>
+              </Button>
             </nav>
           </>
         )}

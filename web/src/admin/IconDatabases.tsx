@@ -1,4 +1,5 @@
-import { Section, SettingRow, Table, Toggle } from '../components/ui';
+import { Section, SettingRow, Switch } from '@uwusuite/design';
+import { Table } from '../components/ui';
 import type { IconDatabase, IconStatus, Settings } from '../lib/admin';
 import { bytes } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
@@ -60,7 +61,7 @@ export function IconDatabases({ draft, setDraft, status }: Props) {
 
   return (
     <Section
-      heading={t('Icon-Datenbanken')}
+      title={t('Icon-Datenbanken')}
       lead={t(
         'Kommen mit dem Server und liegen in ihm: für Websites ohne eigenes Icon und für Geräte im Heimnetz. Nachgeschaut wird nur auf diesem Server, nichts wird dafür abgerufen.',
       )}
@@ -79,12 +80,15 @@ export function IconDatabases({ draft, setDraft, status }: Props) {
               </>
             }
           >
-            <Toggle
-              label={database.name}
-              checked={on.includes(database.id)}
-              disabled={!icons.automatic && database.id !== 'dashboard-icons'}
-              onChange={(enabled) => set(database.id, enabled)}
-            />
+            {({ id, describedBy }) => (
+              <Switch
+                id={id}
+                describedBy={describedBy}
+                checked={on.includes(database.id)}
+                disabled={!icons.automatic && database.id !== 'dashboard-icons'}
+                onChange={(enabled) => set(database.id, enabled)}
+              />
+            )}
           </SettingRow>
         );
       })}

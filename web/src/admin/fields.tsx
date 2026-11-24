@@ -1,5 +1,5 @@
+import { Tag } from '@uwusuite/design';
 import type { ReactNode } from 'react';
-import { Badge } from '../components/ui';
 import { t, useLanguage } from '../lib/i18n';
 
 /**
@@ -15,7 +15,7 @@ export function Explain({ children, recommended }: { children?: ReactNode; recom
         <>
           {' '}
           <span className="recommended">
-            <Badge tone="ok">{t('Empfohlen: {value}', { value: recommended })}</Badge>
+            <Tag tone="success">{t('Empfohlen: {value}', { value: recommended })}</Tag>
           </span>
         </>
       )}

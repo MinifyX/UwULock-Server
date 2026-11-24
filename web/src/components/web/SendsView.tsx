@@ -18,7 +18,7 @@ import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { domainOf, type SendDomain } from '../../lib/links';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
+import { Button, Icon, ICONS, IconButton } from '@uwusuite/design';
 import { NyuScene } from '../nyu/scenes';
 import { Modal } from '../Modal';
 import { listbox } from '../listbox';
@@ -86,11 +86,11 @@ export function SendsView() {
             <span className="list-count">{sends.length}</span>
             <span className="spacer" />
             <button className="new-item" onClick={() => setEditing({ send: null, kind: 0 })}>
-              <Icon name="plus" size={15} />
+              <Icon icon={ICONS.add} />
               {t('Text')}
             </button>
             <button className="new-item" onClick={() => setEditing({ send: null, kind: 1 })}>
-              <Icon name="plus" size={15} />
+              <Icon icon={ICONS.add} />
               {t('Datei')}
             </button>
           </p>
@@ -110,15 +110,17 @@ export function SendsView() {
                 }}
               >
                 <span className="item-tile" data-hue="2">
-                  <Icon name={send.kind === 1 ? 'file' : 'note'} size={18} />
+                  <Icon icon={send.kind === 1 ? ICONS.file : ICONS.note} size="md" />
                 </span>
                 <span className="item-text">
                   <span className="item-name">{send.name || t('(ohne Namen)')}</span>
                   <span className="item-sub">{status(send)}</span>
                 </span>
                 <span className="item-badges">
-                  {send.hasPassword && <Icon name="lock" size={13} title={t('Mit Passwort')} />}
-                  {send.disabled && <Icon name="stop" size={13} title={t('Deaktiviert')} />}
+                  {send.hasPassword && (
+                    <Icon icon={ICONS.locked} size="xs" label={t('Mit Passwort')} />
+                  )}
+                  {send.disabled && <Icon icon={ICONS.stop} size="xs" label={t('Deaktiviert')} />}
                 </span>
               </li>
             ))}
@@ -141,7 +143,11 @@ export function SendsView() {
           <article className="detail" aria-label={current.name}>
             <header className="detail-head">
               <span className="item-tile" data-size="large" data-hue="2">
-                <Icon name={current.kind === 1 ? 'file' : 'note'} size={26} />
+                <Icon
+                  icon={current.kind === 1 ? ICONS.file : ICONS.note}
+                  size="xl"
+                  className="size-[26px]"
+                />
               </span>
               <div className="detail-title">
                 <h2>{current.name || t('(ohne Namen)')}</h2>
@@ -152,25 +158,22 @@ export function SendsView() {
                 </p>
               </div>
               <div className="detail-tools">
-                <button className="primary" onClick={() => void copyLink(current)}>
-                  <Icon name="copy" size={15} />
+                <Button icon={ICONS.copy} variant="primary" onClick={() => void copyLink(current)}>
                   {t('Link kopieren')}
-                </button>
-                <button
-                  className="quiet"
+                </Button>
+                <Button
+                  icon={ICONS.edit}
+                  variant="ghost"
                   onClick={() => setEditing({ send: current, kind: current.kind })}
                 >
-                  <Icon name="pencil" size={15} />
                   {t('Bearbeiten')}
-                </button>
-                <button
-                  className="quiet danger-text"
+                </Button>
+                <IconButton
+                  icon={ICONS.delete}
+                  label={t('Löschen')}
+                  className="text-danger-ink"
                   onClick={() => setDeleting(current)}
-                  title={t('Löschen')}
-                  aria-label={t('Löschen')}
-                >
-                  <Icon name="trash" size={15} />
-                </button>
+                />
               </div>
             </header>
             <section className="detail-card">
@@ -233,8 +236,8 @@ export function SendsView() {
                 </p>
               )}
               {current.authType !== 2 && (
-                <button
-                  className="quiet"
+                <Button
+                  variant="ghost"
                   onClick={() =>
                     void removeSendAuth(current.id).then(
                       () =>
@@ -248,7 +251,7 @@ export function SendsView() {
                   }
                 >
                   {current.authType === 0 ? t('Adressen entfernen') : t('Passwort entfernen')}
-                </button>
+                </Button>
               )}
             </section>
           </article>
@@ -278,11 +281,11 @@ export function SendsView() {
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDeleting(null)}>
+              <Button data-secondary onClick={() => setDeleting(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   const id = deleting.id;
                   setDeleting(null);
@@ -293,7 +296,7 @@ export function SendsView() {
                 }}
               >
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -428,12 +431,12 @@ function SendEditor({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={!ready || busy} onClick={() => void submit()}>
+          </Button>
+          <Button variant="primary" disabled={!ready || busy} onClick={() => void submit()}>
             {busy ? t('Einen Moment …') : send ? t('Speichern') : t('Anlegen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -501,10 +504,9 @@ function SendEditor({
               hidden
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             />
-            <button type="button" onClick={() => input.current?.click()}>
-              <Icon name="upload" size={15} />
+            <Button icon={ICONS.upload} onClick={() => input.current?.click()}>
               {file ? `${file.name} (${bytes(file.size)})` : t('Datei wählen …')}
-            </button>
+            </Button>
           </div>
         )}
         <div className="field-pair">

@@ -4,7 +4,7 @@ import { entryCodes, type SharedEntry } from '../../lib/entrySend';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
+import { Icon, ICONS, IconButton } from '@uwusuite/design';
 import { Colored } from '../ItemDetail';
 import { TotpCodes } from '../Totp';
 
@@ -20,15 +20,11 @@ async function copy(text: string, done = t('Kopiert ✧')) {
 function CopyButton({ value, label }: { value: string; label: string }) {
   useLanguage();
   return (
-    <button
-      type="button"
-      className="icon-button"
+    <IconButton
+      icon={ICONS.copy}
+      label={t('{label} kopieren', { label })}
       onClick={() => void copy(value)}
-      aria-label={t('{label} kopieren', { label })}
-      title={t('Kopieren')}
-    >
-      <Icon name="copy" size={15} />
-    </button>
+    />
   );
 }
 
@@ -64,16 +60,12 @@ function SecretRow({ label, value, colored }: { label: string; value: string; co
       mono
       actions={
         <>
-          <button
-            type="button"
-            className="icon-button"
+          <IconButton
+            icon={shown ? ICONS.hide : ICONS.show}
             onClick={() => setShown(!shown)}
-            aria-label={shown ? t('{label} verbergen', { label }) : t('{label} zeigen', { label })}
+            label={shown ? t('{label} verbergen', { label }) : t('{label} zeigen', { label })}
             aria-pressed={shown}
-            title={shown ? t('Verbergen') : t('Zeigen')}
-          >
-            <Icon name={shown ? 'eyeOff' : 'eye'} size={15} />
-          </button>
+          />
           <CopyButton value={value} label={label} />
         </>
       }
@@ -123,15 +115,11 @@ function CodesRow({ secret }: { secret: string }) {
       mono
       actions={
         code && (
-          <button
-            type="button"
-            className="icon-button"
+          <IconButton
+            icon={ICONS.copy}
+            label={t('{label} kopieren', { label: t('Code') })}
             onClick={() => void copy(code.code, t('Code kopiert ✧'))}
-            aria-label={t('{label} kopieren', { label: t('Code') })}
-            title={t('Kopieren')}
-          >
-            <Icon name="copy" size={15} />
-          </button>
+          />
         )
       }
     >
@@ -193,7 +181,7 @@ export function SharedEntryView({ entry, openable }: { entry: SharedEntry; opena
                       aria-label={t('{uri} im Browser öffnen', { uri })}
                       title={t('Im Browser öffnen')}
                     >
-                      <Icon name="external" size={15} />
+                      <Icon icon={ICONS.openExternal} />
                     </a>
                   )}
                   <CopyButton value={uri} label={t('Adresse')} />

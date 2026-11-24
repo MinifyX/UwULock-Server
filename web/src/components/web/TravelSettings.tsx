@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button, SettingRow, Tag } from '@uwusuite/design';
 import { vaultOverview, type Folder } from '../../lib/api';
 import type { AccountInfo } from '../../lib/account';
 import {
@@ -13,8 +14,7 @@ import { errorText } from '../../lib/errors';
 import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { PasswordInput } from '../PasswordInput';
-import { Badge } from '../ui';
-import { Row, ResultLine, type Result } from './controls';
+import { ResultLine, type Result } from './controls';
 
 /**
  * Travel mode (docs/uwu-api.md §9): marked folders, and while it is on, their items gone from
@@ -67,14 +67,14 @@ export function TravelSettings({ info }: { info: AccountInfo | null }) {
 
   return (
     <>
-      <Row
+      <SettingRow
         label={t('Reisemodus')}
         description={t(
           'Markierte Ordner verschwinden samt ihren Einträgen von allen Geräten, auch aus den offiziellen Bitwarden-Apps beim nächsten Sync. Einschalten geht überall, ausschalten nur mit Master-Passwort und Zwei-Schritt-Anmeldung. Der Server kennt nur die Ordner-IDs, nie ihre Namen.',
         )}
       >
-        <Badge tone={state.enabled ? 'ok' : 'neutral'}>{state.enabled ? t('An') : t('Aus')}</Badge>
-      </Row>
+        <Tag tone={state.enabled ? 'success' : 'neutral'}>{state.enabled ? t('An') : t('Aus')}</Tag>
+      </SettingRow>
       {state.enabled && (
         <p className="notice">
           {t('An seit {when}. {n} Einträge sind gerade ausgeblendet.', {
@@ -122,13 +122,13 @@ export function TravelSettings({ info }: { info: AccountInfo | null }) {
             </p>
           )}
           <div className="comfort-actions">
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || marked.size === 0 || providers.length === 0}
               onClick={() => void run(enableTravel, t('Reisemodus an ✧ Gute Reise!'))}
             >
               {t('Reisemodus einschalten')}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
@@ -202,14 +202,9 @@ function DisableForm({
         </label>
       )}
       {needsCode && provider === 1 && (
-        <button
-          type="button"
-          className="quiet"
-          disabled={busy || !password}
-          onClick={() => void mail()}
-        >
+        <Button variant="ghost" disabled={busy || !password} onClick={() => void mail()}>
           {sent ? t('Neuen Code senden') : t('Code per Mail senden')}
-        </button>
+        </Button>
       )}
       {needsCode && provider !== 7 && (
         <label className="field">
@@ -229,15 +224,15 @@ function DisableForm({
         </p>
       )}
       <div className="comfort-actions">
-        <button
+        <Button
+          variant="primary"
           type="submit"
-          className="primary"
           disabled={busy || !password || (needsCode && provider !== 7 && !code.trim())}
         >
           {needsCode && provider === 7
             ? t('Mit Sicherheitsschlüssel ausschalten')
             : t('Ausschalten')}
-        </button>
+        </Button>
       </div>
     </form>
   );

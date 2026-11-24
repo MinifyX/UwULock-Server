@@ -1,15 +1,24 @@
-import { NavIndicator, revealFrom, Toaster } from '@uwusuite/design';
+import {
+  Button,
+  Icon,
+  ICONS,
+  NavIndicator,
+  revealFrom,
+  TabPanel,
+  Tabs,
+  Toaster,
+  useTabsId,
+} from '@uwusuite/design';
 import { toasts } from '../lib/toast';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { initialOf } from '../components/AccountCard';
-import { Icon } from '../components/Icon';
 import { LoginScreen } from '../components/LoginScreen';
 import { NyuScene } from '../components/nyu/scenes';
 import { NyuLoading } from '../components/NyuStates';
 import { Appearance } from '../components/SettingsDialog';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { SkipLink, TitleBar } from '../components/TitleBar';
-import { Button, Modal, TabPanel, Tabs, useTabsId } from '../components/ui';
+import { Modal } from '../components/ui';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
@@ -256,7 +265,7 @@ export function AdminApp() {
                       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
                       onClick={() => go(each.tabs[0]!.path)}
                     >
-                      <Icon name={each.icon} size={16} />
+                      <Icon icon={each.icon} />
                       <span className="nav-label">{t(each.label)}</span>
                     </button>
                   </li>
@@ -332,7 +341,7 @@ export function AdminApp() {
           settingsLabel={t('Darstellung')}
         >
           <a className="titlebar-link" href="/">
-            <Icon name="lock" size={15} />
+            <Icon icon={ICONS.locked} />
             <span className="titlebar-link-text">{t('Zum Tresor')}</span>
           </a>
           <button
@@ -341,7 +350,7 @@ export function AdminApp() {
             title={t('Tastenkürzel (?)')}
             aria-label={t('Tastenkürzel')}
           >
-            <Icon name="keyboard" size={17} />
+            <Icon icon={ICONS.keyboard} size="md" />
           </button>
           {status && status.state !== 'logged-out' && (
             <button
@@ -350,7 +359,7 @@ export function AdminApp() {
               title={t('Abmelden')}
               aria-label={t('Abmelden')}
             >
-              <Icon name="logout" size={17} />
+              <Icon icon={ICONS.signOut} size="md" />
             </button>
           )}
         </TitleBar>

@@ -1,5 +1,6 @@
+import { Button } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import { Button, ButtonRow, Table } from '../components/ui';
+import { ButtonRow, Table } from '../components/ui';
 import { ipBlocks, placeText, unblockIp, type IpBlock } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
@@ -77,7 +78,7 @@ export function IpBlocks() {
             </td>
             <td>{block.reason || '–'}</td>
             <td className="row-actions">
-              <Button size="small" onClick={() => void lift(block)}>
+              <Button size="sm" onClick={() => void lift(block)}>
                 {t('Aufheben')}
                 <span className="sr-only">{block.network}</span>
               </Button>

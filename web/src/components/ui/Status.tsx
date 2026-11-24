@@ -1,40 +1,29 @@
+import { Hint, Icon, ICONS, type HintTone } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Icon, type IconName } from '../Icon';
-
-export type Tone = 'accent' | 'ok' | 'alarm' | 'neutral';
-
-/** A short label on a pill: a count, a state ("Aktiv", "Fällig"). */
-export function Badge({
-  tone = 'accent',
-  children,
-  label,
-}: {
-  tone?: Tone;
-  children: ReactNode;
-  /** What a bare number means, for screen readers ("3 neue Hinweise"). */
-  label?: string;
-}) {
-  return (
-    <span className="badge" data-tone={tone === 'accent' ? undefined : tone} aria-label={label}>
-      {children}
-    </span>
-  );
-}
 
 export type CalloutTone = 'info' | 'accent' | 'ok' | 'warning' | 'error';
 
-const ICON: Record<CalloutTone, IconName> = {
-  info: 'shield',
-  accent: 'sparkles',
-  ok: 'check',
+const HINT: Record<CalloutTone, HintTone> = {
+  info: 'info',
+  accent: 'info',
+  ok: 'success',
   warning: 'warning',
-  error: 'warning',
+  error: 'danger',
+};
+
+const ICON: Record<CalloutTone, LucideIcon> = {
+  info: ICONS.securityCheck,
+  accent: ICONS.tip,
+  ok: ICONS.done,
+  warning: ICONS.warning,
+  error: ICONS.error,
 };
 
 /**
- * A notice inside a page or a dialog: something to know (`info`), to do (`accent`), that went
- * well (`ok`), that needs care (`warning`) or went wrong (`error`). Errors are announced; the
- * others are read when reached.
+ * A notice inside a page or a dialog, on @uwusuite/design's Hint: something to know (`info`), to
+ * do (`accent`, with a pink icon), that went well (`ok`), that needs care (`warning`) or went
+ * wrong (`error`, announced). The Hint has no icon, title or actions; UwULock's notices do.
  */
 export function Callout({
   tone = 'info',
@@ -46,23 +35,21 @@ export function Callout({
   tone?: CalloutTone;
   title?: ReactNode;
   /** Another icon, or `null` for none. */
-  icon?: IconName | null;
+  icon?: LucideIcon | null;
   actions?: ReactNode;
   children?: ReactNode;
 }) {
   const shown = icon === undefined ? ICON[tone] : icon;
   return (
-    <div
-      className="callout"
-      data-tone={tone === 'info' ? undefined : tone}
-      role={tone === 'error' ? 'alert' : undefined}
-    >
-      {shown && <Icon name={shown} size={16} />}
-      <div className="callout-body">
-        {title && <p className="callout-title">{title}</p>}
+    <Hint tone={HINT[tone]} className="callout flex items-start gap-2.5">
+      {shown && (
+        <Icon icon={shown} className={tone === 'accent' ? 'mt-0.5 text-pink-ink' : 'mt-0.5'} />
+      )}
+      <div className="grid min-w-0 flex-1 gap-1.5">
+        {title && <p className="font-semibold">{title}</p>}
         {typeof children === 'string' ? <p>{children}</p> : children}
-        {actions && <div className="callout-actions">{actions}</div>}
+        {actions && <div className="mt-1 flex flex-wrap gap-2">{actions}</div>}
       </div>
-    </div>
+    </Hint>
   );
 }

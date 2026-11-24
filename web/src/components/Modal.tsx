@@ -39,7 +39,14 @@ const stopCancel = { onCancel: (event: SyntheticEvent) => event.stopPropagation(
  * Rendered straight into <body>: a dialog opened from inside another one (the export from
  * Settings) must not live in the outer dialog's scroll box.
  */
-export function Modal({ title, tone = 'default', size = 'default', onCancel, children, footer }: ModalProps) {
+export function Modal({
+  title,
+  tone = 'default',
+  size = 'default',
+  onCancel,
+  children,
+  footer,
+}: ModalProps) {
   useLanguage();
   const bodyRef = useRef<HTMLDivElement>(null);
   // Escape calls the latest onCancel, not the one from when the dialog
@@ -90,7 +97,10 @@ export function Modal({ title, tone = 'default', size = 'default', onCancel, chi
         closeOnOutsideClick={false}
         className="modal"
       >
-        <div ref={bodyRef} className="modal-body grid content-start gap-4 px-6 pt-1 pb-5 phone:px-4">
+        <div
+          ref={bodyRef}
+          className="modal-body grid content-start gap-4 px-6 pt-1 pb-5 phone:px-4"
+        >
           {children}
         </div>
       </Dialog>

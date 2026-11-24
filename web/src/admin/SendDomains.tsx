@@ -1,17 +1,6 @@
+import { Button, Card, Icon, ICONS, Section, Segmented, SettingRow, Tag } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import { Icon } from '../components/Icon';
-import {
-  Badge,
-  Button,
-  ButtonRow,
-  Callout,
-  Card,
-  Modal,
-  Section,
-  Segmented,
-  SettingRow,
-  TextField,
-} from '../components/ui';
+import { ButtonRow, Callout, Modal, TextField } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import {
   addSendDomain,
@@ -106,7 +95,7 @@ export function SendDomains() {
   return (
     <>
       <Section
-        heading={t('Send-Domains auf diesem Server')}
+        title={t('Send-Domains auf diesem Server')}
         lead={t(
           'Weitere Adressen, unter denen nur Sends und Datei-Anfragen erreichbar sind – etwa send.example.com neben der Adresse des Tresors. Tresor, Anmeldung und Admin-Portal gibt es dort nicht. Jeder Send ist unter allen Adressen erreichbar; die Wahl bestimmt nur, welcher Link angezeigt wird.',
         )}
@@ -130,7 +119,7 @@ export function SendDomains() {
         )}
       </Section>
 
-      <Section heading={t('Send-Domain hinzufügen')}>
+      <Section title={t('Send-Domain hinzufügen')}>
         <form
           className="form"
           onSubmit={(event) => {
@@ -166,7 +155,12 @@ export function SendDomains() {
             <Segmented label={t('TLS')} value={tls} onChange={setTls} options={tlsOptions()} />
           </SettingRow>
           <ButtonRow end>
-            <Button variant="primary" type="submit" icon="plus" disabled={busy || !hostOf(host)}>
+            <Button
+              variant="primary"
+              type="submit"
+              icon={ICONS.add}
+              disabled={busy || !hostOf(host)}
+            >
               {t('Hinzufügen')}
             </Button>
           </ButtonRow>
@@ -272,11 +266,9 @@ function DomainCard({
   return (
     <Card
       className="channel-card"
-      heading={<span className="mono">{domain.host}</span>}
+      title={<span className="mono">{domain.host}</span>}
       aside={
-        <Badge tone="neutral">
-          {domain.branding ? t('eigenes Aussehen') : t('wie der Server')}
-        </Badge>
+        <Tag tone="neutral">{domain.branding ? t('eigenes Aussehen') : t('wie der Server')}</Tag>
       }
     >
       <SettingRow
@@ -331,19 +323,19 @@ function DomainCard({
       )}
       <ButtonRow>
         <Button
-          size="small"
+          size="sm"
           disabled={busy}
           onClick={() => void run(async () => setCheck(await checkSendDomain(domain.id)))}
         >
           {busy ? t('Einen Moment …') : t('Prüfen')}
           <span className="sr-only">{domain.host}</span>
         </Button>
-        <Button size="small" variant="quiet" icon="eye" onClick={onStyle}>
+        <Button size="sm" variant="ghost" icon={ICONS.show} onClick={onStyle}>
           {t('Aussehen …')}
           <span className="sr-only">{domain.host}</span>
         </Button>
         <span className="spacer" />
-        <Button size="small" variant="quiet-danger" onClick={onDelete}>
+        <Button className="text-danger-ink" size="sm" variant="ghost" onClick={onDelete}>
           {t('Löschen …')}
           <span className="sr-only">{domain.host}</span>
         </Button>
@@ -356,7 +348,7 @@ function CheckLine({ ok, text }: { ok: boolean; text: string }) {
   useLanguage();
   return (
     <li data-ok={ok}>
-      <Icon name={ok ? 'check' : 'close'} size={14} />
+      <Icon icon={ok ? ICONS.done : ICONS.close} size="xs" />
       <span>
         <span className="sr-only">{ok ? t('in Ordnung') : t('Fehler')}: </span>
         {text}

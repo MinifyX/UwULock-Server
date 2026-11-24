@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button, Icon, ICONS, Segmented } from '@uwusuite/design';
 import { logout, type Status } from '../../lib/api';
 import {
   changeKdf,
@@ -10,10 +11,9 @@ import {
 } from '../../lib/account';
 import { locale, t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import type { SettingsSection } from '../SettingsDialog';
 import { NewPassword } from './AccountSettings';
-import { PasswordPrompt, Segmented } from './controls';
+import { PasswordPrompt } from './controls';
 import { TwoFactorSettings } from './TwoFactorSettings';
 
 /** The account has to set up two-step login, and has not yet. */
@@ -47,25 +47,25 @@ export function PolicyBanners({
     <>
       {lacksTwoFactor(info) && !policy.twoFactorEnforced && (
         <div className="notice policy-banner" role="status">
-          <Icon name="shield" size={16} />
+          <Icon icon={ICONS.securityCheck} />
           <span className="policy-banner-text">
             {t(
               'Dieser Server verlangt ab {date} die Zwei-Schritt-Anmeldung. Danach melden dich Apps, Erweiterungen und die CLI erst wieder an, wenn sie eingerichtet ist.',
               { date: day(policy.twoFactorDeadline) },
             )}
           </span>
-          <button onClick={() => onSettings('two-factor')}>{t('Einrichten')}</button>
+          <Button onClick={() => onSettings('two-factor')}>{t('Einrichten')}</Button>
         </div>
       )}
       {policy.kdfBelowMinimum && (
         <div className="notice policy-banner" role="status">
-          <Icon name="key" size={16} />
+          <Icon icon={ICONS.secret} />
           <span className="policy-banner-text">
             {t(
               'Deine Schlüsselableitung ist schwächer, als dieser Server für neue Konten verlangt. Stell sie um: Dein Master-Passwort wird dadurch schwerer zu erraten.',
             )}
           </span>
-          <button onClick={() => setUpgrading(true)}>{t('Jetzt umstellen')}</button>
+          <Button onClick={() => setUpgrading(true)}>{t('Jetzt umstellen')}</Button>
         </div>
       )}
       {upgrading && status.email && (
@@ -177,7 +177,7 @@ export function TwoFactorRequired({
         </div>
         <div className="form-actions">
           <span className="spacer" />
-          <button onClick={() => void logout()}>{t('Abmelden')}</button>
+          <Button onClick={() => void logout()}>{t('Abmelden')}</Button>
         </div>
       </div>
     </div>
@@ -202,10 +202,10 @@ export function PasswordChangeRequired({ info }: { info: AccountInfo | null }) {
         </p>
         <div className="form-actions">
           <span className="spacer" />
-          <button onClick={() => void logout()}>{t('Abmelden')}</button>
-          <button className="primary" onClick={() => setChanging(true)}>
+          <Button onClick={() => void logout()}>{t('Abmelden')}</Button>
+          <Button variant="primary" onClick={() => setChanging(true)}>
             {t('Ändern')}
-          </button>
+          </Button>
         </div>
       </div>
       {changing && (

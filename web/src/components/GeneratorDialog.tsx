@@ -1,3 +1,4 @@
+import { Button, Icon, ICONS, Segmented } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
 import { copyGenerated, generatePassword, type Generated, type GeneratorOptions } from '../lib/api';
 import { useFeature } from '../lib/branding';
@@ -22,10 +23,8 @@ import {
 } from '../lib/generator';
 import { getSettings } from '../lib/settings';
 import { toast } from '../lib/toast';
-import { Icon } from './Icon';
 import { Colored } from './ItemDetail';
 import { Modal } from './Modal';
-import { Segmented } from './web/controls';
 import { MaskedDomainField } from './web/MaskedSettings';
 
 function strength(bits: number): { level: 1 | 2 | 3 | 4; label: string } {
@@ -99,15 +98,18 @@ export function GeneratorDialog({
         footer={
           <>
             <span className="spacer" />
-            <button onClick={onClose}>{t('Schließen')}</button>
-            <button disabled={maker.busy} onClick={() => void maker.create()}>
-              <Icon name="plus" size={15} />
+            <Button onClick={onClose}>{t('Schließen')}</Button>
+            <Button icon={ICONS.add} disabled={maker.busy} onClick={() => void maker.create()}>
               {maker.made ? t('Noch eine anlegen') : t('Adresse anlegen')}
-            </button>
-            <button className="primary" disabled={!maker.made} onClick={() => void maker.copy()}>
-              <Icon name="copy" size={15} />
+            </Button>
+            <Button
+              variant="primary"
+              icon={ICONS.copy}
+              disabled={!maker.made}
+              onClick={() => void maker.copy()}
+            >
               {t('Kopieren')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -148,26 +150,24 @@ export function GeneratorDialog({
       footer={
         <>
           <span className="spacer" />
-          <button onClick={onClose}>{t('Schließen')}</button>
-          <button onClick={() => void roll(options)}>
-            <Icon name="dice" size={15} />
+          <Button onClick={onClose}>{t('Schließen')}</Button>
+          <Button icon={ICONS.generate} onClick={() => void roll(options)}>
             {t('Neu würfeln')}
-          </button>
+          </Button>
           {onUse ? (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
+              icon={ICONS.done}
               data-autofocus
               disabled={!result}
               onClick={() => result && onUse(result.password)}
             >
-              <Icon name="check" size={15} />
               {t('Übernehmen')}
-            </button>
+            </Button>
           ) : (
-            <button className="primary" data-autofocus onClick={() => void copy()}>
-              <Icon name="copy" size={15} />
+            <Button variant="primary" icon={ICONS.copy} data-autofocus onClick={() => void copy()}>
               {t('Kopieren')}
-            </button>
+            </Button>
           )}
         </>
       }
@@ -226,16 +226,16 @@ export function GeneratorDialog({
             </label>
           ))}
         </div>
-        <button
-          type="button"
-          className="quiet history-toggle"
+        <Button
+          variant="ghost"
+          icon={ICONS.adjust}
+          className="history-toggle"
           aria-expanded={showMinimums}
           onClick={() => setShowMinimums(!showMinimums)}
         >
-          <Icon name="sliders" size={15} />
           {t('Mindestens je Zeichenart')}
-          <Icon name="chevron" size={14} className={showMinimums ? 'turned' : undefined} />
-        </button>
+          <Icon icon={ICONS.next} size="xs" className={showMinimums ? 'turned' : undefined} />
+        </Button>
         {showMinimums && (
           <div
             className="generator-minimums"

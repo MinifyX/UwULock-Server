@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import { t, useLanguage } from '../lib/i18n';
-import { Icon } from './Icon';
+import { Button, ICONS } from '@uwusuite/design';
 
 /**
  * On a phone the vault shows one layer at a time — the list, or what is picked in it — and a
@@ -17,9 +17,14 @@ export function BackToList() {
   useLanguage();
   const { back } = useContext(Panes);
   return (
-    <button type="button" className="pane-back quiet" onClick={back}>
-      <Icon name="chevron" size={15} />
+    // min-[761px]:hidden: the utility layer beats vault.css's `.pane-back { display: none }`.
+    <Button
+      variant="ghost"
+      icon={ICONS.previous}
+      className="pane-back min-[761px]:hidden"
+      onClick={back}
+    >
       {t('Zurück')}
-    </button>
+    </Button>
   );
 }

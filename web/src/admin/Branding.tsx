@@ -1,5 +1,6 @@
+import { Button, ICONS, Section, SettingRow } from '@uwusuite/design';
 import { useEffect, useRef, useState } from 'react';
-import { Button, ButtonRow, Section, SettingRow as Row } from '../components/ui';
+import { ButtonRow } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import {
   branding,
@@ -109,7 +110,7 @@ export function Branding({
   return (
     <>
       <Section
-        heading={t('Name und Farbe')}
+        title={t('Name und Farbe')}
         lead={
           domain
             ? t(
@@ -136,16 +137,22 @@ export function Branding({
             </Button>
           </ButtonRow>
         )}
-        <Row label={t('Name')} description={t('Leer lässt es bei UwULock. Höchstens 40 Zeichen.')}>
-          <input
-            aria-label={t('Name')}
-            value={name}
-            maxLength={40}
-            placeholder="UwULock"
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Row>
-        <Row
+        <SettingRow
+          label={t('Name')}
+          description={t('Leer lässt es bei UwULock. Höchstens 40 Zeichen.')}
+        >
+          {({ id }) => (
+            <input
+              id={id}
+              aria-label={t('Name')}
+              value={name}
+              maxLength={40}
+              placeholder="UwULock"
+              onChange={(e) => setName(e.target.value)}
+            />
+          )}
+        </SettingRow>
+        <SettingRow
           label={t('Akzentfarbe')}
           description={t(
             'Braucht mindestens 3:1 Kontrast zu Weiß und zum dunklen Hintergrund. Die Farbtöne für Knöpfe und Links rechnet der Server daraus so, dass Text darauf gut lesbar bleibt (4,5:1).',
@@ -177,7 +184,7 @@ export function Branding({
             maxLength={7}
             onChange={(e) => setColor(e.target.value.trim())}
           />
-        </Row>
+        </SettingRow>
         <div className="brand-preview" aria-live="polite">
           {contrast ? (
             <>
@@ -219,7 +226,7 @@ export function Branding({
         </div>
         <ButtonRow>
           <Button
-            variant="quiet"
+            variant="ghost"
             disabled={busy || !current || (!current.nameSet && !current.colorSet)}
             onClick={() => void act(() => saveBranding(null, null, path), t('Wieder UwULock ✧'))}
           >
@@ -247,7 +254,7 @@ export function Branding({
       </Section>
 
       <Section
-        heading={t('Logos und Favicon')}
+        title={t('Logos und Favicon')}
         lead={t(
           'PNG, JPEG, WebP, GIF, ICO oder SVG. Der Server zeichnet jedes Bild neu als PNG; was sonst in der Datei steckt, bleibt draußen. Logos bis 512 KB, das Favicon bis 128 KB.',
         )}
@@ -305,7 +312,7 @@ function ImageRow({
   useLanguage();
   const input = useRef<HTMLInputElement>(null);
   return (
-    <Row
+    <SettingRow
       label={label}
       description={
         image === 'favicon'
@@ -327,13 +334,14 @@ function ImageRow({
           if (file) void act(() => uploadBrandingImage(image, file, path), t('Bild gespeichert ✧'));
         }}
       />
-      <Button icon="upload" disabled={busy} onClick={() => input.current?.click()}>
+      <Button icon={ICONS.upload} disabled={busy} onClick={() => input.current?.click()}>
         {t('Hochladen …')}
         <span className="sr-only">{label}</span>
       </Button>
       {url && (
         <Button
-          variant="quiet-danger"
+          className="text-danger-ink"
+          variant="ghost"
           disabled={busy}
           onClick={() => void act(() => removeBrandingImage(image, path), t('Bild entfernt.'))}
         >
@@ -341,6 +349,6 @@ function ImageRow({
           <span className="sr-only">{label}</span>
         </Button>
       )}
-    </Row>
+    </SettingRow>
   );
 }

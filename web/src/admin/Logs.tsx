@@ -1,5 +1,6 @@
+import { Segmented } from '@uwusuite/design';
 import { useEffect, useRef, useState } from 'react';
-import { Callout, Checkbox, Segmented } from '../components/ui';
+import { Callout, Checkbox } from '../components/ui';
 import { logs, type LogLine } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';

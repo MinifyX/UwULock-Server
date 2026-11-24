@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import {
   invitePerson,
   myInvitations,
@@ -10,7 +11,6 @@ import { errorText } from '../../lib/errors';
 import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { EmptyNote } from '../NyuStates';
 
 /**
@@ -74,17 +74,17 @@ export function InviteSettings() {
           disabled={busy || left === 0}
           aria-label={t('E-Mail-Adresse')}
         />
-        <button
-          className="primary"
+        <Button
+          variant="primary"
           type="submit"
           disabled={busy || left === 0 || !email.includes('@')}
         >
           {t('Einladen')}
-        </button>
+        </Button>
       </form>
       {made && (
         <div className="notice invite-made" role="status">
-          <Icon name={made.mailed ? 'check' : 'sparkles'} size={16} />
+          <Icon icon={made.mailed ? ICONS.done : ICONS.invitation} />
           <span>
             {!made.link
               ? t('Die Einladung an {email} ist per Mail unterwegs.', { email: made.email })
@@ -99,7 +99,7 @@ export function InviteSettings() {
             {made.link && <code className="invite-link">{made.link}</code>}
           </span>
           {made.link && (
-            <button
+            <Button
               onClick={() => {
                 void navigator.clipboard
                   .writeText(made.link ?? '')
@@ -107,7 +107,7 @@ export function InviteSettings() {
               }}
             >
               {t('Kopieren')}
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -118,7 +118,7 @@ export function InviteSettings() {
         <ul className="device-list">
           {mine.invitations.map((invitation: MyInvitation) => (
             <li key={invitation.email} className="device">
-              <Icon name="sparkles" size={20} />
+              <Icon icon={ICONS.invitation} size="lg" />
               <span className="device-text">
                 <b>{invitation.email}</b>
                 <small>
@@ -127,11 +127,12 @@ export function InviteSettings() {
                     : t('gilt bis {when}', { when: when(invitation.expires) ?? '' })}
                 </small>
               </span>
-              <button disabled={busy} onClick={() => void send(invitation.email)}>
+              <Button disabled={busy} onClick={() => void send(invitation.email)}>
                 {t('Neu senden')}
-              </button>
-              <button
-                className="quiet danger-text"
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-danger-ink"
                 onClick={async () => {
                   try {
                     await withdrawInvitation(invitation.email);
@@ -142,7 +143,7 @@ export function InviteSettings() {
                 }}
               >
                 {t('Zurückziehen')}
-              </button>
+              </Button>
             </li>
           ))}
         </ul>

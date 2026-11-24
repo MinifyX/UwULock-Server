@@ -1,3 +1,4 @@
+import { Button, Icon, IconButton, ICONS } from '@uwusuite/design';
 import { useEffect, useState } from 'react';
 import { lock, logout, syncNow, type Status } from '../lib/api';
 import { errorText } from '../lib/errors';
@@ -5,7 +6,6 @@ import { ago } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
 import { toast } from '../lib/toast';
 import { ContextMenu, type MenuAnchor, type MenuItem } from './ContextMenu';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
 
 export function initialOf(account: { name?: string | null; label?: string; email: string }) {
@@ -42,8 +42,13 @@ export function AccountCard({ status }: { status: Status }) {
 
   const items: MenuItem[] = email
     ? [
-        { label: t('Sperren'), icon: 'lock', onSelect: () => void lock() },
-        { label: t('Abmelden'), icon: 'logout', danger: true, onSelect: () => setLeaving(email) },
+        { label: t('Sperren'), icon: ICONS.locked, onSelect: () => void lock() },
+        {
+          label: t('Abmelden'),
+          icon: ICONS.signOut,
+          danger: true,
+          onSelect: () => setLeaving(email),
+        },
       ]
     : [];
 
@@ -80,21 +85,20 @@ export function AccountCard({ status }: { status: Status }) {
                   : t('Synchronisiert {when}', { when: ago(status.lastSync) })}
             </span>
           </span>
-          <Icon name="chevron" size={14} className="account-chevron" />
+          <Icon icon={ICONS.next} size="xs" className="account-chevron" />
         </button>
-        <button
-          className="icon-button"
+        <IconButton
+          icon={ICONS.refresh}
+          label={t('Jetzt synchronisieren')}
+          className={status.syncing ? '[&>svg]:animate-spin' : undefined}
           disabled={status.syncing}
-          aria-label={t('Jetzt synchronisieren')}
           title={status.syncError ?? t('Jetzt synchronisieren')}
           onClick={() =>
             void syncNow()
               .then(() => toast(t('Synchronisiert ✧')))
               .catch((e) => toast(errorText(e), 'error'))
           }
-        >
-          <Icon name="refresh" size={15} className={status.syncing ? 'spin' : undefined} />
-        </button>
+        />
       </div>
 
       {menu && (
@@ -116,8 +120,8 @@ export function AccountCard({ status }: { status: Status }) {
           footer={
             <>
               <span className="spacer" />
-              <button
-                className="danger"
+              <Button
+                variant="danger"
                 data-secondary
                 onClick={() => {
                   setLeaving(null);
@@ -127,10 +131,10 @@ export function AccountCard({ status }: { status: Status }) {
                 }}
               >
                 {t('Abmelden')}
-              </button>
-              <button className="primary" data-autofocus onClick={() => setLeaving(null)}>
+              </Button>
+              <Button variant="primary" data-autofocus onClick={() => setLeaving(null)}>
                 {t('Bleiben')}
-              </button>
+              </Button>
             </>
           }
         >

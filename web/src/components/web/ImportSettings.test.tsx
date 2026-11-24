@@ -38,7 +38,7 @@ describe('the import in the settings', () => {
 
     await choose(container, 'chrome.csv', fixture('chrome.csv'));
     const dialog = await vi.waitFor(() => {
-      const found = document.querySelector<HTMLElement>('[role="dialog"]');
+      const found = document.querySelector<HTMLElement>('dialog, [role="dialog"]');
       if (!found) throw new Error('no dialog yet');
       return found;
     });
@@ -50,7 +50,7 @@ describe('the import in the settings', () => {
     expect(buttons.at(-1)!.textContent).toMatch(/2/);
 
     await act(async () => buttons.find((b) => b.hasAttribute('data-secondary'))!.click());
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector('dialog, [role="dialog"]')).toBeNull();
     await act(async () => root.unmount());
   });
 

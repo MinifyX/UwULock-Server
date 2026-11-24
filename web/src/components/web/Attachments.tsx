@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Button, Icon, IconButton, ICONS } from '@uwusuite/design';
 import { errorText } from '../../lib/errors';
 import {
   addAttachment,
@@ -10,7 +11,6 @@ import {
 import { bytes } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { save } from './controls';
 
@@ -83,31 +83,25 @@ export function Attachments({
         <div className="detail-row" key={attachment.id}>
           <div className="detail-text">
             <span className="detail-value attachment-name">
-              <Icon name="file" size={14} />
+              <Icon icon={ICONS.file} size="xs" />
               {attachment.fileName}
             </span>
             <span className="detail-label">{bytes(attachment.size)}</span>
           </div>
           <div className="detail-actions">
-            <button
-              className="icon-button"
-              title={t('Herunterladen')}
-              aria-label={t('{name} herunterladen', { name: attachment.fileName })}
+            <IconButton
+              icon={ICONS.download}
+              label={t('{name} herunterladen', { name: attachment.fileName })}
               disabled={Boolean(busy)}
               onClick={() => void open(attachment)}
-            >
-              <Icon name="download" size={15} />
-            </button>
+            />
             {editable && (
-              <button
-                className="icon-button"
-                title={t('Löschen')}
-                aria-label={t('{name} löschen', { name: attachment.fileName })}
+              <IconButton
+                icon={ICONS.delete}
+                label={t('{name} löschen', { name: attachment.fileName })}
                 disabled={Boolean(busy)}
                 onClick={() => setDeleting(attachment)}
-              >
-                <Icon name="trash" size={15} />
-              </button>
+              />
             )}
           </div>
         </div>
@@ -128,10 +122,14 @@ export function Attachments({
               if (file) void add(file);
             }}
           />
-          <button className="quiet" disabled={Boolean(busy)} onClick={() => input.current?.click()}>
-            <Icon name="paperclip" size={15} />
+          <Button
+            variant="ghost"
+            disabled={Boolean(busy)}
+            onClick={() => input.current?.click()}
+            icon={ICONS.attachment}
+          >
             {t('Datei anhängen …')}
-          </button>
+          </Button>
         </div>
       )}
       {deleting && (
@@ -142,12 +140,12 @@ export function Attachments({
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDeleting(null)}>
+              <Button data-secondary onClick={() => setDeleting(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button className="danger" onClick={() => void remove(deleting)}>
+              </Button>
+              <Button variant="danger" onClick={() => void remove(deleting)}>
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >

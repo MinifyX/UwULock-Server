@@ -1,19 +1,6 @@
+import { Button, Section, Segmented, SettingRow, Switch, Tag } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import {
-  Badge,
-  Button,
-  ButtonRow,
-  Field,
-  FormRow,
-  Modal,
-  Section,
-  Segmented,
-  Select,
-  SettingRow,
-  Table,
-  TextField,
-  Toggle,
-} from '../components/ui';
+import { ButtonRow, Field, FormRow, Modal, Select, Table, TextField } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import {
   blockIp,
@@ -298,7 +285,7 @@ function AttemptRow({
           {where && <small>{where}</small>}
         </td>
         <td className="row-actions">
-          <Button size="small" onClick={onToggle} aria-expanded={open}>
+          <Button size="sm" onClick={onToggle} aria-expanded={open}>
             {open ? t('Weniger') : t('Details')}
           </Button>
         </td>
@@ -331,19 +318,19 @@ function AttemptRow({
             </dl>
             {attempt.ip && (
               <div className="row-buttons">
-                <Button size="small" onClick={() => onHistory(attempt.ip!)}>
+                <Button size="sm" onClick={() => onHistory(attempt.ip!)}>
                   {t('Verlauf dieser Adresse')}
                 </Button>
-                <Button size="small" onClick={() => onAddress(attempt.ip!)}>
+                <Button size="sm" onClick={() => onAddress(attempt.ip!)}>
                   {t('Nur diese Adresse zeigen')}
                 </Button>
-                <Button size="small" variant="danger" onClick={() => onBlock(attempt.ip!)}>
+                <Button size="sm" variant="danger" onClick={() => onBlock(attempt.ip!)}>
                   {t('IP sperren …')}
                 </Button>
                 {attempt.account && (
                   <Button
-                    size="small"
-                    variant="quiet"
+                    size="sm"
+                    variant="ghost"
                     onClick={() => go(`/users?q=${encodeURIComponent(attempt.account!.email)}`)}
                   >
                     {t('Zum Konto')}
@@ -419,7 +406,7 @@ function Groups({
               <span className="mono">{group.ip}</span>
               {group.blocked && (
                 <span className="badges">
-                  <Badge tone="alarm">{t('gesperrt')}</Badge>
+                  <Tag tone="warning">{t('gesperrt')}</Tag>
                 </span>
               )}
               {placeText(group.place) && <small>{placeText(group.place)}</small>}
@@ -442,12 +429,12 @@ function Groups({
               <small>{t('seit {when}', { when: when(group.first) ?? '' })}</small>
             </td>
             <td className="row-actions">
-              <Button size="small" onClick={() => onHistory(group.ip)}>
+              <Button size="sm" onClick={() => onHistory(group.ip)}>
                 {t('Verlauf')}
                 <span className="sr-only">{group.ip}</span>
               </Button>
               {!group.blocked && (
-                <Button size="small" variant="danger" onClick={() => onBlock(group.ip)}>
+                <Button size="sm" variant="danger" onClick={() => onBlock(group.ip)}>
                   {t('IP sperren …')}
                   <span className="sr-only">{group.ip}</span>
                 </Button>
@@ -663,7 +650,7 @@ function GeoIpSection() {
     <SettingsTab>
       {({ draft, setDraft }) => (
         <Section
-          heading={t('Herkunft der Adressen (GeoIP)')}
+          title={t('Herkunft der Adressen (GeoIP)')}
           lead={t(
             'Land, Stadt und Netz einer Adresse kommen aus einer Datenbank auf diesem Server. Der Server lädt sie einmal im Monat von DB-IP herunter; einzelne Adressen werden nirgends nachgefragt.',
           )}
@@ -674,11 +661,14 @@ function GeoIpSection() {
               'Ausgeschaltet lädt der Server nichts herunter, zeigt keine Herkunft und löscht die Datenbank beim nächsten nächtlichen Lauf.',
             )}
           >
-            <Toggle
-              label={t('GeoIP verwenden')}
-              checked={draft.geoip}
-              onChange={(geoip) => setDraft({ ...draft, geoip })}
-            />
+            {({ id, describedBy }) => (
+              <Switch
+                id={id}
+                describedBy={describedBy}
+                checked={draft.geoip}
+                onChange={(geoip) => setDraft({ ...draft, geoip })}
+              />
+            )}
           </SettingRow>
           {status && (
             <p className="field-hint">
@@ -696,7 +686,7 @@ function GeoIpSection() {
           )}
           {status?.enabled && (
             <ButtonRow>
-              <Button size="small" disabled={status.updating} onClick={() => void update()}>
+              <Button size="sm" disabled={status.updating} onClick={() => void update()}>
                 {t('Jetzt herunterladen')}
               </Button>
             </ButtonRow>

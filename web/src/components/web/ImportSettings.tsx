@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react';
+import { Button, SettingRow } from '@uwusuite/design';
 import { importVault } from '../../lib/account';
 import { syncNow } from '../../lib/api';
 import { errorText } from '../../lib/errors';
@@ -17,7 +18,7 @@ import { checkFileSize } from '../../lib/import/limits';
 import { ItemType } from '../../lib/import/types';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import { ResultLine, Row, type Result } from './controls';
+import { ResultLine, type Result } from './controls';
 
 /** The preview lists this many items; more would only slow the page down. */
 const LIST_LIMIT = 500;
@@ -70,37 +71,39 @@ export function ImportSettings() {
 
   return (
     <>
-      <Row
+      <SettingRow
         label={t('Importieren')}
         description={t(
           'Aus Bitwarden, Vaultwarden, UwULock, KeePass, KeePassXC, 1Password, Chrome, Edge, Firefox, Apple Passwörter, Proton Pass oder LastPass. Die Datei wird nur hier im Browser gelesen, und du siehst vorher, was kommt.',
         )}
       >
-        <select
-          className="select"
-          value={source}
-          aria-label={t('Importieren aus')}
-          onChange={(e) => setSource(e.target.value as Source | 'auto')}
-          disabled={busy}
-        >
-          <option value="auto">{t('Automatisch erkennen')}</option>
-          {SOURCES.map((option) => (
-            <option key={option.value} value={option.value}>
-              {t(option.label)}
-            </option>
-          ))}
-        </select>
-        <input
-          ref={input}
-          type="file"
-          accept={ACCEPT}
-          hidden
-          onChange={(e) => void pick(e.target.files?.[0])}
-        />
-        <button onClick={() => input.current?.click()} disabled={busy}>
-          {busy ? t('Liest …') : t('Datei wählen …')}
-        </button>
-      </Row>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            className="select"
+            value={source}
+            aria-label={t('Importieren aus')}
+            onChange={(e) => setSource(e.target.value as Source | 'auto')}
+            disabled={busy}
+          >
+            <option value="auto">{t('Automatisch erkennen')}</option>
+            {SOURCES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(option.label)}
+              </option>
+            ))}
+          </select>
+          <input
+            ref={input}
+            type="file"
+            accept={ACCEPT}
+            hidden
+            onChange={(e) => void pick(e.target.files?.[0])}
+          />
+          <Button onClick={() => input.current?.click()} disabled={busy}>
+            {busy ? t('Liest …') : t('Datei wählen …')}
+          </Button>
+        </div>
+      </SettingRow>
       <ResultLine result={result} />
       {locked && (
         <KeepassPrompt
@@ -169,17 +172,12 @@ function KeepassPrompt({
       footer={
         <>
           <span className="spacer" />
-          <button type="button" onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => void submit()}
-            disabled={busy || !ready}
-          >
+          </Button>
+          <Button variant="primary" onClick={() => void submit()} disabled={busy || !ready}>
             {busy ? t('Öffnet …') : t('Öffnen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -203,21 +201,20 @@ function KeepassPrompt({
               hidden
               onChange={(e) => void pickKey(e.target.files?.[0])}
             />
-            <button type="button" onClick={() => keyInput.current?.click()} disabled={busy}>
+            <Button onClick={() => keyInput.current?.click()} disabled={busy}>
               {keyFile ? t('Andere wählen …') : t('Schlüsseldatei wählen …')}
-            </button>
+            </Button>
             {keyFile && (
               <>
                 <span className="import-key-name">{keyFile.name}</span>
-                <button
-                  type="button"
+                <Button
                   onClick={() => setKeyFile(null)}
                   disabled={busy}
                   aria-label={t('Schlüsseldatei entfernen')}
                   data-secondary
                 >
                   {t('Entfernen')}
-                </button>
+                </Button>
               </>
             )}
           </div>
@@ -285,17 +282,12 @@ function ImportPreview({
       footer={
         <>
           <span className="spacer" />
-          <button type="button" onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => void run()}
-            disabled={busy || total === 0}
-          >
+          </Button>
+          <Button variant="primary" onClick={() => void run()} disabled={busy || total === 0}>
             {busy ? t('Importiert …') : t('{n} Einträge importieren', { n: total })}
-          </button>
+          </Button>
         </>
       }
     >

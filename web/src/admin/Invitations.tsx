@@ -1,5 +1,6 @@
+import { Button, ICONS, Section, Tag } from '@uwusuite/design';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Badge, Button, Callout, Checkbox, Section, Table, TextField } from '../components/ui';
+import { Callout, Checkbox, Table, TextField } from '../components/ui';
 import { invitations, invite, uninvite, type Invitation } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { when } from '../lib/format';
@@ -50,7 +51,7 @@ export function Invitations() {
   return (
     <>
       <Section
-        heading={t('Jemanden einladen')}
+        title={t('Jemanden einladen')}
         lead={t(
           'Die Einladung geht per Mail, wenn ein Mailserver eingerichtet ist. Den Link bekommst du in jedem Fall, zum Weitergeben von Hand.',
         )}
@@ -75,8 +76,8 @@ export function Invitations() {
             tone={made.mailed ? 'ok' : 'accent'}
             actions={
               <Button
-                size="small"
-                icon="copy"
+                size="sm"
+                icon={ICONS.copy}
                 onClick={() => {
                   void navigator.clipboard
                     .writeText(made.link)
@@ -101,7 +102,7 @@ export function Invitations() {
           </Callout>
         )}
       </Section>
-      <Section heading={t('Offene Einladungen')}>
+      <Section title={t('Offene Einladungen')}>
         {list?.length === 0 ? (
           <EmptyNote>{t('Keine offenen Einladungen.')}</EmptyNote>
         ) : (
@@ -123,20 +124,21 @@ export function Invitations() {
                 <td>
                   <b>{invitation.email}</b>
                   <span className="badges">
-                    {invitation.admin && <Badge>{t('Admin')}</Badge>}
-                    {invitation.expired && <Badge tone="alarm">{t('abgelaufen')}</Badge>}
+                    {invitation.admin && <Tag tone="pink">{t('Admin')}</Tag>}
+                    {invitation.expired && <Tag tone="warning">{t('abgelaufen')}</Tag>}
                   </span>
                 </td>
                 <td>{invitation.invitedBy ?? t('Kommandozeile')}</td>
                 <td>{when(invitation.expires)}</td>
                 <td className="row-actions">
-                  <Button size="small" onClick={() => void again(invitation)}>
+                  <Button size="sm" onClick={() => void again(invitation)}>
                     {t('Neu senden')}
                     <span className="sr-only">{invitation.email}</span>
                   </Button>
                   <Button
-                    size="small"
-                    variant="quiet-danger"
+                    className="text-danger-ink"
+                    size="sm"
+                    variant="ghost"
                     onClick={async () => {
                       try {
                         await uninvite(invitation.email);

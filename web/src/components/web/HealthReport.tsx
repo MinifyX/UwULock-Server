@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import { account } from '../../lib/account';
 import {
   breachAfterChange,
@@ -39,7 +40,6 @@ import {
 } from '../../lib/twofa';
 import { useSwitch } from '../../lib/switches';
 import { t, useLanguage } from '../../lib/i18n';
-import { Icon } from '../Icon';
 import { NyuScene } from '../nyu/scenes';
 import { breachText, hidden, problemTitle } from './HealthReview';
 
@@ -240,9 +240,9 @@ export function HealthReport({ onOpen, onReview }: Props) {
               </span>
             </div>
             <div className="detail-actions">
-              <button className="quiet" onClick={() => onOpen(finding.id)}>
+              <Button variant="ghost" onClick={() => onOpen(finding.id)}>
                 {t('Öffnen')}
-              </button>
+              </Button>
             </div>
           </div>
         ))}
@@ -289,7 +289,7 @@ export function HealthReport({ onOpen, onReview }: Props) {
       <article className="detail">
         <header className="detail-head">
           <span className="item-tile" data-size="large" data-hue="4">
-            <Icon name="pulse" size={26} />
+            <Icon icon={ICONS.stats} size="xl" className="size-[26px]" />
           </span>
           <div className="detail-title">
             <h2>{t('Passwortprüfung')}</h2>
@@ -306,15 +306,18 @@ export function HealthReport({ onOpen, onReview }: Props) {
           </div>
           <div className="detail-tools">
             {report && problems > 0 && onReview && (
-              <button disabled={Boolean(busy)} onClick={onReview}>
-                <Icon name="layers" size={15} />
+              <Button disabled={Boolean(busy)} onClick={onReview} icon={ICONS.collection}>
                 {t('Durchgehen')}
-              </button>
+              </Button>
             )}
-            <button className="primary" disabled={Boolean(busy)} onClick={() => void run()}>
-              <Icon name="refresh" size={15} />
+            <Button
+              variant="primary"
+              disabled={Boolean(busy)}
+              onClick={() => void run()}
+              icon={ICONS.refresh}
+            >
               {report ? t('Nochmal prüfen') : t('Jetzt prüfen')}
-            </button>
+            </Button>
           </div>
         </header>
         {!report && !busy && (
@@ -379,9 +382,9 @@ export function HealthReport({ onOpen, onReview }: Props) {
                   </span>
                 </div>
                 <div className="detail-actions">
-                  <button className="quiet" onClick={() => onOpen(finding.id)}>
+                  <Button variant="ghost" onClick={() => onOpen(finding.id)}>
                     {t('Öffnen')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -442,16 +445,16 @@ export function HealthReport({ onOpen, onReview }: Props) {
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      <Icon name="external" size={14} />
+                      <Icon icon={ICONS.openExternal} size="xs" />
                       {t('Anleitung')}
                       <span className="sr-only">
                         {t('für {site} (neues Fenster)', { site: entry.name })}
                       </span>
                     </a>
                   )}
-                  <button className="quiet" onClick={() => onOpen(item.id)}>
+                  <Button variant="ghost" onClick={() => onOpen(item.id)}>
                     {t('Öffnen')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -476,12 +479,12 @@ export function HealthReport({ onOpen, onReview }: Props) {
                   )}
                 </p>
                 <div className="detail-actions">
-                  <button disabled={Boolean(busy)} onClick={() => void checkAddresses()}>
+                  <Button disabled={Boolean(busy)} onClick={() => void checkAddresses()}>
                     {t('Adressen prüfen')}
-                  </button>
-                  <button className="quiet" onClick={() => void agree(false)}>
+                  </Button>
+                  <Button variant="ghost" onClick={() => void agree(false)}>
                     {t('Zustimmung zurücknehmen')}
-                  </button>
+                  </Button>
                 </div>
                 {emails?.results.map((result) => (
                   <div className="detail-row" key={result.email}>
@@ -515,7 +518,7 @@ export function HealthReport({ onOpen, onReview }: Props) {
                   )}
                 </p>
                 <div className="detail-actions">
-                  <button onClick={() => void agree(true)}>{t('Zustimmen und einschalten')}</button>
+                  <Button onClick={() => void agree(true)}>{t('Zustimmen und einschalten')}</Button>
                 </div>
               </>
             )}
@@ -538,9 +541,9 @@ export function HealthReport({ onOpen, onReview }: Props) {
                   <span className="detail-label">{t('Ganzer Login, nicht mehr geprüft')}</span>
                 </div>
                 <div className="detail-actions">
-                  <button className="quiet" onClick={() => void check(entry.itemId)}>
+                  <Button variant="ghost" onClick={() => void check(entry.itemId)}>
                     {t('Wieder prüfen')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -553,12 +556,9 @@ export function HealthReport({ onOpen, onReview }: Props) {
                   <span className="detail-label">{problemTitle(entry.kind)}</span>
                 </div>
                 <div className="detail-actions">
-                  <button
-                    className="quiet"
-                    onClick={() => void undoIgnore(entry.itemId, entry.kind)}
-                  >
+                  <Button variant="ghost" onClick={() => void undoIgnore(entry.itemId, entry.kind)}>
                     {t('Rückgängig')}
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}

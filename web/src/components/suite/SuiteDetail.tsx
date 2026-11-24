@@ -23,7 +23,8 @@ import {
 } from '../../lib/suite/model';
 import { revealSecret } from '../../lib/suite/sync';
 import { toast } from '../../lib/toast';
-import { Icon, type IconName } from '../Icon';
+import { Button, ICONS, Icon, IconButton } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 import { save } from '../web/controls';
 import { kindIcon, kindLabel, workspaceLabel, authLabel } from './labels';
 
@@ -64,12 +65,8 @@ export function Row({
   );
 }
 
-function Tool({ label, icon, onClick }: { label: string; icon: IconName; onClick: () => void }) {
-  return (
-    <button className="icon-button" onClick={onClick} aria-label={label} title={label}>
-      <Icon name={icon} size={15} />
-    </button>
-  );
+function Tool({ label, icon, onClick }: { label: string; icon: LucideIcon; onClick: () => void }) {
+  return <IconButton icon={icon} label={label} onClick={onClick} />;
 }
 
 async function copyText(text: string, what: string) {
@@ -116,7 +113,7 @@ function SecretRow({
             label={
               value === null ? t('{label} zeigen', { label }) : t('{label} verbergen', { label })
             }
-            icon={value === null ? 'eye' : 'eyeOff'}
+            icon={value === null ? ICONS.show : ICONS.hide}
             onClick={() =>
               value !== null
                 ? setValue(null)
@@ -125,7 +122,7 @@ function SecretRow({
           />
           <Tool
             label={t('{label} kopieren', { label })}
-            icon="copy"
+            icon={ICONS.copy}
             onClick={() =>
               void read().then(
                 (text) => copyText(text, label),
@@ -136,7 +133,7 @@ function SecretRow({
           {download && (
             <Tool
               label={t('{label} herunterladen', { label })}
-              icon="download"
+              icon={ICONS.download}
               onClick={() =>
                 void read().then(
                   (text) => save(new Blob([text], { type: 'application/octet-stream' }), download),
@@ -280,28 +277,29 @@ export function SuiteDetail({
   const hostTools =
     record.kind === 'host' ? (
       <>
-        <button
-          className="primary"
+        <Button
+          variant="primary"
+          icon={ICONS.copy}
           onClick={() => void copyText(connectCommand(space, record, all), t('Befehl'))}
         >
-          <Icon name="copy" size={15} />
           {space === 'ssh' ? t('Befehl kopieren') : t('Adresse kopieren')}
-        </button>
+        </Button>
         {desktop && link && (
-          <button
-            className="quiet"
+          <Button
+            variant="ghost"
+            icon={ICONS.openExternal}
             onClick={() => {
               // The app asks the browser; only the record's id goes along.
               window.location.href = link;
             }}
           >
-            <Icon name="external" size={15} />
             {t('In {app} öffnen', { app })}
-          </button>
+          </Button>
         )}
         {space === 'rdp' && (
-          <button
-            className="quiet"
+          <Button
+            variant="ghost"
+            icon={ICONS.download}
             onClick={() =>
               save(
                 new Blob([rdpFile(record, all)], { type: 'application/x-rdp' }),
@@ -309,9 +307,8 @@ export function SuiteDetail({
               )
             }
           >
-            <Icon name="download" size={15} />
             {t('.rdp-Datei')}
-          </button>
+          </Button>
         )}
       </>
     ) : null;
@@ -330,7 +327,7 @@ export function SuiteDetail({
     <article className="detail suite-detail" aria-label={title}>
       <header className="detail-head">
         <span className="item-tile" data-size="large" data-hue={space === 'ssh' ? '4' : '5'}>
-          <Icon name={kindIcon(record.kind)} size={26} />
+          <Icon icon={kindIcon(record.kind)} size="xl" className="size-[26px]" />
         </span>
         <div className="detail-title">
           <h2>{title}</h2>
@@ -344,39 +341,22 @@ export function SuiteDetail({
         <div className="detail-tools">
           {hostTools}
           {!knownHost && (
-            <button className="quiet" data-edit onClick={onEdit}>
-              <Icon name="pencil" size={15} />
+            <Button variant="ghost" icon={ICONS.edit} data-edit onClick={onEdit}>
               {t('Bearbeiten')}
-            </button>
+            </Button>
           )}
           {onMove && (
             <>
-              <button
-                className="icon-button"
-                onClick={() => onMove(-1)}
-                aria-label={t('Nach oben')}
-                title={t('Nach oben')}
-              >
-                <Icon name="up" size={15} />
-              </button>
-              <button
-                className="icon-button suite-down"
-                onClick={() => onMove(1)}
-                aria-label={t('Nach unten')}
-                title={t('Nach unten')}
-              >
-                <Icon name="up" size={15} />
-              </button>
+              <IconButton icon={ICONS.moveUp} label={t('Nach oben')} onClick={() => onMove(-1)} />
+              <IconButton icon={ICONS.moveDown} label={t('Nach unten')} onClick={() => onMove(1)} />
             </>
           )}
-          <button
-            className="quiet danger-text"
+          <IconButton
+            icon={ICONS.delete}
+            label={t('Löschen')}
+            className="text-danger-ink"
             onClick={onDelete}
-            title={t('Löschen')}
-            aria-label={t('Löschen')}
-          >
-            <Icon name="trash" size={15} />
-          </button>
+          />
         </div>
       </header>
 
@@ -389,7 +369,7 @@ export function SuiteDetail({
               actions={
                 <Tool
                   label={t('Adresse kopieren')}
-                  icon="copy"
+                  icon={ICONS.copy}
                   onClick={() => void copyText(str(p.address), t('Adresse'))}
                 />
               }
@@ -424,17 +404,18 @@ export function SuiteDetail({
                   key={f.id}
                   label={str(f.payload?.name) || t('(ohne Namen)')}
                   mono
-                  actions={<Tool label={t('Öffnen')} icon="chevron" onClick={() => onOpen(f.id)} />}
+                  actions={
+                    <Tool label={t('Öffnen')} icon={ICONS.next} onClick={() => onOpen(f.id)} />
+                  }
                 >
                   {forwardText(f.payload ?? {})}
                   {bool(f.payload?.autostart) && ` · ${t('startet mit')}`}
                 </Row>
               ))}
               {onAddForward && (
-                <button className="quiet" onClick={onAddForward}>
-                  <Icon name="plus" size={15} />
+                <Button variant="ghost" icon={ICONS.add} onClick={onAddForward}>
                   {t('Weiterleitung hinzufügen')}
-                </button>
+                </Button>
               )}
             </section>
           )}
@@ -467,7 +448,7 @@ export function SuiteDetail({
             actions={
               <Tool
                 label={t('Benutzername kopieren')}
-                icon="copy"
+                icon={ICONS.copy}
                 onClick={() => void copyText(str(p.username), t('Benutzername'))}
               />
             }
@@ -503,7 +484,7 @@ export function SuiteDetail({
               actions={
                 <Tool
                   label={t('Öffentlichen Schlüssel kopieren')}
-                  icon="copy"
+                  icon={ICONS.copy}
                   onClick={() => void copyText(str(p.public_key), t('Öffentlicher Schlüssel'))}
                 />
               }
@@ -534,7 +515,7 @@ export function SuiteDetail({
             actions={
               <Tool
                 label={t('Snippet kopieren')}
-                icon="copy"
+                icon={ICONS.copy}
                 onClick={() => void copyText(str(p.body), t('Snippet'))}
               />
             }

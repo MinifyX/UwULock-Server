@@ -1,5 +1,6 @@
+import { Button, Section } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import { Button, Section, Table } from '../components/ui';
+import { Table } from '../components/ui';
 import { PasswordPrompt } from '../components/web/controls';
 import { deleteOrganization, organizations, type AdminOrganization } from '../lib/admin';
 import { errorText } from '../lib/errors';
@@ -25,7 +26,7 @@ export function Families() {
   return (
     <>
       <Section
-        heading={t('Familien auf diesem Server')}
+        title={t('Familien auf diesem Server')}
         lead={t(
           'Familien teilen Einträge in Sammlungen, verschlüsselt mit einem eigenen Schlüssel. Was darin liegt, sieht hier niemand.',
         )}
@@ -56,7 +57,12 @@ export function Families() {
                 <td>{org.members}</td>
                 <td>{when(org.creationDate) ?? ''}</td>
                 <td className="row-actions">
-                  <Button size="small" variant="quiet-danger" onClick={() => setDeleting(org)}>
+                  <Button
+                    className="text-danger-ink"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setDeleting(org)}
+                  >
                     {t('Löschen …')}
                     <span className="sr-only">{org.name}</span>
                   </Button>

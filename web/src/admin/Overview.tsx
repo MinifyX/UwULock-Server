@@ -1,6 +1,6 @@
-import { CountUp } from '@uwusuite/design';
+import { Button, Card, CountUp, ICONS, Section, StatTile, Tag } from '@uwusuite/design';
 import { useEffect, useState } from 'react';
-import { Badge, Button, Callout, Card, Section } from '../components/ui';
+import { Callout } from '../components/ui';
 import { alertTitle, overview, type Alert, type Overview as Data } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { ago, bytes, seconds, when } from '../lib/format';
@@ -50,13 +50,13 @@ export function Overview() {
                       ? 'error'
                       : 'warning'
                 }
-                icon="warning"
+                icon={ICONS.warning}
                 title={
                   <>
                     {alertTitle(alert.kind)}
-                    <Badge tone={alert.severity === 'info' ? 'accent' : 'alarm'}>
+                    <Tag tone={alert.severity === 'info' ? 'pink' : 'warning'}>
                       {t(SEVERITY[alert.severity] ?? alert.severity)}
-                    </Badge>
+                    </Tag>
                   </>
                 }
               >
@@ -74,7 +74,7 @@ export function Overview() {
           tone="warning"
           title={t('Benachrichtigungen kommen nicht an:')}
           actions={
-            <Button size="small" onClick={() => go('/mail/alerts')}>
+            <Button size="sm" onClick={() => go('/mail/alerts')}>
               {t('Zu den Benachrichtigungen')}
             </Button>
           }
@@ -84,9 +84,9 @@ export function Overview() {
       )}
       <Callout
         tone={data.diagnosis && data.diagnosis.errors > 0 ? 'warning' : 'info'}
-        icon="lifebuoy"
+        icon={ICONS.help}
         actions={
-          <Button size="small" onClick={() => go('/system')}>
+          <Button size="sm" onClick={() => go('/system')}>
             {t('Zur Diagnose')}
           </Button>
         }
@@ -101,7 +101,7 @@ export function Overview() {
               'Die Diagnose lief noch nie. Sie prüft Zertifikat, Uhrzeit, Mail, Backups und den Proxy davor.',
             )}
       </Callout>
-      <Section heading={t('Zahlen')}>
+      <Section title={t('Zahlen')}>
         <div className="stat-grid uwu-stagger">
           <Stat
             label={t('Nutzer')}
@@ -129,8 +129,8 @@ export function Overview() {
           />
         </div>
       </Section>
-      <Section heading={t('Server')}>
-        <Card as="div">
+      <Section title={t('Server')}>
+        <Card>
           <dl className="facts">
             <Fact
               label={t('Version')}
@@ -222,29 +222,28 @@ function Stat({
   /** A tile that leads to its own page. */
   onOpen?: () => void;
 }) {
-  const content = (
-    <>
-      <span className="stat-value" data-alarm={alarm || undefined}>
-        <CountUp value={value} />
-      </span>
-      <span className="stat-label">{label}</span>
-      {note && <span className="stat-note">{note}</span>}
-    </>
-  );
-  if (onOpen)
-    return (
-      <button type="button" className="card stat stat-link" onClick={onOpen}>
-        {content}
+  const tile = (
+    <StatTile
+      label={label}
+      // The number turns to the warning colour when it is high.
+      value={alarm ? <CountUp value={value} className="text-warning-ink" /> : value}
+      note={note}
+      className={onOpen ? 'w-full group-hover:border-pink' : undefined}
+    >
+      {onOpen && (
         <span className="stat-more" aria-hidden>
           {t('Ansehen')} →
         </span>
+      )}
+    </StatTile>
+  );
+  if (onOpen)
+    return (
+      <button type="button" className="stat-link group grid rounded-card" onClick={onOpen}>
+        {tile}
       </button>
     );
-  return (
-    <Card as="div" className="stat">
-      {content}
-    </Card>
-  );
+  return tile;
 }
 
 function Fact({ label, value, alarm }: { label: string; value: string; alarm?: boolean }) {

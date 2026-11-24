@@ -1,9 +1,9 @@
+import { Button, Switch } from '@uwusuite/design';
 import { Fragment } from 'react';
 import { t, useLanguage } from '../lib/i18n';
 import { updateSettings, useSettings } from '../lib/settings';
 import { type ShortcutGroup } from '../lib/shortcuts';
 import { Modal } from './Modal';
-import { Toggle } from './web/controls';
 
 /** The overview of the keyboard shortcuts, behind `?` and the keyboard button in the bar. */
 export function ShortcutsDialog({
@@ -22,9 +22,9 @@ export function ShortcutsDialog({
       footer={
         <>
           <span className="spacer" />
-          <button className="primary" onClick={onClose}>
+          <Button variant="primary" onClick={onClose}>
             {t('Schließen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -79,7 +79,7 @@ export function ShortcutsDialog({
               )}
             </p>
           </div>
-          <Toggle
+          <Switch
             label={t('Kürzel mit einer Taste')}
             checked={settings.singleKeys}
             onChange={(singleKeys) => updateSettings({ singleKeys })}

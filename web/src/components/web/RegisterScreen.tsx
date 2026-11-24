@@ -16,7 +16,7 @@ import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
-import { radioArrows } from './controls';
+import { Button, Segmented } from '@uwusuite/design';
 
 type Props = {
   token: string;
@@ -234,25 +234,16 @@ export function RegisterScreen({ token, email, family, onDone }: Props) {
             </label>
             <details className="advanced">
               <summary>{t('Schlüsselableitung')}</summary>
-              <div
-                className="segmented wide"
-                role="radiogroup"
-                aria-label={t('Schlüsselableitung')}
-                onKeyDown={radioArrows}
-              >
-                {(['argon2id', 'pbkdf2'] as const).map((kind) => (
-                  <button
-                    key={kind}
-                    type="button"
-                    role="radio"
-                    aria-checked={kdf === kind}
-                    tabIndex={kdf === kind ? 0 : -1}
-                    onClick={() => setKdf(kind)}
-                  >
-                    {kind === 'argon2id' ? 'Argon2id' : 'PBKDF2'}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                label={t('Schlüsselableitung')}
+                value={kdf}
+                onChange={setKdf}
+                className="w-full"
+                options={[
+                  { value: 'argon2id', label: 'Argon2id' },
+                  { value: 'pbkdf2', label: 'PBKDF2' },
+                ]}
+              />
               <small className="field-hint">
                 {kdf === 'argon2id'
                   ? t(
@@ -268,15 +259,15 @@ export function RegisterScreen({ token, email, family, onDone }: Props) {
             )}
             <div className="form-actions">
               <span className="spacer" />
-              <button
-                className="primary"
+              <Button
+                variant="primary"
                 type="submit"
                 disabled={
                   Boolean(busy) || Boolean(weak) || password !== repeat || hintGivesAway || !invited
                 }
               >
                 {busy ?? t('Konto anlegen')}
-              </button>
+              </Button>
             </div>
           </form>
         )}

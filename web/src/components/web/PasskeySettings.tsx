@@ -11,7 +11,8 @@ import { when } from '../../lib/format';
 import { N_, t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { available } from '../../lib/web/webauthn';
-import { PasswordPrompt, Row } from './controls';
+import { Button, SettingRow } from '@uwusuite/design';
+import { PasswordPrompt } from './controls';
 
 const PRF: Record<number, string> = {
   0: N_('Meldet an und entsperrt den Tresor.'),
@@ -48,33 +49,36 @@ export function PasskeySettings() {
         )}
       </p>
       {list.map((passkey) => (
-        <Row
+        <SettingRow
           key={passkey.id}
           label={passkey.name}
           description={`${t(PRF[passkey.prfStatus] ?? '')} ${t('Seit {when}.', { when: when(passkey.creationDate) ?? '' })}`}
         >
-          {passkey.prfStatus === 1 && (
-            <button onClick={() => setDialog({ kind: 'unlock' })}>
-              {t('Entsperren einschalten …')}
-            </button>
-          )}
-          <button
-            className="quiet danger-text"
-            onClick={() => setDialog({ kind: 'remove', passkey })}
-          >
-            {t('Entfernen …')}
-          </button>
-        </Row>
+          <div className="flex flex-wrap items-center gap-2">
+            {passkey.prfStatus === 1 && (
+              <Button onClick={() => setDialog({ kind: 'unlock' })}>
+                {t('Entsperren einschalten …')}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              className="text-danger-ink"
+              onClick={() => setDialog({ kind: 'remove', passkey })}
+            >
+              {t('Entfernen …')}
+            </Button>
+          </div>
+        </SettingRow>
       ))}
-      <Row label={t('Passkey hinzufügen')} description={t('Bis zu fünf.')}>
-        <button
-          className="primary"
+      <SettingRow label={t('Passkey hinzufügen')} description={t('Bis zu fünf.')}>
+        <Button
+          variant="primary"
           disabled={list.length >= 5}
           onClick={() => setDialog({ kind: 'add' })}
         >
           {t('Hinzufügen …')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
 
       {dialog?.kind === 'add' && (
         <PasswordPrompt

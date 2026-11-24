@@ -1,7 +1,7 @@
 import type { TotpCode } from '../lib/api';
 import { spacedCode } from '../lib/format';
 import { t, useLanguage } from '../lib/i18n';
-import { Icon } from './Icon';
+import { IconButton, ICONS } from '@uwusuite/design';
 
 /**
  * A one-time code counting down, and in the last seconds of its period the next one below it,
@@ -46,15 +46,12 @@ export function TotpCodes({
             {t('Nächster:')} <span className="mono">{spacedCode(code.next)}</span>
           </span>
           {onCopyNext && (
-            <button
-              type="button"
-              className="icon-button small"
+            <IconButton
+              icon={ICONS.copy}
+              size="sm"
               onClick={onCopyNext}
-              aria-label={t('Nächsten Code kopieren')}
-              title={t('Nächsten Code kopieren')}
-            >
-              <Icon name="copy" size={13} />
-            </button>
+              label={t('Nächsten Code kopieren')}
+            />
           )}
         </span>
       )}

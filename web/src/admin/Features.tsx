@@ -1,5 +1,6 @@
+import { Button, Section, SettingRow, Switch } from '@uwusuite/design';
 import { useEffect, useState } from 'react';
-import { Button, Callout, Modal, Section, SettingRow, Toggle } from '../components/ui';
+import { Callout, Modal } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import { loadServerInfo } from '../lib/branding';
 import { errorText } from '../lib/errors';
@@ -65,7 +66,7 @@ export function Features() {
         const states = list.filter((state) => state.group === group.id);
         if (!states.length) return null;
         return (
-          <Section key={group.id} heading={t(group.label)}>
+          <Section key={group.id} title={t(group.label)}>
             {states.map((state) => {
               const text = SWITCH_TEXTS[state.id];
               const needs = state.requires ? byId.get(state.requires) : null;
@@ -90,14 +91,17 @@ export function Features() {
                     </>
                   }
                 >
-                  <Toggle
-                    label={t(text.label)}
-                    checked={state.on}
-                    disabled={busy !== null}
-                    onChange={(on) =>
-                      !on && state.inUse ? setAsking(state) : void change(state.id, on)
-                    }
-                  />
+                  {({ id, describedBy }) => (
+                    <Switch
+                      id={id}
+                      describedBy={describedBy}
+                      checked={state.on}
+                      disabled={busy !== null}
+                      onChange={(on) =>
+                        !on && state.inUse ? setAsking(state) : void change(state.id, on)
+                      }
+                    />
+                  )}
                 </SettingRow>
               );
             })}
