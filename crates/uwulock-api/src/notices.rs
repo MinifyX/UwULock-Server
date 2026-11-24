@@ -246,7 +246,8 @@ pub async fn deliver_due(state: &AppState, now: &str) {
             Err(error) => {
                 let mut retries = state.notice_retries.lock();
                 let attempts = retries.get(&user_id).map_or(1, |(attempts, _)| attempts + 1);
-                let wait = std::time::Duration::from_secs(60 * 2u64.saturating_pow(attempts - 1)).min(HOUR);
+                let wait =
+                    std::time::Duration::from_secs(60u64.saturating_mul(2u64.saturating_pow(attempts - 1))).min(HOUR);
                 retries.insert(user_id, (attempts, std::time::Instant::now() + wait));
                 if attempts == 1 {
                     tracing::warn!(%error, "a mail with security notices did not go out");

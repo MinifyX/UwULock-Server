@@ -253,6 +253,9 @@ pub struct BackupReport {
     pub total: u64,
     pub removed_snapshots: usize,
     pub removed_objects: usize,
+    /// The snapshot that could not be read, so nothing was pruned.
+    #[serde(default)]
+    pub unreadable: Option<String>,
 }
 
 fn random_suffix() -> String {
@@ -436,13 +439,15 @@ pub async fn backup(
     let encoded = repo.codec.encode(&serde_json::to_vec(&manifest).expect("manifests serialize"))?;
     repo.storage.write(&format!("snapshots/{name}"), &encoded).await?;
 
-    let (removed_snapshots, removed_objects) = prune(repo, retention).await?;
-    Ok(BackupReport { snapshot: name, uploaded, total: database_size + files_size, removed_snapshots, removed_objects })
+    let (removed_snapshots, removed_objects, unreadable) = prune(repo, retention).await?;
+    let total = database_size + files_size;
+    Ok(BackupReport { snapshot: name, uploaded, total, removed_snapshots, removed_objects, unreadable })
 }
 
 /// Removes snapshots the retention rules let go, then objects no snapshot needs. Nothing at all
-/// while a snapshot cannot be read: what it needs is not known, so no object may go.
-pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, usize), Error> {
+/// while a snapshot cannot be read: what it needs is not known, so no object may go. Its name
+/// comes back then, for the admin to see.
+pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, usize, Option<String>), Error> {
     let names = repo.snapshots().await?;
     let mut manifests = Vec::new();
     for name in &names {
@@ -450,7 +455,7 @@ pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, us
             Ok(manifest) => manifests.push((name.clone(), manifest)),
             Err(error) => {
                 tracing::warn!(snapshot = %name, %error, "a snapshot cannot be read; nothing is pruned this time");
-                return Ok((0, 0));
+                return Ok((0, 0, Some(name.clone())));
             }
         }
     }
@@ -475,7 +480,7 @@ pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, us
             }
         }
     }
-    Ok((removed_snapshots, removed_objects))
+    Ok((removed_snapshots, removed_objects, None))
 }
 
 /// Whether this build can put a snapshot back: migrations only ever run forwards.

@@ -493,6 +493,9 @@ async fn offsite(
                 cli::size(report.total),
                 report.removed_snapshots
             );
+            if let Some(name) = &report.unreadable {
+                println!("Nothing was pruned: the snapshot {name} cannot be read.");
+            }
             Ok(())
         }
         BackupAction::List => {

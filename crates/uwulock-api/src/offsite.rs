@@ -549,6 +549,17 @@ pub async fn problems(state: &AppState) -> Vec<(&'static str, &'static str, Deta
             ),
         ));
     }
+    // The backup itself worked, but the repository only grows until somebody looks at it.
+    else if let Some(name) = status.last_report.as_ref().and_then(|report| report.unreadable.as_deref()) {
+        found.push((
+            "backupFailed",
+            "warning",
+            Detail::new(
+                format!("Das Backup außer Haus räumt nicht mehr auf: der Snapshot {name} ist nicht lesbar."),
+                format!("The off-site backup no longer prunes: the snapshot {name} cannot be read."),
+            ),
+        ));
+    }
     if let Some(hours) = Offsite::stale_hours(&settings, &status, crate::auth::now_seconds()) {
         let detail = match status.last_success {
             Some(when) => {

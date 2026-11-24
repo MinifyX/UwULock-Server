@@ -703,7 +703,8 @@ impl Store {
     /// Like [`Store::invite`], by a user who may invite up to `quota` people: counted and
     /// written in one step, so invitations sent at once cannot pass the quota. Their own
     /// invitation of the same address again does not count twice. Nothing when the quota is
-    /// used up.
+    /// used up. Somebody else's invitation that still holds stays theirs and comes back as it
+    /// is: `invited_by` tells.
     pub async fn invite_within(
         &self,
         email: &str,
@@ -735,9 +736,6 @@ impl Store {
                 params![email, token_hash, invited_by, language, now, expires],
             )?;
             // Somebody else's invitation that still holds stays theirs, also when two ask at once.
-            if tx.changes() == 0 {
-                return Ok(None);
-            }
             tx.query_row(
                 "SELECT email, admin, invited_by, language, created, expires FROM invitations WHERE email = ?1",
                 [&email],
@@ -1171,7 +1169,7 @@ pub(crate) mod tests {
             async move { store.invite_within("q@example.com", vec![1; 32], &by, "de", expires, 2).await.unwrap() }
         };
         assert!(invite(nyu.id.clone(), clock::in_seconds(60)).await.is_some());
-        assert!(invite(mia.id.clone(), clock::in_seconds(60)).await.is_none());
+        assert_eq!(invite(mia.id.clone(), clock::in_seconds(60)).await.unwrap().invited_by, Some(nyu.id.clone()));
         assert_eq!(store.invitation("q@example.com").await.unwrap().unwrap().invited_by, Some(nyu.id.clone()));
     }
 }

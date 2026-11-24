@@ -93,7 +93,7 @@ async fn old_snapshots_go_and_take_what_only_they_needed() {
     }
     let names = repo.snapshots().await.unwrap();
     assert!(!names.contains(&first.snapshot), "a week of days, and the first was not the newest of its week");
-    let (_, removed) = uwulock_backup::prune(&repo, Retention::default()).await.unwrap();
+    let (_, removed, _) = uwulock_backup::prune(&repo, Retention::default()).await.unwrap();
     assert_eq!(removed, 0, "the backups pruned already");
     let newest = repo.manifest(names.last().unwrap()).await.unwrap();
     assert!(uwulock_backup::check(&repo, &newest.name).await.unwrap().is_empty());
@@ -124,6 +124,7 @@ async fn an_unreadable_snapshot_neither_stops_backups_nor_lets_prune_delete() {
     let objects = walk(&target.path().join("data")).len();
     let second = server.backup(&repo, 90_000).await;
     assert_eq!((second.removed_snapshots, second.removed_objects), (0, 0));
+    assert_eq!(second.unreadable, Some(first.snapshot.clone()), "and says which one");
     assert!(walk(&target.path().join("data")).len() >= objects, "no object went");
     assert!(uwulock_backup::check(&repo, &second.snapshot).await.unwrap().is_empty());
     assert!(!repo.manifest(&second.snapshot).await.unwrap().files.is_empty());
