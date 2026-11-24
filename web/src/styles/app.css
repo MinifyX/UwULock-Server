@@ -1,3 +1,14 @@
+/* Measures of this app's own layouts, on the package's control sizes (Button md 40, sm 32). */
+:root {
+  --lock-control-height: 40px;
+  --lock-control-height-small: 32px;
+  --lock-control-line: 18px;
+  --lock-control-pad-x: 12px;
+  --lock-icon-button: 36px;
+  --lock-icon-button-small: 32px;
+  --lock-label-gap: 6px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -12,9 +23,9 @@ body,
 body {
   background: var(--uwu-canvas);
   color: var(--uwu-ink);
-  font-family: var(--uwu-font);
-  font-size: var(--uwu-text-base);
-  letter-spacing: var(--uwu-tracking);
+  font-family: var(--font-ui);
+  font-size: var(--uwu-text-body);
+  letter-spacing: var(--tracking-ui);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   /*
@@ -206,22 +217,22 @@ code {
   gap: var(--uwu-space-3);
   margin: 0;
   padding: var(--uwu-space-2) var(--uwu-space-2) var(--uwu-space-2) var(--uwu-space-4);
-  min-height: calc(var(--uwu-control-height-small) + 2 * var(--uwu-space-2) + 2px);
+  min-height: calc(var(--lock-control-height-small) + 2 * var(--uwu-space-2) + 2px);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-surface);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   line-height: var(--uwu-leading);
 }
 
 .notice[data-tone='error'] {
-  border-color: color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
-  color: var(--uwu-alarm);
+  border-color: color-mix(in srgb, var(--uwu-warning-ink) 50%, transparent);
+  color: var(--uwu-warning-ink);
 }
 
 .notice button {
-  font-size: var(--uwu-text-sm);
-  padding: calc((var(--uwu-control-height-small) - var(--uwu-control-line) - 2px) / 2)
+  font-size: var(--uwu-text-caption);
+  padding: calc((var(--lock-control-height-small) - var(--lock-control-line) - 2px) / 2)
     var(--uwu-space-3);
 }
 
@@ -278,12 +289,12 @@ code {
 .vault-status {
   display: block;
   max-width: 260px;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   line-height: 1.45;
 }
 
 .vault-status[data-status='unlocked'] {
-  color: var(--uwu-online);
+  color: var(--uwu-success-ink);
 }
 
 .shortcuts {
@@ -299,7 +310,7 @@ code {
 
 .shortcuts dt {
   font-family: var(--uwu-mono);
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   letter-spacing: 0;
   text-transform: none;
   color: var(--uwu-ink);
@@ -307,7 +318,7 @@ code {
 
 .shortcuts dd {
   margin: 0;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
 }
 
@@ -321,7 +332,7 @@ code {
 
 .about-name {
   margin: var(--uwu-space-2) 0 0;
-  font-size: var(--uwu-text-xl);
+  font-size: var(--uwu-text-title);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -333,14 +344,14 @@ code {
 .about-version {
   margin: 0;
   font-family: var(--uwu-mono);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
 }
 
 .about-text {
   max-width: 380px;
   margin: var(--uwu-space-2) 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   line-height: 1.5;
   color: var(--uwu-muted);
 }
@@ -354,7 +365,7 @@ code {
 
 .about-diagnostics {
   margin-top: var(--uwu-space-4);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   color: var(--uwu-muted);
 }
 
@@ -398,7 +409,7 @@ code {
 .update-hint-notes,
 .update-hint-warning {
   margin: 0;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
 }
 
@@ -414,7 +425,7 @@ code {
 }
 
 .update-hint-warning {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 .update-hint-actions {

@@ -130,7 +130,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: 6px;
   background: var(--uwu-canvas);
-  font-family: var(--uwu-font);
+  font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 700;
   text-align: center;

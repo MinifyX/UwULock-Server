@@ -20,7 +20,7 @@ a {
 }
 
 .titlebar-area {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 700;
   padding: 2px var(--uwu-space-2);
   border-radius: var(--uwu-radius-pill);
@@ -37,7 +37,7 @@ a {
   padding: var(--uwu-space-1) var(--uwu-space-3);
   border-radius: var(--uwu-radius-control);
   color: var(--uwu-muted);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   font-weight: 600;
   text-decoration: none;
 }
@@ -71,7 +71,7 @@ a {
 
 .advanced summary {
   cursor: pointer;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 600;
   color: var(--uwu-muted);
   margin-bottom: var(--uwu-space-2);
@@ -97,7 +97,7 @@ a {
 .strength-bar span {
   display: block;
   height: 100%;
-  background: var(--uwu-alarm);
+  background: var(--uwu-warning-ink);
   transition: width 200ms ease;
 }
 
@@ -107,11 +107,11 @@ a {
 
 .strength[data-level='2'] .strength-bar span,
 .strength[data-level='3'] .strength-bar span {
-  background: var(--uwu-online);
+  background: var(--uwu-success);
 }
 
 .strength small {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
 }
 
@@ -144,7 +144,7 @@ a {
 }
 
 .secret-key.big {
-  font-size: var(--uwu-text-lg);
+  font-size: var(--uwu-text-section);
   margin-top: var(--uwu-space-3);
 }
 
@@ -251,7 +251,7 @@ a {
 
 .nyu-loading p {
   margin: 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 /* ── The admin portal ──────────────────────────────────── */
@@ -295,7 +295,7 @@ a {
 
 .page-title {
   margin: 0;
-  font-size: var(--uwu-text-xl);
+  font-size: var(--uwu-text-title);
   font-weight: 700;
   line-height: var(--uwu-leading-tight);
   letter-spacing: -0.02em;
@@ -303,7 +303,7 @@ a {
 
 .page-lead {
   margin: 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   line-height: var(--uwu-leading);
   color: var(--uwu-muted);
 }
@@ -311,8 +311,8 @@ a {
 /* A tab's content: its sections one below the other, the page's gap between them. */
 .admin-panel {
   display: grid;
-  gap: var(--uwu-section-gap);
-  padding-top: var(--uwu-section-gap);
+  gap: var(--uwu-space-6);
+  padding-top: var(--uwu-space-6);
   min-width: 0;
 }
 
@@ -337,12 +337,12 @@ a {
   padding: var(--uwu-space-3) var(--uwu-space-8);
   border-top: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
-  box-shadow: var(--uwu-shadow-menu);
+  box-shadow: var(--uwu-shadow-float);
 }
 
 .save-bar-text {
   margin: 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   font-weight: 600;
 }
 
@@ -367,7 +367,7 @@ a {
 }
 
 .number-unit {
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   color: var(--uwu-muted);
 }
 
@@ -375,9 +375,9 @@ a {
 .danger-zone {
   display: grid;
   gap: var(--uwu-space-2);
-  padding: var(--uwu-card-pad-y) var(--uwu-card-pad-x);
+  padding: var(--uwu-space-3) var(--uwu-space-4);
   border-radius: var(--uwu-radius-card);
-  border: 1px solid color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--uwu-warning-ink) 50%, transparent);
   background: var(--uwu-surface);
   min-width: 0;
 }
@@ -387,12 +387,12 @@ a {
   align-items: center;
   gap: var(--uwu-space-2);
   margin: 0;
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   font-weight: 700;
   line-height: var(--uwu-leading);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* Cards and notices one below the other. */
@@ -437,7 +437,7 @@ a {
 }
 
 .stat-value[data-alarm] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 .stat-label {
@@ -445,7 +445,7 @@ a {
 }
 
 .stat-note {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
 }
 
@@ -465,7 +465,7 @@ a {
 }
 
 .stat-more {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 600;
   color: var(--uwu-pink-ink);
 }
@@ -480,7 +480,7 @@ a {
 
 .facts {
   display: grid;
-  margin: calc(-1 * var(--uwu-card-pad-y)) calc(-1 * var(--uwu-card-pad-x));
+  margin: calc(-1 * var(--uwu-space-3)) calc(-1 * var(--uwu-space-4));
 }
 
 .fact {
@@ -516,14 +516,14 @@ a {
 }
 
 .table tr[data-alarm] td:nth-child(2) {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
   font-weight: 600;
 }
 
 .table td small,
 .event-detail {
   display: block;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
   font-weight: 500;
 }
@@ -576,7 +576,7 @@ a {
 .row-facts {
   margin: 0;
   color: var(--uwu-muted);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 .row-buttons {
@@ -599,7 +599,7 @@ a {
 }
 
 .invite-form > .check {
-  min-height: var(--uwu-control-height);
+  min-height: var(--lock-control-height);
 }
 
 .invite-form input[type='email'] {
@@ -650,7 +650,7 @@ a {
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
   font-family: var(--uwu-mono);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
 }
 
 .log-line {
@@ -679,7 +679,7 @@ a {
 
 .log-line[data-level='error'] .log-level,
 .log-line[data-level='error'] .log-message {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 .log-message {
@@ -713,7 +713,7 @@ a {
 }
 
 .chart-value {
-  font-size: var(--uwu-text-xl);
+  font-size: var(--uwu-text-title);
   font-weight: 800;
   letter-spacing: -0.02em;
 }
@@ -740,13 +740,13 @@ a {
 }
 
 .chart-bar-alarm {
-  fill: var(--uwu-alarm);
+  fill: var(--uwu-warning-ink);
 }
 
 .chart-axis {
   display: flex;
   justify-content: space-between;
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   color: var(--uwu-muted);
 }
 
@@ -801,7 +801,7 @@ a {
   }
 
   .stat-value {
-    font-size: var(--uwu-text-xl);
+    font-size: var(--uwu-text-title);
   }
 
   .table th {
@@ -827,8 +827,8 @@ a {
   .settings-nav {
     flex-direction: row;
     overflow-x: auto;
-    margin-inline: calc(-1 * var(--uwu-dialog-pad));
-    padding-inline: var(--uwu-dialog-pad);
+    margin-inline: calc(-1 * var(--uwu-space-6));
+    padding-inline: var(--uwu-space-6);
     scrollbar-width: none;
   }
 
@@ -897,7 +897,7 @@ a {
   gap: var(--uwu-space-1);
   min-height: 28px;
   padding: 0 var(--uwu-space-1);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 .bulk-count {
@@ -906,7 +906,7 @@ a {
 
 .bulk-bar .select {
   padding: var(--uwu-space-1) var(--uwu-space-2);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
 }
 
 /* ── Attachments, Sends, the password check ────────────── */
@@ -937,7 +937,7 @@ a {
 .detail-line {
   margin: 0;
   padding: var(--uwu-space-2) 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   line-height: var(--uwu-leading);
   color: var(--uwu-muted);
 }
@@ -951,7 +951,7 @@ a {
 }
 
 .send-link {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   user-select: all;
 }
 
@@ -972,7 +972,7 @@ a {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--uwu-mono);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-canvas);
@@ -1193,7 +1193,7 @@ a {
 }
 
 .channel-status[data-alarm] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* Masked addresses and send domains: a card each, like the channels. */
@@ -1251,7 +1251,7 @@ a {
 }
 
 .domain-checks li[data-ok='false'] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* The diagnosis: a card per check (.card), its state on a Badge; a problem frames it. */
@@ -1265,7 +1265,7 @@ a {
 
 .check-card[data-status='warning'],
 .check-card[data-status='error'] {
-  border-color: color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
+  border-color: color-mix(in srgb, var(--uwu-warning-ink) 50%, transparent);
 }
 
 .check-card .badge {
@@ -1281,7 +1281,7 @@ a {
 }
 
 .check-detail {
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   color: var(--uwu-muted);
   white-space: pre-wrap;
 }
@@ -1307,7 +1307,7 @@ a {
   gap: var(--uwu-space-2);
   padding: var(--uwu-space-1) var(--uwu-space-1) var(--uwu-space-1) var(--uwu-space-3);
   border-bottom: 1px solid var(--uwu-hairline);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 700;
   color: var(--uwu-muted);
 }
@@ -1317,7 +1317,7 @@ a {
   padding: var(--uwu-space-2) var(--uwu-space-3);
   overflow-x: auto;
   font-family: var(--uwu-mono);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   line-height: var(--uwu-leading);
 }
 
@@ -1335,7 +1335,7 @@ a {
 
 .offsite {
   display: grid;
-  gap: var(--uwu-section-gap);
+  gap: var(--uwu-space-6);
 }
 
 code.wrap {
@@ -1362,7 +1362,7 @@ code.wrap {
 }
 
 .detail-line[data-tone='warning'] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* ── File requests ────────────────────────────────────── */
@@ -1385,13 +1385,13 @@ code.wrap {
 }
 
 .picked-files li[data-bad] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* A heading between the cards of the details ("Angekommen", "Rolle"). */
 .detail-subhead {
   margin: var(--uwu-space-2) 0 0;
-  font-size: var(--uwu-text-base);
+  font-size: var(--uwu-text-body);
   font-weight: 700;
 }
 
@@ -1525,7 +1525,7 @@ fieldset.send-access {
 fieldset.send-access > legend {
   padding: 0;
   margin-bottom: var(--uwu-space-2);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 600;
   color: var(--uwu-muted);
 }
@@ -1651,7 +1651,7 @@ fieldset.send-access > legend {
 }
 
 .import-key-name {
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   overflow-wrap: anywhere;
 }
 
@@ -1662,12 +1662,12 @@ fieldset.send-access > legend {
   display: flex;
   flex-wrap: wrap;
   gap: var(--uwu-space-2) var(--uwu-space-4);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 .import-folders {
   margin: 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   overflow-wrap: anywhere;
 }
 
@@ -1680,7 +1680,7 @@ fieldset.send-access > legend {
   padding: var(--uwu-space-2) var(--uwu-space-3) var(--uwu-space-2) var(--uwu-space-6);
   border-radius: var(--uwu-radius-control);
   background: var(--uwu-elevated);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   line-height: 1.5;
 }
 
@@ -1714,7 +1714,7 @@ fieldset.send-access > legend {
 
 .import-item-detail {
   grid-column: 1;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
   overflow-wrap: anywhere;
 }
@@ -1726,7 +1726,7 @@ fieldset.send-access > legend {
 
 .import-item-more {
   color: var(--uwu-muted);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 /* ── Families (Stufe 4d) ─────────────────────────────────── */
@@ -1763,7 +1763,7 @@ fieldset.send-access > legend {
 
 .family-invitation p {
   margin: 0 0 var(--uwu-space-2);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 .family-invitation .buttons {
@@ -1773,7 +1773,7 @@ fieldset.send-access > legend {
 
 .nav-note {
   margin: 2px var(--uwu-space-3) var(--uwu-space-2);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
 }
 
@@ -1787,7 +1787,7 @@ fieldset.send-access > legend {
 }
 
 .wifi-share dt {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 600;
   color: var(--uwu-muted);
 }
@@ -1845,7 +1845,7 @@ fieldset.send-access > legend {
 
 .review-card-head h3 {
   margin: 0;
-  font-size: var(--uwu-text-lg);
+  font-size: var(--uwu-text-section);
   overflow-wrap: anywhere;
 }
 
@@ -1861,7 +1861,7 @@ fieldset.send-access > legend {
   display: flex;
   align-items: center;
   gap: var(--uwu-space-3);
-  padding: var(--uwu-card-pad-y) var(--uwu-card-pad-x);
+  padding: var(--uwu-space-3) var(--uwu-space-4);
   border-radius: var(--uwu-radius-control);
   background: var(--uwu-pink-tint);
 }
@@ -1931,14 +1931,14 @@ fieldset.send-access > legend {
 
 .suite-kinds .segmented button {
   padding: var(--uwu-space-1) var(--uwu-space-2);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   display: inline-flex;
   align-items: center;
   gap: var(--uwu-space-1);
 }
 
 .suite-count {
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   font-variant-numeric: tabular-nums;
   color: var(--uwu-muted);
 }
@@ -1946,7 +1946,7 @@ fieldset.send-access > legend {
 /* A workspace or a group of hosts, between the rows of the list. */
 .suite-heading {
   padding: var(--uwu-space-3) var(--uwu-space-3) var(--uwu-space-1);
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;

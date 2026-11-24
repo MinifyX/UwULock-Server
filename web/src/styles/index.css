@@ -1,0 +1,22 @@
+/*
+ * Every stylesheet of the web vault and the admin portal, in cascade order.
+ *
+ * The suite first: Tailwind and @uwusuite/design (tokens, UwU Sans, the base layer, motion, Nyu)
+ * plus the font picker's fonts. Then UwULock's own sheets, in Tailwind's `components` layer, as in
+ * UwULock-Client: built from the package's tokens, and a utility class on an element always wins
+ * over them.
+ */
+@import 'tailwindcss';
+@import '@uwusuite/design/tailwind.css';
+@import '@uwusuite/design/font-picker.css';
+
+/* Tailwind looks for class names in the app's sources. */
+@source '../';
+
+@import './app.css' layer(components);
+@import './vault.css' layer(components);
+@import './ui.css' layer(components);
+@import './web.css' layer(components);
+@import './entries.css' layer(components);
+@import '../components/nyu/nyu.css' layer(components);
+@import './a11y.css' layer(components);

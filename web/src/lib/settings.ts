@@ -7,9 +7,16 @@
  * on every change.
  */
 
+import {
+  applyAppearance as applyResolved,
+  applyUiFont,
+  isFontChoice,
+  QUERIES,
+  resolveAppearance,
+  type FontChoice,
+} from '@uwusuite/design';
 import { useSyncExternalStore } from 'react';
 import pkg from '../../package.json';
-import { applyFont, DEFAULT_FONT, isFontChoice, type FontChoice } from './fonts';
 import { language } from './i18n';
 
 export type ThemeSetting = 'system' | 'light' | 'dark';
@@ -31,7 +38,7 @@ export type Settings = {
   theme: ThemeSetting;
   motion: MotionSetting;
   contrast: ContrastSetting;
-  /** The page's font (lib/fonts.ts): UwU Sans unless this device picked another. */
+  /** The page's font (FONT_CHOICES of @uwusuite/design): UwU Sans unless this device picked another. */
   font: FontChoice;
   /**
    * Shortcuts of a single key (`?`, `/`, `N`, …) outside text fields. They can get in the way of
@@ -56,7 +63,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
   motion: 'system',
   contrast: 'system',
-  font: DEFAULT_FONT,
+  font: 'uwu',
   singleKeys: true,
   // Someone who installed a beta wants the next beta too.
   updateChannel: pkg.version.includes('-') ? 'beta' : 'stable',
@@ -150,42 +157,20 @@ export function useSettings(): Settings {
   return useSyncExternalStore(subscribeSettings, getSettings);
 }
 
-const darkQuery = () => window.matchMedia('(prefers-color-scheme: dark)');
-const reducedQuery = () => window.matchMedia('(prefers-reduced-motion: reduce)');
-const contrastQuery = () => window.matchMedia('(prefers-contrast: more)');
-
-/** Whether animations should play right now, by setting and system. */
-export function motionAllowed(): boolean {
-  const { motion } = current;
-  return motion === 'on' || (motion === 'system' && !reducedQuery().matches);
-}
-
-/** Whether the high-contrast colours apply right now, by setting and system. */
-export function highContrast(): boolean {
-  const { contrast } = current;
-  return contrast === 'high' || (contrast === 'system' && contrastQuery().matches);
-}
-
 /**
- * Puts theme, contrast, motion and the font on <html>, now and whenever the setting or the
- * system changes.
+ * Puts theme, contrast, motion (the package's data-theme/-contrast/-motion) and the font on
+ * <html>, now and whenever the setting or the system changes. /boot.js did the same before the
+ * first paint. Outside React, because the vault and the admin portal both need it from the start.
  */
 export function applyAppearance() {
   const apply = () => {
-    const { theme } = current;
-    const dark = theme === 'dark' || (theme === 'system' && darkQuery().matches);
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    applyResolved(resolveAppearance(current));
     document.documentElement.lang = language(current);
-    if (motionAllowed()) delete document.documentElement.dataset.motion;
-    else document.documentElement.dataset.motion = 'reduced';
-    if (highContrast()) document.documentElement.dataset.contrast = 'high';
-    else delete document.documentElement.dataset.contrast;
-    applyFont(current.font);
+    applyUiFont(current.font);
   };
   apply();
   watchOtherTabs();
   subscribeSettings(apply);
-  darkQuery().addEventListener('change', apply);
-  reducedQuery().addEventListener('change', apply);
-  contrastQuery().addEventListener('change', apply);
+  for (const query of Object.values(QUERIES))
+    window.matchMedia(query).addEventListener('change', apply);
 }

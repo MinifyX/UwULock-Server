@@ -1,4 +1,4 @@
-import { FONT_CHOICES, FONT_NAMES, FONT_STACKS, type FontChoice } from '../lib/fonts';
+import { FONT_CHOICES, FONT_NAMES, FONT_STACKS, type FontChoice } from '@uwusuite/design';
 import { t } from '../lib/i18n';
 import { updateSettings, useSettings } from '../lib/settings';
 import { radioArrows, radioTab } from './ui';

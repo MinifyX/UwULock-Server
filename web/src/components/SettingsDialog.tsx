@@ -1,3 +1,4 @@
+import { NavIndicator } from '@uwusuite/design';
 import { useState } from 'react';
 import pkg from '../../package.json';
 import { lock, openProjectPage, type ProjectPage, type Status } from '../lib/api';
@@ -8,7 +9,6 @@ import { updateSettings, useSettings, type AutoLock, type ClipboardClear } from 
 import { switchedOff, useSwitch } from '../lib/switches';
 import { FontPicker } from './FontPicker';
 import { Modal } from './Modal';
-import { NavIndicator } from './ui';
 import { Nyu } from './nyu/Nyu';
 import { AccountSettings } from './web/AccountSettings';
 import { Row, Segmented, Toggle } from './web/controls';

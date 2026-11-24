@@ -1,3 +1,4 @@
+import { NavIndicator } from '@uwusuite/design';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { initialOf } from '../components/AccountCard';
 import { Icon } from '../components/Icon';
@@ -8,8 +9,8 @@ import { Appearance } from '../components/SettingsDialog';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { SkipLink, TitleBar } from '../components/TitleBar';
 import { Toasts } from '../components/Toasts';
-import { Button, Modal, NavIndicator, TabPanel, Tabs, useTabsId } from '../components/ui';
-import { revealOnMount } from '../lib/motion';
+import { Button, Modal, TabPanel, Tabs, useTabsId } from '../components/ui';
+import { revealFrom } from '@uwusuite/design';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
@@ -244,7 +245,7 @@ export function AdminApp() {
     body = (
       <SettingsProvider>
         <SsoProvider>
-          <div className="admin" ref={revealOnMount}>
+          <div className="admin" ref={(el) => void (el && revealFrom(el))}>
             <nav className="sidebar admin-sidebar" aria-label={t('Admin-Portal')}>
               <ul className="nav-list">
                 {areas.map((each, index) => (

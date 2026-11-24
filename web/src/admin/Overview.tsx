@@ -1,5 +1,6 @@
+import { CountUp } from '@uwusuite/design';
 import { useEffect, useState } from 'react';
-import { Badge, Button, Callout, Card, CountUp, Section } from '../components/ui';
+import { Badge, Button, Callout, Card, Section } from '../components/ui';
 import { alertTitle, overview, type Alert, type Overview as Data } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { ago, bytes, seconds, when } from '../lib/format';

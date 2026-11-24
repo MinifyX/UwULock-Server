@@ -1,3 +1,4 @@
+import { NavIndicator } from '@uwusuite/design';
 import { listen } from '../lib/events';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -14,7 +15,6 @@ import {
   type Status,
 } from '../lib/api';
 import { errorText } from '../lib/errors';
-import { NavIndicator } from './ui';
 import { copiedText } from '../lib/format';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { dueItems, useComfort } from '../lib/comfort';

@@ -1,13 +1,39 @@
 /// <reference types="vitest/config" />
+import tailwindcss from '@tailwindcss/vite';
+import { bootScript } from '@uwusuite/design';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 // `pnpm dev` talks to a UwULock Server on this machine (docs/development.md): the web vault and
 // the API have to share one origin, as they do when the server serves the build.
 const server = process.env.UWULOCK_DEV_SERVER ?? 'http://127.0.0.1:8443';
 
+/**
+ * Theme, contrast and motion go onto <html> before the first paint, so a dark page never flashes
+ * white. As the file /boot.js, not inline, because the server's CSP allows only script-src 'self'
+ * (as in UwUMail). The key is KEY in src/lib/settings.ts.
+ */
+function boot(): Plugin {
+  // Without a stored theme this app is dark (DEFAULT_SETTINGS), the package's script says "system".
+  const source = bootScript('uwulock.settings').replace('s.theme||"system"', 's.theme||"dark"');
+  if (!source.includes('s.theme||"dark"'))
+    throw new Error('bootScript changed: set the dark default again');
+  return {
+    name: 'uwulock-boot',
+    configureServer(dev) {
+      dev.middlewares.use('/boot.js', (_request, response) => {
+        response.setHeader('content-type', 'text/javascript');
+        response.end(source);
+      });
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'boot.js', source });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss(), boot()],
   server: {
     port: 5173,
     proxy: Object.fromEntries(
