@@ -674,9 +674,7 @@ async fn new_security_stamp(
 ) -> ApiResult<StatusCode> {
     check_password(&state, &session.user, data.master_password_hash.as_deref()).await?;
     state.store.update_user(&session.user.id, |user| user.security_stamp = uuid::Uuid::new_v4().to_string()).await?;
-    for device in state.store.devices(&session.user.id).await? {
-        state.store.delete_device(&session.user.id, &device.id).await?;
-    }
+    state.store.delete_devices(&session.user.id).await?;
     crate::notify::logout(&state, &session.user.id, Some(&session), "securityStamp");
     Ok(StatusCode::OK)
 }

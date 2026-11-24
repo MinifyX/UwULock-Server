@@ -636,6 +636,14 @@ impl Store {
         Ok(done)
     }
 
+    /// Forget every device of the account at once ("log out everywhere").
+    pub async fn delete_devices(&self, user_id: &str) -> Result<()> {
+        let owned = user_id.to_string();
+        self.sqlite_write(move |tx| tx.execute("DELETE FROM devices WHERE user_id = ?1", [owned]).map(drop)).await?;
+        self.forget_session_of(user_id);
+        Ok(())
+    }
+
     /// A remembered device skipped two-step login at `at` (now, but for tests): it stays
     /// remembered for the set number of days from then. Nothing for a device not remembered.
     pub async fn renew_remembered_device(&self, user_id: &str, id: &str, at: String) -> Result<()> {
@@ -722,9 +730,14 @@ impl Store {
                  VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6) \
                  ON CONFLICT (email) DO UPDATE SET token_hash = excluded.token_hash, admin = 0, \
                  invited_by = excluded.invited_by, language = excluded.language, created = excluded.created, \
-                 expires = excluded.expires",
+                 expires = excluded.expires \
+                 WHERE invitations.invited_by IS excluded.invited_by OR invitations.expires <= excluded.created",
                 params![email, token_hash, invited_by, language, now, expires],
             )?;
+            // Somebody else's invitation that still holds stays theirs, also when two ask at once.
+            if tx.changes() == 0 {
+                return Ok(None);
+            }
             tx.query_row(
                 "SELECT email, admin, invited_by, language, created, expires FROM invitations WHERE email = ?1",
                 [&email],
@@ -1146,5 +1159,19 @@ pub(crate) mod tests {
                     .is_some(),
             "one's own again does not count twice"
         );
+    }
+
+    #[tokio::test]
+    async fn somebody_elses_invitation_stays_theirs() {
+        let (store, _dir) = store();
+        let nyu = store.create_user(new_user("nyu@example.com")).await.unwrap();
+        let mia = store.create_user(new_user("mia@example.com")).await.unwrap();
+        let invite = |by: String, expires: String| {
+            let store = store.clone();
+            async move { store.invite_within("q@example.com", vec![1; 32], &by, "de", expires, 2).await.unwrap() }
+        };
+        assert!(invite(nyu.id.clone(), clock::in_seconds(60)).await.is_some());
+        assert!(invite(mia.id.clone(), clock::in_seconds(60)).await.is_none());
+        assert_eq!(store.invitation("q@example.com").await.unwrap().unwrap().invited_by, Some(nyu.id.clone()));
     }
 }
