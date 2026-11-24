@@ -383,9 +383,7 @@ async fn settings(config: Config, action: SettingsAction) -> Result<(), String> 
             } else {
                 value
             };
-            // JSON, or else the text as it is.
-            let parsed = serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text));
-            let new = current.with(&key, parsed)?;
+            let new = current.with_text(&key, &text)?;
             new.save(&store, &secret).await?;
             let shown = find(&new.for_portal(), &key).unwrap_or(serde_json::Value::Null);
             println!("{key} is now {shown}.");
