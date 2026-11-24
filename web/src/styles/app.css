@@ -5,28 +5,11 @@
   --lock-control-line: 18px;
   --lock-control-pad-x: 12px;
   --lock-icon-button: 36px;
-  --lock-icon-button-small: 32px;
   --lock-label-gap: 6px;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-}
-
+/* The page itself never scrolls: the panes do. Font, colours and the canvas come from the package. */
 body {
-  background: var(--uwu-canvas);
-  color: var(--uwu-ink);
-  font-family: var(--font-ui);
-  font-size: var(--uwu-text-body);
-  letter-spacing: var(--tracking-ui);
-  -webkit-font-smoothing: antialiased;
   overflow: hidden;
   /*
    * In a password manager a name, a value or a password must always look exactly like what it
@@ -51,58 +34,8 @@ samp {
   font-feature-settings: 'calt' 0;
 }
 
-/*
- * Scrollbars in the app's colours instead of the system's white ones with
- * arrow buttons: a slim rounded thumb on a clear track. Every webview UwULock
- * runs in (WebView2, WKWebView, WebKitGTK) reads the -webkit- pseudo-elements;
- * the standard scrollbar-color would switch them off in Chromium, so it is
- * deliberately not set.
- */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track,
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-::-webkit-scrollbar-button {
-  display: none;
-}
-
-::-webkit-scrollbar-thumb {
-  border: 3px solid transparent;
-  border-radius: var(--uwu-radius-pill);
-  background: color-mix(in srgb, var(--uwu-muted) 45%, transparent) padding-box;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--uwu-pink) 70%, transparent) padding-box;
-}
-
-:focus-visible {
-  outline: 2px solid var(--uwu-pink);
-  outline-offset: 2px;
-}
-
-code {
-  font-family: var(--uwu-mono);
-  font-size: 0.92em;
-}
-
 .spacer {
   flex: 1;
-}
-
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
 }
 
 /* ── Shell ─────────────────────────────────────────────── */
@@ -161,47 +94,9 @@ code {
   color: var(--uwu-ink);
 }
 
-/* Caption buttons the size Windows uses: the full bar height, 46 px wide. */
-.window-controls {
-  display: flex;
-}
-
-.window-control {
-  width: 46px;
-  height: 100%;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  color: var(--uwu-ink);
-}
-
-.window-control svg {
-  width: 10px;
-  height: 10px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1;
-}
-
-.window-control:hover:not(:disabled) {
-  background: var(--uwu-elevated);
-}
-
-.window-control.close:hover:not(:disabled) {
-  background: var(--uwu-pink-solid);
-  color: var(--uwu-on-pink);
-}
-
 .titlebar .wordmark {
   font-weight: 700;
   letter-spacing: -0.02em;
-}
-
-.titlebar .wordmark span {
-  color: var(--uwu-pink-solid);
 }
 
 /* ── Shared ────────────────────────────────────────────── */
@@ -226,8 +121,8 @@ code {
 }
 
 .notice[data-tone='error'] {
-  border-color: color-mix(in srgb, var(--uwu-warning-ink) 50%, transparent);
-  color: var(--uwu-warning-ink);
+  border-color: color-mix(in srgb, var(--uwu-danger-ink) 50%, transparent);
+  color: var(--uwu-danger-ink);
 }
 
 .notice button {
@@ -284,17 +179,6 @@ code {
 .settings-content > :first-child > :first-child {
   margin-top: 0;
   padding-top: 0;
-}
-
-.vault-status {
-  display: block;
-  max-width: 260px;
-  font-size: var(--uwu-text-caption);
-  line-height: 1.45;
-}
-
-.vault-status[data-status='unlocked'] {
-  color: var(--uwu-success-ink);
 }
 
 .shortcuts {
@@ -360,77 +244,6 @@ code {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: var(--uwu-space-2);
-}
-
-.about-diagnostics {
-  margin-top: var(--uwu-space-4);
-  font-size: var(--uwu-text-meta);
-  color: var(--uwu-muted);
-}
-
-.about-diagnostics summary {
-  cursor: pointer;
-}
-
-.about-diagnostics button {
-  margin-top: var(--uwu-space-2);
-}
-
-/* ── Update hint ─────────────────────────────────────────────────────────── */
-
-.update-hint {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 8;
-  width: min(340px, calc(100vw - 32px));
-  display: grid;
-  gap: var(--uwu-space-3);
-  padding: var(--uwu-space-4) var(--uwu-space-4);
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  box-shadow: 0 24px 60px -24px rgba(20, 16, 22, 0.45);
-}
-
-.update-hint-head {
-  display: flex;
-  gap: var(--uwu-space-3);
-  align-items: center;
-}
-
-.update-hint-title {
-  margin: 0;
-  font-weight: 700;
-}
-
-.update-hint-meta,
-.update-hint-notes,
-.update-hint-warning {
-  margin: 0;
-  font-size: var(--uwu-text-caption);
-  color: var(--uwu-muted);
-}
-
-.update-hint-notes {
-  max-height: 160px;
-  overflow-y: auto;
-  padding: var(--uwu-space-2) var(--uwu-space-3);
-  border-radius: var(--uwu-radius-control);
-  background: var(--uwu-canvas);
-  line-height: 1.5;
-  white-space: pre-line;
-  user-select: text;
-}
-
-.update-hint-warning {
-  color: var(--uwu-warning-ink);
-}
-
-.update-hint-actions {
-  display: flex;
-  justify-content: flex-end;
   gap: var(--uwu-space-2);
 }
 

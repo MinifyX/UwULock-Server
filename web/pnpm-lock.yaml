@@ -588,7 +588,7 @@ packages:
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
   '@uwusuite/design@file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz':
-    resolution: {integrity: sha512-i4373yLS15gB76McMs/K9PHbeENK3KZXi9Jw7EWJaHp3+Iv0UMm9x83oWZmpQPFoPlM4zYPJ8SpDB67RqTOFjQ==, tarball: file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz}
+    resolution: {integrity: sha512-cDwAcCa33VzVGsTSZgxnXjIclqe2NZ+gvZrtAZJSj7MfLBLmVNQv5DrrUx1sZCmZgqyhszZ3PsWPsIqTbF2Hag==, tarball: file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz}
     version: 1.18.0
     engines: {node: '>=22'}
     hasBin: true

@@ -1,35 +1,28 @@
 /*
  * The shared building blocks of the web vault and the admin portal (components/ui, docs/ui.md):
- * buttons, fields, cards, sections, tabs, badges, notices and dialogs. Sizes and gaps come from
- * tokens.css only, so one change there moves every screen alike.
+ * raw buttons, fields, cards, settings rows, badges, tables and the settings dialog. Buttons, tabs,
+ * notices (Hint) and the dialog frame are @uwusuite/design's components; only layout stays here.
  */
 
 /* ── Buttons ───────────────────────────────────────────── */
 
 /*
- * Every button: one height with fields (--lock-control-height), from its line and padding, so a
- * button without a class looks like the default one. Lists, menus and bars override the padding.
+ * Raw <button>s of this app's own layouts (lists, menus, bars): one height with fields
+ * (--lock-control-height). No frame or colour: those come from @uwusuite/design's Button, which
+ * this rule must not leak into (utilities override only what they set).
  */
 button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--uwu-space-2);
-  font: inherit;
   font-size: var(--uwu-text-meta);
   font-weight: 600;
   line-height: var(--lock-control-line);
   padding: calc((var(--lock-control-height) - var(--lock-control-line) - 2px) / 2)
     var(--uwu-space-4);
   border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
   cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  background: var(--uwu-elevated);
 }
 
 button:disabled {
@@ -37,50 +30,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
-button.primary {
-  background: var(--uwu-pink-solid);
-  border-color: var(--uwu-pink-solid);
-  color: var(--uwu-on-pink);
-}
-
-button.primary:hover:not(:disabled) {
-  background: var(--uwu-pink-solid);
-  filter: brightness(1.06);
-}
-
-button.danger {
-  color: var(--uwu-warning-ink);
-  border-color: color-mix(in srgb, var(--uwu-warning-ink) 45%, transparent);
-}
-
-/* No frame: for actions next to others, in cards and lists. As tall as the others. */
-button.quiet {
-  border-color: transparent;
-  background: transparent;
-  color: var(--uwu-muted);
-  padding-inline: var(--uwu-space-3);
-}
-
-button.quiet:hover:not(:disabled) {
-  background: var(--uwu-elevated);
-  color: var(--uwu-ink);
-}
-
-.danger-text,
-button.quiet.danger-text {
+.danger-text {
   color: var(--uwu-warning-ink);
 }
 
-/* The small size: list heads, toolbars, chips of actions. */
-button.small,
-.button-link.small {
-  font-size: var(--uwu-text-caption);
-  padding: calc((var(--lock-control-height-small) - var(--lock-control-line) - 2px) / 2)
-    var(--uwu-space-3);
-}
-
-.icon-button,
-button.icon-button {
+.icon-button {
   flex: none;
   width: var(--lock-icon-button);
   height: var(--lock-icon-button);
@@ -96,12 +50,6 @@ button.icon-button {
 
 .icon-button:hover:not(:disabled) {
   color: var(--uwu-ink);
-}
-
-.icon-button.small,
-.icon-button.tiny {
-  width: var(--lock-icon-button-small);
-  height: var(--lock-icon-button-small);
 }
 
 /* A link that looks like a button (downloads, the way to the admin portal). */
@@ -152,7 +100,6 @@ button.icon-button {
   select,
   textarea
 ) {
-  font: inherit;
   font-size: var(--uwu-text-body);
   line-height: var(--lock-control-line);
   min-width: 0;
@@ -177,10 +124,6 @@ button.icon-button {
   resize: vertical;
 }
 
-:where(input, select, textarea):focus-visible {
-  outline-offset: 1px;
-}
-
 :where(input, select, textarea)[aria-invalid='true'] {
   border-color: var(--uwu-warning-ink);
 }
@@ -200,14 +143,6 @@ button.icon-button {
   padding: 0;
   border: 0;
   min-width: 0;
-}
-
-.field.grow {
-  flex: 1;
-}
-
-.field.port {
-  width: 88px;
 }
 
 .field > span,
@@ -466,10 +401,6 @@ input[type='checkbox']:indeterminate::before {
   transform: scale(1);
 }
 
-input[type='checkbox']:focus-visible {
-  outline-offset: 2px;
-}
-
 input[type='checkbox']:disabled {
   cursor: default;
   opacity: 0.5;
@@ -533,94 +464,7 @@ input[type='checkbox']:disabled {
   }
 }
 
-/* ── Choices ───────────────────────────────────────────── */
-
-.segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  padding: 3px;
-  gap: 3px;
-  border-radius: var(--uwu-radius-control);
-  background: var(--uwu-canvas);
-  border: 1px solid var(--uwu-border);
-  width: max-content;
-  max-width: 100%;
-}
-
-.segmented button {
-  border: 0;
-  background: transparent;
-  padding: calc((var(--lock-control-height) - var(--lock-control-line) - 8px) / 2)
-    var(--uwu-space-3);
-  border-radius: 7px;
-  color: var(--uwu-muted);
-}
-
-.segmented button[aria-checked='true'],
-.segmented button[aria-selected='true'] {
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
-  box-shadow: 0 1px 2px rgba(20, 16, 22, 0.12);
-}
-
-.segmented.wide {
-  width: 100%;
-  display: flex;
-}
-
-.segmented.wide button {
-  flex: 1;
-  padding-inline: var(--uwu-space-2);
-}
-
-.toggle,
-button.toggle {
-  flex: none;
-  position: relative;
-  width: 44px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--uwu-radius-pill);
-  /* The outline colour of controls: an off switch keeps 3:1 against the page (WCAG 1.4.11). */
-  background: var(--uwu-control);
-  transition: background-color 200ms ease;
-}
-
-.toggle:hover:not(:disabled) {
-  background: var(--uwu-control);
-}
-
-.toggle[aria-checked='true'],
-.toggle[aria-checked='true']:hover:not(:disabled) {
-  background: var(--uwu-pink-solid);
-}
-
-.toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(20, 16, 22, 0.3);
-  transition: transform 200ms cubic-bezier(0.3, 1.3, 0.6, 1);
-}
-
-.toggle[aria-checked='true'] .toggle-thumb {
-  transform: translateX(20px);
-}
-
-.toggle:disabled {
-  opacity: 0.5;
-}
-
 /* Darstellung → Schrift: each font shown in itself, two or more side by side. */
-.setting-control:has(> .font-picker) {
-  flex: 1 1 100%;
-}
-
 .font-picker {
   flex: 1;
   display: grid;
@@ -669,44 +513,7 @@ button.toggle {
   color: inherit;
 }
 
-/* ── Tabs ──────────────────────────────────────────────── */
-
-/* The line style, for the parts of a page; the segmented style above is for a list's views. */
-.tabs {
-  display: flex;
-  gap: var(--uwu-space-1);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--uwu-hairline);
-  scrollbar-width: none;
-}
-
-.tabs button {
-  flex: none;
-  margin-bottom: -1px;
-  padding-inline: var(--uwu-space-3);
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: var(--uwu-radius-small) var(--uwu-radius-small) 0 0;
-  background: transparent;
-  color: var(--uwu-muted);
-  white-space: nowrap;
-}
-
-.tabs button:hover:not(:disabled) {
-  background: var(--uwu-elevated);
-  color: var(--uwu-ink);
-}
-
-.tabs button[aria-selected='true'] {
-  border-bottom-color: var(--uwu-pink-solid);
-  color: var(--uwu-pink-ink);
-}
-
-.tabs button .badge {
-  margin-left: 0;
-}
-
-/* ── Cards and sections ───────────────────────────────── */
+/* ── Cards and settings ───────────────────────────────── */
 
 .card {
   display: grid;
@@ -732,19 +539,7 @@ button.toggle {
   overflow-wrap: anywhere;
 }
 
-/* A part of a page or a settings section: a small heading, a line about it, then its content. */
-.section {
-  display: grid;
-  gap: var(--uwu-space-2);
-  min-width: 0;
-}
-
-.section + .section {
-  margin-top: var(--uwu-space-6);
-}
-
-.settings-heading,
-.section-heading {
+.settings-heading {
   margin: var(--uwu-space-6) 0 0;
   font-size: var(--uwu-text-badge);
   font-weight: 700;
@@ -752,10 +547,6 @@ button.toggle {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--uwu-muted);
-}
-
-.section > .section-heading {
-  margin: 0;
 }
 
 .settings-lead,
@@ -798,16 +589,6 @@ button.toggle {
   color: var(--uwu-muted);
 }
 
-.setting-control {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--uwu-space-2);
-}
-
 .setting-result {
   margin: var(--uwu-space-2) 0 0;
   font-size: var(--uwu-text-meta);
@@ -836,7 +617,6 @@ button.toggle {
   white-space: nowrap;
 }
 
-.badge.alarm,
 .badge[data-tone='alarm'] {
   background: color-mix(in srgb, var(--uwu-warning-ink) 18%, transparent);
   color: var(--uwu-warning-ink);
@@ -852,75 +632,6 @@ button.toggle {
   background: var(--uwu-elevated);
   color: var(--uwu-muted);
   box-shadow: inset 0 0 0 1px var(--uwu-border);
-}
-
-/* ── Notices ───────────────────────────────────────────── */
-
-/* A line that stands out in a page or a dialog: something to know, to do, or that went wrong. */
-.callout {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--uwu-space-3);
-  padding: var(--uwu-space-3) var(--uwu-space-4);
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  font-size: var(--uwu-text-meta);
-  line-height: var(--uwu-leading);
-  min-width: 0;
-}
-
-.callout > .icon {
-  margin-top: 2px;
-  color: var(--uwu-muted);
-}
-
-.callout-body {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: var(--uwu-space-1);
-  overflow-wrap: anywhere;
-}
-
-.callout-title {
-  margin: 0;
-  font-weight: 700;
-}
-
-.callout-body > p {
-  margin: 0;
-}
-
-.callout-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--uwu-space-2);
-  margin-top: var(--uwu-space-1);
-}
-
-.callout[data-tone='accent'] {
-  border-color: var(--uwu-pink);
-  background: var(--uwu-pink-tint);
-}
-
-.callout[data-tone='accent'] > .icon {
-  color: var(--uwu-pink-ink);
-}
-
-.callout[data-tone='warning'],
-.callout[data-tone='error'] {
-  border-color: color-mix(in srgb, var(--uwu-warning-ink) 50%, transparent);
-}
-
-.callout[data-tone='warning'] > .icon,
-.callout[data-tone='error'] > .icon,
-.callout[data-tone='error'] {
-  color: var(--uwu-warning-ink);
-}
-
-.callout[data-tone='ok'] > .icon {
-  color: var(--uwu-success-ink);
 }
 
 /* ── Tables ────────────────────────────────────────────── */

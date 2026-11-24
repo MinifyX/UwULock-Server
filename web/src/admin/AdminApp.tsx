@@ -127,6 +127,9 @@ function content(tab: TabId, me: string, info: AccountInfo) {
   }
 }
 
+/** A stable ref: the reveal plays once, when the frame mounts, not on every render. */
+const reveal = (el: HTMLElement | null) => void (el && revealFrom(el));
+
 /**
  * The admin portal at `/admin`. It needs a login like the vault — admins are ordinary accounts
  * with the admin right — but not the vault's keys: after a reload the session is enough.
@@ -253,7 +256,7 @@ export function AdminApp() {
     body = (
       <SettingsProvider>
         <SsoProvider>
-          <div className="admin" ref={(el) => void (el && revealFrom(el))}>
+          <div className="admin" ref={reveal}>
             <nav className="sidebar admin-sidebar" aria-label={t('Admin-Portal')}>
               <ul className="nav-list">
                 {areas.map((each, index) => (

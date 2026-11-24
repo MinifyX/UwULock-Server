@@ -543,7 +543,7 @@ function NewKdf({
       }}
     >
       <Segmented
-        className="w-full"
+        className="w-full [&>button]:flex-1"
         label={t('Schlüsselableitung')}
         value={kdf.kind}
         onChange={(kind) => setKdf(kind === current.kind ? current : DEFAULT_KDFS[kind])}

@@ -219,6 +219,16 @@ export function VaultScreen({
   const suiteOn = useSwitch('suite');
   const newButtonRef = useRef<HTMLButtonElement>(null);
   const detailRef = useRef<HTMLElement>(null);
+  // A new section fades in (motion.md: page change). Replayed, not remounted: a remount would
+  // drop the search field, the focus and the list's place.
+  const listRef = useRef<HTMLElement>(null);
+  const filterKey = JSON.stringify(filter);
+  useEffect(() => {
+    for (const animation of listRef.current?.getAnimations() ?? []) {
+      animation.cancel();
+      animation.play();
+    }
+  }, [filterKey]);
 
   const reload = useCallback(async () => {
     // Invitations to families wait here until they are taken or turned down.
@@ -770,8 +780,7 @@ export function VaultScreen({
         ) : (
           <>
             <section
-              // A new section fades in (motion.md: page change).
-              key={JSON.stringify(filter)}
+              ref={listRef}
               className="list-pane uwu-page"
               aria-label={title}
               tabIndex={-1}

@@ -36,6 +36,9 @@ import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
 import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
 
+/** A stable ref: the reveal plays once, when the frame mounts, not on every render. */
+const reveal = (el: HTMLElement | null) => void (el && revealFrom(el));
+
 /** The web vault: login or unlock, the vault, the settings — and registering by invitation. */
 export function App() {
   useLanguage();
@@ -325,7 +328,7 @@ export function App() {
           ) : mustSetUp ? (
             <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
           ) : (
-            <div className="vault-frame" ref={(el) => void (el && revealFrom(el))}>
+            <div className="vault-frame" ref={reveal}>
               <PolicyBanners status={status} info={info} onSettings={setSettingsOpen} />
               <VaultScreen
                 status={status}

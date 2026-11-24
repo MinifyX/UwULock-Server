@@ -1,14 +1,5 @@
 /* UwULock's own screens: login, lock, the vault in three panes. Tokens only. */
 
-.icon {
-  flex: none;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .settings-nav button,
 .nav-row,
 .history-toggle {
@@ -75,16 +66,6 @@
   text-align: center;
 }
 
-.spin {
-  animation: uwu-spin 900ms linear infinite;
-}
-
-@keyframes uwu-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 /* ── Welcome / login ───────────────────────────────────── */
 
 .welcome {
@@ -143,7 +124,7 @@
   color: var(--uwu-muted);
 }
 
-.welcome-beta .icon {
+.welcome-beta .uwu-icon {
   color: var(--uwu-pink);
   margin-top: 2px;
 }
@@ -268,7 +249,7 @@
   text-align: left;
 }
 
-.nav-row .icon {
+.nav-row .uwu-icon {
   color: var(--uwu-muted);
 }
 
@@ -282,8 +263,8 @@
   color: var(--uwu-pink-ink);
 }
 
-.nav-row[aria-current='true'] .icon,
-.nav-row[aria-current='page'] .icon {
+.nav-row[aria-current='true'] .uwu-icon,
+.nav-row[aria-current='page'] .uwu-icon {
   color: var(--uwu-pink);
 }
 
@@ -373,7 +354,7 @@
   display: block;
 }
 
-.search-box .icon {
+.search-box .uwu-icon {
   position: absolute;
   left: var(--lock-control-pad-x);
   top: 50%;
@@ -679,11 +660,6 @@
   margin-bottom: var(--uwu-space-2);
 }
 
-.detail-card > button.quiet {
-  justify-self: start;
-  margin-left: calc(-1 * var(--uwu-space-3));
-}
-
 .detail-card-title {
   margin: 0;
   padding: var(--uwu-space-3) 0 var(--uwu-space-1);
@@ -735,25 +711,6 @@
 .detail-actions {
   display: flex;
   gap: 2px;
-}
-
-/* The row's tools step back until the row is pointed at — the icons only, and only so far that
-   they keep 3:1; a tool with words stays readable. */
-.detail-actions .icon-button {
-  opacity: 0.75;
-  transition: opacity 120ms;
-}
-
-.detail-row:hover .detail-actions .icon-button,
-.detail-actions:focus-within .icon-button,
-:root[data-contrast='high'] .detail-actions .icon-button {
-  opacity: 1;
-}
-
-.detail-actions .icon-button:hover:not(:disabled),
-.notes .icon-button:hover:not(:disabled) {
-  color: var(--uwu-pink);
-  background: var(--uwu-pink-tint);
 }
 
 .masked {
@@ -901,12 +858,6 @@
   gap: var(--uwu-space-2);
 }
 
-.detail-beta {
-  flex-wrap: wrap;
-  padding-top: var(--uwu-space-2);
-  border-top: 1px dashed var(--uwu-border);
-}
-
 @media (max-width: 1020px) {
   .vault {
     grid-template-columns: 200px minmax(240px, 300px) 1fr;
@@ -952,10 +903,6 @@
     display: inline-flex;
     align-self: flex-start;
     margin: var(--uwu-space-3) var(--uwu-space-3) 0;
-  }
-
-  .pane-back .icon {
-    rotate: 180deg;
   }
 
   .detail {
@@ -1084,9 +1031,16 @@
     var(--uwu-space-3) calc((var(--lock-control-height-small) - var(--lock-control-line) - 2px) / 2)
     var(--uwu-space-2);
   font-size: var(--uwu-text-caption);
+  border: 1px solid var(--uwu-border);
   border-radius: var(--uwu-radius-pill);
+  background: var(--uwu-surface);
+  color: var(--uwu-ink);
   text-transform: none;
   letter-spacing: 0;
+}
+
+.new-item:hover:not(:disabled) {
+  background: var(--uwu-elevated);
 }
 
 .nav-heading {
@@ -1103,16 +1057,6 @@
   align-items: center;
   gap: var(--uwu-space-1);
   flex: none;
-}
-
-.detail-tools > button:not(.icon-button) {
-  font-size: var(--uwu-text-caption);
-  padding: calc((var(--lock-control-height-small) - var(--lock-control-line) - 2px) / 2)
-    var(--uwu-space-3);
-}
-
-.detail-tools > .primary {
-  margin-left: var(--uwu-space-2);
 }
 
 .editor {

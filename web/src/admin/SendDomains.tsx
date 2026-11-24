@@ -265,6 +265,7 @@ function DomainCard({
 
   return (
     <Card
+      level={4}
       className="channel-card"
       title={<span className="mono">{domain.host}</span>}
       aside={

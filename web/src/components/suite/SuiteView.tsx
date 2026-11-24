@@ -69,7 +69,7 @@ export function SuiteView({ space }: { space: SpaceName }) {
       body = (
         <>
           <p>{errorText(state.error)}</p>
-          <button onClick={() => void loadSpace(space, true)}>{t('Noch einmal versuchen')}</button>
+          <Button onClick={() => void loadSpace(space, true)}>{t('Noch einmal versuchen')}</Button>
         </>
       );
       break;

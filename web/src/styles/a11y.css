@@ -56,17 +56,6 @@
   border-color: var(--uwu-control);
 }
 
-.toggle {
-  background: var(--uwu-control);
-}
-
-/* The picked choice of a group: an outline besides the lighter background. */
-.segmented button[aria-checked='true'] {
-  box-shadow:
-    inset 0 0 0 1px var(--uwu-control),
-    0 1px 2px rgba(20, 16, 22, 0.12);
-}
-
 /* The picked item: a bar at its edge, not only a tint. */
 .item-row[aria-selected='true'] {
   box-shadow: inset 3px 0 0 var(--uwu-pink);
@@ -203,28 +192,9 @@ kbd {
   .nav-row[aria-current='true'],
   .settings-nav button[aria-current='page'],
   .nav-row[aria-current='page'],
-  .bottom-nav button[aria-current='page'],
-  .segmented button[aria-checked='true'] {
+  .bottom-nav button[aria-current='page'] {
     outline: 2px solid Highlight;
     outline-offset: -2px;
-  }
-
-  .toggle {
-    border: 1px solid ButtonText;
-  }
-
-  .toggle-thumb {
-    forced-color-adjust: none;
-    background: ButtonText;
-  }
-
-  .toggle[aria-checked='true'] {
-    forced-color-adjust: none;
-    background: Highlight;
-  }
-
-  .toggle[aria-checked='true'] .toggle-thumb {
-    background: HighlightText;
   }
 
   .item-check::before {
@@ -236,12 +206,12 @@ kbd {
     background: Highlight;
   }
 
-  .item-check .icon {
+  .item-check .uwu-icon {
     color: HighlightText;
   }
 
   /* Icons in the colour of their text, not a tint the system no longer draws. */
-  :root .icon {
+  :root .uwu-icon {
     color: inherit;
   }
 

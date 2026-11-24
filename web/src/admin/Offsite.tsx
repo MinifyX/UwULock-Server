@@ -266,6 +266,7 @@ export function Offsite() {
               </Field>
             ) : view.target?.publicKey ? (
               <Card
+                level={4}
                 title={t('Für ~/.ssh/authorized_keys des Backup-Benutzers')}
                 aside={
                   <Button
@@ -290,6 +291,7 @@ export function Offsite() {
             )}
             {view.target?.hostKey && (
               <Card
+                level={4}
                 title={t('Host-Schlüssel des Backup-Servers')}
                 aside={
                   <Button

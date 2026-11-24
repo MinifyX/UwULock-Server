@@ -210,6 +210,7 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
   const status = channel?.status;
   return (
     <Card
+      level={4}
       className={channel && !channel.enabled ? 'channel-card channel-off' : 'channel-card'}
       title={
         <>

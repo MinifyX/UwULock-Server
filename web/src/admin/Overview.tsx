@@ -222,28 +222,28 @@ function Stat({
   /** A tile that leads to its own page. */
   onOpen?: () => void;
 }) {
-  const tile = (
+  // A tile that leads on: the button stretches over the whole tile (a button may not hold the
+  // tile's blocks), named by the tile's label.
+  return (
     <StatTile
       label={label}
       // The number turns to the warning colour when it is high.
       value={alarm ? <CountUp value={value} className="text-warning-ink" /> : value}
       note={note}
-      className={onOpen ? 'w-full group-hover:border-pink' : undefined}
+      className={onOpen ? 'relative has-[.stat-link:hover]:border-pink' : undefined}
     >
       {onOpen && (
-        <span className="stat-more" aria-hidden>
-          {t('Ansehen')} →
-        </span>
+        <button
+          type="button"
+          className="stat-link stat-more after:absolute after:inset-0 after:rounded-card"
+          aria-label={label}
+          onClick={onOpen}
+        >
+          {t('Ansehen')} <span aria-hidden>→</span>
+        </button>
       )}
     </StatTile>
   );
-  if (onOpen)
-    return (
-      <button type="button" className="stat-link group grid rounded-card" onClick={onOpen}>
-        {tile}
-      </button>
-    );
-  return tile;
 }
 
 function Fact({ label, value, alarm }: { label: string; value: string; alarm?: boolean }) {
