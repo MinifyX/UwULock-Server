@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { updates } from './live';
 
 // What uwulock-notify writes for a folder that changed on another device: the invocation
@@ -62,5 +62,46 @@ describe('the hub', () => {
     expect(updates(new Uint8Array([0x80, 0x80, 0x80, 0x80, 0x08, 0x91, 0x06]))).toEqual([]);
     expect(updates(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]))).toEqual([]);
     expect(updates(new Uint8Array([0x10, 0x91]))).toEqual([]);
+  });
+});
+
+describe('the connection', () => {
+  it('syncs once it is back after a drop, not on the first connect', async () => {
+    vi.resetModules();
+    const emitted: string[] = [];
+    vi.doMock('../events', () => ({ emit: (name: string) => emitted.push(name) }));
+    vi.doMock('./http', () => ({ deviceId: () => 'd1', freshToken: async () => 'token' }));
+    const sockets: FakeSocket[] = [];
+    class FakeSocket {
+      binaryType = '';
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onmessage: unknown = null;
+      constructor() {
+        sockets.push(this);
+      }
+      send() {}
+      close() {}
+    }
+    vi.stubGlobal('WebSocket', FakeSocket);
+    vi.useFakeTimers();
+    try {
+      const live = await import('./live');
+      live.startLive();
+      await vi.waitFor(() => expect(sockets).toHaveLength(1));
+      sockets[0]!.onopen!();
+      expect(emitted).toEqual([]);
+      sockets[0]!.onclose!();
+      await vi.runOnlyPendingTimersAsync();
+      await vi.waitFor(() => expect(sockets).toHaveLength(2));
+      sockets[1]!.onopen!();
+      expect(emitted).toEqual(['hub-sync']);
+      live.stopLive();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.doUnmock('../events');
+      vi.doUnmock('./http');
+    }
   });
 });

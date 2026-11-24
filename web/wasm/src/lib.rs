@@ -216,8 +216,13 @@ pub fn open(sync: &str) -> Result<(), JsValue> {
     let send_auth = files::send_auth(value.get("sends"));
     let mut sync: wire::Sync = serde_json::from_value(value).map_err(Failure::from)?;
     with_unlocked(|unlocked| {
-        unlocked.vault = Vault::open(&sync, &unlocked.user_key)?;
         unlocked.private_key = sync.profile.private_key.clone();
+        // A private key that doesn't open costs only the organisations (they count as skipped),
+        // not the whole vault.
+        if keys::private_key(unlocked).is_err() {
+            sync.profile.private_key = None;
+        }
+        unlocked.vault = Vault::open(&sync, &unlocked.user_key)?;
         // An unlock by passkey or by another device had no wrapped user key to keep until now.
         if let Some(key) = sync.profile.key.clone() {
             unlocked.protected_key = key;
@@ -844,4 +849,30 @@ pub fn item_passkeys(id: &str) -> Result<String, JsValue> {
 #[wasm_bindgen(js_name = deletePasskey)]
 pub fn delete_passkey(id: &str, index: u32, name: String) -> Result<String, JsValue> {
     Ok(with_unlocked(|unlocked| json(&passkeys::delete(unlocked, id, index as usize, &name)?))?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_garbled_private_key_still_opens_the_vault() {
+        let unlocked = comfort::tests::unlocked();
+        let mut cipher =
+            serde_json::to_value(unlocked.vault.item("c1").unwrap().seal(&unlocked.user_key).unwrap()).unwrap();
+        cipher["id"] = serde_json::json!("c1");
+        UNLOCKED.with(|cell| *cell.borrow_mut() = Some(unlocked));
+        let sync = serde_json::json!({
+            "profile": { "id": "u1", "email": "nyu@example.com", "privateKey": "2.garbled|garbled|garbled",
+                "organizations": [{ "id": "o1", "name": "Family", "key": "4.garbled" }] },
+            "folders": [], "collections": [], "ciphers": [cipher],
+        });
+        assert!(open(&sync.to_string()).is_ok());
+        with_unlocked(|unlocked| {
+            assert!(unlocked.vault.item("c1").is_some());
+            assert_eq!(unlocked.vault.skipped, 1, "the organisation is skipped");
+            Ok(())
+        })
+        .unwrap();
+    }
 }

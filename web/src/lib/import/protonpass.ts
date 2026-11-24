@@ -278,7 +278,7 @@ export function readProtonCsv(table: CsvTable, collector: Collector) {
       // The CSV has the network's name only as the item's name.
       collector.wifi(item, {
         ssid: table.get(row, 'name'),
-        password: table.get(row, 'password'),
+        password: table.secret(row, 'password'),
         security: null,
       });
       for (const [name, value] of table.rest(row, [...known, ...bookkeeping])) {
@@ -290,7 +290,7 @@ export function readProtonCsv(table: CsvTable, collector: Collector) {
     const email = table.get(row, 'email');
     item.login.username = some(table.get(row, 'username')) ?? some(email);
     if (item.login.username !== email && !blank(email)) collector.field(item, 'email', email);
-    item.login.password = some(table.get(row, 'password'));
+    item.login.password = some(table.secret(row, 'password'));
     item.login.totp = some(table.get(row, 'totp'));
     collector.uris(item, ...table.get(row, 'url').split(/,\s*/));
     for (const [name, value] of table.rest(row, [...known, ...bookkeeping])) {

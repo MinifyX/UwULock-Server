@@ -78,9 +78,14 @@ export class CsvTable {
 
   /** The cell of `row` in the first of `names` the file has, trimmed; '' when there is none. */
   get(row: string[], ...names: string[]): string {
+    return this.secret(row, ...names).trim();
+  }
+
+  /** As `get`, but untrimmed: a password may start or end with a space. */
+  secret(row: string[], ...names: string[]): string {
     for (const name of names) {
       const i = this.index.get(name.toLowerCase());
-      if (i !== undefined) return (row[i] ?? '').trim();
+      if (i !== undefined) return row[i] ?? '';
     }
     return '';
   }
