@@ -186,11 +186,6 @@ kbd {
   box-shadow: inset 4px 0 0 var(--uwu-pink);
 }
 
-:root[data-contrast='high'] .toast {
-  border: 2px solid var(--uwu-canvas);
-  outline: 2px solid var(--uwu-ink);
-}
-
 /* Dialogs stand apart from the page by a clear edge, not a shadow. */
 :root[data-contrast='high'] .modal {
   border: 2px solid var(--uwu-ink);
@@ -243,10 +238,6 @@ kbd {
 
   .item-check .icon {
     color: HighlightText;
-  }
-
-  .toast {
-    border: 2px solid CanvasText;
   }
 
   /* Icons in the colour of their text, not a tint the system no longer draws. */

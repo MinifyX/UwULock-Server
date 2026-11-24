@@ -1,4 +1,5 @@
-import { NavIndicator } from '@uwusuite/design';
+import { NavIndicator, revealFrom, Toaster } from '@uwusuite/design';
+import { toasts } from '../lib/toast';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { initialOf } from '../components/AccountCard';
 import { Icon } from '../components/Icon';
@@ -8,9 +9,7 @@ import { NyuLoading } from '../components/NyuStates';
 import { Appearance } from '../components/SettingsDialog';
 import { ShortcutsDialog } from '../components/ShortcutsDialog';
 import { SkipLink, TitleBar } from '../components/TitleBar';
-import { Toasts } from '../components/Toasts';
 import { Button, Modal, TabPanel, Tabs, useTabsId } from '../components/ui';
-import { revealFrom } from '@uwusuite/design';
 import { account, type AccountInfo } from '../lib/account';
 import { lock, logout, vaultStatus, type Status } from '../lib/api';
 import { listen } from '../lib/events';
@@ -359,7 +358,7 @@ export function AdminApp() {
           {body}
         </main>
       </div>
-      <Toasts />
+      <Toaster store={toasts} />
       {shortcuts && (
         <ShortcutsDialog groups={ADMIN_SHORTCUTS} onClose={() => setShortcuts(false)} />
       )}

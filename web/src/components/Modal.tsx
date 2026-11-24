@@ -1,7 +1,7 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Dialog } from '@uwusuite/design';
+import { useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { t, useLanguage } from '../lib/i18n';
-import { Icon } from './Icon';
+import { useLanguage } from '../lib/i18n';
 
 type ModalProps = {
   title: string;
@@ -16,112 +16,59 @@ type ModalProps = {
    * main one (`primary`, or `danger` in a warning). A destructive extra goes before the spacer.
    */
   footer?: ReactNode;
-  /** A × in the title bar, for dialogs without a footer (the settings). */
-  closable?: boolean;
 };
 
-const FOCUSABLE =
-  'input, button, textarea, select, summary, [href], [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+const WIDTH = { default: 'md', wide: 'lg' } as const;
+
+/** `onCancel` on a plain element: React's types only know it on <dialog>. */
+const stopCancel = { onCancel: (event: SyntheticEvent) => event.stopPropagation() };
 
 /**
- * Open dialogs, innermost last. A dialog can open another (the host form opens
- * the vault), and only the one on top may react to Escape and Tab.
- */
-const stack: HTMLElement[] = [];
-
-/**
- * A dialog. Escape cancels, a click beside it doesn't; focus moves into the
- * dialog on open, stays inside it while it is open, and goes back where it was
- * on close.
+ * A dialog: @uwusuite/design's `Dialog` (a native <dialog>, so the page behind it is inert, Tab
+ * stays inside and the top one gets Escape), with what UwULock adds on top:
  *
- * Focus always lands somewhere inside. When nothing should be focused — the
- * host key dialog deliberately gives neither button default focus, so Enter
- * cannot trust a key by accident — the dialog itself takes it. Leaving focus
- * behind let Enter activate whatever was focused in the background: in the
- * end-to-end test that was the host row, and it started a second connection.
+ * - Escape, the × and the dialog's own buttons close it, a click beside it doesn't: closing by
+ *   accident threw away whatever was typed into it.
+ * - Focus lands where it is safe. An explicit [data-autofocus] wins — warnings point it at the
+ *   safe choice. Otherwise the first field, or the first button not marked [data-secondary]:
+ *   buttons that act on something risky carry it, so Enter can never trigger them by accident.
+ *   When nothing should be focused, the dialog itself takes it, so Enter cannot activate whatever
+ *   was focused in the background.
+ * - Focus goes back where it was on close, or to the page's content when that is gone.
+ *
+ * Rendered straight into <body>: a dialog opened from inside another one (the export from
+ * Settings) must not live in the outer dialog's scroll box.
  */
-export function Modal({
-  title,
-  tone = 'default',
-  size = 'default',
-  onCancel,
-  children,
-  footer,
-  closable,
-}: ModalProps) {
+export function Modal({ title, tone = 'default', size = 'default', onCancel, children, footer }: ModalProps) {
   useLanguage();
-  const dialogRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   // Escape calls the latest onCancel, not the one from when the dialog
   // opened: a form that asks before closing only knows once something changed.
   const cancelRef = useRef(onCancel);
   cancelRef.current = onCancel;
-  // Dialogs stack (the host form opens the vault): each needs its own title id.
-  const titleId = useId();
   // Where focus was when the dialog opened, taken while drawing it: by the time the effect runs
   // (twice, in development) focus may already be inside.
   const [previous] = useState(() => document.activeElement as HTMLElement | null);
 
   useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    // An explicit [data-autofocus] wins — warnings point it at the safe choice.
-    // Otherwise the first field, or the first button not marked secondary.
-    // Buttons that act on something risky carry data-secondary, so Enter can
-    // never trigger them by accident.
+    const body = bodyRef.current;
+    const dialog = body?.closest('dialog');
+    if (!body || !dialog) return;
     const first =
       dialog.querySelector<HTMLElement>('[data-autofocus]') ??
-      dialog.querySelector<HTMLElement>('input, button:not([data-secondary]), textarea, select') ??
-      dialog;
-    first.focus();
-    stack.push(dialog);
-
-    const onKey = (event: KeyboardEvent) => {
-      if (stack[stack.length - 1] !== dialog) return;
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        cancelRef.current();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      // Keep Tab inside the dialog.
-      // Only what Tab really reaches: nothing disabled, nothing out of sight (a closed
-      // <details>, a hidden panel), nothing taken out of the order.
-      const focusable = [...dialog.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-        (el) =>
-          !el.hasAttribute('disabled') &&
-          el.tabIndex >= 0 &&
-          el.getClientRects().length > 0 &&
-          getComputedStyle(el).visibility !== 'hidden',
-      );
-      if (focusable.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      const firstEl = focusable[0]!;
-      const lastEl = focusable[focusable.length - 1]!;
-      const current = document.activeElement;
-      if (event.shiftKey && (current === firstEl || current === dialog)) {
-        event.preventDefault();
-        lastEl.focus();
-      } else if (!event.shiftKey && current === lastEl) {
-        event.preventDefault();
-        firstEl.focus();
-      }
-    };
-
-    window.addEventListener('keydown', onKey);
+      body.querySelector<HTMLElement>('input, button:not([data-secondary]), textarea, select') ??
+      dialog.querySelector<HTMLElement>('footer button:not([data-secondary])');
+    if (first) {
+      first.focus();
+    } else {
+      dialog.tabIndex = -1;
+      dialog.focus();
+    }
     return () => {
-      window.removeEventListener('keydown', onKey);
-      stack.splice(stack.indexOf(dialog), 1);
-      // Back where it was. When that is gone (the row of a deleted item, the menu that opened
-      // the dialog), to the dialog below, or to the page's content rather than to nowhere.
       if (previous?.isConnected && previous !== document.body) previous.focus();
       else
         (
-          stack[stack.length - 1] ??
+          document.querySelector<HTMLElement>('dialog[open]') ??
           document.querySelector<HTMLElement>('[data-main-content]') ??
           document.getElementById('main')
         )?.focus();
@@ -129,77 +76,24 @@ export function Modal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A hairline under the title and over the buttons, only while the body scrolls beneath them.
-  useEffect(() => {
-    const body = bodyRef.current;
-    if (!body) return;
-    const update = () => {
-      const scrolled = body.scrollTop > 0;
-      const more = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
-      body.toggleAttribute('data-scrolled', scrolled);
-      body.toggleAttribute('data-more', more);
-    };
-    update();
-    body.addEventListener('scroll', update, { passive: true });
-    if (typeof ResizeObserver === 'undefined') {
-      return () => body.removeEventListener('scroll', update);
-    }
-    // The body's own size and its content's: a field added below grows the content only.
-    const sizes = new ResizeObserver(update);
-    const watch = () => {
-      sizes.disconnect();
-      sizes.observe(body);
-      for (const child of body.children) sizes.observe(child);
-    };
-    watch();
-    const children = new MutationObserver(watch);
-    children.observe(body, { childList: true });
-    return () => {
-      body.removeEventListener('scroll', update);
-      sizes.disconnect();
-      children.disconnect();
-    };
-  }, []);
-
-  // Straight into <body>: a dialog opened from inside another one (the export
-  // from Settings) otherwise lives in the outer dialog's scroll box, which
-  // moves it about when a field inside gets focus.
+  // React passes a dialog's `cancel` up its own tree, through the portal, into the dialog this
+  // one was opened from. The boundary stops it: only the dialog on top reacts.
   return createPortal(
-    // A click beside the dialog does nothing: closing by accident threw away
-    // whatever was typed into it. Escape and the dialog's own buttons close.
-    <div className="modal-backdrop">
-      <div
-        ref={dialogRef}
+    <div className="contents" {...stopCancel}>
+      <Dialog
+        open
+        onClose={() => cancelRef.current()}
+        title={title}
+        tone={tone}
+        width={WIDTH[size]}
+        footer={footer}
+        closeOnOutsideClick={false}
         className="modal"
-        data-tone={tone}
-        data-size={size}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        tabIndex={-1}
       >
-        <div className="modal-head">
-          <h2 id={titleId} className="modal-title">
-            {title}
-          </h2>
-        </div>
-        <div ref={bodyRef} className="modal-body">
+        <div ref={bodyRef} className="modal-body grid content-start gap-4 px-6 pt-1 pb-5 phone:px-4">
           {children}
         </div>
-        {footer && <div className="modal-footer">{footer}</div>}
-        {/* Last in the Tab order, as before; drawn in the title bar. */}
-        {closable && (
-          <button
-            type="button"
-            className="icon-button modal-close"
-            onClick={onCancel}
-            aria-label={t('Schließen')}
-            title={t('Schließen')}
-          >
-            <Icon name="close" size={16} />
-          </button>
-        )}
-      </div>
+      </Dialog>
     </div>,
     document.body,
   );

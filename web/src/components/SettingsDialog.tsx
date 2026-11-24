@@ -283,7 +283,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (
-    <Modal title={t('Einstellungen')} size="wide" onCancel={onClose} closable>
+    <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
       <div className="settings">
         <nav className="settings-nav" aria-label={t('Bereiche')}>
           {sections.map(({ id, label }) => (

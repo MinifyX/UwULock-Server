@@ -7,7 +7,6 @@ import { NyuLoading } from './components/NyuStates';
 import { SettingsDialog, type SettingsSection } from './components/SettingsDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { SkipLink, TitleBar } from './components/TitleBar';
-import { Toasts } from './components/Toasts';
 import { VaultScreen } from './components/VaultScreen';
 import {
   lacksTwoFactor,
@@ -26,14 +25,14 @@ import { publicLinkOf } from './lib/links';
 import { connectResultOf, reloadMaskedConnection } from './lib/masked';
 import { acceptContact } from './lib/features';
 import { acceptInvitation } from './lib/families';
-import { toast } from './lib/toast';
+import { toast, toasts } from './lib/toast';
 import { lock, setSecurity, syncNow, touch, vaultStatus, type Status } from './lib/api';
 import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
 import { pageName, useServerInfo } from './lib/branding';
-import { revealFrom } from '@uwusuite/design';
+import { revealFrom, Toaster } from '@uwusuite/design';
 import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
 import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
@@ -346,7 +345,7 @@ export function App() {
         </main>
       </div>
 
-      <Toasts />
+      <Toaster store={toasts} />
 
       {generator && <GeneratorDialog onClose={() => setGenerator(false)} />}
 

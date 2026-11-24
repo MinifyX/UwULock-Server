@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@uwusuite/design':
-        specifier: https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.17.0/uwusuite-design-1.17.0.tgz
-        version: https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.17.0/uwusuite-design-1.17.0.tgz(lucide-react@1.78.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.5)
+        specifier: file:/home/nyop/.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz
+        version: file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz(lucide-react@1.78.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.5)
       lucide-react:
         specifier: ^1.78.0
         version: 1.78.0(@types/react@19.3.0)(react@19.3.0)
@@ -587,9 +587,9 @@ packages:
     resolution: {integrity: sha512-Vwj9lUIW5Xq3wQ9w6gv3R86g1hMK8f2zNOdGTAgeXUMMXFK78G9ruCjjqutHMNJc0+CH7LYRnHeUB9IT8wFmcw==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
 
-  '@uwusuite/design@https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.17.0/uwusuite-design-1.17.0.tgz':
-    resolution: {tarball: https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.17.0/uwusuite-design-1.17.0.tgz}
-    version: 1.17.0
+  '@uwusuite/design@file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz':
+    resolution: {integrity: sha512-i4373yLS15gB76McMs/K9PHbeENK3KZXi9Jw7EWJaHp3+Iv0UMm9x83oWZmpQPFoPlM4zYPJ8SpDB67RqTOFjQ==, tarball: file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz}
+    version: 1.18.0
     engines: {node: '>=22'}
     hasBin: true
     peerDependencies:
@@ -1878,7 +1878,7 @@ snapshots:
       '@typescript-eslint/types': 8.70.1
       eslint-visitor-keys: 5.0.1
 
-  '@uwusuite/design@https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.17.0/uwusuite-design-1.17.0.tgz(lucide-react@1.78.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.5)':
+  '@uwusuite/design@file:../../../../.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz(lucide-react@1.78.0(@types/react@19.3.0)(react@19.3.0))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(tailwindcss@4.3.5)':
     dependencies:
       '@blobatar/react': 2.7.0(blobatar@2.7.0(react@19.3.0))(react@19.3.0)
       '@fontsource-variable/dm-sans': 5.3.0

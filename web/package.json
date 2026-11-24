@@ -20,7 +20,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@uwusuite/design": "https://github.com/MinifyX/UwUSuite-Design/releases/download/v1.17.0/uwusuite-design-1.17.0.tgz",
+    "@uwusuite/design": "file:/home/nyop/.cache/lock-design-pkg/uwusuite-design-1.18.0.tgz",
     "lucide-react": "^1.78.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
