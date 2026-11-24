@@ -26,6 +26,8 @@ Fixes from an audit of the server and the web vault.
   again when it is taken at the start. A failed look at the certificate keeps the expiry known
   before. `settings set` takes plain text as well as JSON. The import from Vaultwarden notes a
   Send whose file is missing. The nightly job keeps its rhythm of 24 hours.
+- **Dependencies.** `lettre` 0.11.24 and `url` 2.5.9, for the advisories RUSTSEC-2026-0560 to
+  -0565 (SMTP) and RUSTSEC-2026-0592.
 
 ## 0.8.0-beta.6
 
