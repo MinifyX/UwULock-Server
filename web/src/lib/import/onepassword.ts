@@ -402,7 +402,7 @@ export function read1PasswordCsv(table: CsvTable, collector: Collector) {
     item.type = type;
     const login = item.login!;
     login.username = some(table.get(row, 'username'));
-    login.password = some(table.get(row, 'password'));
+    login.password = some(table.secret(row, 'password'));
     login.totp = some(table.get(row, 'otpauth', 'one-time password'));
     collector.uris(item, ...table.get(row, 'urls', 'url', 'website').split(/\r?\n/));
     item.favorite = ['true', '1', 'yes'].includes(table.get(row, 'favorite').toLowerCase());

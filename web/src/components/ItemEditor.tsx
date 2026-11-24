@@ -495,7 +495,7 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
     setBusy(true);
     setError(null);
     try {
-      const draft = draftOf(form, kind);
+      const draft = { ...draftOf(form, kind), revisionDate: summary?.revisionDate ?? null };
       // Only the reminder changed: the item itself stays as it is (no new revision, no version).
       const onlyReminder =
         Boolean(id) &&

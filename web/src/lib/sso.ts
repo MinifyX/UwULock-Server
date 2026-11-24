@@ -189,7 +189,13 @@ export async function pairSso(url: string, code: string, password: string) {
   const masterPasswordHash = await passwordHash(password);
   return request<SsoSettings>(`${base}/sso/pair`, { body: { url, code, masterPasswordHash } });
 }
-export const unpairSso = () => request<SsoSettings>(`${base}/sso/pairing`, { method: 'DELETE' });
+export async function unpairSso(password: string) {
+  const masterPasswordHash = await passwordHash(password);
+  return request<SsoSettings>(`${base}/sso/pairing`, {
+    method: 'DELETE',
+    body: { masterPasswordHash },
+  });
+}
 /** A new SCIM token; it takes the admin's master password. */
 export async function newScimToken(password: string) {
   const masterPasswordHash = await passwordHash(password);

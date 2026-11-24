@@ -356,6 +356,8 @@ function SendEditor({
   const [expires, setExpires] = useState<number | 0>(
     send?.expirationDate ? daysUntil(send.expirationDate) : 0,
   );
+  // The selects only snap to their days: an edit keeps the Send's own dates unless they are touched.
+  const [datesTouched, setDatesTouched] = useState(false);
   const [disabled, setDisabled] = useState(send?.disabled ?? false);
   const [hideEmail, setHideEmail] = useState(send?.hideEmail ?? false);
   const [access, setAccess] = useState<0 | 1 | 2>(send?.authType ?? 2);
@@ -392,8 +394,12 @@ function SendEditor({
       authType: access,
       emails: access === 0 ? addresses : [],
       maxAccessCount: maxAccess ? Math.max(1, Number(maxAccess)) : null,
-      expirationDate: expires ? inDays(Math.min(expires, deletion)) : null,
-      deletionDate: inDays(deletion),
+      ...(send?.deletionDate && !datesTouched
+        ? { expirationDate: send.expirationDate, deletionDate: send.deletionDate }
+        : {
+            expirationDate: expires ? inDays(Math.min(expires, deletion)) : null,
+            deletionDate: inDays(deletion),
+          }),
       disabled,
       hideEmail,
     };
@@ -507,7 +513,10 @@ function SendEditor({
             <select
               className="select"
               value={deletion}
-              onChange={(e) => setDeletion(Number(e.target.value))}
+              onChange={(e) => {
+                setDeletion(Number(e.target.value));
+                setDatesTouched(true);
+              }}
             >
               {DAYS.map((n) => (
                 <option key={n} value={n}>
@@ -521,7 +530,10 @@ function SendEditor({
             <select
               className="select"
               value={expires}
-              onChange={(e) => setExpires(Number(e.target.value))}
+              onChange={(e) => {
+                setExpires(Number(e.target.value));
+                setDatesTouched(true);
+              }}
             >
               <option value={0}>{t('Nie (bis zum Löschen)')}</option>
               {DAYS.map((n) => (

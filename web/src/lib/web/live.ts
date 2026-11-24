@@ -176,6 +176,8 @@ let wanted = false;
 let failures = 0;
 let retry: number | undefined;
 let settle: number | undefined;
+/** The connection dropped: what came while it was gone, only a sync brings. */
+let dropped = false;
 
 function handle(update: Update) {
   // What this browser did itself, it knows already.
@@ -208,7 +210,11 @@ async function connect() {
   const ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
   socket = ws;
-  ws.onopen = () => ws.send('{"protocol":"messagepack","version":1}\u001e');
+  ws.onopen = () => {
+    ws.send('{"protocol":"messagepack","version":1}\u001e');
+    if (dropped) emit('hub-sync');
+    dropped = false;
+  };
   ws.onmessage = (event: MessageEvent) => {
     if (!(event.data instanceof ArrayBuffer)) return;
     failures = 0;
@@ -217,6 +223,7 @@ async function connect() {
   ws.onclose = () => {
     if (socket === ws) socket = null;
     if (!wanted) return;
+    dropped = true;
     const delay = Math.min(60_000, 1000 * 2 ** failures++) + Math.random() * 1000;
     retry = window.setTimeout(() => void connect(), delay);
   };
@@ -235,6 +242,7 @@ export function stopLive() {
   window.clearTimeout(retry);
   window.clearTimeout(settle);
   failures = 0;
+  dropped = false;
   socket?.close();
   socket = null;
 }

@@ -260,7 +260,7 @@ export function readKeepassCsv(table: CsvTable, collector: Collector) {
   for (const row of table.rows) {
     const item = collector.login(table.get(row, 'Title', 'Account'));
     item.login.username = some(table.get(row, 'Username', 'Login Name'));
-    item.login.password = some(table.get(row, 'Password'));
+    item.login.password = some(table.secret(row, 'Password'));
     collector.uris(item, table.get(row, 'URL', 'Web Site'));
     collector.appendNote(item, table.get(row, 'Notes', 'Comments'));
     const totp = table.get(row, 'TOTP');

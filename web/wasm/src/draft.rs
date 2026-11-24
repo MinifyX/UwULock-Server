@@ -38,6 +38,10 @@ pub struct Draft {
     ssh_key: Option<SshKeyDraft>,
     #[serde(default)]
     fields: Vec<FieldDraft>,
+    /// The item's revision date when the editor opened it: the server refuses the save when the
+    /// item changed since, instead of the stale editor overwriting the newer change.
+    #[serde(default)]
+    revision_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +227,9 @@ pub fn seal(unlocked: &Unlocked, id: &str, draft: Draft, now: &str) -> Result<Ci
     if item.kind != draft.kind {
         return Err(Failure::new("invalid", "An item keeps its kind."));
     }
+    if !id.is_empty() && draft.revision_date.is_some() {
+        item.revision_date = draft.revision_date.clone();
+    }
     apply(&mut item, draft, now)?;
     item.can_save()?;
     let outer = unlocked.vault.outer_key(item.organization_id.as_deref(), &unlocked.user_key)?;
@@ -271,4 +278,26 @@ pub fn seal_password(unlocked: &Unlocked, id: &str, password: String, now: &str)
     item.can_save()?;
     let outer = unlocked.vault.outer_key(item.organization_id.as_deref(), &unlocked.user_key)?;
     Ok(item.seal(outer)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_save_carries_the_revision_the_editor_opened() {
+        let unlocked = crate::comfort::tests::unlocked();
+        let draft = |revision: Option<&str>| -> Draft {
+            serde_json::from_value(serde_json::json!({
+                "kind": "login", "name": "Bank", "fields": [], "revisionDate": revision,
+                "login": { "uris": [] },
+            }))
+            .unwrap()
+        };
+        let opened = "2026-01-02T03:04:05.000Z";
+        let sealed = serde_json::to_value(seal(&unlocked, "c1", draft(Some(opened)), opened).unwrap()).unwrap();
+        assert_eq!(sealed["lastKnownRevisionDate"], opened);
+        let sealed = serde_json::to_value(seal(&unlocked, "c1", draft(None), opened).unwrap()).unwrap();
+        assert!(sealed["lastKnownRevisionDate"].is_null());
+    }
 }

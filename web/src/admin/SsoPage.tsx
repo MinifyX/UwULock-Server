@@ -7,7 +7,6 @@ import {
   DangerZone,
   Field,
   FormRow,
-  Modal,
   Section,
   Select,
   SettingRow,
@@ -238,10 +237,10 @@ export function SsoProviderTab() {
       return t('Mit UwUAuth gekoppelt ✧ Probier die Anmeldung in einem privaten Fenster aus.');
     });
 
-  const unpair = () =>
+  const unpair = (password: string) =>
     run(async () => {
       const manage = current.paired?.manageUrl;
-      loaded(await unpairSso());
+      loaded(await unpairSso(password));
       return manage
         ? t('Entkoppelt. Die App in UwUAuth löschst du dort: {url}', { url: manage })
         : t('Entkoppelt.');
@@ -400,34 +399,19 @@ export function SsoProviderTab() {
         />
       )}
       {unpairing && (
-        <Modal
+        <PasswordPrompt
           title={t('Von UwUAuth entkoppeln?')}
           tone="warning"
+          lead={t(
+            'Danach meldet sich niemand mehr über UwUAuth an, bis du wieder koppelst oder einen Anbieter von Hand einträgst. Konten und Tresore bleiben.',
+          )}
+          confirm={t('Entkoppeln')}
           onCancel={() => setUnpairing(false)}
-          footer={
-            <>
-              <span className="spacer" />
-              <Button data-autofocus data-secondary onClick={() => setUnpairing(false)}>
-                {t('Abbrechen')}
-              </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setUnpairing(false);
-                  void unpair();
-                }}
-              >
-                {t('Entkoppeln')}
-              </Button>
-            </>
-          }
-        >
-          <p className="dialog-lead">
-            {t(
-              'Danach meldet sich niemand mehr über UwUAuth an, bis du wieder koppelst oder einen Anbieter von Hand einträgst. Konten und Tresore bleiben.',
-            )}
-          </p>
-        </Modal>
+          action={async (password) => {
+            setUnpairing(false);
+            await unpair(password);
+          }}
+        />
       )}
     </>
   );

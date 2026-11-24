@@ -501,6 +501,10 @@ fn read_csv(text: &str) -> Result<Read> {
             .filter(|cell| !cell.is_empty())
             .map(str::to_string)
     };
+    // Untrimmed: a password may start or end with a space.
+    let get_secret = |row: &[String], name: &str| {
+        column(name).and_then(|index| row.get(index)).filter(|cell| !cell.trim().is_empty()).cloned()
+    };
     // The columns an export guards against spreadsheets with a `'`.
     let get_text = |row: &[String], name: &str| get(row, name).map(formula_back);
     let mut items = Vec::new();
@@ -524,7 +528,7 @@ fn read_csv(text: &str) -> Result<Read> {
         item.reprompt = get(&row, "reprompt").as_deref() == Some("1");
         if let Some(login) = item.login.as_mut() {
             login.username = get(&row, "login_username").map(Zeroizing::new);
-            login.password = get(&row, "login_password").map(Zeroizing::new);
+            login.password = get_secret(&row, "login_password").map(Zeroizing::new);
             login.totp = get(&row, "login_totp").map(Zeroizing::new);
             login.uris = get_text(&row, "login_uri")
                 .map(|uris| {
@@ -581,7 +585,7 @@ mod tests {
     #[test]
     fn a_bitwarden_csv_reads() {
         let csv = "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n\
-                   Arbeit,1,login,Router,,\"pin: 1234\",0,\"https://a.example.com,https://b.example.com\",admin,hunter2,\n\
+                   Arbeit,1,login,Router,,\"pin: 1234\",0,\"https://a.example.com,https://b.example.com\",admin, pw ,\n\
                    ,,note,Notiz,geheim,,0,,,,\n";
         let (items, folders, in_folder) = read_csv(csv).unwrap();
         assert_eq!(items.len(), 2);
@@ -591,6 +595,11 @@ mod tests {
         assert!(router.favorite);
         assert_eq!(router.login.as_ref().unwrap().uris.len(), 2);
         assert_eq!(router.fields[0].value.as_ref().unwrap().as_str(), "1234");
+        assert_eq!(
+            router.login.as_ref().unwrap().password.as_ref().unwrap().as_str(),
+            " pw ",
+            "a password keeps its spaces"
+        );
         assert_eq!(items[1].kind, ItemKind::Note);
     }
 
