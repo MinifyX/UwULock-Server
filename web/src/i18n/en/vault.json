@@ -40,7 +40,6 @@
   "{label} zeigen": "Show {label}",
   "{label} verbergen": "Hide {label}",
   "Zeigen": "Show",
-  "Verbergen": "Hide",
   "Einmal-Code (TOTP)": "One-time code (TOTP)",
   "Code": "Code",
   "Master-Passwort erforderlich": "Master password required",

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Button, ICONS, IconButton, SettingRow } from '@uwusuite/design';
 import { secret } from '../../lib/account';
 import { vaultItems } from '../../lib/api';
 import { useFeature } from '../../lib/branding';
@@ -28,9 +29,8 @@ import {
 } from '../../lib/masked';
 import { go } from '../../lib/route';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { Modal } from '../Modal';
-import { PasswordPrompt, Row } from './controls';
+import { PasswordPrompt } from './controls';
 import { EmptyNote } from '../NyuStates';
 
 /** Why connecting did not work, from the way back (`?result=error&reason=…`). */
@@ -150,12 +150,12 @@ export function NewMaskedDialog({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={busy} onClick={() => void submit()}>
+          </Button>
+          <Button variant="primary" disabled={busy} onClick={() => void submit()}>
             {busy ? t('Einen Moment …') : t('Anlegen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -277,7 +277,7 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
           </p>
         ) : (
           <>
-            <Row
+            <SettingRow
               label={t('UwUMail-Server')}
               description={t(
                 'Du meldest dich dort an und erlaubst UwULock, maskierte Adressen anzulegen. Deine Mails lesen oder senden kann UwULock damit nicht.',
@@ -299,26 +299,26 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
               ) : (
                 <span className="setting-value">{serverName(chosenServer) || chosenServer}</span>
               )}
-            </Row>
-            <Row
+            </SettingRow>
+            <SettingRow
               label={t('Verbinden')}
               description={t(
                 'Du kommst danach hierher zurück und entsperrst den Tresor noch einmal.',
               )}
             >
-              <button
-                className="primary"
+              <Button
+                variant="primary"
                 disabled={busy || !chosenServer}
                 onClick={() => void connect(chosenServer)}
               >
                 {busy ? t('Einen Moment …') : t('Mit UwUMail verbinden')}
-              </button>
-            </Row>
+              </Button>
+            </SettingRow>
           </>
         )
       ) : (
         <>
-          <Row
+          <SettingRow
             label={t('Verbunden mit')}
             description={[
               connection.server,
@@ -331,24 +331,24 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
               .join(' · ')}
           >
             <span className="setting-value">{connection.username}</span>
-          </Row>
+          </SettingRow>
           {connection.status === 'revoked' ? (
-            <Row
+            <SettingRow
               label={t('Zustand')}
               description={t(
                 'UwUMail hat die Verbindung beendet – etwa, weil sie dort abgemeldet wurde. Verbinde dich neu, um wieder Adressen anzulegen.',
               )}
             >
-              <button
-                className="primary"
+              <Button
+                variant="primary"
                 disabled={busy || !connection.server}
                 onClick={() => void connect(connection.server ?? '')}
               >
                 {t('Neu verbinden')}
-              </button>
-            </Row>
+              </Button>
+            </SettingRow>
           ) : (
-            <Row
+            <SettingRow
               label={t('Zustand')}
               description={
                 connection.status === 'unreachable'
@@ -359,9 +359,9 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
               <span className="setting-value">
                 {connection.status === 'unreachable' ? t('Nicht erreichbar') : t('Verbunden ✧')}
               </span>
-            </Row>
+            </SettingRow>
           )}
-          <Row
+          <SettingRow
             label={t('Domains')}
             description={
               connection.defaultDomain
@@ -372,17 +372,21 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
             }
           >
             <span className="setting-value">{(connection.domains ?? []).join(', ')}</span>
-          </Row>
-          <Row
+          </SettingRow>
+          <SettingRow
             label={t('Trennen')}
             description={t(
               'Die Adressen bleiben bei UwUMail und bekommen weiter Mails; UwULock legt nur keine neuen mehr an.',
             )}
           >
-            <button className="quiet danger-text" onClick={() => setDialog({ kind: 'disconnect' })}>
+            <Button
+              variant="ghost"
+              className="text-danger-ink!"
+              onClick={() => setDialog({ kind: 'disconnect' })}
+            >
               {t('Trennen …')}
-            </button>
-          </Row>
+            </Button>
+          </SettingRow>
 
           <Addresses
             connection={connection}
@@ -405,11 +409,11 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary disabled={busy} onClick={() => setDialog(null)}>
+              <Button data-secondary disabled={busy} onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 disabled={busy}
                 onClick={async () => {
                   setBusy(true);
@@ -426,7 +430,7 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
                 }}
               >
                 {t('Trennen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -520,14 +524,14 @@ function Addresses({
           </label>
         )}
         <span className="spacer" />
-        <button
-          className="primary"
+        <Button
+          icon={ICONS.add}
+          variant="primary"
           onClick={() => setDialog({ kind: 'new' })}
           disabled={connection.status === 'revoked'}
         >
-          <Icon name="plus" size={15} />
           {t('Neue Adresse …')}
-        </button>
+        </Button>
       </div>
       {error && (
         <p className="notice" data-tone="error" role="alert">
@@ -550,14 +554,11 @@ function Addresses({
                   <span className="chip">{t(STATE_LABEL[address.state] ?? address.state)}</span>
                   <span className="spacer" />
                   {!gone && (
-                    <button
-                      className="icon-button"
-                      title={t('Kopieren')}
-                      aria-label={t('{label} kopieren', { label: address.email })}
+                    <IconButton
+                      icon={ICONS.copy}
+                      label={t('{label} kopieren', { label: address.email })}
                       onClick={() => void copy(address.email)}
-                    >
-                      <Icon name="copy" size={15} />
-                    </button>
+                    />
                   )}
                 </div>
                 <p className="channel-status">
@@ -574,20 +575,20 @@ function Addresses({
                 {!gone && (
                   <div className="form-actions">
                     {address.cipherId && (
-                      <button
-                        className="quiet"
+                      <Button
+                        icon={ICONS.secret}
+                        variant="ghost"
                         onClick={() => onOpenItem(address.cipherId ?? '')}
                         disabled={!itemName}
                       >
-                        <Icon name="key" size={15} />
                         {itemName
                           ? t('Eintrag: {name}', { name: itemName || t('(ohne Namen)') })
                           : t('Eintrag nicht im Tresor')}
-                      </button>
+                      </Button>
                     )}
                     <span className="spacer" />
                     {address.state === 'enabled' ? (
-                      <button
+                      <Button
                         disabled={busy === address.id}
                         onClick={() =>
                           void act(
@@ -600,9 +601,9 @@ function Addresses({
                         }
                       >
                         {t('Abschalten')}
-                      </button>
+                      </Button>
                     ) : (
-                      <button
+                      <Button
                         disabled={busy === address.id}
                         onClick={() =>
                           void act(
@@ -613,15 +614,16 @@ function Addresses({
                         }
                       >
                         {t('Einschalten')}
-                      </button>
+                      </Button>
                     )}
-                    <button
-                      className="quiet danger-text"
+                    <Button
+                      variant="ghost"
+                      className="text-danger-ink!"
                       disabled={busy === address.id}
                       onClick={() => setDialog({ kind: 'delete', address })}
                     >
                       {t('Löschen …')}
-                    </button>
+                    </Button>
                   </div>
                 )}
               </li>
@@ -650,18 +652,18 @@ function Addresses({
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   setDialog(null);
                   void act(deleting, () => deleteMasked(deleting.id), t('Gelöscht.'));
                 }}
               >
                 {t('Endgültig löschen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -715,31 +717,27 @@ function ApiKeys({
           <span>{t('addy.io: Self-host server URL')}</span>
           <div className="copy-field">
             <code className="mono">{urls.addy}</code>
-            <button
-              className="icon-button"
-              aria-label={t('{label} kopieren', { label: 'addy.io URL' })}
+            <IconButton
+              icon={ICONS.copy}
+              label={t('{label} kopieren', { label: 'addy.io URL' })}
               onClick={() => void copy(urls.addy)}
-            >
-              <Icon name="copy" size={15} />
-            </button>
+            />
           </div>
         </div>
         <div className="field">
           <span>{t('SimpleLogin: Self-host server URL')}</span>
           <div className="copy-field">
             <code className="mono">{urls.simpleLogin}</code>
-            <button
-              className="icon-button"
-              aria-label={t('{label} kopieren', { label: 'SimpleLogin URL' })}
+            <IconButton
+              icon={ICONS.copy}
+              label={t('{label} kopieren', { label: 'SimpleLogin URL' })}
               onClick={() => void copy(urls.simpleLogin)}
-            >
-              <Icon name="copy" size={15} />
-            </button>
+            />
           </div>
         </div>
       </div>
       {keys.map((key) => (
-        <Row
+        <SettingRow
           key={key.id}
           label={key.name}
           description={[
@@ -750,24 +748,25 @@ function ApiKeys({
               : t('Noch nie benutzt.'),
           ].join(' · ')}
         >
-          <button
-            className="quiet danger-text"
+          <Button
+            variant="ghost"
+            className="text-danger-ink!"
             onClick={() => setDialog({ kind: 'delete-key', key })}
           >
             {t('Löschen …')}
             <span className="sr-only">{key.name}</span>
-          </button>
-        </Row>
+          </Button>
+        </SettingRow>
       ))}
-      <Row label={t('Schlüssel erstellen')} description={t('Bis zu zehn, einer pro App.')}>
-        <button
-          className="primary"
+      <SettingRow label={t('Schlüssel erstellen')} description={t('Bis zu zehn, einer pro App.')}>
+        <Button
+          variant="primary"
           disabled={keys.length >= 10}
           onClick={() => setDialog({ kind: 'new-key' })}
         >
           {t('Erstellen …')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
 
       {dialog?.kind === 'new-key' && (
         <PasswordPrompt
@@ -809,9 +808,9 @@ function ApiKeys({
           footer={
             <>
               <span className="spacer" />
-              <button className="primary" data-autofocus onClick={() => setMade(null)}>
+              <Button variant="primary" data-autofocus onClick={() => setMade(null)}>
                 {t('Fertig')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -825,13 +824,11 @@ function ApiKeys({
               <span>{t('API-Schlüssel')}</span>
               <div className="copy-field">
                 <code className="mono">{made.key}</code>
-                <button
-                  className="icon-button"
-                  aria-label={t('{label} kopieren', { label: t('API-Schlüssel') })}
+                <IconButton
+                  icon={ICONS.copy}
+                  label={t('{label} kopieren', { label: t('API-Schlüssel') })}
                   onClick={() => void copy(made.key ?? '')}
-                >
-                  <Icon name="copy" size={15} />
-                </button>
+                />
               </div>
             </div>
           </div>
@@ -845,11 +842,11 @@ function ApiKeys({
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   const target = dialog.key;
                   setDialog(null);
@@ -863,7 +860,7 @@ function ApiKeys({
                 }}
               >
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >

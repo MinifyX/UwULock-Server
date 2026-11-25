@@ -1,107 +1,56 @@
 # UI building blocks
 
-The web vault and the admin portal are built from one set of components in
-`web/src/components/ui/` (imported from `'../ui'` or `'./ui'`). Their styles live in
-`web/src/styles/ui.css`, their sizes and gaps in `web/src/styles/tokens.css`. A view adds layout
-(where things go) in its own CSS, never its own button, field, card or heading look.
+The web vault, the admin portal and the public pages (Send, file request, register) are built on
+[`@uwusuite/design`](https://github.com/MinifyX/UwUSuite-Design): its tokens, fonts, base styles
+and motion come in through `web/src/styles/index.css` (Tailwind v4), its components (`Button`,
+`IconButton`, `Icon`/`ICONS`, `Dialog`, `Toaster`, `Segmented`, `Switch`, `Card`, `Section`,
+`SettingRow`, `Tabs`, `Tag`/`Badge`, `StatTile`, `NavIndicator`, Nyu …) are imported straight from
+the package. Their props and rules are in the package docs:
+[components](https://github.com/MinifyX/UwUSuite-Design/blob/main/docs/components.md),
+[icons](https://github.com/MinifyX/UwUSuite-Design/blob/main/docs/icons.md),
+[motion](https://github.com/MinifyX/UwUSuite-Design/blob/main/docs/motion.md),
+[Nyu](https://github.com/MinifyX/UwUSuite-Design/blob/main/docs/nyu.md),
+[typography](https://github.com/MinifyX/UwUSuite-Design/blob/main/docs/typography.md).
+A shared look or a new icon meaning goes into the package first, never into this app.
 
-## Tokens
+The view CSS (`web/src/styles/*.css`, in the `components` layer) only places things; colours,
+type and radii come from the package tokens.
 
-| What | Tokens |
+## What this app adds
+
+`web/src/components/ui/` holds what only this app has:
+
+| Component | Notes |
 |---|---|
-| Spacing (a 4 px scale) | `--uwu-space-1` 4 · `-2` 8 · `-3` 12 · `-4` 16 · `-5` 20 · `-6` 24 · `-8` 32 · `-10` 40 |
-| Type | `--uwu-text-xs` 11 · `-sm` 12.5 (labels, hints) · `-md` 13 (descriptions) · `-base` 14 (body) · `-lg` 18 · `-xl` 22; `--uwu-leading` 1.5, `--uwu-leading-tight` 1.3 |
-| Radius | `--uwu-radius-small` 8 · `-control` 10 · `-card` 16 · `-pill` |
-| Controls | `--uwu-control-height` 36 (fields, selects and buttons alike) · `-small` 30 · `--uwu-icon-button` 28 · `-small` 24 (never less, WCAG 2.5.8) |
-| Layout | `--uwu-label-gap` 6 · `--uwu-form-gap` 16 · `--uwu-card-pad-x` 16 / `-y` 12 · `--uwu-section-gap` 24 · `--uwu-dialog-pad` 24 |
-| Shadows | `--uwu-shadow-float` (dialogs) · `--uwu-shadow-menu` (menus) |
+| `Field`, `TextField`, `Select` | A labelled control with up to three `tools` (IconButtons) inside it, `hint`/`hintTone="warn"`, `error` (sets `aria-invalid`), `hideLabel`. |
+| `Checkbox`, `FormRow`, `FieldGroup`, `RepeatRow` | Check boxes, fields side by side (`min` 120/180/240 px), groups of fields, repeated rows. |
+| `ButtonRow`, `Table`, `DangerZone` | Wrapping buttons; a table that scrolls sideways on a phone; what cannot be undone, framed apart. |
+| `Callout` | The package `Hint` with an icon, a title and actions (`tone` info/accent/ok/warning/error; `error` is announced). |
+| `Modal` | The package `Dialog` with this app's rules: no closing by a click beside it, focus on `[data-autofocus]` or the first safe control (`data-secondary` marks the risky ones), focus back on close. Footer: `<span className="spacer" />`, the safe choice, then the main one. |
+| `radioArrows`, `radioTab` | Arrow keys and the Tab stop for hand-made radio groups (the font picker). |
 
-A value that is not on these scales needs a reason in a comment.
+Also local: `TitleBar` (the web bar; the package one needs window controls), `ContextMenu`,
+`PasswordInput`, `TotpCodes`, `FontPicker` and the Nyu scenes (`components/nyu/`).
 
-## Components
+## Password manager rule
 
-| Component | Props | Notes |
-|---|---|---|
-| `Button` | `variant?: 'default' \| 'primary' \| 'danger' \| 'quiet' \| 'quiet-danger'`, `size?: 'default' \| 'small'`, `icon?: IconName`, button attributes | `type="button"` unless told otherwise. One `primary` per view. |
-| `IconButton` | `label`, `icon`, `size?: 'default' \| 'small'`, button attributes | `label` is the accessible name and the tooltip. |
-| `Field` | `label`, `hint?`, `hintTone?: 'default' \| 'warn'`, `error?`, `tools?`, `hideLabel?`, one control as child | Gives the control its id, `aria-describedby` and `aria-invalid`. `tools` (up to three IconButtons) sit inside the control, at its end. |
-| `TextField` | `label`, `value`, `onChange(value)`, `hint?`, `error?`, `tools?`, `mono?`, input attributes | A Field around an input. |
-| `Select` | `value`, `options: {value, label}[]`, `onChange(value)`, `label?`, `disabled?`, `id?` | Wrap in a Field for a visible label. |
-| `Checkbox` | `label`, `checked`, `onChange(checked)`, `disabled?` | Several in a `<div className="checks">`. Every `input[type=checkbox]` looks the same (below). |
-| `Toggle` | `label`, `checked`, `onChange(checked)`, `disabled?` | A switch; the row beside it says what it does. |
-| `Segmented` | `label`, `value`, `options: {value, label}[]`, `onChange(value)`, `wide?` | A radio group with arrow keys. |
-| `FormRow` | `min?: 'narrow' \| 'default' \| 'wide'` (120/180/240 px) | Fields side by side as they fit, stacked on a phone. |
-| `FieldGroup` | `title`, `description?`, `actions?` | A group of fields under a small heading, with its "add" buttons below. |
-| `RepeatRow` | `aux?: 'wide' \| 'narrow'` | A repeated row: main control, optional second one, remove button. |
-| `Card` | `heading?`, `aside?`, `as?: 'section' \| 'div' \| 'li' \| 'article'` | A framed block with an optional head. |
-| `Section` | `heading?`, `lead?` | A part of a page or settings section, with the shared small heading. |
-| `SettingRow` | `label`, `description?`, children = the control | The control wraps below the text on a phone. |
-| `ButtonRow` | `end?` | Buttons side by side that wrap. |
-| `Tabs` | `label`, `tabs: {id, label, extra?, disabled?}[]`, `value`, `onChange(id)`, `variant?: 'line' \| 'segmented'`, `idPrefix?` | Arrow keys, Home and End; roving tab stop. With `idPrefix` (from `useTabsId()`), `TabPanel` names its tab. |
-| `TabPanel` | `idPrefix`, `tab`, `className?` | The picked tab's content. |
-| `Badge` | `tone?: 'accent' \| 'ok' \| 'alarm' \| 'neutral'`, `label?` | A count or a state on a pill; `label` explains a bare number. |
-| `Callout` | `tone?: 'info' \| 'accent' \| 'ok' \| 'warning' \| 'error'`, `title?`, `icon?: IconName \| null`, `actions?` | A notice in a page or dialog; `error` is announced. |
-| `Table` | `label?`, `head` (the `<th>`s), rows as children | Scrolls sideways inside its frame on a phone; the frame then takes the keyboard focus. |
-| `DangerZone` | `heading`, `lead?` | What cannot be undone (deleting, restoring, strict rules), framed apart at the end of a page. Its buttons still ask first. |
-| `TotpCodes` | `code: TotpCode`, `onCopyNext?` | A one-time code with its countdown ring; in the last 10 seconds (`showNext`) the next code below it, small, with its own copy button. The item details and the Send page of an entry Send use it. |
-| `Modal` | `title`, `onCancel`, `footer?`, `size?: 'default' \| 'wide'`, `tone?: 'default' \| 'warning'`, `closable?` | Focus trap, Escape, scroll hairlines on the body. Footer: `<span className="spacer" />`, then the safe choice (`data-secondary`), then the primary one. |
+No value may look different from what it is: contextual alternates are off on fields, code and
+buttons (`font-variant-ligatures: no-contextual`) and secrets are set in the mono font.
 
-Plain classes for what needs no component: `.form` (a form's rows with even gaps),
-`.form-note`, `.form-error`, `.field-hint`, `.checks`, `.button-link`, `.settings-heading` and
-`.settings-lead`.
+## Theme and settings
 
-## Fonts
-
-*Appearance → Font* (per device, `font` in `uwulock.settings`; vault and admin portal alike):
-**UwU Sans** (the default, as in UwUMail), Manrope (UwULock's font before 0.8), Rubik, DM Sans or
-the system's. The picker shows each choice in itself. `applyAppearance` sets `--uwu-font`,
-`--uwu-tracking` and `data-font` on `<html>` (`web/src/lib/fonts.ts`); every file comes from this
-server (`font-src 'self'`), and the browser only fetches the one in use. UwU Sans is UwUMail's
-build (`brand/fonts/uwu-sans`, keep it byte-identical with UwUMail's copy); the licences (all SIL
-OFL 1.1) are in `THIRD-PARTY-NOTICES.txt`.
-
-UwU Sans has no ligatures: `:3` and `<3` stay as typed (until font version 1.100 they turned into
-Nyu and a heart). In a password manager no value may look different from what it is, so contextual
-alternates are still off for the whole page (`font-variant-ligatures: no-contextual`, again on
-fields, code and buttons): JetBrains Mono would join `->`, `!=` or `==` into one sign.
-
-## Checkboxes and switches
-
-Every `input[type=checkbox]` has UwUMail's look, in CSS only (`appearance: none`), so it stays a
-native checkbox for keyboards and screen readers: 18 px, 6 px corners, a 2 px border, pink with a
-check mark when ticked, a dash when mixed, the focus ring, a dimmed disabled state, high contrast
-(`data-contrast=high`) and the system's colours in Windows contrast themes; a small pop when
-ticked. `Toggle` is UwUMail's switch: 44 × 24, a thumb that slides, pink when on.
-
-## Nyu
-
-Nyu, the mascot (`web/src/components/nyu/`), is decoration everywhere (`aria-hidden`), and every
-animation of hers follows *Appearance → Animations* (`data-motion=reduced` on `<html>`, which also
-follows the system's wish for less motion). Scenes (`NyuScene`) show empty states — the vault,
-an empty trash (`tidy`), no Sends (`letter`), no file requests (`files`) — loading (`connecting`,
-only after a moment), unlocking (`keys`) and the password check (`search` while it runs, `done`
-when nothing was found). Toasts carry a small Nyu: starry-eyed for a toast ending in ✧ (copied,
-saved), happy for a note, sad for an error. Empty lists in the admin portal and the settings use
-`EmptyNote`, a small sleepy Nyu in front of the text.
-
-## Theme
-
-The web vault and the admin portal are one page with one set of settings (`web/src/lib/settings.ts`,
-kept under `uwulock.settings` in the browser): the theme is *Dark* by default, like every UwU
-app, and *System* follows `prefers-color-scheme`. Both pick it in their *Appearance* dialog, and a
-change in one tab reaches the other open tabs at once (the `storage` event). Every colour comes
-from the tokens, so a view looks right in both themes without its own rules; check light and dark
-with `scripts/e2e/local.sh theme`, which also runs axe over every admin page in the light theme.
-
-Menus that belong to a button (the account card's) open with `ContextMenu`'s `anchor`: above the
-button when there is room, else below, and never over it.
+Vault and admin portal share one set of settings (`web/src/lib/settings.ts`, `uwulock.settings`):
+theme (*Dark* by default, like every UwU app), contrast, motion and font go through the package's
+`applyAppearance`/`applyUiFont`; `/boot.js` (emitted by `web/vite.config.ts` from `bootScript`, external because
+the CSP allows no inline script) applies them before the first paint. Older stored font names fall
+back to UwU Sans. A change in one tab reaches the other open tabs (`storage` event). Check light,
+dark and the phone with `scripts/e2e/local.sh theme`.
 
 ## The admin portal
 
-The portal uses the vault's shell: the bar on top, the sidebar (`.nav-row`s, the account card at
-its foot) and a page with a title, a lead line and the area's `Tabs`. Its areas and tabs are one
-list in `web/src/admin/areas.ts` (with the redirects from the addresses before 0.6.0-beta.2, and
-the feature switches that hide a tab). Every setting is a `SettingRow` whose description says in
-plain words what it does; `Explain` (`web/src/admin/fields.tsx`) adds the recommended value as a
-green badge and `NumberInput` spells the unit out. The settings of all tabs are one draft
-(`web/src/admin/draft.tsx`): changed on any tab, the bar at the foot offers *Save* and *Discard*.
+The portal uses the vault's shell: the bar on top, the sidebar (`.nav-row`s with the package
+`NavIndicator`, the account card at its foot) and a page with a title, a lead line and the area's
+`Tabs`. Its areas and tabs are one list in `web/src/admin/areas.ts`. Every setting is a
+`SettingRow`; `Explain` (`web/src/admin/fields.tsx`) adds the recommended value and `NumberInput`
+spells the unit out. The settings of all tabs are one draft (`web/src/admin/draft.tsx`): changed on
+any tab, the bar at the foot offers *Save* and *Discard*.

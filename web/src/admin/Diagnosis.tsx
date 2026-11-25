@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Icon, type IconName } from '../components/Icon';
-import { Badge, Button, ButtonRow, Callout, Modal, Section, type Tone } from '../components/ui';
+import { Button, Icon, ICONS, Section, Tag, type TagTone } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
+import { ButtonRow, Callout, Modal } from '../components/ui';
 import {
   checkUpload,
   checkWebSocket,
@@ -38,11 +39,11 @@ function titleOf(id: string): string {
   return family ? `${t(family)} (${rest.join('.')})` : id;
 }
 
-const STATUS: Record<CheckStatus, { label: string; icon: IconName; tone: Tone }> = {
-  ok: { label: N_('in Ordnung'), icon: 'check', tone: 'ok' },
-  warning: { label: N_('Warnung'), icon: 'warning', tone: 'alarm' },
-  error: { label: N_('Fehler'), icon: 'close', tone: 'alarm' },
-  skipped: { label: N_('übersprungen'), icon: 'more', tone: 'neutral' },
+const STATUS: Record<CheckStatus, { label: string; icon: LucideIcon; tone: TagTone }> = {
+  ok: { label: N_('in Ordnung'), icon: ICONS.done, tone: 'success' },
+  warning: { label: N_('Warnung'), icon: ICONS.warning, tone: 'warning' },
+  error: { label: N_('Fehler'), icon: ICONS.close, tone: 'warning' },
+  skipped: { label: N_('übersprungen'), icon: ICONS.more, tone: 'neutral' },
 };
 
 /**
@@ -92,7 +93,7 @@ export function Diagnosis() {
   return (
     <>
       <Section
-        heading={t('Ist alles richtig eingerichtet?')}
+        title={t('Ist alles richtig eingerichtet?')}
         lead={t(
           'Prüft Zertifikat, Uhrzeit, Mail, Backups, Speicherplatz und den Proxy davor. WebSockets und große Uploads prüft dieser Browser gegen den eigenen Server. Nach jedem Update läuft die Diagnose von selbst; das Ergebnis steht dann hier.',
         )}
@@ -172,10 +173,10 @@ function CheckCard({ check }: { check: Check }) {
       <div className="card-head">
         <h3 className="card-heading">{titleOf(check.id)}</h3>
         <span className="spacer" />
-        <Badge tone={status.tone}>
-          <Icon name={status.icon} size={13} />
+        <Tag tone={status.tone} className="gap-1">
+          <Icon icon={status.icon} size="xs" />
           {t(status.label)}
-        </Badge>
+        </Tag>
       </div>
       <p className="check-summary">{check.summary}</p>
       {check.detail && <p className="check-detail">{check.detail}</p>}
@@ -198,9 +199,9 @@ function Snippet({ name, text }: { name: string; text: string }) {
       <div className="snippet-head">
         <span>{name}</span>
         <Button
-          size="small"
-          variant="quiet"
-          icon="copy"
+          size="sm"
+          variant="ghost"
+          icon={ICONS.copy}
           onClick={() =>
             void navigator.clipboard.writeText(text).then(() => toast(t('Kopiert ✧'), 'info'))
           }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Button, SettingRow } from '@uwusuite/design';
 import { renderSVG } from 'uqr';
 import { type Status } from '../../lib/api';
 import {
@@ -16,7 +17,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import { PasswordPrompt, Row } from './controls';
+import { PasswordPrompt } from './controls';
 import {
   addSecurityKey,
   removeSecurityKey,
@@ -68,7 +69,7 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
           )}
         </p>
       )}
-      <Row
+      <SettingRow
         label={t('Authenticator-App')}
         description={
           on(AUTHENTICATOR)
@@ -77,24 +78,24 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
         }
       >
         {on(AUTHENTICATOR) ? (
-          <button
-            className="danger"
+          <Button
+            variant="danger"
             onClick={() => setDialog({ disable: AUTHENTICATOR })}
             disabled={travelling}
           >
             {t('Ausschalten …')}
-          </button>
+          </Button>
         ) : (
-          <button
-            className="primary"
+          <Button
+            variant="primary"
             onClick={() => setDialog('authenticator')}
             disabled={travelling}
           >
             {t('Einrichten …')}
-          </button>
+          </Button>
         )}
-      </Row>
-      <Row
+      </SettingRow>
+      <SettingRow
         label={t('Codes per Mail')}
         description={
           on(EMAIL)
@@ -105,20 +106,20 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
         }
       >
         {on(EMAIL) ? (
-          <button
-            className="danger"
+          <Button
+            variant="danger"
             onClick={() => setDialog({ disable: EMAIL })}
             disabled={travelling}
           >
             {t('Ausschalten …')}
-          </button>
+          </Button>
         ) : (
-          <button onClick={() => setDialog('email')} disabled={!info?.mail || travelling}>
+          <Button onClick={() => setDialog('email')} disabled={!info?.mail || travelling}>
             {t('Einrichten …')}
-          </button>
+          </Button>
         )}
-      </Row>
-      <Row
+      </SettingRow>
+      <SettingRow
         label={t('Sicherheitsschlüssel')}
         description={
           on(WEBAUTHN)
@@ -128,23 +129,23 @@ export function TwoFactorSettings({ status, info, onInfo }: Props) {
               : t('Dieser Browser kann keine Sicherheitsschlüssel.')
         }
       >
-        <button onClick={() => setDialog('keys')} disabled={!available() || travelling}>
+        <Button onClick={() => setDialog('keys')} disabled={!available() || travelling}>
           {on(WEBAUTHN) ? t('Verwalten …') : t('Einrichten …')}
-        </button>
-      </Row>
-      <Row
+        </Button>
+      </SettingRow>
+      <SettingRow
         label={t('Wiederherstellungscode')}
         description={t(
           'Schaltet die Zwei-Schritt-Anmeldung aus, wenn du keinen Code mehr bekommst. Schreib ihn auf und heb ihn getrennt vom Rechner auf.',
         )}
       >
-        <button
+        <Button
           onClick={() => setDialog('recovery')}
           disabled={!info?.twoFactor.length || travelling}
         >
           {t('Anzeigen …')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
 
       {dialog === 'authenticator' && (
         <SetUpAuthenticator
@@ -222,12 +223,12 @@ function SetUpAuthenticator({
       footer={
         <>
           <span className="spacer" />
-          <button onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
+          </Button>
           {key ? (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || code.trim().length < 6}
               onClick={() =>
                 void run(async () => {
@@ -237,15 +238,15 @@ function SetUpAuthenticator({
               }
             >
               {t('Einschalten')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || !password}
               onClick={() => void run(async () => setKey((await authenticatorKey(password)).key))}
             >
               {t('Weiter')}
-            </button>
+            </Button>
           )}
         </>
       }
@@ -333,12 +334,12 @@ function SetUpEmail({
       footer={
         <>
           <span className="spacer" />
-          <button onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
+          </Button>
           {sent ? (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || !code.trim()}
               onClick={() =>
                 void run(async () => {
@@ -348,10 +349,10 @@ function SetUpEmail({
               }
             >
               {t('Einschalten')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || !password || !email.includes('@')}
               onClick={() =>
                 void run(async () => {
@@ -361,7 +362,7 @@ function SetUpEmail({
               }
             >
               {t('Code senden')}
-            </button>
+            </Button>
           )}
         </>
       }
@@ -431,9 +432,9 @@ function Recovery({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <span className="spacer" />
-          <button className="primary" data-autofocus onClick={onClose}>
+          <Button variant="primary" data-autofocus onClick={onClose}>
             {t('Fertig')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -494,23 +495,24 @@ function SecurityKeys({ onClose }: { onClose: () => void }) {
       footer={
         <>
           <span className="spacer" />
-          <button className="primary" onClick={onClose}>
+          <Button variant="primary" onClick={onClose}>
             {t('Fertig')}
-          </button>
+          </Button>
         </>
       }
     >
       <div className="form">
         {keys.map((key) => (
-          <Row key={key.id} label={key.name || t('Schlüssel {n}', { n: key.id })}>
-            <button
-              className="quiet danger-text"
+          <SettingRow key={key.id} label={key.name || t('Schlüssel {n}', { n: key.id })}>
+            <Button
+              variant="ghost"
+              className="text-danger-ink!"
               disabled={busy}
               onClick={() => void run(() => removeSecurityKey(key.id, password), t('Entfernt.'))}
             >
               {t('Entfernen')}
-            </button>
-          </Row>
+            </Button>
+          </SettingRow>
         ))}
         {free !== undefined && (
           <>
@@ -520,8 +522,8 @@ function SecurityKeys({ onClose }: { onClose: () => void }) {
             </label>
             <div className="form-actions">
               <span className="spacer" />
-              <button
-                className="primary"
+              <Button
+                variant="primary"
                 disabled={busy || !name.trim()}
                 onClick={() =>
                   void run(async () => {
@@ -531,7 +533,7 @@ function SecurityKeys({ onClose }: { onClose: () => void }) {
                 }
               >
                 {busy ? t('Berühre den Schlüssel …') : t('Schlüssel hinzufügen')}
-              </button>
+              </Button>
             </div>
           </>
         )}

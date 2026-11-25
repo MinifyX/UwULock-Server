@@ -14,6 +14,7 @@ import { logout, unlock, type Status } from '../../lib/api';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { forwardSso } from '../../lib/sso';
+import { Button } from '@uwusuite/design';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
 
@@ -121,13 +122,13 @@ export function SetPasswordScreen({ status, info, onDone }: Props) {
             </p>
           )}
           <div className="form-actions">
-            <button type="button" className="quiet" onClick={() => void logout()} disabled={busy}>
+            <Button variant="ghost" onClick={() => void logout()} disabled={busy}>
               {t('Abmelden')}
-            </button>
+            </Button>
             <span className="spacer" />
-            <button className="primary" type="submit" disabled={busy || !password || !again}>
+            <Button variant="primary" type="submit" disabled={busy || !password || !again}>
               {busy ? t('Nyu macht deine Schlüssel …') : t('Festlegen und öffnen')}
-            </button>
+            </Button>
           </div>
         </form>
       </section>

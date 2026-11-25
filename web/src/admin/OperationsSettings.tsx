@@ -1,19 +1,7 @@
+import { Button, IconButton, ICONS, Section, SettingRow, Switch } from '@uwusuite/design';
 import { useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
-import {
-  Button,
-  ButtonRow,
-  Callout,
-  Checkbox,
-  Field,
-  FormRow,
-  IconButton,
-  Section,
-  Select,
-  SettingRow,
-  TextField,
-  Toggle,
-} from '../components/ui';
+import { ButtonRow, Callout, Checkbox, Field, FormRow, Select, TextField } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import {
   fromLocalInput,
@@ -75,7 +63,7 @@ export function SignInTab() {
         return (
           <>
             <Section
-              heading={t('Zwei-Schritt-Anmeldung')}
+              title={t('Zwei-Schritt-Anmeldung')}
               lead={t(
                 'Außer dem Master-Passwort ein zweiter Nachweis: ein Code aus einer App, ein Sicherheitsschlüssel oder ein Passkey (2FA).',
               )}
@@ -90,39 +78,48 @@ export function SignInTab() {
                   </Explain>
                 }
               >
-                <Toggle
-                  label={t('Zwei-Schritt-Anmeldung verlangen')}
-                  checked={twoFactor.enabled}
-                  onChange={(enabled) => setPolicy(props, 'requireTwoFactor', { enabled })}
-                />
+                {({ id, describedBy }) => (
+                  <Switch
+                    id={id}
+                    describedBy={describedBy}
+                    checked={twoFactor.enabled}
+                    onChange={(enabled) => setPolicy(props, 'requireTwoFactor', { enabled })}
+                  />
+                )}
               </SettingRow>
               {twoFactor.enabled && (
                 <SettingRow
                   label={t('Stichtag')}
                   description={t('Leer: ab sofort. Die Zeit ist die dieses Browsers.')}
                 >
-                  <input
-                    className="select"
-                    type="datetime-local"
-                    aria-label={t('Stichtag')}
-                    value={localInput(twoFactor.deadline)}
-                    onChange={(e) =>
-                      setPolicy(props, 'requireTwoFactor', {
-                        deadline: fromLocalInput(e.target.value),
-                      })
-                    }
-                  />
+                  {({ id }) => (
+                    <input
+                      id={id}
+                      className="select"
+                      type="datetime-local"
+                      aria-label={t('Stichtag')}
+                      value={localInput(twoFactor.deadline)}
+                      onChange={(e) =>
+                        setPolicy(props, 'requireTwoFactor', {
+                          deadline: fromLocalInput(e.target.value),
+                        })
+                      }
+                    />
+                  )}
                 </SettingRow>
               )}
               <SettingRow
                 label={t('Geräte merken')}
                 description={t('„Auf diesem Gerät merken“ lässt den zweiten Schritt dort weg.')}
               >
-                <Toggle
-                  label={t('Geräte merken')}
-                  checked={draft.rememberTwoFactor}
-                  onChange={(rememberTwoFactor) => setDraft({ ...draft, rememberTwoFactor })}
-                />
+                {({ id, describedBy }) => (
+                  <Switch
+                    id={id}
+                    describedBy={describedBy}
+                    checked={draft.rememberTwoFactor}
+                    onChange={(rememberTwoFactor) => setDraft({ ...draft, rememberTwoFactor })}
+                  />
+                )}
               </SettingRow>
               {draft.rememberTwoFactor && (
                 <SettingRow
@@ -135,20 +132,25 @@ export function SignInTab() {
                     </Explain>
                   }
                 >
-                  <Select
-                    label={t('So lange merken')}
-                    value={String(draft.rememberTwoFactorDays ?? 90)}
-                    onChange={(days) => setDraft({ ...draft, rememberTwoFactorDays: Number(days) })}
-                    options={REMEMBER_DAYS.map(({ days, label }) => ({
-                      value: String(days),
-                      label: t(label),
-                    }))}
-                  />
+                  {({ id }) => (
+                    <Select
+                      id={id}
+                      label={t('So lange merken')}
+                      value={String(draft.rememberTwoFactorDays ?? 90)}
+                      onChange={(days) =>
+                        setDraft({ ...draft, rememberTwoFactorDays: Number(days) })
+                      }
+                      options={REMEMBER_DAYS.map(({ days, label }) => ({
+                        value: String(days),
+                        label: t(label),
+                      }))}
+                    />
+                  )}
                 </SettingRow>
               )}
             </Section>
             <Section
-              heading={t('Vergessenes Master-Passwort')}
+              title={t('Vergessenes Master-Passwort')}
               lead={t(
                 'Das Master-Passwort kennt nur sein Besitzer; niemand kann es zurücksetzen, auch kein Admin.',
               )}
@@ -159,11 +161,14 @@ export function SignInTab() {
                   'Jeder darf sich einen Hinweis zum Master-Passwort hinterlegen, der auf Wunsch per Mail kommt.',
                 )}
               >
-                <Toggle
-                  label={t('Passwort-Hinweise')}
-                  checked={draft.passwordHints}
-                  onChange={(passwordHints) => setDraft({ ...draft, passwordHints })}
-                />
+                {({ id, describedBy }) => (
+                  <Switch
+                    id={id}
+                    describedBy={describedBy}
+                    checked={draft.passwordHints}
+                    onChange={(passwordHints) => setDraft({ ...draft, passwordHints })}
+                  />
+                )}
               </SettingRow>
             </Section>
           </>
@@ -191,7 +196,7 @@ export function MasterPasswordTab() {
         return (
           <>
             <Section
-              heading={t('Länge und Stärke')}
+              title={t('Länge und Stärke')}
               lead={t(
                 'Prüfen der Web-Tresor und die Apps beim Registrieren und Ändern; der Server sieht das Passwort nie.',
               )}
@@ -219,15 +224,18 @@ export function MasterPasswordTab() {
                   'Wie schwer es zu erraten ist, als Stufe von 0 bis 4 (gemessen mit zxcvbn).',
                 )}
               >
-                <Select
-                  label={t('Stärke des Master-Passworts')}
-                  value={String(password.minComplexity)}
-                  onChange={(score) => setPassword({ minComplexity: Number(score) })}
-                  options={COMPLEXITY.map((label, score) => ({
-                    value: String(score),
-                    label: t(label),
-                  }))}
-                />
+                {({ id }) => (
+                  <Select
+                    id={id}
+                    label={t('Stärke des Master-Passworts')}
+                    value={String(password.minComplexity)}
+                    onChange={(score) => setPassword({ minComplexity: Number(score) })}
+                    options={COMPLEXITY.map((label, score) => ({
+                      value: String(score),
+                      label: t(label),
+                    }))}
+                  />
+                )}
               </SettingRow>
               <SettingRow
                 label={t('Auch beim Anmelden prüfen')}
@@ -235,15 +243,18 @@ export function MasterPasswordTab() {
                   'Wer ein schwächeres Passwort hat, wird in den Bitwarden-Apps nach der Anmeldung gebeten, ein neues zu wählen.',
                 )}
               >
-                <Toggle
-                  label={t('Auch beim Anmelden prüfen')}
-                  checked={password.enforceOnLogin}
-                  onChange={(enforceOnLogin) => setPassword({ enforceOnLogin })}
-                />
+                {({ id, describedBy }) => (
+                  <Switch
+                    id={id}
+                    describedBy={describedBy}
+                    checked={password.enforceOnLogin}
+                    onChange={(enforceOnLogin) => setPassword({ enforceOnLogin })}
+                  />
+                )}
               </SettingRow>
             </Section>
             <Section
-              heading={t('Schutz vor Durchprobieren')}
+              title={t('Schutz vor Durchprobieren')}
               lead={t(
                 'Aus dem Master-Passwort wird der Schlüssel des Tresors gerechnet, absichtlich langsam: So dauert es ewig, Passwörter durchzuprobieren. Das Verfahren heißt Schlüsselableitung (KDF) – Argon2id (empfohlen) oder PBKDF2. Hier steht das Mindeste, was der Server annimmt; Konten darunter funktionieren weiter und bekommen im Web-Tresor einen Knopf zum Umstellen.',
               )}
@@ -314,7 +325,7 @@ export function UserMailsTab() {
         return (
           <>
             <Section
-              heading={t('Neues Gerät')}
+              title={t('Neues Gerät')}
               lead={t('Eine Mail an das Konto, damit niemand sich unbemerkt anmeldet.')}
             >
               <SettingRow
@@ -325,15 +336,18 @@ export function UserMailsTab() {
                   </Explain>
                 }
               >
-                <Toggle
-                  label={t('Mail bei neuem Gerät')}
-                  checked={draft.newDeviceMail}
-                  onChange={(newDeviceMail) => setDraft({ ...draft, newDeviceMail })}
-                />
+                {({ id, describedBy }) => (
+                  <Switch
+                    id={id}
+                    describedBy={describedBy}
+                    checked={draft.newDeviceMail}
+                    onChange={(newDeviceMail) => setDraft({ ...draft, newDeviceMail })}
+                  />
+                )}
               </SettingRow>
             </Section>
             <Section
-              heading={t('Sicherheitshinweise per Mail')}
+              title={t('Sicherheitshinweise per Mail')}
               lead={t(
                 'Was auf einem Konto passiert, steht im Web-Tresor unter Einstellungen → Sicherheit. Angehakte Arten kommen außerdem per Mail – gesammelt, höchstens eine Mail in 15 Minuten.',
               )}
@@ -380,7 +394,7 @@ function NetworkSettings({ draft, setDraft }: Props) {
   const [text, setText] = useState(draft.adminNetworks.join('\n'));
   return (
     <Section
-      heading={t('Wer das Admin-Portal erreicht')}
+      title={t('Wer das Admin-Portal erreicht')}
       lead={t(
         'Nur aus diesen Netzen ist das Admin-Portal erreichbar, von überall sonst antwortet es mit „nicht gefunden“. Leer: von überall. Tresor, Sends und Apps betrifft das nicht.',
       )}
@@ -446,7 +460,7 @@ function MetricsSettings({ draft, setDraft }: Props) {
   const fresh = metrics.token ? metrics.token : null;
   return (
     <Section
-      heading={t('Metriken für Prometheus')}
+      title={t('Metriken für Prometheus')}
       lead={t(
         'Zahlen unter /metrics: Anfragen, Anmeldungen, Backups, Zertifikat. Nie Adressen, Namen oder IPs. Dafür braucht es einen Token oder eine eigene Adresse, sonst könnte sie jeder lesen.',
       )}
@@ -455,11 +469,14 @@ function MetricsSettings({ draft, setDraft }: Props) {
         label={t('Metriken anbieten')}
         description={t('Für ein Monitoring wie Prometheus und Grafana.')}
       >
-        <Toggle
-          label={t('Metriken anbieten')}
-          checked={metrics.enabled}
-          onChange={(enabled) => set({ enabled })}
-        />
+        {({ id, describedBy }) => (
+          <Switch
+            id={id}
+            describedBy={describedBy}
+            checked={metrics.enabled}
+            onChange={(enabled) => set({ enabled })}
+          />
+        )}
       </SettingRow>
       <SettingRow
         label={t('Token')}
@@ -474,7 +491,12 @@ function MetricsSettings({ draft, setDraft }: Props) {
         }
       >
         {metrics.tokenSet && metrics.token !== '' && !fresh && (
-          <Button variant="quiet-danger" onClick={() => set({ token: '' })} data-secondary>
+          <Button
+            className="text-danger-ink!"
+            variant="ghost"
+            onClick={() => set({ token: '' })}
+            data-secondary
+          >
             {t('Entfernen')}
           </Button>
         )}
@@ -484,7 +506,7 @@ function MetricsSettings({ draft, setDraft }: Props) {
         <div className="copy-field">
           <code className="mono">{fresh}</code>
           <IconButton
-            icon="copy"
+            icon={ICONS.copy}
             label={t('Kopieren')}
             onClick={() =>
               void navigator.clipboard.writeText(fresh).then(() => toast(t('Kopiert ✧')))
@@ -498,14 +520,17 @@ function MetricsSettings({ draft, setDraft }: Props) {
           'Zum Beispiel 127.0.0.1:9100: Dort gibt es /metrics ohne Token, auf der öffentlichen Adresse dann gar nicht. Leer: auf der öffentlichen Adresse, mit Token.',
         )}
       >
-        <input
-          className="select"
-          value={metrics.listen ?? ''}
-          placeholder="127.0.0.1:9100"
-          aria-label={t('Eigene Adresse')}
-          spellCheck={false}
-          onChange={(e) => set({ listen: e.target.value.trim() ? e.target.value : null })}
-        />
+        {({ id }) => (
+          <input
+            id={id}
+            className="select"
+            value={metrics.listen ?? ''}
+            placeholder="127.0.0.1:9100"
+            aria-label={t('Eigene Adresse')}
+            spellCheck={false}
+            onChange={(e) => set({ listen: e.target.value.trim() ? e.target.value : null })}
+          />
+        )}
       </SettingRow>
     </Section>
   );
@@ -522,7 +547,7 @@ function LokiSettings({ draft, setDraft, dirty }: Props & { dirty: boolean }) {
   const bad = parseLabels(text).bad;
   return (
     <Section
-      heading={t('Logs an Loki')}
+      title={t('Logs an Loki')}
       lead={t(
         'Dieselben Zeilen wie im Log, als JSON an Grafana Loki geschickt, gesammelt jede Sekunde. Ist Loki länger weg, werden Zeilen verworfen und gezählt.',
       )}
@@ -531,11 +556,14 @@ function LokiSettings({ draft, setDraft, dirty }: Props & { dirty: boolean }) {
         label={t('Logs an Loki schicken')}
         description={t('Zum Suchen und Aufheben der Logs außerhalb des Servers.')}
       >
-        <Toggle
-          label={t('Logs an Loki schicken')}
-          checked={loki.enabled}
-          onChange={(enabled) => set({ enabled })}
-        />
+        {({ id, describedBy }) => (
+          <Switch
+            id={id}
+            describedBy={describedBy}
+            checked={loki.enabled}
+            onChange={(enabled) => set({ enabled })}
+          />
+        )}
       </SettingRow>
       <FormRow min="wide">
         <TextField

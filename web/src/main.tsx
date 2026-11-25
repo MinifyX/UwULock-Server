@@ -1,22 +1,10 @@
-import '@fontsource-variable/dm-sans';
-import '@fontsource-variable/manrope';
-import '@fontsource-variable/rubik';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AdminApp } from './admin/AdminApp';
 import { App } from './App';
-import './components/nyu/nyu.css';
 import { applyAppearance } from './lib/settings';
 import { load } from './lib/web/core';
-import './styles/fonts.css';
-import './styles/app.css';
-import './styles/vault.css';
-import './styles/tokens.css';
-import './styles/ui.css';
-import './styles/web.css';
-import './styles/entries.css';
-import './styles/a11y.css';
-import './styles/motion.css';
+import './styles/index.css';
 
 // Dark by default, like the other UwU apps; the settings switch to light or follow the system.
 applyAppearance();

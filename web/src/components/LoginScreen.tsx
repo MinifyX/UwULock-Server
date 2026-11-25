@@ -1,3 +1,4 @@
+import { Button, Icon, ICONS, Segmented } from '@uwusuite/design';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   checkDeviceLogin,
@@ -21,11 +22,9 @@ import { startSso, takeStarted } from '../lib/sso';
 import { errorText } from '../lib/errors';
 import { N_, t, useLanguage } from '../lib/i18n';
 import { updateSettings, useSettings } from '../lib/settings';
-import { Icon } from './Icon';
 import { NyuScene } from './nyu/scenes';
 import { PasswordInput } from './PasswordInput';
 import { WelcomeMark } from './TitleBar';
-import { radioArrows } from './web/controls';
 
 type Props = {
   onDone: (status: Status) => void;
@@ -234,43 +233,47 @@ export function LoginScreen({ onDone, target = 'vault' }: Props) {
               </p>
             )}
             <div className="form-actions">
-              <button
-                type="button"
-                className="quiet"
+              <Button
+                variant="ghost"
                 onClick={() => void sendHint()}
                 disabled={Boolean(busy) || !email.includes('@')}
               >
                 {t('Passwort vergessen?')}
-              </button>
+              </Button>
               <span className="spacer" />
-              <button className="primary" type="submit" disabled={Boolean(busy) || !password}>
+              <Button variant="primary" type="submit" disabled={Boolean(busy) || !password}>
                 {busy ?? t('Anmelden')}
-              </button>
+              </Button>
             </div>
             <div className="login-other">
               {sso && (
-                <button type="button" onClick={() => void withSso()} disabled={Boolean(busy)}>
-                  <Icon name="shield" size={15} />
+                <Button
+                  icon={ICONS.securityCheck}
+                  onClick={() => void withSso()}
+                  disabled={Boolean(busy)}
+                >
                   {t('Mit {provider} anmelden', { provider: sso.label })}
-                </button>
+                </Button>
               )}
               {webauthnAvailable() && (
-                <button type="button" onClick={() => void passkey()} disabled={Boolean(busy)}>
-                  <Icon name="key" size={15} />
+                <Button
+                  icon={ICONS.passkey}
+                  onClick={() => void passkey()}
+                  disabled={Boolean(busy)}
+                >
                   {t('Mit Passkey anmelden')}
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
+              <Button
+                icon={ICONS.devices}
                 onClick={() => void askDevice()}
                 disabled={Boolean(busy) || !email.includes('@')}
               >
-                <Icon name="devices" size={15} />
                 {t('Mit anderem Gerät anmelden')}
-              </button>
+              </Button>
             </div>
             <p className="welcome-beta">
-              <Icon name="sparkles" size={14} />
+              <Icon icon={ICONS.tip} size="xs" />
               {sso
                 ? t(
                     'Neu hier? Melde dich mit {provider} an, oder nimm den Link aus deiner Einladungsmail. Dein Master-Passwort legst du beim ersten Mal selbst fest.',
@@ -376,9 +379,7 @@ function TwoFactor({
           )}
         </p>
         <div className="form-actions">
-          <button type="button" onClick={onBack}>
-            {t('Zurück')}
-          </button>
+          <Button onClick={onBack}>{t('Zurück')}</Button>
         </div>
       </div>
     );
@@ -388,29 +389,20 @@ function TwoFactor({
     <form className="form" onSubmit={submit}>
       <h1 className="card-title">{t('Zweistufige Anmeldung')}</h1>
       {usable.length > 1 && (
-        <div
-          className="segmented wide"
-          role="radiogroup"
-          aria-label={t('Methode')}
-          onKeyDown={radioArrows}
-        >
-          {usable.map((m) => (
-            <button
-              key={m.provider}
-              type="button"
-              role="radio"
-              aria-checked={m.provider === provider}
-              tabIndex={m.provider === provider ? 0 : -1}
-              onClick={() => {
-                setProvider(m.provider);
-                setCode('');
-                setError(null);
-              }}
-            >
-              {t(METHOD_LABEL[m.kind])}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label={t('Methode')}
+          className="w-full [&>button]:flex-1"
+          value={String(provider)}
+          onChange={(value) => {
+            setProvider(Number(value));
+            setCode('');
+            setError(null);
+          }}
+          options={usable.map((m) => ({
+            value: String(m.provider),
+            label: t(METHOD_LABEL[m.kind]),
+          }))}
+        />
       )}
       <p className="dialog-lead">
         {method.kind === 'authenticator' &&
@@ -465,17 +457,17 @@ function TwoFactor({
         </p>
       )}
       <div className="form-actions">
-        <button type="button" className="quiet" onClick={onBack} disabled={busy}>
+        <Button variant="ghost" onClick={onBack} disabled={busy}>
           {t('Zurück')}
-        </button>
+        </Button>
         <span className="spacer" />
         {method.kind === 'email' && (
-          <button type="button" onClick={() => void sendEmail()} disabled={busy}>
+          <Button onClick={() => void sendEmail()} disabled={busy}>
             {sent ? t('Nochmal senden') : t('Code senden')}
-          </button>
+          </Button>
         )}
-        <button
-          className="primary"
+        <Button
+          variant="primary"
           type="submit"
           disabled={busy || (method.kind !== 'webauthn' && !code.trim())}
         >
@@ -484,7 +476,7 @@ function TwoFactor({
             : method.kind === 'webauthn'
               ? t('Schlüssel verwenden')
               : t('Weiter')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -546,9 +538,9 @@ function DeviceWait({
         </p>
       )}
       <div className="form-actions">
-        <button type="button" className="quiet" onClick={onBack}>
+        <Button variant="ghost" onClick={onBack}>
           {t('Zurück')}
-        </button>
+        </Button>
       </div>
     </div>
   );

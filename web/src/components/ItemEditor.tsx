@@ -1,3 +1,4 @@
+import { Button, IconButton, ICONS } from '@uwusuite/design';
 import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   revealField,
@@ -44,9 +45,8 @@ import {
 } from '../lib/wifi';
 import { useCloseGuard } from './CloseGuard';
 import { GeneratorDialog } from './GeneratorDialog';
-import { Icon } from './Icon';
 import { Modal } from './Modal';
-import { Button, Callout, Checkbox, Field, FieldGroup, FormRow, IconButton, RepeatRow } from './ui';
+import { Callout, Checkbox, Field, FieldGroup, FormRow, RepeatRow } from './ui';
 import { reminderForm, ReminderFields, saveReminder, type ReminderForm } from './web/ItemComfort';
 import { NewMaskedDialog } from './web/MaskedSettings';
 
@@ -354,7 +354,7 @@ function SecretField({
     kept && itemId && field && (
       <IconButton
         key="reveal"
-        icon="eye"
+        icon={ICONS.show}
         label={t('{label} zeigen', { label })}
         title={t('Zeigen')}
         onClick={() => void reveal()}
@@ -364,7 +364,7 @@ function SecretField({
     !kept && itemId && field && (
       <IconButton
         key="keep"
-        icon="history"
+        icon={ICONS.history}
         label={t('{label} unverändert lassen', { label })}
         title={t('Unverändert lassen')}
         onClick={() => onChange(keep(true))}
@@ -592,21 +592,17 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
               <Field
                 label={t('Name')}
                 tools={
-                  <button
-                    type="button"
-                    className="icon-button favorite-toggle"
+                  <IconButton
+                    icon={ICONS.favorite}
+                    label={t('Favorit')}
+                    className={
+                      form.favorite ? 'favorite-toggle [&_svg]:fill-current' : 'favorite-toggle'
+                    }
                     aria-pressed={form.favorite}
-                    aria-label={t('Favorit')}
                     title={form.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
                     onClick={() => set({ favorite: !form.favorite })}
                     data-favorite
-                  >
-                    <Icon
-                      name="star"
-                      size={16}
-                      className={form.favorite ? 'badge-star' : undefined}
-                    />
-                  </button>
+                  />
                 }
               >
                 <input
@@ -640,7 +636,7 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
                   tools={
                     masked && (
                       <IconButton
-                        icon="sparkles"
+                        icon={ICONS.maskedAddress}
                         label={t('Maskierte Adresse anlegen')}
                         onClick={() => setMaskedDialog(true)}
                         aria-haspopup="dialog"
@@ -663,7 +659,7 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
                   field="password"
                 >
                   <IconButton
-                    icon="dice"
+                    icon={ICONS.generate}
                     label={t('Passwort-Generator')}
                     onClick={() => setGenerator('password')}
                   />
@@ -681,8 +677,8 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
                   title={t('Websites')}
                   actions={
                     <Button
-                      variant="quiet"
-                      icon="plus"
+                      variant="ghost"
+                      icon={ICONS.add}
                       onClick={() =>
                         set({
                           uris: [...form.uris, { key: key(), uri: '', match: null }],
@@ -733,7 +729,7 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
                         ))}
                       </select>
                       <IconButton
-                        icon="trash"
+                        icon={ICONS.delete}
                         label={t('Adresse {n} entfernen', { n: index + 1 })}
                         title={t('Entfernen')}
                         onClick={() =>
@@ -933,7 +929,7 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
                     }
                   >
                     <IconButton
-                      icon="dice"
+                      icon={ICONS.generate}
                       label={t('Passwort-Generator')}
                       onClick={() => setGenerator('wifi')}
                     />
@@ -1035,8 +1031,8 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
               actions={(['text', 'hidden', 'boolean'] as FieldKind[]).map((fieldKind) => (
                 <Button
                   key={fieldKind}
-                  variant="quiet"
-                  icon="plus"
+                  variant="ghost"
+                  icon={ICONS.add}
                   onClick={() =>
                     set({
                       fields: [
@@ -1133,7 +1129,7 @@ export function ItemEditor({ summary, kind, clone = false, overview, onClose, on
                     />
                   )}
                   <IconButton
-                    icon="trash"
+                    icon={ICONS.delete}
                     label={t('Feld {n} entfernen', { n: index + 1 })}
                     title={t('Entfernen')}
                     onClick={() =>

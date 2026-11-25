@@ -30,22 +30,11 @@ import {
 } from '../../lib/suite/keys';
 import { Batch, SpaceChanged } from '../../lib/suite/sync';
 import { toast } from '../../lib/toast';
+import { Button, ICONS, IconButton, Segmented } from '@uwusuite/design';
 import { GeneratorDialog } from '../GeneratorDialog';
-import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import {
-  Callout,
-  Checkbox,
-  Field,
-  FieldGroup,
-  FormRow,
-  IconButton,
-  RepeatRow,
-  Segmented,
-  Select,
-  TextField,
-} from '../ui';
+import { Callout, Checkbox, Field, FieldGroup, FormRow, RepeatRow, Select, TextField } from '../ui';
 import { authLabel, kindLabel, workspaceLabel } from './labels';
 
 export type EditorTarget = {
@@ -322,14 +311,13 @@ export function SuiteEditor({
         )}
         actions={
           mode === 'on' && (
-            <button
-              type="button"
-              className="quiet"
+            <Button
+              variant="ghost"
+              icon={ICONS.add}
               onClick={() => setList([...list, { name: '', path: '' }])}
             >
-              <Icon name="plus" size={15} />
               {t('Ordner hinzufügen')}
-            </button>
+            </Button>
           )
         }
       >
@@ -374,7 +362,7 @@ export function SuiteEditor({
               />
               <IconButton
                 label={t('Entfernen')}
-                icon="trash"
+                icon={ICONS.delete}
                 onClick={() => setList(list.filter((_, i) => i !== index))}
               />
             </RepeatRow>
@@ -394,12 +382,12 @@ export function SuiteEditor({
         footer={
           <>
             <span className="spacer" />
-            <button type="button" data-secondary onClick={onClose}>
+            <Button data-secondary onClick={onClose}>
               {t('Abbrechen')}
-            </button>
-            <button type="submit" form="suite-editor" className="primary" disabled={busy !== null}>
+            </Button>
+            <Button type="submit" variant="primary" form="suite-editor" disabled={busy !== null}>
               {busy ?? t('Speichern')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -734,11 +722,11 @@ export function SuiteEditor({
                       : t('Keins gespeichert.')
                   }
                 >
-                  <button type="button" onClick={() => setPassword('')}>
+                  <Button onClick={() => setPassword('')}>
                     {ref(opened.password_secret_id)
                       ? t('Passwort ändern')
                       : t('Passwort festlegen')}
-                  </button>
+                  </Button>
                 </Field>
               ) : (
                 <Field
@@ -749,7 +737,7 @@ export function SuiteEditor({
                   tools={
                     <IconButton
                       label={t('Passwort erzeugen')}
-                      icon="dice"
+                      icon={ICONS.generate}
                       onClick={() => setGenerator(true)}
                     />
                   }

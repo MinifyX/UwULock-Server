@@ -1,5 +1,5 @@
 import { useId, type ReactNode } from 'react';
-import { Icon } from '../Icon';
+import { Icon, ICONS } from '@uwusuite/design';
 
 /**
  * What can lock people out or lose data, set apart at the end of a page: a frame in the alarm
@@ -18,7 +18,7 @@ export function DangerZone({
   return (
     <section className="danger-zone" aria-labelledby={id}>
       <h3 className="danger-zone-heading" id={id}>
-        <Icon name="warning" size={15} />
+        <Icon icon={ICONS.warning} />
         {heading}
       </h3>
       {lead && <p className="section-lead">{lead}</p>}

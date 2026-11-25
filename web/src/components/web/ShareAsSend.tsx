@@ -12,7 +12,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { IDENTITY_LABEL } from '../../lib/items';
 import { domainOf } from '../../lib/links';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
+import { Button, ICONS } from '@uwusuite/design';
 import { Modal } from '../Modal';
 import { SendDomainField, useDefaultSendDomain, useSendDomains } from './SendDomainSelect';
 import { SendAccess, splitAddresses } from './SendsView';
@@ -163,11 +163,10 @@ export function ShareAsSend({
         footer={
           <>
             <span className="spacer" />
-            <button onClick={onClose}>{t('Fertig')}</button>
-            <button className="primary" data-autofocus onClick={() => void copy()}>
-              <Icon name="copy" size={15} />
+            <Button onClick={onClose}>{t('Fertig')}</Button>
+            <Button icon={ICONS.copy} variant="primary" data-autofocus onClick={() => void copy()}>
               {t('Link kopieren')}
-            </button>
+            </Button>
           </>
         }
       >
@@ -191,12 +190,12 @@ export function ShareAsSend({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={!ready || busy} onClick={() => void submit()}>
+          </Button>
+          <Button variant="primary" disabled={!ready || busy} onClick={() => void submit()}>
             {busy ? t('Einen Moment …') : t('Send anlegen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -252,23 +251,17 @@ export function ShareAsSend({
                 {t('Teile ihn nur, wenn das okay ist.')}
               </p>
               <div className="form-actions">
-                <button
-                  type="button"
+                <Button
                   onClick={() => {
                     setChosen(new Set(chosen).add('totp'));
                     setAskTotp(false);
                   }}
                 >
                   {t('Schlüssel mitgeben')}
-                </button>
-                <button
-                  type="button"
-                  className="primary"
-                  autoFocus
-                  onClick={() => setAskTotp(false)}
-                >
+                </Button>
+                <Button variant="primary" autoFocus onClick={() => setAskTotp(false)}>
                   {t('Lieber nicht')}
-                </button>
+                </Button>
               </div>
             </div>
           )}

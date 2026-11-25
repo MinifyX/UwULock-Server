@@ -1,3 +1,4 @@
+import { Button, NavIndicator, Segmented, SettingRow, Switch } from '@uwusuite/design';
 import { useState } from 'react';
 import pkg from '../../package.json';
 import { lock, openProjectPage, type ProjectPage, type Status } from '../lib/api';
@@ -8,10 +9,8 @@ import { updateSettings, useSettings, type AutoLock, type ClipboardClear } from 
 import { switchedOff, useSwitch } from '../lib/switches';
 import { FontPicker } from './FontPicker';
 import { Modal } from './Modal';
-import { NavIndicator } from './ui';
 import { Nyu } from './nyu/Nyu';
 import { AccountSettings } from './web/AccountSettings';
-import { Row, Segmented, Toggle } from './web/controls';
 import { DeviceSettings } from './web/DeviceSettings';
 import { EmergencySettings } from './web/EmergencySettings';
 import { PasskeySettings } from './web/PasskeySettings';
@@ -64,7 +63,7 @@ export function Appearance({ vault = true }: { vault?: boolean }) {
   const settings = useSettings();
   return (
     <>
-      <Row
+      <SettingRow
         label="Sprache · Language"
         description="„System“ folgt der Sprache des Browsers. · “System” follows the browser."
       >
@@ -78,8 +77,8 @@ export function Appearance({ vault = true }: { vault?: boolean }) {
             { value: 'en', label: 'English' },
           ]}
         />
-      </Row>
-      <Row label={t('Farbschema')}>
+      </SettingRow>
+      <SettingRow label={t('Farbschema')}>
         <Segmented
           label={t('Farbschema')}
           value={settings.theme}
@@ -90,16 +89,19 @@ export function Appearance({ vault = true }: { vault?: boolean }) {
             { value: 'dark', label: t('Dunkel') },
           ]}
         />
-      </Row>
-      <Row
+      </SettingRow>
+      <SettingRow
         label={t('Schrift')}
         description={t(
           'Nyu mag UwU Sans am liebsten, aber du entscheidest. Gilt nur auf diesem Gerät.',
         )}
       >
         <FontPicker />
-      </Row>
-      <Row label={t('Animationen')} description={t('„System“ folgt der Einstellung des Systems.')}>
+      </SettingRow>
+      <SettingRow
+        label={t('Animationen')}
+        description={t('„System“ folgt der Einstellung des Systems.')}
+      >
         <Segmented
           label={t('Animationen')}
           value={settings.motion}
@@ -110,8 +112,8 @@ export function Appearance({ vault = true }: { vault?: boolean }) {
             { value: 'off', label: t('Aus') },
           ]}
         />
-      </Row>
-      <Row
+      </SettingRow>
+      <SettingRow
         label={t('Kontrast')}
         description={t(
           '„Hoch“ macht Schrift, Ränder und den Fokus kräftiger. „System“ folgt dem Wunsch des Systems nach mehr Kontrast.',
@@ -127,43 +129,52 @@ export function Appearance({ vault = true }: { vault?: boolean }) {
             { value: 'high', label: t('Hoch') },
           ]}
         />
-      </Row>
-      <Row
+      </SettingRow>
+      <SettingRow
         label={t('Kürzel mit einer Taste')}
         description={t(
           'Etwa ? für die Übersicht der Tastenkürzel. Schalte sie aus, wenn sie deiner Spracheingabe oder deinem Screenreader in die Quere kommen.',
         )}
       >
-        <Toggle
-          label={t('Kürzel mit einer Taste')}
-          checked={settings.singleKeys}
-          onChange={(singleKeys) => updateSettings({ singleKeys })}
-        />
-      </Row>
+        {({ id, describedBy }) => (
+          <Switch
+            id={id}
+            describedBy={describedBy}
+            checked={settings.singleKeys}
+            onChange={(singleKeys) => updateSettings({ singleKeys })}
+          />
+        )}
+      </SettingRow>
       {vault && (
         <>
-          <Row
+          <SettingRow
             label={t('Papierkorb zeigen')}
             description={t('Gelöschte Einträge in einem eigenen Bereich der Seitenleiste.')}
           >
-            <Toggle
-              label={t('Papierkorb zeigen')}
-              checked={settings.showTrash}
-              onChange={(showTrash) => updateSettings({ showTrash })}
-            />
-          </Row>
-          <Row
+            {({ id, describedBy }) => (
+              <Switch
+                id={id}
+                describedBy={describedBy}
+                checked={settings.showTrash}
+                onChange={(showTrash) => updateSettings({ showTrash })}
+              />
+            )}
+          </SettingRow>
+          <SettingRow
             label={t('Website-Icons zeigen')}
             description={t(
               'Holt dieser Server von den Websites deiner Einträge. Eigene Icons zeigt der Tresor immer.',
             )}
           >
-            <Toggle
-              label={t('Website-Icons zeigen')}
-              checked={settings.showIcons}
-              onChange={(showIcons) => updateSettings({ showIcons })}
-            />
-          </Row>
+            {({ id, describedBy }) => (
+              <Switch
+                id={id}
+                describedBy={describedBy}
+                checked={settings.showIcons}
+                onChange={(showIcons) => updateSettings({ showIcons })}
+              />
+            )}
+          </SettingRow>
         </>
       )}
     </>
@@ -175,58 +186,64 @@ function Security({ onClose, onSeen }: { onClose: () => void; onSeen: () => void
   const minutes = (n: number) => (n === 1 ? t('1 Minute') : t('{n} Minuten', { n }));
   return (
     <>
-      <Row
+      <SettingRow
         label={t('Automatisch sperren')}
         description={t(
           'Nach so langer Zeit ohne Eingabe sperrt UwULock den Tresor und vergisst alles Entschlüsselte. Beim Neuladen oder Schließen des Tabs ist er immer gesperrt.',
         )}
       >
-        <select
-          className="select"
-          value={settings.autoLock}
-          aria-label={t('Automatisch sperren')}
-          onChange={(e) => updateSettings({ autoLock: Number(e.target.value) as AutoLock })}
-        >
-          {([1, 5, 15, 30, 60, 240] as const).map((n) => (
-            <option key={n} value={n}>
-              {n < 60 ? minutes(n) : n === 60 ? t('1 Stunde') : t('{n} Stunden', { n: n / 60 })}
-            </option>
-          ))}
-          <option value={0}>{t('Nie (nur beim Schließen des Tabs)')}</option>
-        </select>
-      </Row>
-      <Row
+        {({ id, describedBy }) => (
+          <select
+            id={id}
+            aria-describedby={describedBy}
+            className="select"
+            value={settings.autoLock}
+            onChange={(e) => updateSettings({ autoLock: Number(e.target.value) as AutoLock })}
+          >
+            {([1, 5, 15, 30, 60, 240] as const).map((n) => (
+              <option key={n} value={n}>
+                {n < 60 ? minutes(n) : n === 60 ? t('1 Stunde') : t('{n} Stunden', { n: n / 60 })}
+              </option>
+            ))}
+            <option value={0}>{t('Nie (nur beim Schließen des Tabs)')}</option>
+          </select>
+        )}
+      </SettingRow>
+      <SettingRow
         label={t('Zwischenablage leeren')}
         description={t(
           'Kopierte Werte verschwinden danach wieder, solange der Tab offen ist – aber nur, wenn inzwischen nichts anderes kopiert wurde.',
         )}
       >
-        <select
-          className="select"
-          value={settings.clipboardClear}
-          aria-label={t('Zwischenablage leeren')}
-          onChange={(e) =>
-            updateSettings({ clipboardClear: Number(e.target.value) as ClipboardClear })
-          }
-        >
-          {([10, 30, 60, 120] as const).map((n) => (
-            <option key={n} value={n}>
-              {t('nach {n} Sekunden', { n })}
-            </option>
-          ))}
-          <option value={0}>{t('Nie')}</option>
-        </select>
-      </Row>
-      <Row label={t('Jetzt sperren')} description={t('Auch mit Strg+L.')}>
-        <button
+        {({ id, describedBy }) => (
+          <select
+            id={id}
+            aria-describedby={describedBy}
+            className="select"
+            value={settings.clipboardClear}
+            onChange={(e) =>
+              updateSettings({ clipboardClear: Number(e.target.value) as ClipboardClear })
+            }
+          >
+            {([10, 30, 60, 120] as const).map((n) => (
+              <option key={n} value={n}>
+                {t('nach {n} Sekunden', { n })}
+              </option>
+            ))}
+            <option value={0}>{t('Nie')}</option>
+          </select>
+        )}
+      </SettingRow>
+      <SettingRow label={t('Jetzt sperren')} description={t('Auch mit Strg+L.')}>
+        <Button
           onClick={() => {
             onClose();
             void lock();
           }}
         >
           {t('Sperren')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
       <SecurityNotices onSeen={onSeen} />
     </>
   );
@@ -253,10 +270,10 @@ function About() {
         )}
       </p>
       <div className="about-actions">
-        <button onClick={() => open('source')}>{t('Quellcode auf GitHub')}</button>
-        <button onClick={() => open('releases')}>{t('Versionen')}</button>
-        <button onClick={() => open('license')}>{t('Lizenz')}</button>
-        <button onClick={() => open('suite')}>UwUSuite</button>
+        <Button onClick={() => open('source')}>{t('Quellcode auf GitHub')}</Button>
+        <Button onClick={() => open('releases')}>{t('Versionen')}</Button>
+        <Button onClick={() => open('license')}>{t('Lizenz')}</Button>
+        <Button onClick={() => open('suite')}>UwUSuite</Button>
       </div>
     </div>
   );
@@ -283,7 +300,7 @@ export function SettingsDialog({ initial = 'appearance', status, info, onInfo, o
   );
   const unseen = info?.securityNoticesUnseen ?? 0;
   return (
-    <Modal title={t('Einstellungen')} size="wide" onCancel={onClose} closable>
+    <Modal title={t('Einstellungen')} size="wide" onCancel={onClose}>
       <div className="settings">
         <nav className="settings-nav" aria-label={t('Bereiche')}>
           {sections.map(({ id, label }) => (

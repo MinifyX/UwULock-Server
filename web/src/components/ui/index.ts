@@ -1,15 +1,12 @@
 /**
- * The shared building blocks of the web vault and the admin portal. Styles: styles/ui.css, sizes
- * and gaps: styles/tokens.css, an overview: docs/ui.md.
+ * What the web vault and the admin portal add to @uwusuite/design (buttons, cards, settings rows,
+ * tabs, switches and the rest come from the package): labelled fields with tools inside, forms
+ * that line up, tables, the danger zone and notices with an icon and actions. Overview: docs/ui.md.
  */
-export { Button, IconButton, type ButtonVariant } from './Button';
-export { Segmented, Toggle, radioArrows, radioTab } from './Choice';
 export { Checkbox, Field, FieldGroup, FormRow, RepeatRow, Select, TextField } from './Field';
-export { CountUp } from './CountUp';
-export { NavIndicator } from './NavIndicator';
-export { ButtonRow, Card, Section, SettingRow } from './Layout';
+export { ButtonRow } from './Layout';
 export { DangerZone } from './DangerZone';
-export { Badge, Callout, type CalloutTone, type Tone } from './Status';
+export { Callout, type CalloutTone } from './Status';
 export { Table } from './Table';
-export { TabPanel, Tabs, useTabsId, type Tab } from './Tabs';
+export { radioArrows, radioTab } from './radio';
 export { Modal } from '../Modal';

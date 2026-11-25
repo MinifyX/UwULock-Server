@@ -1,3 +1,4 @@
+import { Button } from '@uwusuite/design';
 import { useState, type FormEvent } from 'react';
 import { logout, unlock, type Status } from '../lib/api';
 import { errorText } from '../lib/errors';
@@ -72,9 +73,14 @@ export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
             {error}
           </p>
         )}
-        <button className="primary lock-button" type="submit" disabled={busy || !password}>
+        <Button
+          variant="primary"
+          className="lock-button"
+          type="submit"
+          disabled={busy || !password}
+        >
           {busy ? t('Entsperrt …') : t('Entsperren')}
-        </button>
+        </Button>
         <p className="lock-meta">
           {t('Zuletzt synchronisiert: {when}', { when: ago(status.lastSync) })}
           {' · '}
@@ -91,8 +97,8 @@ export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
           footer={
             <>
               <span className="spacer" />
-              <button
-                className="danger"
+              <Button
+                variant="danger"
                 data-secondary
                 onClick={async () => {
                   try {
@@ -105,10 +111,10 @@ export function LockScreen({ status, onUnlocked, onLoggedOut }: Props) {
                 }}
               >
                 {t('Abmelden')}
-              </button>
-              <button className="primary" data-autofocus onClick={() => setConfirmLogout(false)}>
+              </Button>
+              <Button variant="primary" data-autofocus onClick={() => setConfirmLogout(false)}>
                 {t('Abbrechen')}
-              </button>
+              </Button>
             </>
           }
         >

@@ -116,18 +116,22 @@ describe('a suite space in the web vault', () => {
     state.current = { status: 'open', records, unreadable: 0 };
     const { container, root } = await mount();
     await click(container.querySelector('.detail-tools button[aria-label="Löschen"]'));
-    const dialog = document.querySelector('[role="dialog"]')!;
+    const dialog = document.querySelector('dialog')!;
     expect(dialog.textContent).toContain('Port-Weiterleitungen');
-    await click(dialog.querySelector('button.danger'));
+    await click(
+      [...dialog.querySelectorAll('footer button')].find((b) => b.textContent === 'Löschen'),
+    );
     expect(pushed).toEqual([['remove 9b2d0c1e-0000-4000-8000-0000000000a1', 'remove f1']]);
 
     const tabs = [...container.querySelectorAll('[role="tab"]')];
     await click(tabs.find((t) => t.textContent?.startsWith('Identitäten')));
     await click(container.querySelector('.detail-tools button[aria-label="Löschen"]'));
-    const hint = document.querySelector('[role="dialog"]')!;
+    const hint = document.querySelector('dialog')!;
     expect(hint.textContent).toContain('Wird noch verwendet');
     expect(hint.textContent).toContain('Host: Router');
-    expect(hint.querySelector('button.danger')).toBeNull();
+    expect(
+      [...hint.querySelectorAll('footer button')].find((b) => b.textContent === 'Löschen'),
+    ).toBeUndefined();
     await act(async () => root.unmount());
   });
 
@@ -135,7 +139,9 @@ describe('a suite space in the web vault', () => {
     state.current = { status: 'none' };
     const { container, root } = await mount();
     expect(container.textContent).toContain('Noch keine Daten von UwUSSH');
-    expect(container.querySelector('button.primary')!.textContent).toBe('Bereich anlegen');
+    expect(
+      [...container.querySelectorAll('button')].some((b) => b.textContent === 'Bereich anlegen'),
+    ).toBe(true);
     await act(async () => root.unmount());
   });
 });

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Button } from '@uwusuite/design';
 import { listen } from '../../lib/events';
 import { errorText } from '../../lib/errors';
 import {
@@ -74,13 +75,13 @@ export function DeviceRequests({ email }: { email: string }) {
       }}
       footer={
         <>
-          <button className="danger" disabled={busy} onClick={() => void answer(false)}>
+          <Button variant="danger" disabled={busy} onClick={() => void answer(false)}>
             {t('Ablehnen')}
-          </button>
+          </Button>
           <span className="spacer" />
-          <button className="primary" disabled={busy} onClick={() => void answer(true)}>
+          <Button variant="primary" disabled={busy} onClick={() => void answer(true)}>
             {t('Anmelden lassen')}
-          </button>
+          </Button>
         </>
       }
     >

@@ -19,11 +19,11 @@ import {
 } from '../../lib/suite/model';
 import { Batch, SpaceChanged, createSpace, loadSpace, useSuiteSpace } from '../../lib/suite/sync';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { listbox } from '../listbox';
 import { Modal } from '../Modal';
 import { BackToList, Panes } from '../panes';
-import { Callout, Tabs } from '../ui';
+import { Button, ICONS, Icon, Tabs } from '@uwusuite/design';
+import { Callout } from '../ui';
 import { kindIcon, SPACE_LABEL, kindLabel, kindsLabel, workspaceLabel } from './labels';
 import { SuiteDetail } from './SuiteDetail';
 import { SuiteEditor, type EditorTarget } from './SuiteEditor';
@@ -69,7 +69,7 @@ export function SuiteView({ space }: { space: SpaceName }) {
       body = (
         <>
           <p>{errorText(state.error)}</p>
-          <button onClick={() => void loadSpace(space, true)}>{t('Noch einmal versuchen')}</button>
+          <Button onClick={() => void loadSpace(space, true)}>{t('Noch einmal versuchen')}</Button>
         </>
       );
       break;
@@ -82,8 +82,8 @@ export function SuiteView({ space }: { space: SpaceName }) {
               { app: APP[space] },
             )}
           </p>
-          <button
-            className="primary"
+          <Button
+            variant="primary"
             disabled={creating}
             onClick={() => {
               setCreating(true);
@@ -93,7 +93,7 @@ export function SuiteView({ space }: { space: SpaceName }) {
             }}
           >
             {t('Bereich anlegen')}
-          </button>
+          </Button>
         </>
       );
       break;
@@ -275,13 +275,13 @@ function OpenSpace({
                   })
                 }
               >
-                <Icon name="plus" size={15} />
+                <Icon icon={ICONS.add} />
                 {kindLabel(newKind)}
               </button>
             )}
           </p>
           <label className="search-box">
-            <Icon name="search" size={15} />
+            <Icon icon={ICONS.search} />
             <input
               className="search"
               type="search"
@@ -346,7 +346,7 @@ function OpenSpace({
                   }}
                 >
                   <span className="item-tile" data-hue={space === 'ssh' ? '4' : '5'}>
-                    <Icon name={kindIcon(line.record.kind)} size={18} />
+                    <Icon icon={kindIcon(line.record.kind)} size="md" />
                   </span>
                   <span className="item-text">
                     <span className="item-name">{titleOf(line.record) || t('(ohne Namen)')}</span>
@@ -428,11 +428,11 @@ function OpenSpace({
             plan.ok ? (
               <>
                 <span className="spacer" />
-                <button data-secondary data-autofocus onClick={() => setDeleting(null)}>
+                <Button data-secondary data-autofocus onClick={() => setDeleting(null)}>
                   {t('Abbrechen')}
-                </button>
-                <button
-                  className="danger"
+                </Button>
+                <Button
+                  variant="danger"
                   disabled={busy}
                   onClick={() =>
                     void run(async (batch) => {
@@ -442,14 +442,14 @@ function OpenSpace({
                   }
                 >
                   {t('Löschen')}
-                </button>
+                </Button>
               </>
             ) : (
               <>
                 <span className="spacer" />
-                <button className="primary" onClick={() => setDeleting(null)}>
+                <Button variant="primary" onClick={() => setDeleting(null)}>
                   {t('Verstanden')}
-                </button>
+                </Button>
               </>
             )
           }

@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Badge, Button, Icon, ICONS, Tabs } from '@uwusuite/design';
 import { errorText } from '../../lib/errors';
 import {
   MEMBER,
@@ -26,10 +27,8 @@ import {
 } from '../../lib/families';
 import { N_, t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { Modal } from '../Modal';
 import { BackToList, Panes } from '../panes';
-import { Badge, Tabs } from '../ui';
 import { PasswordPrompt } from './controls';
 
 /** What one member may do with one collection: nothing, read, or read and write. */
@@ -140,7 +139,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
             <span className="spacer" />
             {owner && tab === 'members' && (
               <button className="new-item" onClick={() => setDialog({ kind: 'invite' })}>
-                <Icon name="plus" size={15} />
+                <Icon icon={ICONS.add} />
                 {t('Einladen')}
               </button>
             )}
@@ -149,7 +148,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 className="new-item"
                 onClick={() => setDialog({ kind: 'collection', collection: null })}
               >
-                <Icon name="plus" size={15} />
+                <Icon icon={ICONS.add} />
                 {t('Neu')}
               </button>
             )}
@@ -166,7 +165,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
               {
                 id: 'members',
                 label: t('Mitglieder'),
-                extra: waiting > 0 && owner && <Badge>{waiting}</Badge>,
+                extra: waiting > 0 && owner && <Badge count={waiting} />,
               },
               { id: 'collections', label: t('Sammlungen') },
             ]}
@@ -187,7 +186,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 }}
               >
                 <span className="item-tile" data-hue={member.type === OWNER ? '2' : '5'}>
-                  <Icon name={member.type === OWNER ? 'crown' : 'user'} size={18} />
+                  <Icon icon={member.type === OWNER ? ICONS.admin : ICONS.account} size="md" />
                 </span>
                 <span className="item-text">
                   <span className="item-name">{who(member)}</span>
@@ -198,7 +197,11 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 </span>
                 <span className="item-badges">
                   {member.status === STATUS.accepted && owner && (
-                    <Icon name="bell" size={13} title={t('Wartet auf Bestätigung')} />
+                    <Icon
+                      icon={ICONS.notifications}
+                      size="xs"
+                      label={t('Wartet auf Bestätigung')}
+                    />
                   )}
                 </span>
               </li>
@@ -218,7 +221,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 }}
               >
                 <span className="item-tile" data-hue="3">
-                  <Icon name="grid" size={18} />
+                  <Icon icon={ICONS.collection} size="md" />
                 </span>
                 <span className="item-text">
                   <span className="item-name">{collection.name}</span>
@@ -241,20 +244,22 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
 
         <div className="family-actions">
           {owner && (
-            <button className="quiet" onClick={() => setDialog({ kind: 'rename' })}>
-              <Icon name="pencil" size={14} />
+            <Button variant="ghost" onClick={() => setDialog({ kind: 'rename' })} icon={ICONS.edit}>
               {t('Umbenennen')}
-            </button>
+            </Button>
           )}
-          <button className="quiet" onClick={() => setDialog({ kind: 'leave' })}>
-            <Icon name="logout" size={14} />
+          <Button variant="ghost" onClick={() => setDialog({ kind: 'leave' })} icon={ICONS.signOut}>
             {t('Verlassen')}
-          </button>
+          </Button>
           {owner && (
-            <button className="quiet danger-text" onClick={() => setDialog({ kind: 'delete' })}>
-              <Icon name="trash" size={14} />
+            <Button
+              variant="ghost"
+              className="text-danger-ink!"
+              onClick={() => setDialog({ kind: 'delete' })}
+              icon={ICONS.delete}
+            >
               {t('Familie löschen')}
-            </button>
+            </Button>
           )}
         </div>
       </section>
@@ -319,11 +324,11 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="primary"
+              </Button>
+              <Button
+                variant="primary"
                 onClick={() => {
                   const { member, publicKey } = dialog;
                   setDialog(null);
@@ -331,7 +336,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 }}
               >
                 {t('Bestätigen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -395,11 +400,11 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   setDialog(null);
                   void leaveFamily(orgId).then(
@@ -412,7 +417,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 }}
               >
                 {t('Verlassen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -432,11 +437,11 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   const id = dialog.member.id;
                   setDialog(null);
@@ -445,7 +450,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 }}
               >
                 {t('Entfernen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -465,11 +470,11 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDialog(null)}>
+              <Button data-secondary onClick={() => setDialog(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   const id = dialog.collection.id;
                   setDialog(null);
@@ -478,7 +483,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
                 }}
               >
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -575,7 +580,7 @@ function MemberDetail({
     <article className="detail" aria-label={who(member)}>
       <header className="detail-head">
         <span className="item-tile" data-size="large" data-hue={member.type === OWNER ? '2' : '5'}>
-          <Icon name={member.type === OWNER ? 'crown' : 'user'} size={24} />
+          <Icon icon={member.type === OWNER ? ICONS.admin : ICONS.account} size="xl" />
         </span>
         <div className="detail-title">
           <h2>{who(member)}</h2>
@@ -584,7 +589,7 @@ function MemberDetail({
             <span className="chip">{t(STATUS_LABEL[member.status] ?? '')}</span>
             {member.twoFactorEnabled && (
               <span className="chip">
-                <Icon name="shield" size={12} />
+                <Icon icon={ICONS.securityCheck} size="xs" />
                 {t('Zwei-Schritt-Anmeldung')}
               </span>
             )}
@@ -593,21 +598,23 @@ function MemberDetail({
         {owner && (
           <div className="detail-tools">
             {member.status === STATUS.accepted && (
-              <button className="primary" onClick={onConfirm}>
-                <Icon name="check" size={15} />
+              <Button variant="primary" onClick={onConfirm} icon={ICONS.done}>
                 {t('Bestätigen …')}
-              </button>
+              </Button>
             )}
             {member.status === STATUS.invited && (
-              <button className="quiet" onClick={onReinvite}>
-                <Icon name="send" size={15} />
+              <Button variant="ghost" onClick={onReinvite} icon={ICONS.send}>
                 {t('Nochmal einladen')}
-              </button>
+              </Button>
             )}
-            <button className="quiet danger-text" onClick={onRemove}>
-              <Icon name="trash" size={15} />
+            <Button
+              variant="ghost"
+              className="text-danger-ink!"
+              onClick={onRemove}
+              icon={ICONS.delete}
+            >
               {t('Entfernen')}
-            </button>
+            </Button>
           </div>
         )}
       </header>
@@ -684,13 +691,9 @@ function MemberDetail({
             </>
           )}
           <p className="family-save">
-            <button
-              className="primary"
-              disabled={!dirty || busy}
-              onClick={() => void saveChanges()}
-            >
+            <Button variant="primary" disabled={!dirty || busy} onClick={() => void saveChanges()}>
               {t('Speichern')}
-            </button>
+            </Button>
           </p>
         </>
       )}
@@ -747,7 +750,7 @@ function CollectionDetail({
     <article className="detail" aria-label={collection.name}>
       <header className="detail-head">
         <span className="item-tile" data-size="large" data-hue="3">
-          <Icon name="grid" size={24} />
+          <Icon icon={ICONS.collection} size="xl" />
         </span>
         <div className="detail-title">
           <h2>{collection.name}</h2>
@@ -757,14 +760,17 @@ function CollectionDetail({
         </div>
         {owner && (
           <div className="detail-tools">
-            <button className="quiet" onClick={onRename}>
-              <Icon name="pencil" size={15} />
+            <Button variant="ghost" onClick={onRename} icon={ICONS.edit}>
               {t('Umbenennen')}
-            </button>
-            <button className="quiet danger-text" onClick={onDelete}>
-              <Icon name="trash" size={15} />
+            </Button>
+            <Button
+              variant="ghost"
+              className="text-danger-ink!"
+              onClick={onDelete}
+              icon={ICONS.delete}
+            >
               {t('Löschen')}
-            </button>
+            </Button>
           </div>
         )}
       </header>
@@ -787,13 +793,9 @@ function CollectionDetail({
             ))}
           </section>
           <p className="family-save">
-            <button
-              className="primary"
-              disabled={!dirty || busy}
-              onClick={() => void saveChanges()}
-            >
+            <Button variant="primary" disabled={!dirty || busy} onClick={() => void saveChanges()}>
               {t('Speichern')}
-            </button>
+            </Button>
           </p>
         </>
       ) : (
@@ -857,12 +859,12 @@ function InviteDialog({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" onClick={() => void submit()} disabled={busy || !list.length}>
+          </Button>
+          <Button variant="primary" onClick={() => void submit()} disabled={busy || !list.length}>
             {t('Einladen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -985,12 +987,12 @@ export function NameDialog({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={!name.trim() || busy} onClick={() => void submit()}>
+          </Button>
+          <Button variant="primary" disabled={!name.trim() || busy} onClick={() => void submit()}>
             {t('Übernehmen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -1051,16 +1053,16 @@ export function NewFamilyDialog({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            variant="primary"
             disabled={!name.trim() || !collection.trim() || busy}
             onClick={() => void submit()}
           >
             {busy ? t('Nyu macht die Schlüssel …') : t('Anlegen')}
-          </button>
+          </Button>
         </>
       }
     >

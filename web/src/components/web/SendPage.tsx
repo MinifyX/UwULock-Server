@@ -12,7 +12,7 @@ import {
 import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
 import { save } from './controls';
@@ -155,9 +155,9 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             {errorLine}
             <div className="form-actions">
               <span className="spacer" />
-              <button className="primary" type="submit" disabled={busy || !password}>
+              <Button variant="primary" type="submit" disabled={busy || !password}>
                 {busy ? t('Prüft …') : t('Öffnen')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : asking === 'email' ? (
@@ -183,9 +183,9 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             {errorLine}
             <div className="form-actions">
               <span className="spacer" />
-              <button className="primary" type="submit" disabled={busy || !email.trim()}>
+              <Button variant="primary" type="submit" disabled={busy || !email.trim()}>
                 {busy ? t('Schickt …') : t('Code schicken')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : asking === 'code' ? (
@@ -213,8 +213,7 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             </label>
             {errorLine}
             <div className="form-actions">
-              <button
-                type="button"
+              <Button
                 disabled={busy}
                 onClick={() => {
                   setCode('');
@@ -223,11 +222,11 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
                 }}
               >
                 {t('Andere Adresse')}
-              </button>
+              </Button>
               <span className="spacer" />
-              <button className="primary" type="submit" disabled={busy || !code.trim()}>
+              <Button variant="primary" type="submit" disabled={busy || !code.trim()}>
                 {busy ? t('Prüft …') : t('Öffnen')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : send ? (
@@ -236,10 +235,9 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
             {send.creator && <p className="field-hint">{t('Von {who}', { who: send.creator })}</p>}
             {send.kind === 0 ? (
               !shown ? (
-                <button className="primary" onClick={() => setShown(true)}>
-                  <Icon name="eye" size={15} />
+                <Button icon={ICONS.show} variant="primary" onClick={() => setShown(true)}>
                   {mayBeEntrySend(send.text) ? t('Eintrag zeigen') : t('Text zeigen')}
-                </button>
+                </Button>
               ) : decoding ? (
                 <p className="field-hint" role="status">
                   {t('Liest …')}
@@ -249,7 +247,7 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
                   <SharedEntryView entry={decoded.entry} openable={decoded.openable} />
                   <div className="form-actions">
                     <span className="spacer" />
-                    <button onClick={() => setRaw(true)}>{t('Originaltext anzeigen')}</button>
+                    <Button onClick={() => setRaw(true)}>{t('Originaltext anzeigen')}</Button>
                   </div>
                 </>
               ) : (
@@ -257,30 +255,34 @@ export function SendPage({ accessId, urlKey }: { accessId: string; urlKey: strin
                   <pre className="send-text">{decoded ? decoded.readable : send.text}</pre>
                   <div className="form-actions">
                     {decoded && (
-                      <button onClick={() => setRaw(false)}>{t('Als Eintrag zeigen')}</button>
+                      <Button onClick={() => setRaw(false)}>{t('Als Eintrag zeigen')}</Button>
                     )}
                     <span className="spacer" />
-                    <button
-                      className="primary"
+                    <Button
+                      icon={ICONS.copy}
+                      variant="primary"
                       onClick={() => copyText(decoded ? decoded.readable : (send.text ?? ''))}
                     >
-                      <Icon name="copy" size={15} />
                       {t('Kopieren')}
-                    </button>
+                    </Button>
                   </div>
                 </>
               )
             ) : (
               <div className="form-actions">
                 <span className="send-file">
-                  <Icon name="file" size={16} />
+                  <Icon icon={ICONS.file} />
                   {send.fileName} {send.size && `(${bytes(Number(send.size))})`}
                 </span>
                 <span className="spacer" />
-                <button className="primary" disabled={busy} onClick={() => void download()}>
-                  <Icon name="download" size={15} />
+                <Button
+                  icon={ICONS.download}
+                  variant="primary"
+                  disabled={busy}
+                  onClick={() => void download()}
+                >
                   {busy ? t('Lädt …') : t('Herunterladen')}
-                </button>
+                </Button>
               </div>
             )}
             {send.expirationDate && (

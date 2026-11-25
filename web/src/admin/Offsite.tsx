@@ -1,21 +1,16 @@
+import { Button, Card, ICONS, Section, Segmented, SettingRow, Switch } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import {
-  Button,
   ButtonRow,
   Callout,
-  Card,
   Checkbox,
   DangerZone,
   Field,
   FormRow,
   Modal,
-  Section,
-  Segmented,
-  SettingRow,
   Table,
   TextField,
-  Toggle,
 } from '../components/ui';
 import { PasswordPrompt, ResultLine, type Result } from '../components/web/controls';
 import { Explain, NumberInput } from './fields';
@@ -152,7 +147,7 @@ export function Offsite() {
   return (
     <div className="offsite">
       <Section
-        heading={t('Backups außer Haus')}
+        title={t('Backups außer Haus')}
         lead={t(
           'Jede Nacht und auf Knopfdruck auf ein anderes System: dedupliziert (nur Neues geht hoch) und verschlüsselt. Enthält die Datenbank, Anhänge, Send-Dateien, Datei-Anfragen und die Schlüssel des Servers.',
         )}
@@ -172,17 +167,20 @@ export function Offsite() {
               : t('Erst ein Ziel wählen.')
           }
         >
-          <Toggle
-            label={t('Backups außer Haus an')}
-            checked={draft.enabled}
-            disabled={!target}
-            onChange={(enabled) => setDraft({ ...draft, enabled })}
-          />
+          {({ id, describedBy }) => (
+            <Switch
+              id={id}
+              describedBy={describedBy}
+              checked={draft.enabled}
+              disabled={!target}
+              onChange={(enabled) => setDraft({ ...draft, enabled })}
+            />
+          )}
         </SettingRow>
       </Section>
 
       <Section
-        heading={t('Wohin')}
+        title={t('Wohin')}
         lead={t('Ein NAS per SFTP, ein S3-Speicher oder ein eingehängter Ordner.')}
       >
         <SettingRow label={t('Ziel')}>
@@ -268,11 +266,12 @@ export function Offsite() {
               </Field>
             ) : view.target?.publicKey ? (
               <Card
-                heading={t('Für ~/.ssh/authorized_keys des Backup-Benutzers')}
+                level={4}
+                title={t('Für ~/.ssh/authorized_keys des Backup-Benutzers')}
                 aside={
                   <Button
-                    size="small"
-                    icon="copy"
+                    size="sm"
+                    icon={ICONS.copy}
                     onClick={() =>
                       void navigator.clipboard
                         .writeText(view.target?.publicKey ?? '')
@@ -292,11 +291,13 @@ export function Offsite() {
             )}
             {view.target?.hostKey && (
               <Card
-                heading={t('Host-Schlüssel des Backup-Servers')}
+                level={4}
+                title={t('Host-Schlüssel des Backup-Servers')}
                 aside={
                   <Button
-                    size="small"
-                    variant="quiet-danger"
+                    className="text-danger-ink!"
+                    size="sm"
+                    variant="ghost"
                     disabled={busy}
                     onClick={() => setAskingForget(true)}
                   >
@@ -381,22 +382,25 @@ export function Offsite() {
       </Section>
 
       <Section
-        heading={t('Zeitplan und Aufbewahrung')}
+        title={t('Zeitplan und Aufbewahrung')}
         lead={t('Wann gesichert wird, und wie viele ältere Stände am Ziel bleiben.')}
       >
         <SettingRow
           label={t('Jede Nacht um')}
           description={t('In UTC, der Weltzeit ohne Sommerzeit.')}
         >
-          <input
-            type="time"
-            aria-label={t('Jede Nacht um (UTC)')}
-            value={`${pad(draft.hour)}:${pad(draft.minute)}`}
-            onChange={(e) => {
-              const [hour, minute] = e.target.value.split(':').map(Number);
-              setDraft({ ...draft, hour: hour ?? 0, minute: minute ?? 0 });
-            }}
-          />
+          {({ id }) => (
+            <input
+              id={id}
+              type="time"
+              aria-label={t('Jede Nacht um (UTC)')}
+              value={`${pad(draft.hour)}:${pad(draft.minute)}`}
+              onChange={(e) => {
+                const [hour, minute] = e.target.value.split(':').map(Number);
+                setDraft({ ...draft, hour: hour ?? 0, minute: minute ?? 0 });
+              }}
+            />
+          )}
         </SettingRow>
         <SettingRow
           label={t('Tägliche Stände aufheben')}
@@ -460,7 +464,7 @@ export function Offsite() {
         </SettingRow>
       </Section>
 
-      <Section heading={t('Verschlüsselung')}>
+      <Section title={t('Verschlüsselung')}>
         <SettingRow
           label={t('Verschlüsselt')}
           description={
@@ -477,12 +481,15 @@ export function Offsite() {
             )
           }
         >
-          <Toggle
-            label={t('Verschlüsselt')}
-            checked={draft.encrypted || !plainAllowed}
-            disabled={!plainAllowed}
-            onChange={(encrypted) => setDraft({ ...draft, encrypted })}
-          />
+          {({ id, describedBy }) => (
+            <Switch
+              id={id}
+              describedBy={describedBy}
+              checked={draft.encrypted || !plainAllowed}
+              disabled={!plainAllowed}
+              onChange={(encrypted) => setDraft({ ...draft, encrypted })}
+            />
+          )}
         </SettingRow>
         {plainAllowed && !draft.encrypted && (
           <Callout tone="error">
@@ -532,15 +539,15 @@ export function Offsite() {
           {view.running ? t('Läuft …') : t('Jetzt sichern')}
         </Button>
         {view.encrypted && (
-          <Button variant="quiet" disabled={busy} onClick={() => setAskingKey(true)}>
+          <Button variant="ghost" disabled={busy} onClick={() => setAskingKey(true)}>
             {t('Wiederherstellungsschlüssel zeigen')}
           </Button>
         )}
       </ButtonRow>
       <ResultLine result={result} />
 
-      <Section heading={t('Letzter Lauf')}>
-        <Card as="div">
+      <Section title={t('Letzter Lauf')}>
+        <Card>
           <p className="detail-line" data-tone={view.stale ? 'warning' : undefined}>
             {status.lastSuccess
               ? t('Zuletzt gelungen: {when}', { when: when(status.lastSuccess) ?? '' })
@@ -610,8 +617,9 @@ export function Offsite() {
                 <td>{snapshot.version}</td>
                 <td className="row-actions">
                   <Button
-                    size="small"
-                    variant="quiet-danger"
+                    className="text-danger-ink!"
+                    size="sm"
+                    variant="ghost"
                     onClick={() => setRestoring(snapshot)}
                   >
                     {t('Zurückspielen')}
@@ -679,7 +687,7 @@ export function Offsite() {
           footer={
             <>
               <Button
-                icon="copy"
+                icon={ICONS.copy}
                 onClick={() =>
                   void navigator.clipboard
                     .writeText(shownKey)

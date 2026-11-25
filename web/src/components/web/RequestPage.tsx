@@ -3,7 +3,7 @@ import { errorText } from '../../lib/errors';
 import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { openRequest, requestAccess, submit, type OpenedRequest } from '../../lib/requests';
-import { Icon } from '../Icon';
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import { NyuScene } from '../nyu/scenes';
 import { PasswordInput } from '../PasswordInput';
 import { WelcomeMark } from '../TitleBar';
@@ -130,9 +130,9 @@ export function RequestPage({ accessId, secret }: { accessId: string; secret: st
             )}
             <div className="form-actions">
               <span className="spacer" />
-              <button className="primary" type="submit" disabled={busy || !password}>
+              <Button variant="primary" type="submit" disabled={busy || !password}>
                 {busy ? t('Prüft …') : t('Öffnen')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : opened ? (
@@ -154,10 +154,9 @@ export function RequestPage({ accessId, secret }: { accessId: string; secret: st
                   hidden
                   onChange={(event) => setFiles([...(event.target.files ?? [])])}
                 />
-                <button type="button" disabled={busy} onClick={() => input.current?.click()}>
-                  <Icon name="upload" size={15} />
+                <Button icon={ICONS.upload} disabled={busy} onClick={() => input.current?.click()}>
                   {files.length ? t('Andere Dateien wählen …') : t('Dateien wählen …')}
-                </button>
+                </Button>
                 {files.length > 0 && (
                   <ul className="picked-files">
                     {files.map((file) => (
@@ -165,7 +164,7 @@ export function RequestPage({ accessId, secret }: { accessId: string; secret: st
                         key={`${file.name}-${file.size}`}
                         data-bad={file.size > opened.maxFileBytes || undefined}
                       >
-                        <Icon name="file" size={14} />
+                        <Icon icon={ICONS.file} size="xs" />
                         {file.name} ({bytes(file.size)})
                       </li>
                     ))}
@@ -224,14 +223,13 @@ export function RequestPage({ accessId, secret }: { accessId: string; secret: st
             )}
             <div className="form-actions">
               <span className="spacer" />
-              <button className="primary" type="submit" disabled={!ready || busy}>
-                <Icon name="send" size={15} />
+              <Button icon={ICONS.send} variant="primary" type="submit" disabled={!ready || busy}>
                 {progress !== null && files.length
                   ? t('Sendet {done} von {n} …', { done: progress, n: files.length })
                   : busy
                     ? t('Verschlüsselt …')
                     : t('Verschlüsselt senden')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : (

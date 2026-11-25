@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Callout, Section, Segmented } from '../components/ui';
+import { Section, Segmented } from '@uwusuite/design';
+import { Callout } from '../components/ui';
 import { stats, type Day } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { bytes } from '../lib/format';
@@ -133,7 +134,7 @@ export function History() {
   const sum = (pick: (day: Day) => number) => days.reduce((total, day) => total + pick(day), 0);
 
   return (
-    <Section heading={t('Verlauf')} className="history">
+    <Section title={t('Verlauf')} className="history">
       <div className="history-head">
         <Segmented
           label={t('Zeitraum')}

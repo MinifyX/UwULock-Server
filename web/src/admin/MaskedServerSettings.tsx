@@ -1,5 +1,6 @@
+import { Button, Card, ICONS, Section } from '@uwusuite/design';
 import { useState } from 'react';
-import { Button, ButtonRow, Card, FormRow, Section, TextField } from '../components/ui';
+import { ButtonRow, FormRow, TextField } from '../components/ui';
 import { checkMaskedServer, type MaskedServerCheck } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { t, useLanguage } from '../lib/i18n';
@@ -51,7 +52,7 @@ export function MaskedServerSettings() {
         };
         return (
           <Section
-            heading={t('UwUMail-Server für maskierte Adressen')}
+            title={t('UwUMail-Server für maskierte Adressen')}
             lead={t(
               'Mit diesen UwUMail-Servern dürfen Konten sich verbinden, um für jede Website eine eigene Mail-Adresse anzulegen – auch aus den Bitwarden-Apps heraus. Mit anderen spricht dieser Server nicht. Leer: keine maskierten Adressen.',
             )}
@@ -92,7 +93,7 @@ export function MaskedServerSettings() {
                     )}
                     <ButtonRow>
                       <Button
-                        size="small"
+                        size="sm"
                         disabled={!server.url.trim() || result?.busy}
                         onClick={() => void check(index, server.url)}
                       >
@@ -101,8 +102,9 @@ export function MaskedServerSettings() {
                       </Button>
                       <span className="spacer" />
                       <Button
-                        size="small"
-                        variant="quiet-danger"
+                        className="text-danger-ink!"
+                        size="sm"
+                        variant="ghost"
                         onClick={() => set(servers.filter((_, i) => i !== index))}
                       >
                         {t('Entfernen')}
@@ -114,7 +116,7 @@ export function MaskedServerSettings() {
               })}
             </div>
             <ButtonRow>
-              <Button icon="plus" onClick={() => set([...servers, { url: '', name: '' }])}>
+              <Button icon={ICONS.add} onClick={() => set([...servers, { url: '', name: '' }])}>
                 {t('UwUMail-Server hinzufügen')}
               </Button>
             </ButtonRow>

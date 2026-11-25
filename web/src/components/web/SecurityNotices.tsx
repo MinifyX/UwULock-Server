@@ -3,7 +3,7 @@ import { errorText } from '../../lib/errors';
 import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { deviceText, markSeen, notices, noticeText, type Notice } from '../../lib/notices';
-import { Icon } from '../Icon';
+import { Button, Icon, ICONS, Tag } from '@uwusuite/design';
 import { ResultLine, type Result } from './controls';
 
 const WARNINGS = new Set([
@@ -72,11 +72,14 @@ export function SecurityNotices({ onSeen }: { onSeen: () => void }) {
       <ul className="device-list notice-list">
         {list?.map((notice) => (
           <li key={notice.id} className="device" data-unseen={notice.seen ? undefined : true}>
-            <Icon name={WARNINGS.has(notice.kind) ? 'warning' : 'shield'} size={20} />
+            <Icon
+              icon={WARNINGS.has(notice.kind) ? ICONS.warning : ICONS.securityCheck}
+              size="lg"
+            />
             <span className="device-text">
               <b>
                 {noticeText(notice)}
-                {!notice.seen && <span className="badge">{t('neu')}</span>}
+                {!notice.seen && <Tag tone="pink">{t('neu')}</Tag>}
               </b>
               <small>
                 {[
@@ -94,9 +97,9 @@ export function SecurityNotices({ onSeen }: { onSeen: () => void }) {
         {list?.length === 0 && <li className="empty-note">{t('Noch nichts passiert.')}</li>}
       </ul>
       {next && (
-        <button className="load-more" disabled={busy} onClick={() => void more()}>
+        <Button className="load-more" disabled={busy} onClick={() => void more()}>
           {busy ? t('Lädt …') : t('Mehr laden')}
-        </button>
+        </Button>
       )}
     </>
   );

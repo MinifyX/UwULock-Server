@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Button, Icon, IconButton, ICONS } from '@uwusuite/design';
 import { errorText } from '../../lib/errors';
 import { bytes, when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
@@ -18,7 +19,6 @@ import {
   type RequestDraft,
 } from '../../lib/requests';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { NyuScene } from '../nyu/scenes';
 import { Modal } from '../Modal';
 import { listbox } from '../listbox';
@@ -118,7 +118,7 @@ export function FileRequestsView({ open }: { open?: string | null }) {
               disabled={problem === 'lost'}
               onClick={() => setEditing({ request: null })}
             >
-              <Icon name="plus" size={15} />
+              <Icon icon={ICONS.add} />
               {t('Neu')}
             </button>
           </p>
@@ -130,9 +130,9 @@ export function FileRequestsView({ open }: { open?: string | null }) {
                 'Die Schlüssel deines Kontos wurden erneuert, und die Namen und Links deiner Datei-Anfragen lassen sich nicht mehr öffnen. Die Links funktionieren weiter; um neue Anfragen zu machen, fang neu an.',
               )}
             </p>
-            <button className="primary" onClick={() => setResetting(true)}>
+            <Button variant="primary" onClick={() => setResetting(true)}>
               {t('Neu anfangen')}
-            </button>
+            </Button>
           </div>
         )}
         {sorted.length ? (
@@ -150,7 +150,7 @@ export function FileRequestsView({ open }: { open?: string | null }) {
                 }}
               >
                 <span className="item-tile" data-hue="4">
-                  <Icon name="download" size={18} />
+                  <Icon icon={ICONS.download} size="md" />
                 </span>
                 <span className="item-text">
                   <span className="item-name">{request.name ?? t('(ohne Namen)')}</span>
@@ -162,7 +162,9 @@ export function FileRequestsView({ open }: { open?: string | null }) {
                       {request.unseen}
                     </span>
                   )}
-                  {request.passwordSet && <Icon name="lock" size={13} title={t('Mit Passwort')} />}
+                  {request.passwordSet && (
+                    <Icon icon={ICONS.locked} size="xs" label={t('Mit Passwort')} />
+                  )}
                 </span>
               </li>
             ))}
@@ -217,11 +219,11 @@ export function FileRequestsView({ open }: { open?: string | null }) {
           footer={
             <>
               <span className="spacer" />
-              <button data-secondary onClick={() => setDeleting(null)}>
+              <Button data-secondary onClick={() => setDeleting(null)}>
                 {t('Abbrechen')}
-              </button>
-              <button
-                className="danger"
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => {
                   const id = deleting.id;
                   setDeleting(null);
@@ -235,7 +237,7 @@ export function FileRequestsView({ open }: { open?: string | null }) {
                 }}
               >
                 {t('Löschen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -322,7 +324,7 @@ function RequestDetail({
     <article className="detail" aria-label={request.name ?? t('Datei-Anfrage')}>
       <header className="detail-head">
         <span className="item-tile" data-size="large" data-hue="4">
-          <Icon name="download" size={26} />
+          <Icon icon={ICONS.download} size="xl" className="size-[26px]" />
         </span>
         <div className="detail-title">
           <h2>{request.name ?? t('(ohne Namen)')}</h2>
@@ -332,17 +334,18 @@ function RequestDetail({
           </p>
         </div>
         <div className="detail-tools">
-          <button className="primary" disabled={!link} onClick={onCopy}>
-            <Icon name="copy" size={15} />
+          <Button variant="primary" disabled={!link} onClick={onCopy} icon={ICONS.copy}>
             {t('Link kopieren')}
-          </button>
-          <button className="quiet" onClick={onEdit}>
-            <Icon name="pencil" size={15} />
+          </Button>
+          <Button variant="ghost" onClick={onEdit} icon={ICONS.edit}>
             {t('Bearbeiten')}
-          </button>
-          <button className="quiet danger-text" aria-label={t('Löschen')} onClick={onDelete}>
-            <Icon name="trash" size={15} />
-          </button>
+          </Button>
+          <IconButton
+            icon={ICONS.delete}
+            label={t('Löschen')}
+            className="text-danger-ink!"
+            onClick={onDelete}
+          />
         </div>
       </header>
       <section className="detail-card">
@@ -418,27 +421,27 @@ function RequestDetail({
           {submission.files.map((file) => (
             <div key={file.id} className="detail-row">
               <span className="send-file">
-                <Icon name="file" size={16} />
+                <Icon icon={ICONS.file} />
                 {file.name} ({bytes(file.size)})
               </span>
               <span className="spacer" />
-              <button
-                className="quiet"
+              <Button
+                variant="ghost"
                 disabled={busy !== null}
                 onClick={() =>
                   void act(file.id, async () =>
                     save(await downloadArrivedFile(submission, file.id), file.name),
                   )
                 }
+                icon={ICONS.download}
               >
-                <Icon name="download" size={15} />
                 {busy === file.id ? t('Lädt …') : t('Herunterladen')}
-              </button>
+              </Button>
             </div>
           ))}
           <div className="form-actions">
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy !== null}
               onClick={() =>
                 void act(submission.id, async () => {
@@ -451,13 +454,14 @@ function RequestDetail({
                   onChanged();
                 })
               }
+              icon={ICONS.note}
             >
-              <Icon name="note" size={15} />
               {busy === submission.id ? t('Übernimmt …') : t('Als Eintrag übernehmen')}
-            </button>
+            </Button>
             <span className="spacer" />
-            <button
-              className="quiet danger-text"
+            <Button
+              variant="ghost"
+              className="text-danger-ink!"
               disabled={busy !== null}
               onClick={() =>
                 void act(submission.id, async () => {
@@ -466,10 +470,10 @@ function RequestDetail({
                   onChanged();
                 })
               }
+              icon={ICONS.delete}
             >
-              <Icon name="trash" size={15} />
               {t('Löschen')}
-            </button>
+            </Button>
           </div>
         </section>
       ))}
@@ -564,12 +568,12 @@ function RequestEditor({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button className="primary" disabled={!ready || busy} onClick={() => void submit()}>
+          </Button>
+          <Button variant="primary" disabled={!ready || busy} onClick={() => void submit()}>
             {busy ? t('Einen Moment …') : request ? t('Speichern') : t('Anlegen')}
-          </button>
+          </Button>
         </>
       }
     >

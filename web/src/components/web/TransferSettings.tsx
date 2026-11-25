@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { exportVault } from '../../lib/account';
 import { t, useLanguage } from '../../lib/i18n';
 import { reportExport } from '../../lib/notices';
-import { PasswordPrompt, Row, Segmented, save } from './controls';
+import { Button, Segmented, SettingRow } from '@uwusuite/design';
+import { PasswordPrompt, save } from './controls';
 import { ImportSettings } from './ImportSettings';
 
 /**
@@ -18,23 +19,25 @@ export function TransferSettings() {
   return (
     <>
       <ImportSettings />
-      <Row
+      <SettingRow
         label={t('Exportieren')}
         description={t(
           'JSON enthält alles, CSV nur Logins und Notizen. Die Datei ist nicht verschlüsselt: Lösch sie, sobald du sie nicht mehr brauchst.',
         )}
       >
-        <Segmented
-          label={t('Format')}
-          value={format}
-          onChange={setFormat}
-          options={[
-            { value: 'json', label: 'JSON' },
-            { value: 'csv', label: 'CSV' },
-          ]}
-        />
-        <button onClick={() => setExporting(true)}>{t('Exportieren …')}</button>
-      </Row>
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented
+            label={t('Format')}
+            value={format}
+            onChange={setFormat}
+            options={[
+              { value: 'json', label: 'JSON' },
+              { value: 'csv', label: 'CSV' },
+            ]}
+          />
+          <Button onClick={() => setExporting(true)}>{t('Exportieren …')}</Button>
+        </div>
+      </SettingRow>
       {exporting && (
         <PasswordPrompt
           title={t('Tresor exportieren?')}

@@ -1,5 +1,6 @@
+import { Button } from '@uwusuite/design';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { Button, Callout } from '../components/ui';
+import { Callout } from '../components/ui';
 import { ResultLine, type Result } from '../components/web/controls';
 import { saveSettings, settings as load, type Settings } from '../lib/admin';
 import { errorText } from '../lib/errors';

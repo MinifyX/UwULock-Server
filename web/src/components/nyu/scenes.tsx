@@ -4,22 +4,14 @@ import { NYU, NyuFigure, Paw, Sticker } from './Nyu';
 // Every scene is drawn on a 320 × 220 canvas, the same as UwUMail's. Nyu sits
 // at about 0.6 scale, so props use a 6 px outline and an 18 px edge to match.
 
-const S = { stroke: NYU.outline, strokeWidth: 6 } as const;
+const S = { stroke: NYU.ink, strokeWidth: 6 } as const;
 const EDGE = 18;
 /** Nyu's own edge at scene scale: 30 × 0.6 ≈ the props' 18 px. */
 const NYU_EDGE = 30;
 
 export function Shadow({ cx = 160, rx = 104 }: { cx?: number; rx?: number }) {
   return (
-    <ellipse
-      className="no-edge"
-      cx={cx}
-      cy="204"
-      rx={rx}
-      ry="8"
-      fill={NYU.outline}
-      opacity="0.08"
-    />
+    <ellipse className="no-edge" cx={cx} cy="204" rx={rx} ry="8" fill={NYU.ink} opacity="0.08" />
   );
 }
 
@@ -40,7 +32,7 @@ export function Star({
       className={className}
       d={`M${x} ${y - r} Q${x + k} ${y - k} ${x + r} ${y} Q${x + k} ${y + k} ${x} ${y + r} Q${x - k} ${y + k} ${x - r} ${y} Q${x - k} ${y - k} ${x} ${y - r}Z`}
       fill={NYU.star}
-      stroke={NYU.outline}
+      stroke={NYU.ink}
       strokeWidth={r > 10 ? 4 : 3}
     />
   );
@@ -62,7 +54,7 @@ export function Heart({
       transform={`translate(${x} ${y}) scale(${size})`}
       d="M0 13 C-15 3 -18 -4 -17 -8 C-16 -15 -7 -16 -3 -11 L0 -8 L3 -11 C7 -16 16 -15 17 -8 C18 -4 15 3 0 13Z"
       fill={fill}
-      stroke={NYU.outline}
+      stroke={NYU.ink}
       strokeWidth={4 / size}
     />
   );
@@ -82,7 +74,7 @@ export function Key({
 }) {
   return (
     <g transform={`translate(${x} ${y}) rotate(${rotate}) scale(${size})`}>
-      <g fill="none" stroke={NYU.outline} strokeWidth={6}>
+      <g fill="none" stroke={NYU.ink} strokeWidth={6}>
         <path d="M0 4 V40 M0 24 H13 M0 35 H10" />
       </g>
       <circle cx="0" cy="-9" r="13" fill={NYU.lilac} {...S} />
@@ -110,8 +102,8 @@ export function VaultCard({
     <g transform={`translate(${x} ${y}) rotate(${rotate})`}>
       <rect x="-28" y="-19" width="56" height="38" rx="8" fill={NYU.paper} {...S} strokeWidth={5} />
       <circle className="no-edge" cx="-15" cy="-6" r="6" fill={NYU.body} />
-      <rect className="no-edge" x="-5" y="-9" width="24" height="5" rx="2.5" fill={NYU.screen} />
-      <g className="no-edge" fill={NYU.outline}>
+      <rect className="no-edge" x="-5" y="-9" width="24" height="5" rx="2.5" fill={NYU.flap} />
+      <g className="no-edge" fill={NYU.ink}>
         <circle cx="-17" cy="9" r="2.6" />
         <circle cx="-9" cy="9" r="2.6" />
         <circle cx="-1" cy="9" r="2.6" />
@@ -130,7 +122,7 @@ function Welcome() {
       <path
         d="M246 44 q12 9 10 25 M262 32 q16 13 14 35"
         fill="none"
-        stroke={NYU.outline}
+        stroke={NYU.ink}
         strokeWidth={4}
         opacity="0.4"
       />
@@ -184,7 +176,7 @@ function Done() {
             rx="2"
             transform={`rotate(${rotate} ${x} ${y})`}
             fill={fill}
-            stroke={NYU.outline}
+            stroke={NYU.ink}
             strokeWidth={3}
           />
         ))}
@@ -217,12 +209,12 @@ function LoadError() {
       <Shadow cx={150} />
       <NyuFigure mood="sad" x={146} y={122} scale={0.6} tilt={6} edge={NYU_EDGE} />
       <Sticker edge={16}>
-        <path d={cable} fill="none" stroke={NYU.outline} strokeWidth={12} />
+        <path d={cable} fill="none" stroke={NYU.ink} strokeWidth={12} />
       </Sticker>
       <path d={cable} fill="none" stroke={NYU.violet} strokeWidth={5} />
       <Sticker edge={EDGE}>
         <g transform="rotate(-28 270 168)">
-          <path d="M284 162 h12 M284 174 h12" stroke={NYU.outline} strokeWidth={5} />
+          <path d="M284 162 h12 M284 174 h12" stroke={NYU.ink} strokeWidth={5} />
           <rect x="254" y="156" width="32" height="24" rx="6" fill={NYU.lilac} {...S} />
         </g>
       </Sticker>
@@ -239,7 +231,7 @@ function Puzzled() {
       <Sticker edge={EDGE}>
         <g transform="rotate(8 226 118)">
           <path d="M190 58 H240 L262 80 V176 H190Z" fill={NYU.paper} {...S} />
-          <path d="M240 58 V80 H262" fill={NYU.screen} {...S} />
+          <path d="M240 58 V80 H262" fill={NYU.flap} {...S} />
           <path
             d="M212 106 q0 -15 15 -15 q15 0 15 13 q0 10 -13 14 v8"
             fill="none"
@@ -271,7 +263,7 @@ function Pick() {
         edge={NYU_EDGE}
         front={<Paw x={16} y={130} className="nyu-wave" />}
       />
-      <path d="M34 118 h-18 M40 132 h-14" stroke={NYU.outline} strokeWidth={4} opacity="0.35" />
+      <path d="M34 118 h-18 M40 132 h-14" stroke={NYU.ink} strokeWidth={4} opacity="0.35" />
       <Sticker edge={12}>
         <Star x={290} y={172} r={9} />
         <Star x={46} y={52} r={11} />
@@ -358,7 +350,7 @@ function Connecting() {
       <Sticker edge={EDGE}>
         <g className="nyu-plug">
           <rect x="248" y="112" width="30" height="24" rx="6" fill={NYU.lilac} {...S} />
-          <path d="M278 118 h14 M278 130 h14" stroke={NYU.outline} strokeWidth={5} />
+          <path d="M278 118 h14 M278 130 h14" stroke={NYU.ink} strokeWidth={5} />
         </g>
       </Sticker>
       <Sticker edge={10}>
@@ -381,7 +373,7 @@ function Files() {
         <Sticker edge={EDGE}>
           <g transform="rotate(-6 160 172)">
             <rect x="112" y="150" width="96" height="50" rx="6" fill={NYU.kraft} {...S} />
-            <path d="M112 164 h96" stroke={NYU.outline} strokeWidth={5} />
+            <path d="M112 164 h96" stroke={NYU.ink} strokeWidth={5} />
             <rect
               className="no-edge"
               x="148"
@@ -494,7 +486,7 @@ function Tidy() {
           <path d="M220 124 H274 L266 200 H228 Z" fill={NYU.sky} {...S} />
           <path
             d="M236 140 l2 46 M247 140 v46 M258 140 l-2 46"
-            stroke={NYU.outline}
+            stroke={NYU.ink}
             strokeWidth={4}
             opacity="0.5"
           />
@@ -532,7 +524,7 @@ function Search() {
       </Sticker>
       <Sticker edge={EDGE}>
         <g className="nyu-scan">
-          <path d="M222 112 L204 136" stroke={NYU.outline} strokeWidth={10} />
+          <path d="M222 112 L204 136" stroke={NYU.ink} strokeWidth={10} />
           <circle cx="238" cy="92" r="24" fill={NYU.sky} fillOpacity={0.6} {...S} />
           <path
             className="no-edge"

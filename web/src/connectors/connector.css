@@ -1,5 +1,5 @@
-@import '../styles/tokens.css';
-@import '../styles/fonts.css';
+@import '@uwusuite/design/tokens.css';
+@import '@uwusuite/design/fonts.css';
 
 /* The WebAuthn connectors: a button, and on their own page a little around it. */
 .connector {
@@ -7,7 +7,7 @@
   min-height: 100vh;
   display: grid;
   place-items: center;
-  font-family: var(--uwu-font);
+  font-family: var(--font-ui);
   color: var(--uwu-ink);
   background: var(--uwu-canvas);
 }
@@ -33,7 +33,7 @@
 }
 
 .connector .brand span {
-  color: var(--uwu-pink);
+  color: var(--uwu-pink-ink);
 }
 
 .connector h1 {
@@ -71,7 +71,7 @@
 }
 
 .connector #msg[data-tone='error'] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 @media (prefers-color-scheme: dark) {

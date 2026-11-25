@@ -1,17 +1,14 @@
+import { Button, ICONS, Section, SettingRow, Switch } from '@uwusuite/design';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { PasswordInput } from '../components/PasswordInput';
 import {
-  Button,
   ButtonRow,
   Callout,
   DangerZone,
   Field,
   FormRow,
-  Section,
   Select,
-  SettingRow,
   TextField,
-  Toggle,
 } from '../components/ui';
 import { PasswordPrompt, ResultLine, type Result } from '../components/web/controls';
 import { copyGenerated } from '../lib/api';
@@ -166,7 +163,7 @@ function SsoActions({ test }: { test?: boolean }) {
           </Button>
         )}
         <span className="spacer" />
-        <Button variant="quiet" onClick={() => loaded(current)} disabled={busy || !dirty}>
+        <Button variant="ghost" onClick={() => loaded(current)} disabled={busy || !dirty}>
           {t('Verwerfen')}
         </Button>
         <Button
@@ -249,7 +246,7 @@ export function SsoProviderTab() {
   return (
     <>
       <Section
-        heading={t('Mit UwUAuth koppeln')}
+        title={t('Mit UwUAuth koppeln')}
         lead={
           current.paired
             ? `${t('Gekoppelt mit {url} seit {date}.', {
@@ -276,7 +273,12 @@ export function SsoProviderTab() {
               </a>
             )}
             <span className="spacer" />
-            <Button variant="quiet-danger" onClick={() => setUnpairing(true)} disabled={busy}>
+            <Button
+              className="text-danger-ink!"
+              variant="ghost"
+              onClick={() => setUnpairing(true)}
+              disabled={busy}
+            >
               {t('Entkoppeln …')}
             </Button>
           </ButtonRow>
@@ -308,7 +310,7 @@ export function SsoProviderTab() {
       </Section>
 
       <Section
-        heading={t('Anbieter von Hand (OpenID Connect)')}
+        title={t('Anbieter von Hand (OpenID Connect)')}
         lead={t(
           'Für jeden anderen Anbieter (Keycloak, Authentik, Entra ID, …). Beim Anbieter trägst du diese Rückleitungsadresse ein: {uri}',
           { uri: current.redirectUri ?? '' },
@@ -320,11 +322,14 @@ export function SsoProviderTab() {
             'Ein Knopf auf der Anmeldeseite des Web-Tresors und des Admin-Portals, und „Mit SSO anmelden“ in den Bitwarden-Apps (die SSO-Kennung ist egal). Der Tresor öffnet sich weiter nur mit dem Master-Passwort.',
           )}
         >
-          <Toggle
-            label={t('Anmeldung über SSO')}
-            checked={draft.enabled}
-            onChange={(enabled) => set({ enabled })}
-          />
+          {({ id, describedBy }) => (
+            <Switch
+              id={id}
+              describedBy={describedBy}
+              checked={draft.enabled}
+              onChange={(enabled) => set({ enabled })}
+            />
+          )}
         </SettingRow>
         <FormRow min="wide">
           <TextField
@@ -426,7 +431,7 @@ export function SsoRulesTab({ sso: loggedInWithSso }: { sso: boolean }) {
   return (
     <>
       <Section
-        heading={t('Wer über SSO einen Tresor bekommt')}
+        title={t('Wer über SSO einen Tresor bekommt')}
         lead={t(
           'Beim ersten Mal legt man sein Master-Passwort selbst fest. Einladungen gehen immer, und Adressen, die SCIM angelegt hat, auch.',
         )}
@@ -435,16 +440,19 @@ export function SsoRulesTab({ sso: loggedInWithSso }: { sso: boolean }) {
           label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
           description={t('Wer schon ein Konto hat, meldet sich in jedem Fall an.')}
         >
-          <Select
-            label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
-            value={draft.signups}
-            onChange={(signups: Signups) => set({ signups })}
-            options={[
-              { value: 'off', label: t('Niemand – nur bestehende Konten') },
-              { value: 'invitation', label: t('Nur mit Einladung oder über SCIM') },
-              { value: 'group', label: t('Wer in der Nutzergruppe ist') },
-            ]}
-          />
+          {({ id }) => (
+            <Select
+              id={id}
+              label={t('Wer sich ohne Einladung einen Tresor anlegen darf')}
+              value={draft.signups}
+              onChange={(signups: Signups) => set({ signups })}
+              options={[
+                { value: 'off', label: t('Niemand – nur bestehende Konten') },
+                { value: 'invitation', label: t('Nur mit Einladung oder über SCIM') },
+                { value: 'group', label: t('Wer in der Nutzergruppe ist') },
+              ]}
+            />
+          )}
         </SettingRow>
         <FormRow min="wide">
           <TextField
@@ -489,11 +497,14 @@ export function SsoRulesTab({ sso: loggedInWithSso }: { sso: boolean }) {
             'Die Anmeldung mit Passwort (und Passkey) geht dann nur noch für Admins und mit dem API-Key der CLI.',
           )}
         >
-          <Toggle
-            label={t('Nur noch über SSO anmelden')}
-            checked={draft.only}
-            onChange={(only) => set({ only })}
-          />
+          {({ id, describedBy }) => (
+            <Switch
+              id={id}
+              describedBy={describedBy}
+              checked={draft.only}
+              onChange={(only) => set({ only })}
+            />
+          )}
         </SettingRow>
         <SettingRow
           label={t('Admin-Portal nur nach Anmeldung über SSO')}
@@ -505,11 +516,14 @@ export function SsoRulesTab({ sso: loggedInWithSso }: { sso: boolean }) {
                 )
           }
         >
-          <Toggle
-            label={t('Admin-Portal nur nach Anmeldung über SSO')}
-            checked={draft.adminsOnlyWithSso}
-            onChange={(adminsOnlyWithSso) => set({ adminsOnlyWithSso })}
-          />
+          {({ id, describedBy }) => (
+            <Switch
+              id={id}
+              describedBy={describedBy}
+              checked={draft.adminsOnlyWithSso}
+              onChange={(adminsOnlyWithSso) => set({ adminsOnlyWithSso })}
+            />
+          )}
         </SettingRow>
         <SettingRow
           label={t('Unbestätigten Adressen trauen')}
@@ -521,11 +535,14 @@ export function SsoRulesTab({ sso: loggedInWithSso }: { sso: boolean }) {
             </Explain>
           }
         >
-          <Toggle
-            label={t('Unbestätigten Adressen trauen')}
-            checked={draft.trustUnverifiedEmail}
-            onChange={(trustUnverifiedEmail) => set({ trustUnverifiedEmail })}
-          />
+          {({ id, describedBy }) => (
+            <Switch
+              id={id}
+              describedBy={describedBy}
+              checked={draft.trustUnverifiedEmail}
+              onChange={(trustUnverifiedEmail) => set({ trustUnverifiedEmail })}
+            />
+          )}
         </SettingRow>
       </DangerZone>
       <SsoActions />
@@ -562,7 +579,7 @@ export function ScimTab() {
   };
   return (
     <Section
-      heading={t('Konten vom Anbieter verwalten lassen (SCIM)')}
+      title={t('Konten vom Anbieter verwalten lassen (SCIM)')}
       lead={t(
         'Darüber sperrt oder entfernt der Anbieter Konten und legt Adressen an, die sich anmelden dürfen. Adresse: {url}',
         { url: current.scimUrl ?? '' },
@@ -578,16 +595,19 @@ export function ScimTab() {
           </Explain>
         }
       >
-        <Select
-          label={t('Wenn der Anbieter jemanden löscht')}
-          value={current.scimOnDelete ?? 'disable'}
-          onChange={(value: 'disable' | 'delete') => setAsking({ kind: 'onDelete', value })}
-          disabled={busy}
-          options={[
-            { value: 'disable', label: t('Konto sperren') },
-            { value: 'delete', label: t('Konto und Tresor löschen') },
-          ]}
-        />
+        {({ id }) => (
+          <Select
+            id={id}
+            label={t('Wenn der Anbieter jemanden löscht')}
+            value={current.scimOnDelete ?? 'disable'}
+            onChange={(value: 'disable' | 'delete') => setAsking({ kind: 'onDelete', value })}
+            disabled={busy}
+            options={[
+              { value: 'disable', label: t('Konto sperren') },
+              { value: 'delete', label: t('Konto und Tresor löschen') },
+            ]}
+          />
+        )}
       </SettingRow>
       <SettingRow
         label={t('SCIM-Token')}
@@ -606,7 +626,7 @@ export function ScimTab() {
           tone="accent"
           title={t('Das Token – nur jetzt zu sehen:')}
           actions={
-            <Button size="small" icon="copy" onClick={() => void copyGenerated(scimToken)}>
+            <Button size="sm" icon={ICONS.copy} onClick={() => void copyGenerated(scimToken)}>
               {t('Kopieren')}
             </Button>
           }

@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Icon, type IconName } from './Icon';
+import { Icon } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 
 export type MenuItem =
   | {
       label: string;
-      icon?: IconName;
+      icon?: LucideIcon;
       danger?: boolean;
       disabled?: boolean;
       onSelect: () => void;
@@ -126,7 +127,7 @@ export function ContextMenu({ x, y, anchor, items, onClose, label }: Props) {
               item.onSelect();
             }}
           >
-            {item.icon ? <Icon name={item.icon} size={15} /> : <span className="icon-gap" />}
+            {item.icon ? <Icon icon={item.icon} /> : <span className="icon-gap" />}
             {item.label}
           </button>
         ),

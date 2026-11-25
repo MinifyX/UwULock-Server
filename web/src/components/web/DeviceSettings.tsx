@@ -12,16 +12,17 @@ import { errorText } from '../../lib/errors';
 import { ago, bytes } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { suiteAppName } from '../../lib/notices';
-import { Icon, type IconName } from '../Icon';
+import type { LucideIcon } from 'lucide-react';
+import { Button, Icon, ICONS } from '@uwusuite/design';
 import { PasswordPrompt, ResultLine, type Result } from './controls';
 
-function iconOf(type: number, app: string | null): IconName {
-  if (app) return 'terminal';
-  if (type <= 1 || type === 15) return 'grid';
-  if ([2, 3, 4, 5, 19, 20].includes(type)) return 'layers';
-  if ([6, 7, 8].includes(type)) return 'monitor';
-  if (type >= 23 && type <= 25) return 'terminal';
-  return 'globe';
+function iconOf(type: number, app: string | null): LucideIcon {
+  if (app) return ICONS.terminal;
+  if (type <= 1 || type === 15) return ICONS.overview;
+  if ([2, 3, 4, 5, 19, 20].includes(type)) return ICONS.collection;
+  if ([6, 7, 8].includes(type)) return ICONS.computer;
+  if (type >= 23 && type <= 25) return ICONS.terminal;
+  return ICONS.website;
 }
 
 /** Where the account is logged in: each browser extension, app, CLI and web vault tab. */
@@ -45,7 +46,7 @@ export function DeviceSettings({ onClose }: { onClose: () => void }) {
       <ul className="device-list">
         {list?.map((device) => (
           <li key={device.id} className="device">
-            <Icon name={iconOf(device.type, device.app)} size={20} />
+            <Icon icon={iconOf(device.type, device.app)} size="lg" />
             <span className="device-text">
               <b>
                 {device.name}{' '}
@@ -60,7 +61,7 @@ export function DeviceSettings({ onClose }: { onClose: () => void }) {
                 {device.remembered ? ` · ${t('Zwei-Schritt-Anmeldung gemerkt')}` : ''}
               </small>
             </span>
-            <button
+            <Button
               onClick={async () => {
                 try {
                   if (device.current) {
@@ -80,7 +81,7 @@ export function DeviceSettings({ onClose }: { onClose: () => void }) {
               }}
             >
               {t('Abmelden')}
-            </button>
+            </Button>
           </li>
         ))}
         {list?.length === 0 && <li className="empty-note">{t('Keine Geräte.')}</li>}
@@ -124,7 +125,7 @@ function SuiteSpaces() {
       <ul className="device-list">
         {spaces.map((space) => (
           <li key={space.space} className="device">
-            <Icon name="terminal" size={20} />
+            <Icon icon={ICONS.terminal} size="lg" />
             <span className="device-text">
               <b>{spaceName(space.space)}</b>
               <small>
@@ -136,9 +137,9 @@ function SuiteSpaces() {
                 {t('Zuletzt {when}', { when: ago(Date.parse(space.revisionDate) / 1000) })}
               </small>
             </span>
-            <button className="danger" onClick={() => setDeleting(space)}>
+            <Button variant="danger" onClick={() => setDeleting(space)}>
               {t('Löschen')}
-            </button>
+            </Button>
           </li>
         ))}
       </ul>

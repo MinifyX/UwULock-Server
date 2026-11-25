@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Button, IconButton, ICONS, Segmented, SettingRow } from '@uwusuite/design';
 import { currentProfile, logout, syncNow, type Status } from '../../lib/api';
 import { apiKey } from '../../lib/features';
 import { call } from '../../lib/web/core';
@@ -32,7 +33,7 @@ import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
-import { PasswordPrompt, radioArrows, ResultLine, Row, Segmented, type Result } from './controls';
+import { PasswordPrompt, ResultLine, type Result } from './controls';
 import { rememberDefaultSendDomain, SendDomainField, useSendDomains } from './SendDomainSelect';
 
 type Props = {
@@ -88,33 +89,41 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
 
   return (
     <>
-      <Row label={t('Angemeldet als')} description={status.server ?? undefined}>
+      <SettingRow label={t('Angemeldet als')} description={status.server ?? undefined}>
         <span className="setting-value">{status.email}</span>
-      </Row>
-      <Row label={t('Name')} description={t('So nennen dich die Bitwarden-Apps und Mails.')}>
-        <span className="inline-form">
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={50} />
-          <button
-            disabled={busy || name.trim() === (status.name ?? '')}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await saveName(name);
-                await syncNow();
-                setResult({ tone: 'info', text: t('Gespeichert ✧') });
-              } catch (e) {
-                setResult({ tone: 'error', text: errorText(e) });
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t('Speichern')}
-          </button>
-        </span>
-      </Row>
+      </SettingRow>
+      <SettingRow label={t('Name')} description={t('So nennen dich die Bitwarden-Apps und Mails.')}>
+        {({ id, describedBy }) => (
+          <span className="inline-form">
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={50}
+            />
+            <Button
+              disabled={busy || name.trim() === (status.name ?? '')}
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await saveName(name);
+                  await syncNow();
+                  setResult({ tone: 'info', text: t('Gespeichert ✧') });
+                } catch (e) {
+                  setResult({ tone: 'error', text: errorText(e) });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {t('Speichern')}
+            </Button>
+          </span>
+        )}
+      </SettingRow>
       {info && (
-        <Row
+        <SettingRow
           label={t('Sprache der Mails')}
           description={t('Codes, Hinweise und Einladungen kommen in dieser Sprache.')}
         >
@@ -134,10 +143,10 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
               { value: 'en', label: 'English' },
             ]}
           />
-        </Row>
+        </SettingRow>
       )}
       {info && domains.length > 0 && (
-        <Row
+        <SettingRow
           label={t('Adresse für Sends')}
           description={t(
             'Neue Sends und Datei-Anfragen bekommen Links unter dieser Adresse; im Send lässt sie sich ändern. Auch Sends aus den Bitwarden-Apps bekommen sie, deren Links zeigen aber die Hauptadresse.',
@@ -159,13 +168,13 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
               }
             }}
           />
-        </Row>
+        </SettingRow>
       )}
-      <Row
+      <SettingRow
         label={t('Synchronisieren')}
         description={t('Zuletzt {when}.', { when: ago(status.lastSync) })}
       >
-        <button
+        <Button
           disabled={busy || status.syncing}
           onClick={async () => {
             setBusy(true);
@@ -181,23 +190,26 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
           }}
         >
           {t('Jetzt synchronisieren')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
       <ResultLine result={result} />
 
       <h3 className="settings-heading">{t('Anmeldung')}</h3>
-      <Row
+      <SettingRow
         label={t('Master-Passwort ändern')}
         description={t('Danach meldest du dich überall neu an – mit dem neuen Passwort.')}
       >
-        <button onClick={() => setDialog('password')}>{t('Ändern …')}</button>
-      </Row>
-      <Row label={t('Schlüsselableitung')} description={kdf ? kdfLabel(kdf) : t('Wird geladen …')}>
-        <button onClick={() => setDialog('kdf')} disabled={!kdf}>
+        <Button onClick={() => setDialog('password')}>{t('Ändern …')}</Button>
+      </SettingRow>
+      <SettingRow
+        label={t('Schlüsselableitung')}
+        description={kdf ? kdfLabel(kdf) : t('Wird geladen …')}
+      >
+        <Button onClick={() => setDialog('kdf')} disabled={!kdf}>
           {t('Ändern …')}
-        </button>
-      </Row>
-      <Row
+        </Button>
+      </SettingRow>
+      <SettingRow
         label={t('E-Mail-Adresse ändern')}
         description={
           info?.mail
@@ -205,68 +217,72 @@ export function AccountSettings({ status, info, onInfo, onClose }: Props) {
             : t('Geht erst, wenn der Server Mails verschicken kann.')
         }
       >
-        <button onClick={() => setDialog('email')} disabled={!info?.mail}>
+        <Button onClick={() => setDialog('email')} disabled={!info?.mail}>
           {t('Ändern …')}
-        </button>
-      </Row>
-      <Row
+        </Button>
+      </SettingRow>
+      <SettingRow
         label={t('Neue Schlüssel')}
         description={t(
           'Verschlüsselt jeden Eintrag neu, mit einem neuen Schlüssel. Sinnvoll, wenn du fürchtest, jemand hatte deinen entsperrten Tresor.',
         )}
       >
-        <button onClick={() => setDialog('rotate')}>{t('Neu verschlüsseln …')}</button>
-      </Row>
+        <Button onClick={() => setDialog('rotate')}>{t('Neu verschlüsseln …')}</Button>
+      </SettingRow>
 
-      <Row
+      <SettingRow
+        className="setting-row"
         label={t('Fingerabdruck')}
         description={
-          fingerprint ??
-          t(
-            'Den Satz vergleicht jemand mit dir, bevor er dich als Notfallkontakt oder in einer Familie bestätigt.',
-          )
+          // e2e reads the phrase from .setting-row .setting-description
+          <span className="setting-description">
+            {fingerprint ??
+              t(
+                'Den Satz vergleicht jemand mit dir, bevor er dich als Notfallkontakt oder in einer Familie bestätigt.',
+              )}
+          </span>
         }
       >
-        {!fingerprint && <button onClick={() => void showFingerprint()}>{t('Anzeigen')}</button>}
-      </Row>
-      <Row
+        {!fingerprint && <Button onClick={() => void showFingerprint()}>{t('Anzeigen')}</Button>}
+      </SettingRow>
+      <SettingRow
         label={t('API-Key')}
         description={t(
           'Für die Bitwarden-CLI: „bw login --apikey“. Er meldet ohne zweiten Schritt an – behandle ihn wie dein Passwort.',
         )}
       >
-        <button onClick={() => setDialog('api-key')}>{t('Anzeigen …')}</button>
-      </Row>
+        <Button onClick={() => setDialog('api-key')}>{t('Anzeigen …')}</Button>
+      </SettingRow>
 
       <h3 className="settings-heading">{t('Sitzungen')}</h3>
-      <Row
+      <SettingRow
         label={t('Überall abmelden')}
         description={t('Jedes Gerät und jeder Browser muss sich neu anmelden, dieser auch.')}
       >
-        <button onClick={() => setDialog('everywhere')}>{t('Überall abmelden …')}</button>
-      </Row>
-      <Row label={t('Abmelden')} description={t('Nur dieser Browser.')}>
-        <button
+        <Button onClick={() => setDialog('everywhere')}>{t('Überall abmelden …')}</Button>
+      </SettingRow>
+      <SettingRow label={t('Abmelden')} description={t('Nur dieser Browser.')}>
+        <Button
           onClick={async () => {
             onClose();
             await logout();
           }}
         >
           {t('Abmelden')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
 
       <h3 className="settings-heading danger-text">{t('Gefahrenzone')}</h3>
-      <Row
+      <SettingRow
         label={t('Konto löschen')}
         description={t(
           'Das Konto und der ganze Tresor sind danach weg, auch auf dem Server. Das lässt sich nicht rückgängig machen.',
         )}
       >
-        <button className="danger" onClick={() => setDialog('delete')}>
+        <Button variant="danger" onClick={() => setDialog('delete')}>
           {t('Konto löschen …')}
-        </button>
-      </Row>
+        </Button>
+      </SettingRow>
 
       {dialog === 'api-key' && <ApiKey onClose={() => setDialog(null)} />}
       {dialog === 'password' && (
@@ -424,11 +440,11 @@ export function NewPassword({
       footer={
         <>
           <span className="spacer" />
-          <button onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            variant="primary"
             disabled={busy || !ready}
             onClick={async () => {
               setBusy(true);
@@ -446,7 +462,7 @@ export function NewPassword({
             }}
           >
             {busy ? t('Einen Moment …') : t('Ändern')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -526,25 +542,16 @@ function NewKdf({
         onDone();
       }}
     >
-      <div
-        className="segmented wide"
-        role="radiogroup"
-        aria-label={t('Schlüsselableitung')}
-        onKeyDown={radioArrows}
-      >
-        {(['argon2id', 'pbkdf2'] as const).map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            role="radio"
-            aria-checked={kdf.kind === kind}
-            tabIndex={kdf.kind === kind ? 0 : -1}
-            onClick={() => setKdf(kind === current.kind ? current : DEFAULT_KDFS[kind])}
-          >
-            {kind === 'argon2id' ? 'Argon2id' : 'PBKDF2'}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        className="w-full [&>button]:flex-1"
+        label={t('Schlüsselableitung')}
+        value={kdf.kind}
+        onChange={(kind) => setKdf(kind === current.kind ? current : DEFAULT_KDFS[kind])}
+        options={[
+          { value: 'argon2id', label: 'Argon2id' },
+          { value: 'pbkdf2', label: 'PBKDF2' },
+        ]}
+      />
       {kdf.kind === 'pbkdf2' ? (
         <label className="field">
           <span>{t('Runden')}</span>
@@ -621,12 +628,12 @@ function NewEmail({ onCancel, onDone }: { onCancel: () => void; onDone: () => vo
       footer={
         <>
           <span className="spacer" />
-          <button onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
+          </Button>
           {sent ? (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || !code.trim()}
               onClick={() =>
                 void run(async () => {
@@ -636,10 +643,10 @@ function NewEmail({ onCancel, onDone }: { onCancel: () => void; onDone: () => vo
               }
             >
               {t('Umziehen')}
-            </button>
+            </Button>
           ) : (
-            <button
-              className="primary"
+            <Button
+              variant="primary"
               disabled={busy || !email.includes('@') || !password}
               onClick={() =>
                 void run(async () => {
@@ -649,7 +656,7 @@ function NewEmail({ onCancel, onDone }: { onCancel: () => void; onDone: () => vo
               }
             >
               {t('Code senden')}
-            </button>
+            </Button>
           )}
         </>
       }
@@ -726,8 +733,8 @@ function ApiKey({ onClose }: { onClose: () => void }) {
       onCancel={onClose}
       footer={
         <>
-          <button
-            className="danger"
+          <Button
+            variant="danger"
             disabled={busy}
             onClick={() => {
               setBusy(true);
@@ -741,11 +748,11 @@ function ApiKey({ onClose }: { onClose: () => void }) {
             }}
           >
             {t('Neuen Key erzeugen')}
-          </button>
+          </Button>
           <span className="spacer" />
-          <button className="primary" onClick={onClose}>
+          <Button variant="primary" onClick={onClose}>
             {t('Fertig')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -754,26 +761,22 @@ function ApiKey({ onClose }: { onClose: () => void }) {
           <span>client_id</span>
           <div className="copy-field">
             <code className="mono">{key.clientId}</code>
-            <button
-              className="icon-button"
-              aria-label={t('Kopieren')}
+            <IconButton
+              icon={ICONS.copy}
+              label={t('Kopieren')}
               onClick={() => copy(key.clientId)}
-            >
-              ⧉
-            </button>
+            />
           </div>
         </label>
         <label className="field">
           <span>client_secret</span>
           <div className="copy-field">
             <code className="mono">{key.clientSecret}</code>
-            <button
-              className="icon-button"
-              aria-label={t('Kopieren')}
+            <IconButton
+              icon={ICONS.copy}
+              label={t('Kopieren')}
               onClick={() => copy(key.clientSecret)}
-            >
-              ⧉
-            </button>
+            />
           </div>
         </label>
       </div>

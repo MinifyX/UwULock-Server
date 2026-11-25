@@ -1,5 +1,6 @@
+import { Button, Tag } from '@uwusuite/design';
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, DangerZone, Field, Modal, Table } from '../components/ui';
+import { DangerZone, Field, Modal, Table } from '../components/ui';
 import { PasswordPrompt } from '../components/web/controls';
 import {
   actionNeedsPassword,
@@ -196,10 +197,10 @@ function UserRow({
             <small>{user.email}</small>
           </button>
           <span className="badges">
-            {user.admin && <Badge>{t('Admin')}</Badge>}
-            {user.disabled && <Badge tone="alarm">{t('gesperrt')}</Badge>}
-            {user.twoFactor && <Badge tone="ok">2FA</Badge>}
-            {self && <Badge tone="neutral">{t('du')}</Badge>}
+            {user.admin && <Tag tone="pink">{t('Admin')}</Tag>}
+            {user.disabled && <Tag tone="warning">{t('gesperrt')}</Tag>}
+            {user.twoFactor && <Tag tone="success">2FA</Tag>}
+            {self && <Tag tone="neutral">{t('du')}</Tag>}
           </span>
         </td>
         <td>{user.ciphers}</td>
@@ -207,7 +208,7 @@ function UserRow({
         <td>{user.storageBytes ? bytes(user.storageBytes) : '–'}</td>
         <td title={when(user.lastLogin) ?? ''}>{ago(seconds(user.lastLogin))}</td>
         <td className="row-actions">
-          <Button size="small" onClick={onToggle} aria-expanded={open}>
+          <Button size="sm" onClick={onToggle} aria-expanded={open}>
             {open ? t('Weniger') : t('Verwalten')}
             <span className="sr-only">{user.email}</span>
           </Button>
@@ -225,24 +226,24 @@ function UserRow({
             </p>
             <div className="row-buttons">
               {user.disabled ? (
-                <Button size="small" onClick={() => onAction('enable')}>
+                <Button size="sm" onClick={() => onAction('enable')}>
                   {t('Freigeben')}
                 </Button>
               ) : (
-                <Button size="small" onClick={() => onAction('disable')} disabled={self}>
+                <Button size="sm" onClick={() => onAction('disable')} disabled={self}>
                   {t('Sperren')}
                 </Button>
               )}
               {user.admin ? (
-                <Button size="small" onClick={() => onAction('remove-admin')}>
+                <Button size="sm" onClick={() => onAction('remove-admin')}>
                   {t('Admin-Recht nehmen')}
                 </Button>
               ) : (
-                <Button size="small" onClick={() => onAction('make-admin')}>
+                <Button size="sm" onClick={() => onAction('make-admin')}>
                   {t('Zum Admin machen')}
                 </Button>
               )}
-              <Button size="small" onClick={() => onAction('log-out')}>
+              <Button size="sm" onClick={() => onAction('log-out')}>
                 {t('Überall abmelden')}
               </Button>
             </div>
@@ -253,7 +254,7 @@ function UserRow({
                   <span className="device-text">
                     <b>
                       {device.name} <small>· {device.typeName}</small>
-                      {!device.loggedIn && <Badge tone="neutral">{t('abgemeldet')}</Badge>}
+                      {!device.loggedIn && <Tag tone="neutral">{t('abgemeldet')}</Tag>}
                     </b>
                     <small>
                       {t('Zuletzt {when}', {
@@ -263,8 +264,8 @@ function UserRow({
                     </small>
                   </span>
                   <Button
-                    size="small"
-                    variant="quiet"
+                    size="sm"
+                    variant="ghost"
                     onClick={async () => {
                       try {
                         await deleteUserDevice(user.id, device.id);
@@ -287,7 +288,7 @@ function UserRow({
             >
               <div className="row-buttons">
                 <Button
-                  size="small"
+                  size="sm"
                   variant="danger"
                   onClick={() => onAction('reset-two-factor')}
                   disabled={!user.twoFactor}
@@ -295,7 +296,7 @@ function UserRow({
                   {t('Zwei-Schritt-Anmeldung zurücksetzen')}
                 </Button>
                 <Button
-                  size="small"
+                  size="sm"
                   variant="danger"
                   onClick={() => onAction('delete')}
                   disabled={self}

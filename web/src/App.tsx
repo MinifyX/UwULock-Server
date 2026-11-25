@@ -1,13 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GeneratorDialog } from './components/GeneratorDialog';
-import { Icon } from './components/Icon';
 import { LockScreen } from './components/LockScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { NyuLoading } from './components/NyuStates';
 import { SettingsDialog, type SettingsSection } from './components/SettingsDialog';
 import { ShortcutsDialog } from './components/ShortcutsDialog';
 import { SkipLink, TitleBar } from './components/TitleBar';
-import { Toasts } from './components/Toasts';
 import { VaultScreen } from './components/VaultScreen';
 import {
   lacksTwoFactor,
@@ -26,17 +24,20 @@ import { publicLinkOf } from './lib/links';
 import { connectResultOf, reloadMaskedConnection } from './lib/masked';
 import { acceptContact } from './lib/features';
 import { acceptInvitation } from './lib/families';
-import { toast } from './lib/toast';
+import { toast, toasts } from './lib/toast';
 import { lock, setSecurity, syncNow, touch, vaultStatus, type Status } from './lib/api';
 import { account, type AccountInfo } from './lib/account';
 import { listen } from './lib/events';
 import { t, useLanguage } from './lib/i18n';
 import { useRoute } from './lib/route';
 import { pageName, useServerInfo } from './lib/branding';
-import { revealOnMount } from './lib/motion';
+import { Icon, IconButton, ICONS, revealFrom, Toaster } from '@uwusuite/design';
 import { switchedOff, switchOfLink } from './lib/switches';
 import { useSettings } from './lib/settings';
 import { singleKey, VAULT_SHORTCUTS } from './lib/shortcuts';
+
+/** A stable ref: the reveal plays once, when the frame mounts, not on every render. */
+const reveal = (el: HTMLElement | null) => void (el && revealFrom(el));
 
 /** The web vault: login or unlock, the vault, the settings — and registering by invitation. */
 export function App() {
@@ -247,37 +248,34 @@ export function App() {
         >
           {info?.admin && (
             <a className="titlebar-link" href="/admin">
-              <Icon name="shield" size={15} />
+              <Icon icon={ICONS.securityCheck} />
               <span className="titlebar-link-text">{t('Admin-Portal')}</span>
             </a>
           )}
-          <button
+          <IconButton
+            icon={ICONS.keyboard}
+            label={t('Tastenkürzel')}
             className="titlebar-action"
             onClick={() => setShortcuts(true)}
             title={t('Tastenkürzel (?)')}
-            aria-label={t('Tastenkürzel')}
-          >
-            <Icon name="keyboard" size={17} />
-          </button>
-          <button
+          />
+          <IconButton
+            icon={ICONS.generate}
+            label={t('Passwort-Generator')}
             className="titlebar-action"
             onClick={() => setGenerator(true)}
             title={t('Passwort-Generator (Strg+G)')}
-            aria-label={t('Passwort-Generator')}
             aria-keyshortcuts="Control+G"
-          >
-            <Icon name="dice" size={17} />
-          </button>
+          />
           {unlocked && (
-            <button
+            <IconButton
+              icon={ICONS.locked}
+              label={t('Sperren')}
               className="titlebar-action"
               onClick={() => void lock()}
               title={t('Sperren (Strg+L)')}
-              aria-label={t('Sperren')}
               aria-keyshortcuts="Control+L"
-            >
-              <Icon name="lock" size={17} />
-            </button>
+            />
           )}
         </TitleBar>
 
@@ -330,7 +328,7 @@ export function App() {
           ) : mustSetUp ? (
             <TwoFactorRequired status={status} info={info} onInfo={setInfo} />
           ) : (
-            <div className="vault-frame" ref={revealOnMount}>
+            <div className="vault-frame" ref={reveal}>
               <PolicyBanners status={status} info={info} onSettings={setSettingsOpen} />
               <VaultScreen
                 status={status}
@@ -346,7 +344,7 @@ export function App() {
         </main>
       </div>
 
-      <Toasts />
+      <Toaster store={toasts} />
 
       {generator && <GeneratorDialog onClose={() => setGenerator(false)} />}
 

@@ -33,7 +33,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--uwu-space-2);
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   color: var(--uwu-muted);
   animation: totp-next-in 240ms ease-out;
 }

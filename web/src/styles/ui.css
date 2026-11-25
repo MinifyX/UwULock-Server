@@ -1,34 +1,28 @@
 /*
  * The shared building blocks of the web vault and the admin portal (components/ui, docs/ui.md):
- * buttons, fields, cards, sections, tabs, badges, notices and dialogs. Sizes and gaps come from
- * tokens.css only, so one change there moves every screen alike.
+ * raw buttons, fields, cards, settings rows, badges, tables and the settings dialog. Buttons, tabs,
+ * notices (Hint) and the dialog frame are @uwusuite/design's components; only layout stays here.
  */
 
 /* ── Buttons ───────────────────────────────────────────── */
 
 /*
- * Every button: one height with fields (--uwu-control-height), from its line and padding, so a
- * button without a class looks like the default one. Lists, menus and bars override the padding.
+ * Raw <button>s of this app's own layouts (lists, menus, bars): one height with fields
+ * (--lock-control-height). No frame or colour: those come from @uwusuite/design's Button, which
+ * this rule must not leak into (utilities override only what they set).
  */
 button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--uwu-space-2);
-  font: inherit;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   font-weight: 600;
-  line-height: var(--uwu-control-line);
-  padding: calc((var(--uwu-control-height) - var(--uwu-control-line) - 2px) / 2) var(--uwu-space-4);
+  line-height: var(--lock-control-line);
+  padding: calc((var(--lock-control-height) - var(--lock-control-line) - 2px) / 2)
+    var(--uwu-space-4);
   border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
   cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  background: var(--uwu-elevated);
 }
 
 button:disabled {
@@ -36,53 +30,14 @@ button:disabled {
   cursor: not-allowed;
 }
 
-button.primary {
-  background: var(--uwu-pink-solid);
-  border-color: var(--uwu-pink-solid);
-  color: var(--uwu-on-pink);
+.danger-text {
+  color: var(--uwu-warning-ink);
 }
 
-button.primary:hover:not(:disabled) {
-  background: var(--uwu-pink-solid);
-  filter: brightness(1.06);
-}
-
-button.danger {
-  color: var(--uwu-alarm);
-  border-color: color-mix(in srgb, var(--uwu-alarm) 45%, transparent);
-}
-
-/* No frame: for actions next to others, in cards and lists. As tall as the others. */
-button.quiet {
-  border-color: transparent;
-  background: transparent;
-  color: var(--uwu-muted);
-  padding-inline: var(--uwu-space-3);
-}
-
-button.quiet:hover:not(:disabled) {
-  background: var(--uwu-elevated);
-  color: var(--uwu-ink);
-}
-
-.danger-text,
-button.quiet.danger-text {
-  color: var(--uwu-alarm);
-}
-
-/* The small size: list heads, toolbars, chips of actions. */
-button.small,
-.button-link.small {
-  font-size: var(--uwu-text-sm);
-  padding: calc((var(--uwu-control-height-small) - var(--uwu-control-line) - 2px) / 2)
-    var(--uwu-space-3);
-}
-
-.icon-button,
-button.icon-button {
+.icon-button {
   flex: none;
-  width: var(--uwu-icon-button);
-  height: var(--uwu-icon-button);
+  width: var(--lock-icon-button);
+  height: var(--lock-icon-button);
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -97,25 +52,20 @@ button.icon-button {
   color: var(--uwu-ink);
 }
 
-.icon-button.small,
-.icon-button.tiny {
-  width: var(--uwu-icon-button-small);
-  height: var(--uwu-icon-button-small);
-}
-
 /* A link that looks like a button (downloads, the way to the admin portal). */
 .button-link {
   display: inline-flex;
   align-items: center;
   gap: var(--uwu-space-2);
-  padding: calc((var(--uwu-control-height) - var(--uwu-control-line) - 2px) / 2) var(--uwu-space-4);
+  padding: calc((var(--lock-control-height) - var(--lock-control-line) - 2px) / 2)
+    var(--uwu-space-4);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-surface);
   color: var(--uwu-ink);
   font-weight: 600;
-  font-size: var(--uwu-text-md);
-  line-height: var(--uwu-control-line);
+  font-size: var(--uwu-text-meta);
+  line-height: var(--lock-control-line);
   text-decoration: none;
 }
 
@@ -150,13 +100,12 @@ button.icon-button {
   select,
   textarea
 ) {
-  font: inherit;
-  font-size: var(--uwu-text-base);
-  line-height: var(--uwu-control-line);
+  font-size: var(--uwu-text-body);
+  line-height: var(--lock-control-line);
   min-width: 0;
-  min-height: var(--uwu-control-height);
-  padding: calc((var(--uwu-control-height) - var(--uwu-control-line) - 2px) / 2)
-    var(--uwu-control-pad-x);
+  min-height: var(--lock-control-height);
+  padding: calc((var(--lock-control-height) - var(--lock-control-line) - 2px) / 2)
+    var(--lock-control-pad-x);
   border-radius: var(--uwu-radius-control);
   border: 1px solid var(--uwu-border);
   background: var(--uwu-canvas);
@@ -164,23 +113,19 @@ button.icon-button {
 }
 
 :where(select) {
-  height: var(--uwu-control-height);
+  height: var(--lock-control-height);
   padding-block: 0;
 }
 
 :where(textarea) {
   display: block;
-  min-height: calc(var(--uwu-control-height) * 2);
+  min-height: calc(var(--lock-control-height) * 2);
   line-height: var(--uwu-leading);
   resize: vertical;
 }
 
-:where(input, select, textarea):focus-visible {
-  outline-offset: 1px;
-}
-
 :where(input, select, textarea)[aria-invalid='true'] {
-  border-color: var(--uwu-alarm);
+  border-color: var(--uwu-warning-ink);
 }
 
 .select {
@@ -193,26 +138,18 @@ button.icon-button {
   /* Without this a taller neighbour (one with an error line) stretches the
      rows and pushes this input down. */
   align-content: start;
-  gap: var(--uwu-label-gap);
+  gap: var(--lock-label-gap);
   margin: 0;
   padding: 0;
   border: 0;
   min-width: 0;
 }
 
-.field.grow {
-  flex: 1;
-}
-
-.field.port {
-  width: 88px;
-}
-
 .field > span,
 .field-label {
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 600;
-  line-height: var(--uwu-control-line);
+  line-height: var(--lock-control-line);
   color: var(--uwu-muted);
 }
 
@@ -229,7 +166,7 @@ button.icon-button {
 .field textarea.mono,
 .field input.mono {
   font-family: var(--uwu-mono);
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
 }
 
 /* A control with tools inside, at its end: the eye, the dice, a reset. */
@@ -245,20 +182,20 @@ button.icon-button {
 }
 
 .field-control[data-tools='1'] > :is(input, textarea) {
-  padding-right: calc(var(--uwu-icon-button) + var(--uwu-space-2));
+  padding-right: calc(var(--lock-icon-button) + var(--uwu-space-2));
 }
 
 .field-control[data-tools='2'] > :is(input, textarea) {
-  padding-right: calc(2 * var(--uwu-icon-button) + var(--uwu-space-2));
+  padding-right: calc(2 * var(--lock-icon-button) + var(--uwu-space-2));
 }
 
 .field-control[data-tools='3'] > :is(input, textarea) {
-  padding-right: calc(3 * var(--uwu-icon-button) + var(--uwu-space-2));
+  padding-right: calc(3 * var(--lock-icon-button) + var(--uwu-space-2));
 }
 
 .field-tools {
   position: absolute;
-  top: calc((var(--uwu-control-height) - var(--uwu-icon-button)) / 2);
+  top: calc((var(--lock-control-height) - var(--lock-icon-button)) / 2);
   right: var(--uwu-space-1);
   display: flex;
   align-items: center;
@@ -268,12 +205,12 @@ button.icon-button {
 .field-hint {
   margin: 0;
   font-style: normal;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   line-height: var(--uwu-leading);
 }
 
 .field-error {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 .field-hint {
@@ -281,7 +218,7 @@ button.icon-button {
 }
 
 .field-hint[data-tone='warn'] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* Commands in hints must not break at their hyphens. */
@@ -291,19 +228,19 @@ button.icon-button {
 
 .form {
   display: grid;
-  gap: var(--uwu-form-gap);
+  gap: var(--uwu-space-4);
 }
 
 .form-error {
   margin: 0;
-  color: var(--uwu-alarm);
-  font-size: var(--uwu-text-md);
+  color: var(--uwu-warning-ink);
+  font-size: var(--uwu-text-meta);
   line-height: var(--uwu-leading);
 }
 
 .form-note {
   margin: 0;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   line-height: var(--uwu-leading);
   color: var(--uwu-muted);
 }
@@ -316,7 +253,7 @@ button.icon-button {
   --form-row-min: 180px;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--form-row-min)), 1fr));
-  gap: var(--uwu-form-gap) var(--uwu-space-3);
+  gap: var(--uwu-space-4) var(--uwu-space-3);
   align-items: start;
 }
 
@@ -344,7 +281,7 @@ button.icon-button {
   gap: var(--uwu-space-2);
   margin: 0;
   padding: 0;
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -354,18 +291,18 @@ button.icon-button {
 /* A row of a list the form repeats: its main value, maybe a second, and the way to remove it. */
 .repeat-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--uwu-icon-button);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) var(--lock-icon-button);
   grid-template-areas: 'main aux remove';
   gap: var(--uwu-space-2);
   align-items: start;
 }
 
 .repeat-row[data-aux='narrow'] {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 13rem) var(--uwu-icon-button);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 13rem) var(--lock-icon-button);
 }
 
 .repeat-row:not(:has(> :nth-child(3))) {
-  grid-template-columns: minmax(0, 1fr) var(--uwu-icon-button);
+  grid-template-columns: minmax(0, 1fr) var(--lock-icon-button);
   grid-template-areas: 'main remove';
 }
 
@@ -379,12 +316,12 @@ button.icon-button {
 
 .repeat-row > :last-child {
   grid-area: remove;
-  margin-top: calc((var(--uwu-control-height) - var(--uwu-icon-button)) / 2);
+  margin-top: calc((var(--lock-control-height) - var(--lock-icon-button)) / 2);
 }
 
 .repeat-row > .check,
 .repeat-row > .linked-note {
-  min-height: var(--uwu-control-height);
+  min-height: var(--lock-control-height);
 }
 
 /* The actions under a list of rows: aligned with the text of the rows, not their frames. */
@@ -400,7 +337,7 @@ button.icon-button {
   align-items: center;
   gap: var(--uwu-space-2);
   cursor: pointer;
-  font-size: var(--uwu-text-base);
+  font-size: var(--uwu-text-body);
   line-height: var(--uwu-leading-tight);
 }
 
@@ -464,10 +401,6 @@ input[type='checkbox']:indeterminate::before {
   transform: scale(1);
 }
 
-input[type='checkbox']:focus-visible {
-  outline-offset: 2px;
-}
-
 input[type='checkbox']:disabled {
   cursor: default;
   opacity: 0.5;
@@ -524,100 +457,14 @@ input[type='checkbox']:disabled {
 @container (max-width: 480px) {
   .repeat-row,
   .repeat-row[data-aux='narrow'] {
-    grid-template-columns: minmax(0, 1fr) var(--uwu-icon-button);
+    grid-template-columns: minmax(0, 1fr) var(--lock-icon-button);
     grid-template-areas:
       'main remove'
       'aux .';
   }
 }
 
-/* ── Choices ───────────────────────────────────────────── */
-
-.segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  padding: 3px;
-  gap: 3px;
-  border-radius: var(--uwu-radius-control);
-  background: var(--uwu-canvas);
-  border: 1px solid var(--uwu-border);
-  width: max-content;
-  max-width: 100%;
-}
-
-.segmented button {
-  border: 0;
-  background: transparent;
-  padding: calc((var(--uwu-control-height) - var(--uwu-control-line) - 8px) / 2) var(--uwu-space-3);
-  border-radius: 7px;
-  color: var(--uwu-muted);
-}
-
-.segmented button[aria-checked='true'],
-.segmented button[aria-selected='true'] {
-  background: var(--uwu-surface);
-  color: var(--uwu-ink);
-  box-shadow: 0 1px 2px rgba(20, 16, 22, 0.12);
-}
-
-.segmented.wide {
-  width: 100%;
-  display: flex;
-}
-
-.segmented.wide button {
-  flex: 1;
-  padding-inline: var(--uwu-space-2);
-}
-
-.toggle,
-button.toggle {
-  flex: none;
-  position: relative;
-  width: 44px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--uwu-radius-pill);
-  /* The outline colour of controls: an off switch keeps 3:1 against the page (WCAG 1.4.11). */
-  background: var(--uwu-control);
-  transition: background-color 200ms ease;
-}
-
-.toggle:hover:not(:disabled) {
-  background: var(--uwu-control);
-}
-
-.toggle[aria-checked='true'],
-.toggle[aria-checked='true']:hover:not(:disabled) {
-  background: var(--uwu-pink-solid);
-}
-
-.toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(20, 16, 22, 0.3);
-  transition: transform 200ms cubic-bezier(0.3, 1.3, 0.6, 1);
-}
-
-.toggle[aria-checked='true'] .toggle-thumb {
-  transform: translateX(20px);
-}
-
-.toggle:disabled {
-  opacity: 0.5;
-}
-
 /* Darstellung → Schrift: each font shown in itself, two or more side by side. */
-.setting-control:has(> .font-picker) {
-  flex: 1 1 100%;
-}
-
 .font-picker {
   flex: 1;
   display: grid;
@@ -657,7 +504,7 @@ button.toggle {
 }
 
 .font-picker-sample {
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   color: var(--uwu-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -666,49 +513,12 @@ button.toggle {
   color: inherit;
 }
 
-/* ── Tabs ──────────────────────────────────────────────── */
-
-/* The line style, for the parts of a page; the segmented style above is for a list's views. */
-.tabs {
-  display: flex;
-  gap: var(--uwu-space-1);
-  overflow-x: auto;
-  border-bottom: 1px solid var(--uwu-hairline);
-  scrollbar-width: none;
-}
-
-.tabs button {
-  flex: none;
-  margin-bottom: -1px;
-  padding-inline: var(--uwu-space-3);
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: var(--uwu-radius-small) var(--uwu-radius-small) 0 0;
-  background: transparent;
-  color: var(--uwu-muted);
-  white-space: nowrap;
-}
-
-.tabs button:hover:not(:disabled) {
-  background: var(--uwu-elevated);
-  color: var(--uwu-ink);
-}
-
-.tabs button[aria-selected='true'] {
-  border-bottom-color: var(--uwu-pink-solid);
-  color: var(--uwu-pink-ink);
-}
-
-.tabs button .badge {
-  margin-left: 0;
-}
-
-/* ── Cards and sections ───────────────────────────────── */
+/* ── Cards and settings ───────────────────────────────── */
 
 .card {
   display: grid;
   gap: var(--uwu-space-3);
-  padding: var(--uwu-card-pad-y) var(--uwu-card-pad-x);
+  padding: var(--uwu-space-3) var(--uwu-space-4);
   border-radius: var(--uwu-radius-card);
   border: 1px solid var(--uwu-hairline);
   background: var(--uwu-surface);
@@ -724,26 +534,14 @@ button.toggle {
 
 .card-heading {
   margin: 0;
-  font-size: var(--uwu-text-base);
+  font-size: var(--uwu-text-body);
   font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-/* A part of a page or a settings section: a small heading, a line about it, then its content. */
-.section {
-  display: grid;
-  gap: var(--uwu-space-2);
-  min-width: 0;
-}
-
-.section + .section {
-  margin-top: var(--uwu-section-gap);
-}
-
-.settings-heading,
-.section-heading {
-  margin: var(--uwu-section-gap) 0 0;
-  font-size: var(--uwu-text-xs);
+.settings-heading {
+  margin: var(--uwu-space-6) 0 0;
+  font-size: var(--uwu-text-badge);
   font-weight: 700;
   line-height: var(--uwu-leading);
   text-transform: uppercase;
@@ -751,14 +549,10 @@ button.toggle {
   color: var(--uwu-muted);
 }
 
-.section > .section-heading {
-  margin: 0;
-}
-
 .settings-lead,
 .section-lead {
   margin: 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   line-height: var(--uwu-leading);
   color: var(--uwu-muted);
 }
@@ -790,29 +584,19 @@ button.toggle {
 
 .setting-description {
   margin: 2px 0 0;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   line-height: var(--uwu-leading);
   color: var(--uwu-muted);
 }
 
-.setting-control {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--uwu-space-2);
-}
-
 .setting-result {
   margin: var(--uwu-space-2) 0 0;
-  font-size: var(--uwu-text-md);
+  font-size: var(--uwu-text-meta);
   color: var(--uwu-muted);
 }
 
 .setting-result[data-tone='error'] {
-  color: var(--uwu-alarm);
+  color: var(--uwu-warning-ink);
 }
 
 /* ── Badges ────────────────────────────────────────────── */
@@ -826,98 +610,28 @@ button.toggle {
   border-radius: var(--uwu-radius-pill);
   background: var(--uwu-pink-tint);
   color: var(--uwu-pink-ink);
-  font-size: var(--uwu-text-xs);
+  font-size: var(--uwu-text-badge);
   font-weight: 700;
   line-height: 16px;
   vertical-align: 1px;
   white-space: nowrap;
 }
 
-.badge.alarm,
 .badge[data-tone='alarm'] {
-  background: color-mix(in srgb, var(--uwu-alarm) 18%, transparent);
-  color: var(--uwu-alarm);
+  background: color-mix(in srgb, var(--uwu-warning-ink) 18%, transparent);
+  color: var(--uwu-warning-ink);
 }
 
 .badge[data-tone='ok'] {
-  background: color-mix(in srgb, var(--uwu-online) 16%, transparent);
+  background: color-mix(in srgb, var(--uwu-success) 16%, transparent);
   /* A little of the text colour: 4.5:1 on the tint, on the page as on a card. */
-  color: color-mix(in srgb, var(--uwu-online) 75%, var(--uwu-ink));
+  color: color-mix(in srgb, var(--uwu-success-ink) 75%, var(--uwu-ink));
 }
 
 .badge[data-tone='neutral'] {
   background: var(--uwu-elevated);
   color: var(--uwu-muted);
   box-shadow: inset 0 0 0 1px var(--uwu-border);
-}
-
-/* ── Notices ───────────────────────────────────────────── */
-
-/* A line that stands out in a page or a dialog: something to know, to do, or that went wrong. */
-.callout {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--uwu-space-3);
-  padding: var(--uwu-space-3) var(--uwu-space-4);
-  border-radius: var(--uwu-radius-control);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  font-size: var(--uwu-text-md);
-  line-height: var(--uwu-leading);
-  min-width: 0;
-}
-
-.callout > .icon {
-  margin-top: 2px;
-  color: var(--uwu-muted);
-}
-
-.callout-body {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: var(--uwu-space-1);
-  overflow-wrap: anywhere;
-}
-
-.callout-title {
-  margin: 0;
-  font-weight: 700;
-}
-
-.callout-body > p {
-  margin: 0;
-}
-
-.callout-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--uwu-space-2);
-  margin-top: var(--uwu-space-1);
-}
-
-.callout[data-tone='accent'] {
-  border-color: var(--uwu-pink);
-  background: var(--uwu-pink-tint);
-}
-
-.callout[data-tone='accent'] > .icon {
-  color: var(--uwu-pink-ink);
-}
-
-.callout[data-tone='warning'],
-.callout[data-tone='error'] {
-  border-color: color-mix(in srgb, var(--uwu-alarm) 50%, transparent);
-}
-
-.callout[data-tone='warning'] > .icon,
-.callout[data-tone='error'] > .icon,
-.callout[data-tone='error'] {
-  color: var(--uwu-alarm);
-}
-
-.callout[data-tone='ok'] > .icon {
-  color: var(--uwu-online);
 }
 
 /* ── Tables ────────────────────────────────────────────── */
@@ -934,7 +648,7 @@ button.toggle {
 
 .table th {
   text-align: left;
-  font-size: var(--uwu-text-sm);
+  font-size: var(--uwu-text-caption);
   font-weight: 700;
   color: var(--uwu-muted);
   padding: var(--uwu-space-3) var(--uwu-space-4);
@@ -958,154 +672,20 @@ button.toggle {
   overflow-x: auto;
 }
 
-/* ── Dialogs ───────────────────────────────────────────── */
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: var(--uwu-space-6);
-  background: color-mix(in srgb, #141016 45%, transparent);
-  z-index: 10;
-  /* A scroll box of its own, so a swipe beside the dialog does not scroll the page under it. */
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-
-/*
- * A dialog: its title, a body that scrolls on its own, and the buttons. A hairline shows only
- * where the body really scrolls under the title or the buttons.
- */
-.modal {
-  position: relative;
-  width: min(520px, 100%);
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  border-radius: var(--uwu-radius-card);
-  border: 1px solid var(--uwu-border);
-  background: var(--uwu-surface);
-  box-shadow: var(--uwu-shadow-float);
-  overflow: hidden;
-}
-
-.modal[data-size='wide'] {
-  width: min(780px, 100%);
-}
+/* ── Dialogs (the frame is @uwusuite/design's Dialog) ─── */
 
 /* The settings: a fixed height, so the dialog does not jump between sections. */
-.modal:has(> .modal-body > .settings) {
-  width: min(820px, 100%);
-  height: min(640px, 100%);
-}
-
-/* Security warnings look different on purpose — never like a routine dialog. */
-.modal[data-tone='warning'] {
-  border-color: var(--uwu-alarm);
-  border-top-width: 4px;
-}
-
-.modal-head {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--uwu-space-3);
-  padding: var(--uwu-dialog-pad) var(--uwu-dialog-pad) var(--uwu-space-4);
-}
-
-.modal-title {
-  flex: 1;
-  margin: 0;
-  font-size: var(--uwu-text-lg);
-  font-weight: 700;
-  line-height: var(--uwu-leading-tight);
-  letter-spacing: -0.01em;
-  overflow-wrap: anywhere;
-}
-
-/* The × of a dialog without buttons: on the title's line, at the end. */
-.modal-close {
-  position: absolute;
-  top: calc(
-    var(--uwu-dialog-pad) +
-      (var(--uwu-text-lg) * var(--uwu-leading-tight) - var(--uwu-icon-button)) / 2
-  );
-  right: calc(var(--uwu-dialog-pad) - var(--uwu-space-1));
-}
-
-.modal:has(> .modal-close) .modal-title {
-  padding-right: var(--uwu-icon-button);
-}
-
-.modal[data-tone='warning'] .modal-title {
-  color: var(--uwu-alarm);
-}
-
-.modal-body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  display: grid;
-  align-content: start;
-  gap: var(--uwu-form-gap);
-  padding: 0 var(--uwu-dialog-pad) var(--uwu-dialog-pad);
-  border-block: 1px solid transparent;
-}
-
-.modal-body[data-scrolled] {
-  border-top-color: var(--uwu-hairline);
-}
-
-.modal-body[data-more] {
-  border-bottom-color: var(--uwu-hairline);
-}
-
-.modal:has(.modal-footer) .modal-body {
-  padding-bottom: var(--uwu-space-4);
+.modal:has(.modal-body > .settings) {
+  max-width: 820px;
+  height: min(640px, calc(100svh - 48px));
 }
 
 .modal-body:has(> .settings) {
   overflow: hidden;
-}
-
-.modal-footer {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  /* Buttons that wrap on a phone stay at the end, under the others. */
-  justify-content: flex-end;
-  gap: var(--uwu-space-2);
-  padding: var(--uwu-space-4) var(--uwu-dialog-pad) var(--uwu-dialog-pad);
+  padding: 0;
 }
 
 .dialog-lead {
   margin: 0;
   line-height: var(--uwu-leading);
-}
-
-@media (max-width: 760px) {
-  .modal-backdrop {
-    padding: var(--uwu-space-3);
-  }
-
-  :root {
-    --uwu-dialog-pad: var(--uwu-space-5);
-  }
-
-  /* Big dialogs take the whole screen; small ones stay small. */
-  .modal-backdrop:has(> .modal[data-size='wide']) {
-    padding: 0;
-  }
-
-  .modal[data-size='wide'],
-  .modal[data-size='wide']:has(> .modal-body > .settings) {
-    width: 100%;
-    height: 100%;
-    max-height: 100%;
-    border-radius: 0;
-    border-width: 0;
-  }
 }

@@ -1,5 +1,6 @@
+import { Button, Card, CountUp, ICONS, Section, StatTile, Tag } from '@uwusuite/design';
 import { useEffect, useState } from 'react';
-import { Badge, Button, Callout, Card, CountUp, Section } from '../components/ui';
+import { Callout } from '../components/ui';
 import { alertTitle, overview, type Alert, type Overview as Data } from '../lib/admin';
 import { errorText } from '../lib/errors';
 import { ago, bytes, seconds, when } from '../lib/format';
@@ -49,13 +50,21 @@ export function Overview() {
                       ? 'error'
                       : 'warning'
                 }
-                icon="warning"
+                icon={ICONS.warning}
                 title={
                   <>
                     {alertTitle(alert.kind)}
-                    <Badge tone={alert.severity === 'info' ? 'accent' : 'alarm'}>
+                    <Tag
+                      tone={
+                        alert.severity === 'info'
+                          ? 'pink'
+                          : alert.severity === 'error'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    >
                       {t(SEVERITY[alert.severity] ?? alert.severity)}
-                    </Badge>
+                    </Tag>
                   </>
                 }
               >
@@ -73,7 +82,7 @@ export function Overview() {
           tone="warning"
           title={t('Benachrichtigungen kommen nicht an:')}
           actions={
-            <Button size="small" onClick={() => go('/mail/alerts')}>
+            <Button size="sm" onClick={() => go('/mail/alerts')}>
               {t('Zu den Benachrichtigungen')}
             </Button>
           }
@@ -83,9 +92,9 @@ export function Overview() {
       )}
       <Callout
         tone={data.diagnosis && data.diagnosis.errors > 0 ? 'warning' : 'info'}
-        icon="lifebuoy"
+        icon={ICONS.help}
         actions={
-          <Button size="small" onClick={() => go('/system')}>
+          <Button size="sm" onClick={() => go('/system')}>
             {t('Zur Diagnose')}
           </Button>
         }
@@ -100,7 +109,7 @@ export function Overview() {
               'Die Diagnose lief noch nie. Sie prüft Zertifikat, Uhrzeit, Mail, Backups und den Proxy davor.',
             )}
       </Callout>
-      <Section heading={t('Zahlen')}>
+      <Section title={t('Zahlen')}>
         <div className="stat-grid uwu-stagger">
           <Stat
             label={t('Nutzer')}
@@ -128,8 +137,8 @@ export function Overview() {
           />
         </div>
       </Section>
-      <Section heading={t('Server')}>
-        <Card as="div">
+      <Section title={t('Server')}>
+        <Card>
           <dl className="facts">
             <Fact
               label={t('Version')}
@@ -221,28 +230,28 @@ function Stat({
   /** A tile that leads to its own page. */
   onOpen?: () => void;
 }) {
-  const content = (
-    <>
-      <span className="stat-value" data-alarm={alarm || undefined}>
-        <CountUp value={value} />
-      </span>
-      <span className="stat-label">{label}</span>
-      {note && <span className="stat-note">{note}</span>}
-    </>
-  );
-  if (onOpen)
-    return (
-      <button type="button" className="card stat stat-link" onClick={onOpen}>
-        {content}
-        <span className="stat-more" aria-hidden>
-          {t('Ansehen')} →
-        </span>
-      </button>
-    );
+  // A tile that leads on: the button stretches over the whole tile (a button may not hold the
+  // tile's blocks), named by the tile's label.
   return (
-    <Card as="div" className="stat">
-      {content}
-    </Card>
+    <StatTile
+      label={label}
+      // The number turns to the warning colour when it is high.
+      value={alarm ? <CountUp value={value} className="text-warning-ink" /> : value}
+      note={note}
+      className={onOpen ? 'relative has-[.stat-link:hover]:border-pink' : undefined}
+    >
+      {onOpen && (
+        <button
+          type="button"
+          className="stat-link stat-more after:absolute after:inset-0 after:rounded-card"
+          onClick={onOpen}
+        >
+          {/* Its name starts with what one sees (WCAG 2.5.3) and says which tile it opens. */}
+          {t('Ansehen')} <span aria-hidden>→</span>
+          <span className="sr-only">{label}</span>
+        </button>
+      )}
+    </StatTile>
   );
 }
 

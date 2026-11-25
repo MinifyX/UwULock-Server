@@ -1,11 +1,12 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
+import { Button } from '@uwusuite/design';
 import { errorText } from '../../lib/errors';
 import { t, useLanguage } from '../../lib/i18n';
 import { Modal } from '../Modal';
 import { PasswordInput } from '../PasswordInput';
 
 // The shared controls live in components/ui; the settings pages import them from here too.
-export { SettingRow as Row, Segmented, Toggle, radioArrows, radioTab } from '../ui';
+export { radioArrows, radioTab } from '../ui';
 
 export type Result = { tone: 'info' | 'error'; text: string } | null;
 
@@ -64,17 +65,16 @@ export function PasswordPrompt({
       footer={
         <>
           <span className="spacer" />
-          <button type="button" onClick={onCancel} disabled={busy} data-secondary>
+          <Button onClick={onCancel} disabled={busy} data-secondary>
             {t('Abbrechen')}
-          </button>
-          <button
-            type="button"
-            className={tone === 'warning' ? 'danger' : 'primary'}
+          </Button>
+          <Button
+            variant={tone === 'warning' ? 'danger' : 'primary'}
             onClick={() => void submit()}
             disabled={busy || !password}
           >
             {busy ? t('Einen Moment …') : confirm}
-          </button>
+          </Button>
         </>
       }
     >

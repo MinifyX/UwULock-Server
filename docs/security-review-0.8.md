@@ -94,3 +94,20 @@ item on the server, both fixed in branch `r8-server`, each with a test.
 | --- | --- | --- | --- | --- |
 | S-1 | Low | Since R5-5, private, loopback and link-local peers had no cap but the total: with the server's own TLS on Docker's default bridge (IPv6 clients) or rootless Docker, one client behind the gateway could hold all 8 192 connections and shut out IPv4 clients with their own address too | Those peers share a cap of 7/8 of the total (7 168), derived from the total (`shared_cap`), only while there is a cap per network (`UWULOCK_CONNECTIONS_PER_NETWORK` ≠ `0`); the last eighth stays for public clients. In-process test `private_peers_share_a_cap_below_the_total`; docs/deployment.md | `52dfb2d` |
 | I-D | Info | Changing SSO `signups` or `userGroup` needed no master password: a stolen admin session could set sign-ups to *group* without a user group, so anyone at the provider could make an account | Both are in `needs_password` (user group compared after trimming); the portal asks with its own title (*Regeln für neue Konten ändern?*). Server test cases per field, vitest `ssoSignupRulesChanged`, e2e `sso.mjs` switches sign-ups through the prompt | `52dfb2d` |
+
+## Design migration (0.8.0-beta.8)
+
+0.8.0-beta.8 moves the web vault, the admin portal and the public pages onto `@uwusuite/design`
+1.18.0; the server's code changes by one line. The diff since `v0.8.0-beta.7` was read once for
+security, accessibility and leftovers: Critical 0, High 0, Medium 0.
+
+| Id | Severity | Finding | Fix |
+| --- | --- | --- | --- |
+| D-1 | Low | `/boot.js`, the file that sets the theme before the page draws, was not among the files a Send domain answers: 404 there, so the page could flash in the wrong theme | `boot.js` is in the send-host guard's list (`send_hosts::allowed`), with a case in its test |
+| D-2 | Low | The link on a stat tile of the admin overview was named by the tile's label while it shows *Ansehen →* (WCAG 2.5.3) | The name is the visible text, then the label as hidden text |
+| D-3 | Info | Whether a second Escape closes a changed editor without asking | Not the case in Chromium; `scripts/e2e/web.mjs` now presses Escape five times on a changed editor |
+
+Looked at and unchanged: the content security policy (`script-src 'self' 'wasm-unsafe-eval'`; the
+theme script is a file of its own, not inline), no address outside this server (fonts and icons
+come from the package, served from `/assets`), no new `innerHTML`. Errors in toasts are announced
+at once (`role="alert"` in the package).

@@ -1,3 +1,4 @@
+import { Button, Icon, IconButton, ICONS } from '@uwusuite/design';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import {
   copyField,
@@ -38,7 +39,6 @@ import { ItemComfort } from './web/ItemComfort';
 import { ShareAsSend } from './web/ShareAsSend';
 import { ShareToFamily, shareTargets } from './web/ShareToFamily';
 import { WifiShare } from './web/WifiShare';
-import { Icon } from './Icon';
 import { ItemTile } from './ItemTile';
 import { Modal } from './Modal';
 import { PasswordInput } from './PasswordInput';
@@ -66,17 +66,19 @@ export function Colored({ text }: { text: string }) {
   );
 }
 
+/** A row's tools step back until the row is pointed at, only so far that they keep 3:1. */
+const ROW_TOOL =
+  'opacity-75 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 contrast-high:opacity-100';
+
 function CopyButton({ id, field, label }: { id: string; field: string; label: string }) {
   useLanguage();
   return (
-    <button
-      className="icon-button"
+    <IconButton
+      icon={ICONS.copy}
+      className={ROW_TOOL}
       onClick={() => void copy(id, field)}
-      aria-label={t('{label} kopieren', { label })}
-      title={t('Kopieren')}
-    >
-      <Icon name="copy" size={15} />
-    </button>
+      label={t('{label} kopieren', { label })}
+    />
   );
 }
 
@@ -92,7 +94,7 @@ function Row({
   mono?: boolean;
 }) {
   return (
-    <div className="detail-row">
+    <div className="detail-row group">
       <div className="detail-text">
         <span className="detail-label">{label}</span>
         <span className={mono ? 'detail-value mono' : 'detail-value'}>{children}</span>
@@ -143,17 +145,15 @@ function SecretRow({
       mono
       actions={
         <>
-          <button
-            className="icon-button"
+          <IconButton
+            icon={value === null ? ICONS.show : ICONS.hide}
+            className={ROW_TOOL}
             onClick={() => void toggle()}
-            aria-label={
+            label={
               value === null ? t('{label} zeigen', { label }) : t('{label} verbergen', { label })
             }
             aria-pressed={value !== null}
-            title={value === null ? t('Zeigen') : t('Verbergen')}
-          >
-            <Icon name={value === null ? 'eye' : 'eyeOff'} size={15} />
-          </button>
+          />
           <CopyButton id={id} field={field} label={label} />
         </>
       }
@@ -232,18 +232,16 @@ function Websites({ id, uris }: { id: string; uris: NonNullable<Detail['login']>
           actions={
             <>
               {uri.openable && (
-                <button
-                  className="icon-button"
+                <IconButton
+                  icon={ICONS.openExternal}
+                  className={ROW_TOOL}
                   onClick={() =>
                     void openItemUri(id, index).catch((e) => toast(String(e), 'error'))
                   }
-                  aria-label={t('{uri} im Browser öffnen', {
+                  label={t('{uri} im Browser öffnen', {
                     uri: uri.uri,
                   })}
-                  title={t('Im Browser öffnen')}
-                >
-                  <Icon name="external" size={15} />
-                </button>
+                />
               )}
               <CopyButton id={id} field={`uri:${index}`} label={t('Adresse')} />
             </>
@@ -253,20 +251,21 @@ function Websites({ id, uris }: { id: string; uris: NonNullable<Detail['login']>
         </Row>
       ))}
       {more > 0 && (
-        <button
-          className="history-toggle quiet"
+        <Button
+          variant="ghost"
+          icon={ICONS.website}
+          className="history-toggle"
           aria-expanded={all}
           onClick={() => setAll(!all)}
           data-more-websites
         >
-          <Icon name="globe" size={15} />
           {all
             ? t('Weniger zeigen')
             : more === 1
               ? t('+1 weitere Website')
               : t('+{n} weitere Websites', { n: more })}
-          <Icon name="chevron" size={14} className={all ? 'turned' : undefined} />
-        </button>
+          <Icon icon={ICONS.next} size="xs" className={all ? 'turned' : undefined} />
+        </Button>
       )}
     </Section>
   );
@@ -312,8 +311,11 @@ function Passkeys({
   return (
     <Section title={count === 1 ? t('Passkey') : t('Passkeys')}>
       {passkeys.map((passkey) => (
-        <div className="detail-row passkey-row" key={`${passkey.index}-${passkey.credentialId}`}>
-          <Icon name="key" size={16} className="passkey-icon" />
+        <div
+          className="detail-row passkey-row group"
+          key={`${passkey.index}-${passkey.credentialId}`}
+        >
+          <Icon icon={ICONS.passkey} className="passkey-icon" />
           <div className="detail-text">
             <span className="detail-value">
               {site(passkey)}
@@ -333,15 +335,13 @@ function Passkeys({
           </div>
           {editable && (
             <div className="detail-actions">
-              <button
-                className="icon-button"
+              <IconButton
+                icon={ICONS.delete}
+                className={ROW_TOOL}
                 disabled={busy}
                 onClick={() => setAsking(passkey)}
-                aria-label={t('Passkey für {site} löschen', { site: site(passkey) })}
-                title={t('Passkey löschen')}
-              >
-                <Icon name="trash" size={15} />
-              </button>
+                label={t('Passkey für {site} löschen', { site: site(passkey) })}
+              />
             </div>
           )}
         </div>
@@ -364,17 +364,17 @@ function Passkeys({
           footer={
             <>
               <span className="spacer" />
-              <button
-                className="danger"
+              <Button
+                variant="danger"
                 data-secondary
                 disabled={busy}
                 onClick={() => void remove(asking)}
               >
                 {t('Passkey löschen')}
-              </button>
-              <button className="primary" data-autofocus onClick={() => setAsking(null)}>
+              </Button>
+              <Button variant="primary" data-autofocus onClick={() => setAsking(null)}>
                 {t('Abbrechen')}
-              </button>
+              </Button>
             </>
           }
         >
@@ -422,7 +422,7 @@ function Reprompt({ id, onPassed }: { id: string; onPassed: () => void }) {
   return (
     <form className="detail-card reprompt" onSubmit={submit}>
       <p className="detail-card-title">
-        <Icon name="lock" size={15} />
+        <Icon icon={ICONS.locked} />
         {t('Master-Passwort erforderlich')}
       </p>
       <p className="dialog-lead">
@@ -444,9 +444,9 @@ function Reprompt({ id, onPassed }: { id: string; onPassed: () => void }) {
       )}
       <div className="form-actions">
         <span className="spacer" />
-        <button className="primary" type="submit" disabled={busy || !password}>
+        <Button variant="primary" type="submit" disabled={busy || !password}>
           {busy ? t('Prüft …') : t('Öffnen')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -517,16 +517,16 @@ function ConfirmDelete({
       footer={
         <>
           <span className="spacer" />
-          <button
-            className="danger"
+          <Button
+            variant="danger"
             data-secondary
             onClick={() => onConfirm(Boolean(masked) && switchOff)}
           >
             {permanent ? t('Endgültig löschen') : t('In den Papierkorb')}
-          </button>
-          <button className="primary" data-autofocus onClick={onCancel}>
+          </Button>
+          <Button variant="primary" data-autofocus onClick={onCancel}>
             {t('Abbrechen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -616,20 +616,20 @@ export function ItemDetail({
           <h2>
             {summary.name || t('(ohne Namen)')}
             {summary.favorite && (
-              <Icon name="star" size={16} className="badge-star" title={t('Favorit')} />
+              <Icon icon={ICONS.favorite} className="badge-star" label={t('Favorit')} />
             )}
           </h2>
           <p className="chips">
             <span className="chip">{t(KIND_LABEL[summary.kind])}</span>
             {folder && (
               <span className="chip">
-                <Icon name="folder" size={12} />
+                <Icon icon={ICONS.folder} size="xs" />
                 {folder}
               </span>
             )}
             {org && (
               <span className="chip">
-                <Icon name="building" size={12} />
+                <Icon icon={ICONS.organization} size="xs" />
                 {org}
                 {collections.length > 0 && ` · ${collections.join(', ')}`}
               </span>
@@ -643,118 +643,97 @@ export function ItemDetail({
         <div className="detail-tools">
           {summary.deleted ? (
             <>
-              <button
-                className="quiet"
+              <Button
+                variant="ghost"
+                icon={ICONS.history}
                 disabled={busy}
                 onClick={() => void act(() => restoreItem(id), t('Aus dem Papierkorb geholt ✧'))}
               >
-                <Icon name="history" size={15} />
                 {t('Wiederherstellen')}
-              </button>
-              <button
-                className="quiet danger-text"
+              </Button>
+              <Button
+                variant="ghost"
+                icon={ICONS.delete}
+                className="text-danger-ink!"
                 disabled={busy}
                 onClick={() => setAsking('permanent')}
               >
-                <Icon name="trash" size={15} />
                 {t('Endgültig löschen')}
-              </button>
+              </Button>
             </>
           ) : (
             <>
-              <button
-                className="icon-button"
+              <IconButton
+                icon={ICONS.favorite}
+                // Filled pink like the star next to the name, as before.
+                className={summary.favorite ? '[&>svg]:fill-current [&>svg]:text-pink' : undefined}
                 disabled={busy}
                 aria-pressed={summary.favorite}
-                title={summary.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
-                aria-label={summary.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
+                label={summary.favorite ? t('Favorit entfernen') : t('Zu Favoriten')}
                 onClick={() =>
                   void act(
                     () => setFavorite(id, !summary.favorite),
                     summary.favorite ? t('Kein Favorit mehr') : t('Favorit ✧'),
                   )
                 }
-              >
-                <Icon
-                  name="star"
-                  size={15}
-                  className={summary.favorite ? 'badge-star' : undefined}
-                />
-              </button>
-              <button
-                className="icon-button"
+              />
+              <IconButton
+                icon={ICONS.archive}
                 disabled={busy}
                 aria-pressed={summary.archived}
-                title={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
-                aria-label={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
+                label={summary.archived ? t('Aus dem Archiv holen') : t('Archivieren')}
                 onClick={() =>
                   void act(
                     () => archiveItem(id, !summary.archived),
                     summary.archived ? t('Aus dem Archiv geholt ✧') : t('Archiviert.'),
                   )
                 }
-              >
-                <Icon name="archive" size={15} />
-              </button>
-              <button
-                className="icon-button"
+              />
+              <IconButton
+                icon={ICONS.send}
                 disabled={busy || summary.broken || !d || d.locked}
-                title={t('Als Send teilen')}
-                aria-label={t('Als Send teilen')}
+                label={t('Als Send teilen')}
                 aria-haspopup="dialog"
                 onClick={() => setSharing(true)}
-              >
-                <Icon name="send" size={15} />
-              </button>
+              />
               {/* A family's item stays one: copies are of one's own items. */}
               {onClone && !summary.organizationId && (
-                <button
-                  className="icon-button"
+                <IconButton
+                  icon={ICONS.collection}
                   disabled={busy || summary.broken || !d || d.locked}
-                  title={t('Duplizieren')}
-                  aria-label={t('Duplizieren')}
+                  label={t('Duplizieren')}
                   aria-haspopup="dialog"
                   onClick={onClone}
                   data-clone
-                >
-                  <Icon name="layers" size={15} />
-                </button>
+                />
               )}
-              <button
-                className="icon-button"
+              <IconButton
+                icon={ICONS.delete}
                 disabled={busy}
-                title={t('In den Papierkorb')}
-                aria-label={t('In den Papierkorb')}
+                label={t('In den Papierkorb')}
                 onClick={() => setAsking('trash')}
-              >
-                <Icon name="trash" size={15} />
-              </button>
+              />
               {(summary.organizationId || shareTargets().length > 0) && (
-                <button
-                  className="icon-button"
+                <IconButton
+                  icon={summary.organizationId ? ICONS.overview : ICONS.home}
                   disabled={busy || summary.broken || !!d?.locked}
-                  title={
-                    summary.organizationId ? t('Sammlungen') : t('In eine Familie verschieben')
-                  }
-                  aria-label={
+                  label={
                     summary.organizationId ? t('Sammlungen') : t('In eine Familie verschieben')
                   }
                   onClick={() => setMoving(true)}
-                >
-                  <Icon name={summary.organizationId ? 'grid' : 'house'} size={15} />
-                </button>
+                />
               )}
-              <button
-                className="primary"
+              <Button
+                variant="primary"
+                icon={ICONS.edit}
                 disabled={busy || summary.broken || !!d?.locked}
                 onClick={onEdit}
                 title={t('Bearbeiten (E)')}
                 aria-keyshortcuts="E"
                 data-edit
               >
-                <Icon name="pencil" size={15} />
                 {t('Bearbeiten')}
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -823,7 +802,7 @@ export function ItemDetail({
                   {d.login.username}
                   {link && (
                     <span className="chip masked-chip">
-                      <Icon name="sparkles" size={12} />
+                      <Icon icon={ICONS.maskedAddress} size="xs" />
                       {link.state
                         ? t('Maskierte Adresse · {state}', { state: t(STATE_LABEL[link.state]) })
                         : t('Maskierte Adresse')}
@@ -1007,15 +986,17 @@ export function ItemDetail({
                     </Row>
                   ) : null,
                 )}
-              <button
-                className="quiet"
+              <Button
+                variant="ghost"
+                icon={ICONS.qrCode}
+                // vault.css still aligns `.detail-card > button.quiet` this way; the class is gone.
+                className="justify-self-start -ml-3"
                 onClick={() => setSharingWifi(true)}
                 aria-haspopup="dialog"
                 data-wifi-share
               >
-                <Icon name="qr" size={15} />
                 {t('Als QR-Code teilen')}
-              </button>
+              </Button>
             </Section>
           )}
 
@@ -1074,17 +1055,18 @@ export function ItemDetail({
 
           {d.passwordHistory && d.passwordHistory.length > 0 && (
             <Section>
-              <button
-                className="history-toggle quiet"
+              <Button
+                variant="ghost"
+                icon={ICONS.history}
+                className="history-toggle"
                 aria-expanded={showHistory}
                 onClick={() => setShowHistory(!showHistory)}
               >
-                <Icon name="history" size={15} />
                 {d.passwordHistory.length === 1
                   ? t('1 früheres Passwort')
                   : t('{n} frühere Passwörter', { n: d.passwordHistory.length })}
-                <Icon name="chevron" size={14} className={showHistory ? 'turned' : undefined} />
-              </button>
+                <Icon icon={ICONS.next} size="xs" className={showHistory ? 'turned' : undefined} />
+              </Button>
               {showHistory &&
                 d.passwordHistory.map((entry) => (
                   <SecretRow

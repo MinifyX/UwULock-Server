@@ -1,6 +1,7 @@
 import { N_, t } from '../../lib/i18n';
 import type { ShownKind, SpaceName } from '../../lib/suite/model';
-import type { IconName } from '../Icon';
+import { ICONS } from '@uwusuite/design';
+import type { LucideIcon } from 'lucide-react';
 
 export const SPACE_LABEL: Record<SpaceName, string> = {
   ssh: N_('SSH (UwUSSH)'),
@@ -8,18 +9,18 @@ export const SPACE_LABEL: Record<SpaceName, string> = {
 };
 
 /** Look up with `kindIcon`: a kind is a string from elsewhere. */
-const KIND_ICON: Record<string, IconName> = {
-  host: 'monitor',
-  group: 'folder',
-  identity: 'user',
-  key: 'key',
-  snippet: 'terminal',
-  port_forward: 'network',
-  known_host: 'shield',
+const KIND_ICON: Record<string, LucideIcon> = {
+  host: ICONS.computer,
+  group: ICONS.folder,
+  identity: ICONS.account,
+  key: ICONS.secret,
+  snippet: ICONS.terminal,
+  port_forward: ICONS.network,
+  known_host: ICONS.securityCheck,
 };
 
-export const kindIcon = (kind: string): IconName =>
-  Object.hasOwn(KIND_ICON, kind) ? KIND_ICON[kind]! : 'note';
+export const kindIcon = (kind: string): LucideIcon =>
+  Object.hasOwn(KIND_ICON, kind) ? KIND_ICON[kind]! : ICONS.note;
 
 const KIND_PLURAL: Record<ShownKind, string> = {
   host: N_('Hosts'),

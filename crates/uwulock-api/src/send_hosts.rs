@@ -50,7 +50,12 @@ pub fn allowed(method: &Method, path: &str) -> bool {
     let get = method == Method::GET || method == Method::HEAD;
     match segments.as_slice() {
         // The page's own files: the app and what it loads.
-        ["assets", ..] | ["favicon.svg"] | ["favicon.ico"] | ["index.html"] | ["manifest.webmanifest"] => get,
+        ["assets", ..]
+        | ["boot.js"]
+        | ["favicon.svg"]
+        | ["favicon.ico"]
+        | ["index.html"]
+        | ["manifest.webmanifest"] => get,
         ["alive"] => get,
         // The file-request page (`/r/<accessId>#<secret>`) and the Send page (`/<accessId>#<key>`).
         ["r", access] | [access] => get && is_access_id(access),
@@ -82,6 +87,8 @@ mod tests {
             (Method::GET, format!("/r/{id}")),
             (Method::GET, format!("/{id}")),
             (Method::GET, "/assets/index-abc.js".to_string()),
+            // The script that sets the theme before the page draws.
+            (Method::GET, "/boot.js".to_string()),
             (Method::GET, "/uwu/v1/info".to_string()),
             (Method::POST, format!("/uwu/v1/public/file-requests/{id}/open")),
             (Method::PUT, format!("/uwu/v1/public/file-requests/{id}/submissions/s/files/f")),

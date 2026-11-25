@@ -10,6 +10,7 @@ import {
 } from '../../lib/families';
 import { t, useLanguage } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
+import { Button } from '@uwusuite/design';
 import { Modal } from '../Modal';
 
 /** The families the account is confirmed in: where it can share items. */
@@ -73,16 +74,16 @@ export function ShareToFamily({
       footer={
         <>
           <span className="spacer" />
-          <button data-secondary onClick={onClose} disabled={busy}>
+          <Button data-secondary onClick={onClose} disabled={busy}>
             {t('Abbrechen')}
-          </button>
-          <button
-            className="primary"
+          </Button>
+          <Button
+            variant="primary"
             disabled={busy || !orgId || chosen.size === 0}
             onClick={() => void submit()}
           >
             {moving ? t('Verschieben') : t('Speichern')}
-          </button>
+          </Button>
         </>
       }
     >

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Button, Icon, ICONS, Segmented, SettingRow, Switch } from '@uwusuite/design';
 import type { ItemSummary } from '../../lib/api';
 import {
   deleteVersion,
@@ -31,10 +32,8 @@ import { when } from '../../lib/format';
 import { t, useLanguage } from '../../lib/i18n';
 import { useSwitch } from '../../lib/switches';
 import { toast } from '../../lib/toast';
-import { Icon } from '../Icon';
 import { ItemTile } from '../ItemTile';
 import { Modal } from '../Modal';
-import { radioArrows, Toggle } from './controls';
 
 /**
  * What the web vault adds to an item: its icon, a reminder to renew its password, and its
@@ -121,33 +120,46 @@ function IconCard({ summary }: { summary: ItemSummary }) {
             if (file) void keep(() => iconFromFile(file), t('Icon gespeichert ✧'));
           }}
         />
-        <button className="quiet" disabled={busy} onClick={() => input.current?.click()}>
-          <Icon name="upload" size={15} />
+        <Button
+          variant="ghost"
+          disabled={busy}
+          onClick={() => input.current?.click()}
+          icon={ICONS.upload}
+        >
           {t('Hochladen …')}
-        </button>
+        </Button>
         {libraryOn && (
-          <button className="quiet" disabled={busy} onClick={() => setLibrary(true)}>
-            <Icon name="grid" size={15} />
+          <Button
+            variant="ghost"
+            disabled={busy}
+            onClick={() => setLibrary(true)}
+            icon={ICONS.overview}
+          >
             {t('Aus der Bibliothek …')}
-          </button>
+          </Button>
         )}
         {local && (
-          <button
-            className="quiet"
+          <Button
+            variant="ghost"
             disabled={busy}
             onClick={() =>
               void keep(() => iconFromDevice(local), t('Icon vom Gerät gespeichert ✧'))
             }
+            icon={ICONS.home}
           >
-            <Icon name="home" size={15} />
             {t('Vom Gerät holen')}
-          </button>
+          </Button>
         )}
         {own && (
-          <button className="quiet danger-text" disabled={busy} onClick={() => void remove()}>
-            <Icon name="trash" size={15} />
+          <Button
+            variant="ghost"
+            className="text-danger-ink!"
+            disabled={busy}
+            onClick={() => void remove()}
+            icon={ICONS.delete}
+          >
             {t('Eigenes Icon entfernen')}
-          </button>
+          </Button>
         )}
       </div>
       {local && !own && (
@@ -283,9 +295,9 @@ function LibraryDialog({
       footer={
         <>
           <span className="spacer" />
-          <button type="button" data-secondary onClick={onCancel}>
+          <Button data-secondary onClick={onCancel}>
             {t('Abbrechen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -401,50 +413,33 @@ export function ReminderFields({
   const set = (patch: Partial<ReminderForm>) => onChange({ ...value, ...patch });
   return (
     <div className="reminder-fields" data-reminder>
-      <div className="setting-row">
-        <div className="setting-text">
-          <p className="setting-label">{t('Ans Erneuern erinnern')}</p>
-          <p className="setting-description">
-            {t(
-              'Der Server kennt nur den Tag und schickt dann eine Mail, die den Eintrag nicht nennt.',
-            )}
-          </p>
-        </div>
-        <div className="setting-control">
-          <Toggle
-            label={t('Ans Erneuern erinnern')}
+      <SettingRow
+        label={t('Ans Erneuern erinnern')}
+        description={t(
+          'Der Server kennt nur den Tag und schickt dann eine Mail, die den Eintrag nicht nennt.',
+        )}
+        wrap={false}
+      >
+        {({ id, describedBy }) => (
+          <Switch
+            id={id}
+            describedBy={describedBy}
             checked={value.on}
             onChange={(on) => set({ on })}
           />
-        </div>
-      </div>
+        )}
+      </SettingRow>
       {value.on && (
         <div className="comfort-form">
-          <div
-            className="segmented"
-            role="radiogroup"
-            aria-label={t('Wann')}
-            onKeyDown={radioArrows}
-          >
-            <button
-              type="button"
-              role="radio"
-              aria-checked={value.mode === 'months'}
-              tabIndex={value.mode === 'months' ? 0 : -1}
-              onClick={() => set({ mode: 'months' })}
-            >
-              {t('Nach Monaten')}
-            </button>
-            <button
-              type="button"
-              role="radio"
-              aria-checked={value.mode === 'day'}
-              tabIndex={value.mode === 'day' ? 0 : -1}
-              onClick={() => set({ mode: 'day' })}
-            >
-              {t('An einem Tag')}
-            </button>
-          </div>
+          <Segmented
+            label={t('Wann')}
+            value={value.mode}
+            onChange={(mode) => set({ mode })}
+            options={[
+              { value: 'months', label: t('Nach Monaten') },
+              { value: 'day', label: t('An einem Tag') },
+            ]}
+          />
           {value.mode === 'months' ? (
             <label className="field">
               <span>
@@ -514,11 +509,16 @@ function VersionsCard({ summary }: { summary: ItemSummary }) {
 
   return (
     <section className="detail-card comfort-card">
-      <button className="history-toggle quiet" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <Icon name="history" size={15} />
+      <Button
+        variant="ghost"
+        className="history-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+        icon={ICONS.history}
+      >
         {t('Frühere Versionen')}
-        <Icon name="chevron" size={14} className={open ? 'turned' : undefined} />
-      </button>
+        <Icon icon={ICONS.expand} size="xs" className={open ? 'turned' : undefined} />
+      </Button>
       {open && error && <p className="field-hint">{error}</p>}
       {open && versions && !versions.length && (
         <p className="field-hint">
@@ -539,9 +539,9 @@ function VersionsCard({ summary }: { summary: ItemSummary }) {
               </span>
             </div>
             <div className="detail-actions">
-              <button className="quiet" onClick={() => setShown(version)}>
+              <Button variant="ghost" onClick={() => setShown(version)}>
                 {t('Ansehen')}
-              </button>
+              </Button>
             </div>
           </div>
         ))}
@@ -626,23 +626,22 @@ function VersionDialog({
       onCancel={() => !busy && onClose()}
       footer={
         <>
-          <button
-            type="button"
-            className="quiet danger-text"
+          <Button
+            variant="ghost"
+            className="text-danger-ink!"
             disabled={busy}
             onClick={() =>
               void act(() => deleteVersion(summary.id, version.id), t('Version gelöscht.'))
             }
           >
             {t('Version löschen')}
-          </button>
+          </Button>
           <span className="spacer" />
-          <button type="button" data-secondary disabled={busy} onClick={onClose}>
+          <Button data-secondary disabled={busy} onClick={onClose}>
             {t('Schließen')}
-          </button>
-          <button
-            type="button"
-            className="primary"
+          </Button>
+          <Button
+            variant="primary"
             disabled={busy || !opened || !summary.revisionDate}
             onClick={() =>
               void act(
@@ -652,7 +651,7 @@ function VersionDialog({
             }
           >
             {t('Zurückholen')}
-          </button>
+          </Button>
         </>
       }
     >
@@ -674,10 +673,9 @@ function VersionDialog({
                 </div>
               ))}
           </dl>
-          <button type="button" className="quiet" onClick={() => setReveal(!reveal)}>
-            <Icon name="eye" size={15} />
+          <Button variant="ghost" onClick={() => setReveal(!reveal)} icon={ICONS.show}>
             {reveal ? t('Geheimes verbergen') : t('Geheimes zeigen')}
-          </button>
+          </Button>
         </>
       )}
     </Modal>

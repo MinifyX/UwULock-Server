@@ -3,6 +3,17 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.8
+
+- The web vault, the admin portal and the public pages (Send, file request, registration) are
+  built from the suite's design package (`@uwusuite/design` 1.18.0): its colours, type, spacing
+  and controls, its dialogs, toasts, tabs, cards and icons, and its motion. What they do, their
+  texts and their addresses are the same; settings saved in a browser keep working.
+- Look settings: theme, contrast, animations and the font follow the package, so they match the
+  apps. The chosen theme is set by a small script file before the page draws; the content
+  security policy is unchanged, and fonts still come from this server only.
+- Admin overview: an alert about a failure carries a red mark.
+
 ## 0.8.0-beta.7
 
 Fixes from an audit of the server and the web vault.

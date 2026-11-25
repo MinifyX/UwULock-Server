@@ -147,7 +147,7 @@ try {
       await page.goto(`${origin}/admin#${path}`);
       await page.locator('.admin-panel').first().waitFor({ timeout: 30000 });
       // The tab's data came when no spinner is left.
-      await page.locator('.admin-panel .spin').first().waitFor({ state: 'detached', timeout: 15000 });
+      await page.locator('.admin-panel .animate-spin').first().waitFor({ state: 'detached', timeout: 15000 });
       const slug = path.slice(1).replace(/\//g, '-') || 'overview';
       // The overview draws its numbers once they came.
       if (slug === 'overview') await page.getByText('Zahlen', { exact: true }).waitFor();

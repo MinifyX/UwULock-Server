@@ -1,4 +1,5 @@
-import { Section, Select, SettingRow } from '../components/ui';
+import { Section, SettingRow } from '@uwusuite/design';
+import { Select } from '../components/ui';
 import type { OrgRules } from '../lib/admin';
 import { t, useLanguage } from '../lib/i18n';
 import { SettingsTab } from './draft';
@@ -15,7 +16,7 @@ export function FamilySettings() {
           setDraft({ ...draft, families: { ...rules, ...next } });
         return (
           <Section
-            heading={t('Regeln für Familien')}
+            title={t('Regeln für Familien')}
             lead={t(
               'Eine Familie teilt Einträge in Sammlungen, mit Lese- oder Schreibrecht pro Mitglied – wie Bitwardens „Families“, auch in den offiziellen Apps. Neue Leute kommen über Einladungen dazu.',
             )}
@@ -24,16 +25,19 @@ export function FamilySettings() {
               label={t('Wer darf eine Familie anlegen')}
               description={t('Wer keine anlegen darf, kann trotzdem in eine eingeladen werden.')}
             >
-              <Select
-                label={t('Wer darf eine Familie anlegen')}
-                value={rules.whoMayCreate}
-                onChange={(whoMayCreate) => set({ whoMayCreate })}
-                options={[
-                  { value: 'everyone', label: t('Alle') },
-                  { value: 'admins', label: t('Nur Admins') },
-                  { value: 'nobody', label: t('Niemand') },
-                ]}
-              />
+              {({ id }) => (
+                <Select
+                  id={id}
+                  label={t('Wer darf eine Familie anlegen')}
+                  value={rules.whoMayCreate}
+                  onChange={(whoMayCreate) => set({ whoMayCreate })}
+                  options={[
+                    { value: 'everyone', label: t('Alle') },
+                    { value: 'admins', label: t('Nur Admins') },
+                    { value: 'nobody', label: t('Niemand') },
+                  ]}
+                />
+              )}
             </SettingRow>
             <SettingRow
               label={t('Mitglieder pro Familie')}
