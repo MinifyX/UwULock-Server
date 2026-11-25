@@ -54,7 +54,15 @@ export function Overview() {
                 title={
                   <>
                     {alertTitle(alert.kind)}
-                    <Tag tone={alert.severity === 'info' ? 'pink' : 'warning'}>
+                    <Tag
+                      tone={
+                        alert.severity === 'info'
+                          ? 'pink'
+                          : alert.severity === 'error'
+                            ? 'danger'
+                            : 'warning'
+                      }
+                    >
                       {t(SEVERITY[alert.severity] ?? alert.severity)}
                     </Tag>
                   </>
