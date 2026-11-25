@@ -209,6 +209,8 @@ export type Draft = {
     /** Which field of the item this one was, for a value the editor never saw. */
     from: number | null;
   }[];
+  /** The item's revision when the editor opened it: the server refuses a save over a newer one. */
+  revisionDate?: string | null;
 };
 
 export type GeneratorOptions = {
@@ -253,6 +255,7 @@ type Pending = {
 let pending: Pending | null = null;
 let lastSync: number | null = null;
 let syncing = false;
+let syncAgain = false;
 let syncError: string | null = null;
 let name: string | null = null;
 /** The profile of the last sync, for what the module does not keep: the public key. */
@@ -264,7 +267,14 @@ let passwordChangeDue = false;
 export function failure(error: unknown): Failure {
   if (error instanceof ApiError) {
     const kind =
-      error.status === 401 ? 'session-expired' : error.status === 0 ? 'network' : 'server';
+      error.status === 401
+        ? 'session-expired'
+        : error.status === 0
+          ? 'network'
+          : // The cipher changed since the editor opened it (the server's revision check).
+            error.status === 400 && error.message.includes('out of date')
+            ? 'conflict'
+            : 'server';
     return { kind, message: error.message };
   }
   if (typeof error === 'object' && error !== null && 'kind' in error) return error as Failure;
@@ -749,6 +759,8 @@ setInterval(() => {
 // an admin — closes an open vault here too, keys and all, instead of leaving it readable in a
 // tab somebody else may be sitting at.
 void listen('session-ended', () => {
+  clearDue = toClear !== null;
+  void clearClipboard();
   stopLive();
   void call((core) => core.lock()).finally(() => {
     unlocked = false;
@@ -760,7 +772,10 @@ void listen('session-ended', () => {
 
 // Another device changed something: the hub says so, and the vault here follows.
 void listen('hub-sync', () => {
-  if (unlocked && !syncing) void sync().then(announce, () => undefined);
+  if (!unlocked) return;
+  // A change that comes while a sync runs may be newer than what that sync read: one more after it.
+  if (syncing) syncAgain = true;
+  else void sync().then(announce, () => undefined);
 });
 
 // The account's sessions were ended somewhere: asking the server tells whether ours was too —
@@ -799,6 +814,10 @@ export async function sync(): Promise<void> {
     throw failure(error);
   } finally {
     syncing = false;
+    if (syncAgain) {
+      syncAgain = false;
+      if (unlocked) void sync().then(announce, () => undefined);
+    }
   }
 }
 

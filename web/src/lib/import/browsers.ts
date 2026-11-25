@@ -38,7 +38,7 @@ export function readChromeCsv(table: CsvTable, collector: Collector) {
     const app = androidApp(url);
     const item = collector.login(table.get(row, 'name') || app || nameFromUrl(url));
     item.login.username = some(table.get(row, 'username'));
-    item.login.password = some(table.get(row, 'password'));
+    item.login.password = some(table.secret(row, 'password'));
     collector.uris(item, app ? `androidapp://${app}` : url);
     collector.appendNote(item, table.get(row, 'note'));
     for (const [name, value] of table.rest(row, known)) collector.extra(item, name, value);
@@ -70,7 +70,7 @@ export function readFirefoxCsv(table: CsvTable, collector: Collector) {
     if (url === 'chrome://FirefoxAccounts') continue;
     const item = collector.login(nameFromUrl(url));
     item.login.username = some(table.get(row, 'username'));
-    item.login.password = some(table.get(row, 'password'));
+    item.login.password = some(table.secret(row, 'password'));
     collector.uris(item, url);
     for (const [name, value] of table.rest(row, known)) collector.extra(item, name, value);
     collector.add(item);
@@ -86,7 +86,7 @@ export function readAppleCsv(table: CsvTable, collector: Collector) {
     const url = table.get(row, 'URL');
     const item = collector.login(table.get(row, 'Title') || nameFromUrl(url));
     item.login.username = some(table.get(row, 'Username'));
-    item.login.password = some(table.get(row, 'Password'));
+    item.login.password = some(table.secret(row, 'Password'));
     item.login.totp = some(table.get(row, 'OTPAuth'));
     collector.uris(item, url);
     collector.appendNote(item, table.get(row, 'Notes'));

@@ -93,10 +93,41 @@ async fn old_snapshots_go_and_take_what_only_they_needed() {
     }
     let names = repo.snapshots().await.unwrap();
     assert!(!names.contains(&first.snapshot), "a week of days, and the first was not the newest of its week");
-    let (_, removed) = uwulock_backup::prune(&repo, Retention::default()).await.unwrap();
+    let (_, removed, _) = uwulock_backup::prune(&repo, Retention::default()).await.unwrap();
     assert_eq!(removed, 0, "the backups pruned already");
     let newest = repo.manifest(names.last().unwrap()).await.unwrap();
     assert!(uwulock_backup::check(&repo, &newest.name).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_restore_writes_keys_again_but_keeps_same_size_files() {
+    let server = Server::new().await;
+    let target = tempfile::tempdir().unwrap();
+    let repo = open(target.path(), Some(RepoKey::generate())).await;
+    let report = server.backup(&repo, 1_000).await;
+    let manifest = repo.manifest(&report.snapshot).await.unwrap();
+    let here = tempfile::tempdir().unwrap();
+    write(here.path(), "acme/account.key", b"-----BEGIN PRIVATE KEY--X--");
+    write(here.path(), "sends/s1/f1", b"same size....");
+    uwulock_backup::restore_files(&repo, &manifest, here.path()).await.unwrap();
+    assert_eq!(std::fs::read(here.path().join("acme/account.key")).unwrap(), b"-----BEGIN PRIVATE KEY-----");
+    assert_eq!(std::fs::read(here.path().join("sends/s1/f1")).unwrap(), b"same size....", "never changes, not read");
+}
+
+#[tokio::test]
+async fn an_unreadable_snapshot_neither_stops_backups_nor_lets_prune_delete() {
+    let server = Server::new().await;
+    let target = tempfile::tempdir().unwrap();
+    let repo = open(target.path(), None).await;
+    let first = server.backup(&repo, 1_000).await;
+    std::fs::write(target.path().join("snapshots").join(&first.snapshot), b"garbage").unwrap();
+    let objects = walk(&target.path().join("data")).len();
+    let second = server.backup(&repo, 90_000).await;
+    assert_eq!((second.removed_snapshots, second.removed_objects), (0, 0));
+    assert_eq!(second.unreadable, Some(first.snapshot.clone()), "and says which one");
+    assert!(walk(&target.path().join("data")).len() >= objects, "no object went");
+    assert!(uwulock_backup::check(&repo, &second.snapshot).await.unwrap().is_empty());
+    assert!(!repo.manifest(&second.snapshot).await.unwrap().files.is_empty());
 }
 
 #[tokio::test]

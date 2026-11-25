@@ -197,6 +197,8 @@ fn line(notice: &Notice) -> NoticeLine {
     }
 }
 
+const HOUR: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
 /// Send the bundles that are due at `now`. The maintenance job calls it every minute.
 pub async fn deliver_due(state: &AppState, now: &str) {
     let due = match state.store.notices_due(now, GATHER_SECONDS, SPACING_SECONDS).await {
@@ -207,6 +209,9 @@ pub async fn deliver_due(state: &AppState, now: &str) {
         }
     };
     for user_id in due {
+        if state.notice_retries.lock().get(&user_id).is_some_and(|(_, at)| *at > std::time::Instant::now()) {
+            continue;
+        }
         let Ok(Some(user)) = state.store.user(&user_id).await else { continue };
         let Ok(waiting) = state.store.waiting_notices(&user_id).await else { continue };
         if waiting.is_empty() {
@@ -234,10 +239,20 @@ pub async fn deliver_due(state: &AppState, now: &str) {
             Mail::SecurityNotices { notices: lines, link: format!("{}/#/settings/security", state.config.public) };
         match state.mailer.send(&user.email, &mail, Language::from_code(&user.language)).await {
             Ok(()) => {
+                state.notice_retries.lock().remove(&user_id);
                 let _ = state.store.notices_mailed(ids, now, true).await;
             }
-            // Stays waiting: the next minute tries again.
-            Err(error) => tracing::warn!(%error, "a mail with security notices did not go out"),
+            // Stays waiting: tried again after 1, 2, 4 … minutes, at most an hour.
+            Err(error) => {
+                let mut retries = state.notice_retries.lock();
+                let attempts = retries.get(&user_id).map_or(1, |(attempts, _)| attempts + 1);
+                let wait =
+                    std::time::Duration::from_secs(60u64.saturating_mul(2u64.saturating_pow(attempts - 1))).min(HOUR);
+                retries.insert(user_id, (attempts, std::time::Instant::now() + wait));
+                if attempts == 1 {
+                    tracing::warn!(%error, "a mail with security notices did not go out");
+                }
+            }
         }
     }
 }
@@ -377,6 +392,28 @@ async fn collect(
 mod tests {
     use super::*;
     use crate::test_support::*;
+
+    #[tokio::test]
+    async fn a_failed_notice_mail_waits_before_the_next_try() {
+        let server = TestServer::new().await;
+        let account = server.account("nyu@example.com").await;
+        let user = server.state.store.user(&account.id).await.unwrap().unwrap();
+        record(&server.state, &user, "vaultExported", &Context::default(), json!({ "format": "json" })).await;
+        let mut broken = server.state.clone();
+        let smtp = uwulock_mail::SmtpSettings {
+            host: "127.0.0.1".into(),
+            port: 1,
+            security: uwulock_mail::Security::None,
+            from: "vault@example.com".into(),
+            ..Default::default()
+        };
+        broken.mailer = uwulock_mail::Mailer::new(Some(&smtp)).unwrap();
+        let later = clock::in_seconds(GATHER_SECONDS + 1);
+        deliver_due(&broken, &later).await;
+        assert_eq!(broken.notice_retries.lock().get(&user.id).map(|(attempts, _)| *attempts), Some(1));
+        deliver_due(&broken, &later).await;
+        assert_eq!(broken.notice_retries.lock().get(&user.id).map(|(attempts, _)| *attempts), Some(1), "not yet");
+    }
 
     #[tokio::test]
     async fn wrong_passwords_become_one_notice_and_one_mail() {

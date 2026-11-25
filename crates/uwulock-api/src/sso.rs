@@ -1604,7 +1604,17 @@ async fn pair(State(state): State<AppState>, admin: Admin, Json(data): Json<Pair
     Ok(Json(settings_json(&state)))
 }
 
-async fn unpair(State(state): State<AppState>, admin: Admin) -> ApiResult<Json<Value>> {
+#[derive(Deserialize)]
+struct UnpairData {
+    /// Ending the pairing switches SSO off: the admin's master password, as for pairing.
+    #[serde(default, rename = "masterPasswordHash")]
+    master_password_hash: Option<String>,
+}
+
+async fn unpair(State(state): State<AppState>, admin: Admin, Json(data): Json<UnpairData>) -> ApiResult<Json<Value>> {
+    crate::accounts::check_password(&state, &admin.0.user, data.master_password_hash.as_deref())
+        .await
+        .map_err(|error| error.code("password_required"))?;
     let mut all = state.settings();
     let Some(paired) = all.sso.paired.take() else {
         return Err(ApiError::not_found("This server is not paired with UwUAuth."));

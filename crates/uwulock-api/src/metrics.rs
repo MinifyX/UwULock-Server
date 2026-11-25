@@ -428,6 +428,7 @@ pub fn spawn_listener(state: AppState) {
                 let metrics = state.settings().metrics;
                 metrics.listen.filter(|_| metrics.enabled)
             };
+            let want = wanted.is_some();
             if bound.as_ref().map(|(address, _)| address) != wanted.as_ref() {
                 if let Some((address, task)) = bound.take() {
                     task.abort();
@@ -451,7 +452,13 @@ pub fn spawn_listener(state: AppState) {
                     }
                 }
             }
-            state.settings_changed.notified().await;
+            // An address that could not be bound (still in use) is tried again every minute.
+            if want && bound.is_none() {
+                let _ =
+                    tokio::time::timeout(std::time::Duration::from_secs(60), state.settings_changed.notified()).await;
+            } else {
+                state.settings_changed.notified().await;
+            }
         }
     });
 }

@@ -158,14 +158,14 @@ pub fn rotate(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use uwulock_core::crypto::{EncString, PrivateKey};
     use uwulock_core::vault::{ItemKind, Login, Vault};
     use zeroize::Zeroizing;
 
     /// An account with one login, its password "old", under a fresh user key.
-    fn unlocked() -> Unlocked {
+    pub(crate) fn unlocked() -> Unlocked {
         let user_key = SymmetricKey::generate();
         let mut item = Item::new(ItemKind::Login);
         item.name = Zeroizing::new("Bank".into());

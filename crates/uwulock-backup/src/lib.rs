@@ -253,6 +253,9 @@ pub struct BackupReport {
     pub total: u64,
     pub removed_snapshots: usize,
     pub removed_objects: usize,
+    /// The snapshot that could not be read, so nothing was pruned.
+    #[serde(default)]
+    pub unreadable: Option<String>,
 }
 
 fn random_suffix() -> String {
@@ -362,9 +365,15 @@ pub async fn backup(
     let mut known = repo.object_ids().await?;
     let mut uploaded = 0;
     // The newest snapshot says which files it had, and how they looked: those that still look
-    // the same are not read again.
+    // the same are not read again. One that cannot be read only costs reading every file again.
     let previous: HashMap<String, FileEntry> = match repo.snapshots().await?.last() {
-        Some(name) => repo.manifest(name).await?.files.into_iter().map(|file| (file.path.clone(), file)).collect(),
+        Some(name) => match repo.manifest(name).await {
+            Ok(manifest) => manifest.files.into_iter().map(|file| (file.path.clone(), file)).collect(),
+            Err(error) => {
+                tracing::warn!(snapshot = %name, %error, "the newest snapshot cannot be read; backing up every file");
+                HashMap::new()
+            }
+        },
         None => HashMap::new(),
     };
 
@@ -430,16 +439,25 @@ pub async fn backup(
     let encoded = repo.codec.encode(&serde_json::to_vec(&manifest).expect("manifests serialize"))?;
     repo.storage.write(&format!("snapshots/{name}"), &encoded).await?;
 
-    let (removed_snapshots, removed_objects) = prune(repo, retention).await?;
-    Ok(BackupReport { snapshot: name, uploaded, total: database_size + files_size, removed_snapshots, removed_objects })
+    let (removed_snapshots, removed_objects, unreadable) = prune(repo, retention).await?;
+    let total = database_size + files_size;
+    Ok(BackupReport { snapshot: name, uploaded, total, removed_snapshots, removed_objects, unreadable })
 }
 
-/// Removes snapshots the retention rules let go, then objects no snapshot needs.
-pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, usize), Error> {
+/// Removes snapshots the retention rules let go, then objects no snapshot needs. Nothing at all
+/// while a snapshot cannot be read: what it needs is not known, so no object may go. Its name
+/// comes back then, for the admin to see.
+pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, usize, Option<String>), Error> {
     let names = repo.snapshots().await?;
     let mut manifests = Vec::new();
     for name in &names {
-        manifests.push((name.clone(), repo.manifest(name).await?));
+        match repo.manifest(name).await {
+            Ok(manifest) => manifests.push((name.clone(), manifest)),
+            Err(error) => {
+                tracing::warn!(snapshot = %name, %error, "a snapshot cannot be read; nothing is pruned this time");
+                return Ok((0, 0, Some(name.clone())));
+            }
+        }
     }
     let times: Vec<i64> = manifests.iter().map(|(_, manifest)| manifest.created_at).collect();
     let kept = retention::keep(&times, retention);
@@ -462,7 +480,7 @@ pub async fn prune(repo: &Repository, retention: Retention) -> Result<(usize, us
             }
         }
     }
-    Ok((removed_snapshots, removed_objects))
+    Ok((removed_snapshots, removed_objects, None))
 }
 
 /// Whether this build can put a snapshot back: migrations only ever run forwards.
@@ -500,8 +518,9 @@ async fn write_chunks(repo: &Repository, chunks: &[String], path: &Path) -> Resu
 }
 
 /// Puts a snapshot's files into a data directory: those that are missing, or not the size they
-/// were. A file this server has already, the same size, stays: attachments and Send files never
-/// change under their names. Returns how many were written.
+/// were. An attachment, Send or file-request file this server has already, the same size, stays:
+/// those never change under their names. Every other file (keys, certificates) is written again.
+/// Returns how many were written.
 ///
 /// A second attempt after a broken connection picks up where the first one stopped.
 pub async fn restore_files(repo: &Repository, manifest: &Manifest, data_dir: &Path) -> Result<usize, Error> {
@@ -516,7 +535,9 @@ pub async fn restore_files(repo: &Repository, manifest: &Manifest, data_dir: &Pa
             return Err(Error::Damaged(format!("the file name {} leaves its place", file.path.escape_debug())));
         }
         let path = data_dir.join(relative);
-        if tokio::fs::symlink_metadata(&path).await.is_ok_and(|meta| meta.is_file() && meta.len() == file.size) {
+        if matches!(top, "attachments" | "sends" | "file-requests")
+            && tokio::fs::symlink_metadata(&path).await.is_ok_and(|meta| meta.is_file() && meta.len() == file.size)
+        {
             continue;
         }
         tokio::fs::create_dir_all(path.parent().unwrap_or(data_dir)).await?;

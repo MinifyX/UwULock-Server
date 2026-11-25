@@ -233,6 +233,8 @@ pub struct AppState {
     pub geoip: Arc<geoip::GeoIp>,
     /// Addresses that may not log in.
     pub blocks: Arc<blocklist::Blocks>,
+    /// Users whose security-notice mail failed: how often, and when to try again.
+    pub notice_retries: Arc<parking_lot::Mutex<std::collections::HashMap<String, (u32, std::time::Instant)>>>,
 }
 
 impl AppState {
@@ -307,6 +309,7 @@ impl AppState {
             masked: Arc::default(),
             geoip,
             blocks,
+            notice_retries: Arc::default(),
         };
         send_domains::reload(&state).await;
         branding::reload(&state).await;

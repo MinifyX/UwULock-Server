@@ -636,6 +636,14 @@ impl Store {
         Ok(done)
     }
 
+    /// Forget every device of the account at once ("log out everywhere").
+    pub async fn delete_devices(&self, user_id: &str) -> Result<()> {
+        let owned = user_id.to_string();
+        self.sqlite_write(move |tx| tx.execute("DELETE FROM devices WHERE user_id = ?1", [owned]).map(drop)).await?;
+        self.forget_session_of(user_id);
+        Ok(())
+    }
+
     /// A remembered device skipped two-step login at `at` (now, but for tests): it stays
     /// remembered for the set number of days from then. Nothing for a device not remembered.
     pub async fn renew_remembered_device(&self, user_id: &str, id: &str, at: String) -> Result<()> {
@@ -695,7 +703,8 @@ impl Store {
     /// Like [`Store::invite`], by a user who may invite up to `quota` people: counted and
     /// written in one step, so invitations sent at once cannot pass the quota. Their own
     /// invitation of the same address again does not count twice. Nothing when the quota is
-    /// used up.
+    /// used up. Somebody else's invitation that still holds stays theirs and comes back as it
+    /// is: `invited_by` tells.
     pub async fn invite_within(
         &self,
         email: &str,
@@ -722,9 +731,11 @@ impl Store {
                  VALUES (?1, ?2, 0, ?3, ?4, ?5, ?6) \
                  ON CONFLICT (email) DO UPDATE SET token_hash = excluded.token_hash, admin = 0, \
                  invited_by = excluded.invited_by, language = excluded.language, created = excluded.created, \
-                 expires = excluded.expires",
+                 expires = excluded.expires \
+                 WHERE invitations.invited_by IS excluded.invited_by OR invitations.expires <= excluded.created",
                 params![email, token_hash, invited_by, language, now, expires],
             )?;
+            // Somebody else's invitation that still holds stays theirs, also when two ask at once.
             tx.query_row(
                 "SELECT email, admin, invited_by, language, created, expires FROM invitations WHERE email = ?1",
                 [&email],
@@ -1146,5 +1157,19 @@ pub(crate) mod tests {
                     .is_some(),
             "one's own again does not count twice"
         );
+    }
+
+    #[tokio::test]
+    async fn somebody_elses_invitation_stays_theirs() {
+        let (store, _dir) = store();
+        let nyu = store.create_user(new_user("nyu@example.com")).await.unwrap();
+        let mia = store.create_user(new_user("mia@example.com")).await.unwrap();
+        let invite = |by: String, expires: String| {
+            let store = store.clone();
+            async move { store.invite_within("q@example.com", vec![1; 32], &by, "de", expires, 2).await.unwrap() }
+        };
+        assert!(invite(nyu.id.clone(), clock::in_seconds(60)).await.is_some());
+        assert_eq!(invite(mia.id.clone(), clock::in_seconds(60)).await.unwrap().invited_by, Some(nyu.id.clone()));
+        assert_eq!(store.invitation("q@example.com").await.unwrap().unwrap().invited_by, Some(nyu.id.clone()));
     }
 }

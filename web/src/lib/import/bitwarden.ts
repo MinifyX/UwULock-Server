@@ -34,7 +34,7 @@ export function readBitwardenCsv(table: CsvTable, collector: Collector) {
     if (table.get(row, 'type') === 'note') collector.retype(item, ItemType.Note);
     item.favorite = table.get(row, 'favorite') === '1';
     item.login.username = some(table.get(row, 'login_username'));
-    item.login.password = some(table.get(row, 'login_password'));
+    item.login.password = some(table.secret(row, 'login_password'));
     item.login.totp = some(table.get(row, 'login_totp'));
     collector.uris(item, ...table.get(row, 'login_uri').split(','));
     collector.appendNote(item, table.get(row, 'notes'));

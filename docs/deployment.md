@@ -375,7 +375,8 @@ the tokens of its day, and among them ones that were taken back since.
 
 The admin portal puts a backup back without stopping anything (Backups → Restore, with the
 master password): how things are right then is written as a backup first
-(`uwulock-<time>-before-restore.db`), so the step can be undone the same way. It only takes
+(`uwulock-<time>-before-restore.db`, the newest three kept apart from the seven), so the step can
+be undone the same way. It only takes
 backups of this server; one of another server goes back on the command line as above. Here too,
 everybody logs in again afterwards, the admin who put it back included.
 

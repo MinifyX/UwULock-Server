@@ -30,4 +30,11 @@ describe('the CSV reader', () => {
     expect(table.get(row, 'missing', 'url')).toBe('https://example.com');
     expect(table.rest(row, ['name', 'url'])).toEqual([['Extra', 'y']]);
   });
+
+  it('keeps the spaces around a password', () => {
+    const table = new CsvTable('name,password\nx, pw \n');
+    const row = table.rows[0]!;
+    expect(table.get(row, 'password')).toBe('pw');
+    expect(table.secret(row, 'password')).toBe(' pw ');
+  });
 });

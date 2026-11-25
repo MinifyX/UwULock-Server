@@ -237,7 +237,7 @@ export function readLastPassCsv(table: CsvTable, collector: Collector) {
       }
     } else {
       item.login.username = some(table.get(row, 'username'));
-      item.login.password = some(table.get(row, 'password'));
+      item.login.password = some(table.secret(row, 'password'));
       item.login.totp = some(table.get(row, 'totp'));
       collector.uris(item, url);
       collector.appendNote(item, extra);

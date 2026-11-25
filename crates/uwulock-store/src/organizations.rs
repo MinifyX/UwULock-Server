@@ -640,6 +640,12 @@ impl Store {
                     .prepare("SELECT org_id FROM org_members WHERE user_id = ?1 AND type <> ?2")?
                     .query_map(params![user_id, OWNER], |row| row.get(0))?
                     .collect::<rusqlite::Result<_>>()?;
+                // Their own filing of those organisations' items goes too, as when a member is removed.
+                tx.execute(
+                    "DELETE FROM cipher_preferences WHERE user_id = ?1 AND cipher_id IN (SELECT c.id FROM ciphers c \
+                     JOIN org_members m ON m.org_id = c.organization_id WHERE m.user_id = ?1 AND m.type <> ?2)",
+                    params![user_id, OWNER],
+                )?;
                 tx.execute("DELETE FROM org_members WHERE user_id = ?1 AND type <> ?2", params![user_id, OWNER])?;
                 bump_revision(tx, &user_id)?;
                 let mut changed = HashSet::from([user_id.clone()]);
@@ -814,8 +820,22 @@ pub(crate) mod tests {
     async fn leaving_takes_every_organisation_but_owned_ones() {
         let (store, _dir) = store();
         let (owner, member, _) = setting(&store).await;
+        let id = member.clone();
+        let favorite = move |tx: &Transaction<'_>| {
+            tx.execute("INSERT INTO cipher_preferences (cipher_id, user_id, favorite) VALUES ('in-a', ?1, 1)", [&id])
+                .map(drop)
+        };
+        store.sqlite_write(favorite).await.unwrap();
         let changed = store.leave_organizations(&member).await.unwrap();
         assert!(changed.contains(&owner) && changed.contains(&member));
+        let id = member.clone();
+        let left: i64 = store
+            .sqlite_read(move |conn| {
+                conn.query_row("SELECT count(*) FROM cipher_preferences WHERE user_id = ?1", [&id], |row| row.get(0))
+            })
+            .await
+            .unwrap();
+        assert_eq!(left, 0, "their filing of the organisation's items goes too");
         let theirs = store.org_vault(&member).await.unwrap();
         assert!(theirs.memberships.is_empty() && theirs.ciphers.is_empty());
         store.leave_organizations(&owner).await.unwrap();

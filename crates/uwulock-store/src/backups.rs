@@ -9,7 +9,8 @@
 use crate::{Store, with_suffix};
 use std::path::{Path, PathBuf};
 
-/// Backups kept: a week of nights, the ones before updates counted in.
+/// Backups kept: a week of nights, the ones before updates counted in (they have no name of
+/// their own); those before a restore apart.
 pub const KEPT: usize = 7;
 
 /// Write a backup to `path`, or to a dated file in `dir`. Returns where it went.
@@ -48,10 +49,15 @@ pub fn list(dir: &Path) -> Vec<(String, u64)> {
     backups
 }
 
-/// Keep the newest `keep` backups and remove the rest.
+/// Copies taken before a restore (`uwulock-<when>-before-restore.db`) kept beside the others.
+const KEPT_ASIDE: usize = 3;
+
+/// Keep the newest `keep` backups and remove the rest. Copies taken before a restore are counted
+/// apart, the newest few kept, so they never push the nightly ones out.
 pub fn keep_newest(dir: &Path, keep: usize) {
-    let backups = list(dir);
-    for (name, _) in backups.iter().rev().skip(keep) {
+    let (aside, plain): (Vec<_>, Vec<_>) =
+        list(dir).into_iter().partition(|(name, _)| stamp_of(name).is_some_and(|stamp| stamp.contains("-before-")));
+    for (name, _) in plain.iter().rev().skip(keep).chain(aside.iter().rev().skip(KEPT_ASIDE)) {
         let _ = std::fs::remove_file(dir.join(name));
     }
 }
@@ -184,6 +190,9 @@ mod tests {
         for day in 1..=5 {
             std::fs::write(dir.path().join(format!("uwulock-2026-09-0{day}-030000.db")), b"x").unwrap();
         }
+        for n in ["", "-2", "-3", "-4"] {
+            std::fs::write(dir.path().join(format!("uwulock-2026-09-06-120000-before-restore{n}.db")), b"x").unwrap();
+        }
         std::fs::write(dir.path().join("notes.txt"), b"x").unwrap();
         keep_newest(dir.path(), 2);
         let mut left: Vec<String> = std::fs::read_dir(dir.path())
@@ -192,6 +201,17 @@ mod tests {
             .map(|entry| entry.file_name().to_string_lossy().to_string())
             .collect();
         left.sort();
-        assert_eq!(left, vec!["notes.txt", "uwulock-2026-09-04-030000.db", "uwulock-2026-09-05-030000.db"]);
+        assert_eq!(
+            left,
+            vec![
+                "notes.txt",
+                "uwulock-2026-09-04-030000.db",
+                "uwulock-2026-09-05-030000.db",
+                "uwulock-2026-09-06-120000-before-restore-2.db",
+                "uwulock-2026-09-06-120000-before-restore-3.db",
+                "uwulock-2026-09-06-120000-before-restore-4.db",
+            ],
+            "the copies before a restore do not push the nightly ones out"
+        );
     }
 }

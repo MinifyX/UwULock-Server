@@ -262,7 +262,7 @@ async fn password_login(
 /// bucket of the address from everywhere — or, once that is empty, from the small one for
 /// devices the account knows. Taken before the password is hashed, so logins at the same time
 /// cannot all slip through on one try that is left.
-struct AccountTries {
+pub(crate) struct AccountTries {
     network: String,
     wide: Wide,
 }
@@ -274,7 +274,7 @@ enum Wide {
 
 impl AccountTries {
     /// The password was right: the tries were not guesses.
-    fn give_back(&self, state: &AppState) {
+    pub(crate) fn give_back(&self, state: &AppState) {
         state.limits.login_account_network.give_back(&self.network);
         match &self.wide {
             Wide::All(key) => state.limits.login_account.give_back(key),
@@ -283,7 +283,7 @@ impl AccountTries {
     }
 }
 
-async fn account_tries(
+pub(crate) async fn account_tries(
     state: &AppState,
     user: Option<&User>,
     username: &str,

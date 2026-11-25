@@ -3,6 +3,32 @@
 Each release gets a section here before its tag is pushed; CI copies the section into the GitHub
 release. Versions follow semver; `-beta.N` versions are pre-releases.
 
+## 0.8.0-beta.7
+
+Fixes from an audit of the server and the web vault.
+
+- Accounts: disconnecting the single sign-on asks for the master password. A login code by
+  mail counts as a login try. When the security stamp changes (a new master password, a key
+  rotation) the account's devices are removed. An invitation stays with the one who sent it,
+  and leaving an organisation removes the settings kept for its entries.
+- Web vault: saving an entry that was changed elsewhere in the meantime says so instead of
+  overwriting it. Changes missed while the connection was down are fetched after it is back.
+  The clipboard is cleared when the server ends the session. A private key that is damaged
+  opens the vault without its organisations instead of not at all. An import keeps spaces at
+  the ends of passwords, and editing a Send keeps its dates.
+- Sends: editing a Send with a file keeps the file.
+- Backups: a restore writes keys and certificates again even when their size is the same. A
+  snapshot that cannot be read no longer stops the next backups: a full one is taken, and
+  nothing is pruned until the snapshot is readable or removed, which the alerts say. The copies
+  made before a restore are kept apart from the regular ones (the newest three).
+- Operations: notice mails that fail are tried again after 1, 2, 4 … minutes up to an hour
+  instead of every round, and the alerts no longer wait for them. The metrics address is tried
+  again when it is taken at the start. A failed look at the certificate keeps the expiry known
+  before. `settings set` takes plain text as well as JSON. The import from Vaultwarden notes a
+  Send whose file is missing. The nightly job keeps its rhythm of 24 hours.
+- **Dependencies.** `lettre` 0.11.24 and `url` 2.5.9, for the advisories RUSTSEC-2026-0560 to
+  -0565 (SMTP) and RUSTSEC-2026-0592.
+
 ## 0.8.0-beta.6
 
 - Motion, subtle and like the rest of the suite (UwUSuite-Design 1.15): after login or unlock
