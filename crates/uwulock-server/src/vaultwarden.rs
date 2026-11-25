@@ -691,6 +691,9 @@ pub fn read_vaultwarden(
                 .and_then(|data| data.get("id").and_then(Value::as_str).map(str::to_string));
             send.uploaded =
                 file.is_some_and(|file| valid_id(&file) && data.join("sends").join(&send.id).join(file).exists());
+            if !send.uploaded {
+                summary.notes.push(format!("the file of Send {} is missing: it will not open", send.id));
+            }
         }
     }
     summary.sends = migration.sends.len();

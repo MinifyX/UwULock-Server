@@ -1048,7 +1048,10 @@ async fn pairing_with_uwuauth_fills_everything_in() {
         format!("Basic {}", base64::engine::general_purpose::STANDARD.encode("uwulock-vault:paired-secret"))
     );
 
-    let gone = json(server.call("DELETE", "/uwu/v1/admin/sso/pairing", Some(&token), json!({})).await).await;
+    let refused = server.call("DELETE", "/uwu/v1/admin/sso/pairing", Some(&token), json!({})).await;
+    assert_eq!(json(refused).await["code"], "password_required");
+    let unpair = json!({ "masterPasswordHash": password_hash("admin@example.com") });
+    let gone = json(server.call("DELETE", "/uwu/v1/admin/sso/pairing", Some(&token), unpair).await).await;
     assert_eq!(
         (gone["enabled"].clone(), gone["paired"].clone(), gone["scimTokenSet"].clone()),
         (json!(false), Value::Null, json!(false))

@@ -211,15 +211,22 @@ struct Overview {
 /// Open a sync, as the server sent it.
 #[wasm_bindgen]
 pub fn open(sync: &str) -> Result<(), JsValue> {
+    Ok(open_sync(sync)?)
+}
+
+fn open_sync(sync: &str) -> Result<()> {
     let value: serde_json::Value = serde_json::from_str(sync).map_err(Failure::from)?;
     let value = wire::lowercase_keys(value);
     let send_auth = files::send_auth(value.get("sends"));
     let mut sync: wire::Sync = serde_json::from_value(value).map_err(Failure::from)?;
     with_unlocked(|unlocked| {
         unlocked.private_key = sync.profile.private_key.clone();
-        // A private key that doesn't open costs only the organisations (they count as skipped),
-        // not the whole vault.
-        if keys::private_key(unlocked).is_err() {
+        // A private key that decrypts but isn't one costs only the organisations (they count as
+        // skipped), not the whole vault. One that doesn't decrypt is a wrong user key: that still
+        // fails below, or new items would be sealed under a key no other device has.
+        let der = sync.profile.private_key.as_deref().and_then(|text| text.parse::<EncString>().ok());
+        let der = der.and_then(|sealed| sealed.decrypt(&unlocked.user_key).ok());
+        if der.is_some_and(|der| crypto::PrivateKey::from_der(&der).is_err()) {
             sync.profile.private_key = None;
         }
         unlocked.vault = Vault::open(&sync, &unlocked.user_key)?;
@@ -236,8 +243,7 @@ pub fn open(sync: &str) -> Result<(), JsValue> {
         unlocked.sends = std::mem::take(&mut sync.sends);
         unlocked.send_auth = send_auth;
         Ok(())
-    })?;
-    Ok(())
+    })
 }
 
 #[wasm_bindgen]
@@ -856,23 +862,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_garbled_private_key_still_opens_the_vault() {
+    fn a_private_key_that_is_none_still_opens_the_vault_a_wrong_user_key_does_not() {
         let unlocked = comfort::tests::unlocked();
         let mut cipher =
             serde_json::to_value(unlocked.vault.item("c1").unwrap().seal(&unlocked.user_key).unwrap()).unwrap();
         cipher["id"] = serde_json::json!("c1");
+        let not_a_key = EncString::encrypt(b"not a key", &unlocked.user_key).to_string();
+        let wrong_key = EncString::encrypt(b"not a key", &SymmetricKey::generate()).to_string();
         UNLOCKED.with(|cell| *cell.borrow_mut() = Some(unlocked));
         let sync = serde_json::json!({
-            "profile": { "id": "u1", "email": "nyu@example.com", "privateKey": "2.garbled|garbled|garbled",
+            "profile": { "id": "u1", "email": "nyu@example.com", "privateKey": not_a_key,
                 "organizations": [{ "id": "o1", "name": "Family", "key": "4.garbled" }] },
             "folders": [], "collections": [], "ciphers": [cipher],
         });
-        assert!(open(&sync.to_string()).is_ok());
+        assert!(open_sync(&sync.to_string()).is_ok());
         with_unlocked(|unlocked| {
             assert!(unlocked.vault.item("c1").is_some());
             assert_eq!(unlocked.vault.skipped, 1, "the organisation is skipped");
             Ok(())
         })
         .unwrap();
+        // Sealed under another key, it's a wrong user key: the vault stays shut.
+        let mut wrong = sync.clone();
+        wrong["profile"]["privateKey"] = serde_json::json!(wrong_key);
+        assert!(open_sync(&wrong.to_string()).is_err());
     }
 }

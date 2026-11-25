@@ -169,7 +169,15 @@ fn spawn_watch(state: AppState) {
         tokio::time::sleep(Duration::from_secs(30)).await;
         loop {
             uwulock_api::notices::deliver_due(&minutely, &uwulock_store::clock::now()).await;
-            uwulock_api::alerts::tick(&minutely).await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+    });
+    // Apart from the notices: a slow mail server must not hold up the admins' alerts.
+    let alerting = state.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        loop {
+            uwulock_api::alerts::tick(&alerting).await;
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
     });
@@ -182,7 +190,7 @@ fn spawn_watch(state: AppState) {
                 if let Some(problem) = &seen.problem {
                     tracing::warn!(%problem, "the certificate clients see has a problem");
                 }
-                *certificate.certificate.write() = Some(seen);
+                uwulock_api::certificate::remember(&certificate.certificate, seen);
             }
             tokio::time::sleep(Duration::from_secs(6 * 60 * 60)).await;
         }
@@ -220,7 +228,11 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
         // Not at once on start: a server that is restarted in a loop should not write a backup
         // every time.
         tokio::time::sleep(Duration::from_secs(10 * 60)).await;
+        // Every 24 hours from then, however long a night's work takes: it does not drift later.
+        let mut nightly = tokio::time::interval(Duration::from_secs(24 * 60 * 60));
+        nightly.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
+            nightly.tick().await;
             if let Err(error) = state.store.sweep(state.settings().remember_two_factor_days).await {
                 tracing::warn!(%error, "sweeping up did not work");
             }
@@ -252,7 +264,6 @@ pub fn spawn_maintenance(config: Config, state: AppState) {
                     state.alerts.report("backupFailed", Some(("error", detail)));
                 }
             }
-            tokio::time::sleep(Duration::from_secs(24 * 60 * 60)).await;
         }
     });
 }

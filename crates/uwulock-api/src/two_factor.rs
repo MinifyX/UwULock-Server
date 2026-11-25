@@ -12,6 +12,7 @@ use crate::identity::{TokenForm, mail_allowed, mail_failed, send_later};
 use crate::{AppState, totp, webauthn};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Deserializer};
@@ -365,8 +366,8 @@ async fn send_login_code(
     State(state): State<AppState>,
     ClientIp(ip): ClientIp,
     Json(request): Json<LoginCodeRequest>,
-) -> ApiResult<StatusCode> {
-    if !state.limits.login.check(ip) {
+) -> ApiResult<Response> {
+    if !state.limits.login.check(ip) || !state.limits.login_wide.check_wide(ip) {
         return Err(ApiError::too_many("Too many login requests. Wait a minute and try again."));
     }
     let wrong = || ApiError::bad("Username or password is incorrect. Try again");
@@ -401,11 +402,28 @@ async fn send_login_code(
                 .master_password_hash
                 .filter(|hash| !hash.is_empty())
                 .ok_or_else(|| ApiError::bad("No password hash has been submitted."))?;
-            let user = state.store.user_by_email(&email).await?;
-            let stored = user.as_ref().map(|user| user.password_hash.as_str());
-            if !auth::verify_password(state.config.hash_cost, stored, &password).await {
+            // The same guards as the password grant (identity.rs): a password checked here is a
+            // guess like one at login and takes from the same tries.
+            if auth::hashing_busy() {
+                let mut response =
+                    ApiError::new(StatusCode::SERVICE_UNAVAILABLE, "The server is busy. Try again in a moment.")
+                        .code("busy")
+                        .into_response();
+                response.headers_mut().insert(axum::http::header::RETRY_AFTER, axum::http::HeaderValue::from(2));
+                return Ok(response);
+            }
+            let device_id = request.device_identifier.as_deref().unwrap_or_default();
+            if email.len() > crate::identity::MAX_EMAIL || device_id.len() > 256 {
                 return Err(wrong());
             }
+            let user = state.store.user_by_email(&email).await?;
+            let tries = crate::identity::account_tries(&state, user.as_ref(), &email, device_id, ip, 14).await?;
+            let known = user.as_ref().map(|user| user.password_hash.as_str()).filter(|hash| !hash.is_empty());
+            let legacy_rounds = state.legacy_rounds.load(std::sync::atomic::Ordering::Relaxed);
+            if !auth::verify_login(state.config.hash_cost, known, &password, legacy_rounds).await {
+                return Err(wrong());
+            }
+            tries.give_back(&state);
             user.expect("a password matched")
         }
     };
@@ -420,7 +438,7 @@ async fn send_login_code(
         .find(|factor| factor.kind == EMAIL && factor.enabled)
         .ok_or_else(|| ApiError::bad("Two-step login by mail is not set up for this account."))?;
     send_code(&state, &user, &factor.data).await?;
-    Ok(StatusCode::OK)
+    Ok(StatusCode::OK.into_response())
 }
 
 // ── Settings ──────────────────────────────────────────────
@@ -798,7 +816,12 @@ async fn delete_webauthn(
     check_password(&state, &session.user, request.master_password_hash.as_deref()).await?;
     let slot: i64 = request.id.parse().map_err(|_| ApiError::bad("Invalid key slot"))?;
     let mut keys = keys_of(&state, &session.user).await?;
+    let before = keys.len();
     keys.retain(|key| key.id != slot);
+    // No such key: nothing changes, not the remembered devices either.
+    if keys.len() == before {
+        return Ok(Json(keys_answer(&keys)));
+    }
     if keys.is_empty() {
         state.store.remove_two_factor(&session.user.id, Some(WEBAUTHN)).await?;
         state.store.forget_remembered_devices(&session.user.id).await?;
@@ -968,6 +991,25 @@ mod tests {
             server.form("/identity/connect/token", &login_form("nyu@example.com", "d4")).await.status(),
             StatusCode::OK
         );
+    }
+
+    /// Asking for a login code checks the password, so it takes from the same tries as a login.
+    #[tokio::test]
+    async fn asking_for_a_login_code_takes_login_tries() {
+        let server = TestServer::new().await.behind_proxy();
+        server.account("nyu@example.com").await;
+        let mut limits = crate::Limits::generous();
+        limits.login_account_network = crate::limits::Limiter::new(10, std::time::Duration::from_secs(3600));
+        let server = server.with_limits(limits);
+        let ask = json!({ "email": "nyu@example.com", "masterPasswordHash": "wrong" });
+        let path = "/api/two-factor/send-email-login";
+        for _ in 0..10 {
+            let answer = server.call_from("2001:db8:1:1::1", "POST", path, "", ask.clone()).await;
+            assert_eq!(answer.status(), StatusCode::BAD_REQUEST);
+        }
+        // Another /64 of the same /48 is the same network.
+        let answer = server.call_from("2001:db8:1:2::1", "POST", path, "", ask).await;
+        assert_eq!(answer.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

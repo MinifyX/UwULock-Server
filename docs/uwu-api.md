@@ -2835,8 +2835,9 @@ protocol both sides implement; UwUAuth builds its half from this section.
    may sign up, `admin` role = admin).
 5. Answer: the §19.1 settings. The page offers "Test login".
 
-`DELETE /uwu/v1/admin/sso/pairing` forgets it here (and switches SSO off, and the SCIM token); the
-app on the UwUAuth side is deleted there.
+`DELETE /uwu/v1/admin/sso/pairing` with `{ "masterPasswordHash" }` of the admin (else, and with a
+wrong one, 400 `password_required`, as for pairing) forgets it here (and switches SSO off, and the
+SCIM token); the app on the UwUAuth side is deleted there.
 
 ### 19.6 Implementation notes (UwULock Server, Stufe 4b)
 

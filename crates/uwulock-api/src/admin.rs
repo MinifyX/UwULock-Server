@@ -104,6 +104,10 @@ pub async fn invite_as_user(state: &AppState, email: &str, user: &User, quota: i
         .invite_within(&email, auth::sha256(token.as_bytes()), &user.id, language.code(), expires, quota)
         .await?
         .ok_or_else(|| ApiError::bad(format!("You have invited as many people as you may ({quota}).")))?;
+    // Somebody else's got in between the route's look and the write.
+    if invitation.invited_by.as_deref() != Some(user.id.as_str()) {
+        return Err(ApiError::bad("There is an invitation for this address already."));
+    }
     let link = signup_link(state, &token, &email);
     let mailer = state.mailer.enabled();
     if mailer && state.store.user_by_email(&email).await?.is_none() {

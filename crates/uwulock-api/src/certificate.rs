@@ -86,6 +86,16 @@ pub async fn look(probe: &Probe) -> Seen {
     }
 }
 
+/// Keeps `seen` for the alerts and metrics. A look that could not read when the certificate
+/// expires keeps the date known before: a network error must not clear the alarm.
+pub fn remember(known: &parking_lot::RwLock<Option<Seen>>, mut seen: Seen) {
+    let mut known = known.write();
+    if seen.expires.is_none() {
+        seen.expires = known.as_ref().and_then(|before| before.expires);
+    }
+    *known = Some(seen);
+}
+
 async fn handshake(probe: &Probe) -> Result<(Vec<u8>, Option<String>), String> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let roots: rustls::RootCertStore = webpki_roots::TLS_SERVER_ROOTS.iter().cloned().collect();
@@ -178,6 +188,15 @@ mod tests {
         assert_eq!(not_after(later.der()), Some(time::macros::datetime!(2051-01-01 00:00 UTC).unix_timestamp()));
         assert_eq!(not_after(b"\x30\x03\x02\x01\x00"), None);
         assert_eq!(not_after(b""), None);
+    }
+
+    #[test]
+    fn a_failed_look_keeps_the_known_expiry() {
+        let known = parking_lot::RwLock::new(None);
+        remember(&known, Seen { expires: Some(5), problem: None, checked: "a".into() });
+        remember(&known, Seen { expires: None, problem: Some("no answer".into()), checked: "b".into() });
+        let seen = known.read().clone().unwrap();
+        assert_eq!((seen.expires, seen.problem.as_deref()), (Some(5), Some("no answer")));
     }
 
     #[tokio::test]

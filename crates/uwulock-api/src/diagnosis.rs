@@ -166,7 +166,7 @@ async fn certificate(state: &AppState) -> Check {
         );
     };
     let seen = crate::certificate::look(&probe).await;
-    *state.certificate.write() = Some(seen.clone());
+    crate::certificate::remember(&state.certificate, seen.clone());
     judge("certificate", &probe, seen)
 }
 
