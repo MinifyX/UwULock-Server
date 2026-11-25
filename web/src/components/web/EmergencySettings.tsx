@@ -147,7 +147,7 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
             )}
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               onClick={() => void act(() => removeContact(contact.id), t('Entfernt.'))}
             >
               {t('Entfernen')}
@@ -209,7 +209,7 @@ export function EmergencySettings({ mail }: { mail: boolean }) {
                 )}
                 <Button
                   variant="ghost"
-                  className="text-danger-ink"
+                  className="text-danger-ink!"
                   onClick={() => void act(() => removeContact(contact.id), t('Entfernt.'))}
                 >
                   {t('Entfernen')}

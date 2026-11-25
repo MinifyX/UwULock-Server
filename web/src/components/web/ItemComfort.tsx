@@ -153,7 +153,7 @@ function IconCard({ summary }: { summary: ItemSummary }) {
         {own && (
           <Button
             variant="ghost"
-            className="text-danger-ink"
+            className="text-danger-ink!"
             disabled={busy}
             onClick={() => void remove()}
             icon={ICONS.delete}
@@ -628,7 +628,7 @@ function VersionDialog({
         <>
           <Button
             variant="ghost"
-            className="text-danger-ink"
+            className="text-danger-ink!"
             disabled={busy}
             onClick={() =>
               void act(() => deleteVersion(summary.id, version.id), t('Version gelöscht.'))

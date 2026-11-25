@@ -136,7 +136,7 @@ export function Invitations() {
                     <span className="sr-only">{invitation.email}</span>
                   </Button>
                   <Button
-                    className="text-danger-ink"
+                    className="text-danger-ink!"
                     size="sm"
                     variant="ghost"
                     onClick={async () => {

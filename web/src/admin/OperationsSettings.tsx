@@ -492,7 +492,7 @@ function MetricsSettings({ draft, setDraft }: Props) {
       >
         {metrics.tokenSet && metrics.token !== '' && !fresh && (
           <Button
-            className="text-danger-ink"
+            className="text-danger-ink!"
             variant="ghost"
             onClick={() => set({ token: '' })}
             data-secondary

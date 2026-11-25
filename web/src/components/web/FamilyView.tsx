@@ -254,7 +254,7 @@ export function FamilyView({ orgId, onGone }: { orgId: string; onGone: () => voi
           {owner && (
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               onClick={() => setDialog({ kind: 'delete' })}
               icon={ICONS.delete}
             >
@@ -609,7 +609,7 @@ function MemberDetail({
             )}
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               onClick={onRemove}
               icon={ICONS.delete}
             >
@@ -765,7 +765,7 @@ function CollectionDetail({
             </Button>
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               onClick={onDelete}
               icon={ICONS.delete}
             >

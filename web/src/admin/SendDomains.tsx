@@ -336,7 +336,7 @@ function DomainCard({
           <span className="sr-only">{domain.host}</span>
         </Button>
         <span className="spacer" />
-        <Button className="text-danger-ink" size="sm" variant="ghost" onClick={onDelete}>
+        <Button className="text-danger-ink!" size="sm" variant="ghost" onClick={onDelete}>
           {t('Löschen …')}
           <span className="sr-only">{domain.host}</span>
         </Button>

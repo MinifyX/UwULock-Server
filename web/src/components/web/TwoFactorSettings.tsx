@@ -506,7 +506,7 @@ function SecurityKeys({ onClose }: { onClose: () => void }) {
           <SettingRow key={key.id} label={key.name || t('Schlüssel {n}', { n: key.id })}>
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               disabled={busy}
               onClick={() => void run(() => removeSecurityKey(key.id, password), t('Entfernt.'))}
             >

@@ -381,7 +381,7 @@ export function MaskedSettings({ onClose }: { onClose: () => void }) {
           >
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               onClick={() => setDialog({ kind: 'disconnect' })}
             >
               {t('Trennen …')}
@@ -618,7 +618,7 @@ function Addresses({
                     )}
                     <Button
                       variant="ghost"
-                      className="text-danger-ink"
+                      className="text-danger-ink!"
                       disabled={busy === address.id}
                       onClick={() => setDialog({ kind: 'delete', address })}
                     >
@@ -750,7 +750,7 @@ function ApiKeys({
         >
           <Button
             variant="ghost"
-            className="text-danger-ink"
+            className="text-danger-ink!"
             onClick={() => setDialog({ kind: 'delete-key', key })}
           >
             {t('Löschen …')}

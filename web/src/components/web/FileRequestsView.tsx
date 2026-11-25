@@ -343,7 +343,7 @@ function RequestDetail({
           <IconButton
             icon={ICONS.delete}
             label={t('Löschen')}
-            className="text-danger-ink"
+            className="text-danger-ink!"
             onClick={onDelete}
           />
         </div>
@@ -461,7 +461,7 @@ function RequestDetail({
             <span className="spacer" />
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               disabled={busy !== null}
               onClick={() =>
                 void act(submission.id, async () => {

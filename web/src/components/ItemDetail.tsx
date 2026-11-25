@@ -654,7 +654,7 @@ export function ItemDetail({
               <Button
                 variant="ghost"
                 icon={ICONS.delete}
-                className="text-danger-ink"
+                className="text-danger-ink!"
                 disabled={busy}
                 onClick={() => setAsking('permanent')}
               >

@@ -132,7 +132,7 @@ export function InviteSettings() {
               </Button>
               <Button
                 variant="ghost"
-                className="text-danger-ink"
+                className="text-danger-ink!"
                 onClick={async () => {
                   try {
                     await withdrawInvitation(invitation.email);

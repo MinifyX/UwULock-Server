@@ -295,7 +295,7 @@ export function Offsite() {
                 title={t('Host-Schlüssel des Backup-Servers')}
                 aside={
                   <Button
-                    className="text-danger-ink"
+                    className="text-danger-ink!"
                     size="sm"
                     variant="ghost"
                     disabled={busy}
@@ -617,7 +617,7 @@ export function Offsite() {
                 <td>{snapshot.version}</td>
                 <td className="row-actions">
                   <Button
-                    className="text-danger-ink"
+                    className="text-danger-ink!"
                     size="sm"
                     variant="ghost"
                     onClick={() => setRestoring(snapshot)}

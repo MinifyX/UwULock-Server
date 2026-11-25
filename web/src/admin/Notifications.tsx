@@ -411,7 +411,7 @@ function ChannelCard({ channel, events, initial, onSaved, onDeleted, onCancel }:
               {t('Testen')}
             </Button>
             <Button
-              className="text-danger-ink"
+              className="text-danger-ink!"
               size="sm"
               variant="ghost"
               disabled={busy}

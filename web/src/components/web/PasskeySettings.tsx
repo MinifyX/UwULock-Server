@@ -62,7 +62,7 @@ export function PasskeySettings() {
             )}
             <Button
               variant="ghost"
-              className="text-danger-ink"
+              className="text-danger-ink!"
               onClick={() => setDialog({ kind: 'remove', passkey })}
             >
               {t('Entfernen …')}

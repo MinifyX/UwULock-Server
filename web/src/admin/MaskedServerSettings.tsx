@@ -102,7 +102,7 @@ export function MaskedServerSettings() {
                       </Button>
                       <span className="spacer" />
                       <Button
-                        className="text-danger-ink"
+                        className="text-danger-ink!"
                         size="sm"
                         variant="ghost"
                         onClick={() => set(servers.filter((_, i) => i !== index))}

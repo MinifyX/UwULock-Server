@@ -354,7 +354,7 @@ export function SuiteDetail({
           <IconButton
             icon={ICONS.delete}
             label={t('Löschen')}
-            className="text-danger-ink"
+            className="text-danger-ink!"
             onClick={onDelete}
           />
         </div>

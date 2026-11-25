@@ -340,7 +340,7 @@ function ImageRow({
       </Button>
       {url && (
         <Button
-          className="text-danger-ink"
+          className="text-danger-ink!"
           variant="ghost"
           disabled={busy}
           onClick={() => void act(() => removeBrandingImage(image, path), t('Bild entfernt.'))}

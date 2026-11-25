@@ -274,7 +274,7 @@ export function SsoProviderTab() {
             )}
             <span className="spacer" />
             <Button
-              className="text-danger-ink"
+              className="text-danger-ink!"
               variant="ghost"
               onClick={() => setUnpairing(true)}
               disabled={busy}

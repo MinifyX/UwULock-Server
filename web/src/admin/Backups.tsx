@@ -98,7 +98,7 @@ export function Backups() {
                     {t('Herunterladen')}
                   </Button>
                   <Button
-                    className="text-danger-ink"
+                    className="text-danger-ink!"
                     size="sm"
                     variant="ghost"
                     onClick={() => setRestoring(backup.name)}

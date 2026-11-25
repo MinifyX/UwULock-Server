@@ -829,7 +829,7 @@ export function VaultScreen({
                         </Button>
                         <Button
                           variant="ghost"
-                          className="text-danger-ink"
+                          className="text-danger-ink!"
                           onClick={() => {
                             setSwitchOff(true);
                             setConfirmBulkDelete(true);

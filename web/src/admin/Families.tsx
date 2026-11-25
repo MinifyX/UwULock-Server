@@ -58,7 +58,7 @@ export function Families() {
                 <td>{when(org.creationDate) ?? ''}</td>
                 <td className="row-actions">
                   <Button
-                    className="text-danger-ink"
+                    className="text-danger-ink!"
                     size="sm"
                     variant="ghost"
                     onClick={() => setDeleting(org)}
