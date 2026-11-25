@@ -2,7 +2,7 @@
 # The suite's design package is no npm package but a GitHub release tarball, pinned by integrity in
 # the lockfile, so the registry has nothing to say about it.
 minimumReleaseAgeExclude:
-  - "@uwusuite/design"
+  - '@uwusuite/design'
 
 allowBuilds:
   esbuild: set this to true or false
