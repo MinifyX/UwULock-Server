@@ -244,10 +244,11 @@ function Stat({
         <button
           type="button"
           className="stat-link stat-more after:absolute after:inset-0 after:rounded-card"
-          aria-label={label}
           onClick={onOpen}
         >
+          {/* Its name starts with what one sees (WCAG 2.5.3) and says which tile it opens. */}
           {t('Ansehen')} <span aria-hidden>→</span>
+          <span className="sr-only">{label}</span>
         </button>
       )}
     </StatTile>

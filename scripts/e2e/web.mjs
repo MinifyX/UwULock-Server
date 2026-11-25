@@ -97,6 +97,23 @@ try {
   await snap('item-saved');
   await checkA11y(page, 'vault with an item selected');
 
+  step('Escape on a changed editor asks every time and never loses the editor');
+  await page.getByRole('button', { name: 'Neu', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Login' }).click();
+  await page.getByLabel('Name', { exact: true }).fill('Entwurf');
+  const asking = page.getByRole('dialog', { name: 'Wirklich schließen?' });
+  for (let round = 0; round < 2; round++) {
+    await page.keyboard.press('Escape');
+    await asking.waitFor();
+    await page.keyboard.press('Escape');
+    await asking.waitFor({ state: 'detached' });
+    if (!(await page.getByLabel('Name', { exact: true }).isVisible()))
+      throw new Error(`the editor vanished after Escape (round ${round + 1})`);
+  }
+  await page.keyboard.press('Escape');
+  await asking.locator('footer').getByRole('button', { name: 'Schließen' }).click();
+  await page.getByRole('dialog').waitFor({ state: 'detached' });
+
   step('the keyboard: shortcut overview, the new-item menu, the list');
   await page.locator('.item-list').focus();
   await page.keyboard.press('?');
